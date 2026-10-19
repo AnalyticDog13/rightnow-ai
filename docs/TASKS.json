@@ -1,8 +1,8 @@
 {
   "tasks": [
     { "id": "P0-T01", "title": "Initialize CLAUDE.md and project-state docs", "status": "done", "deps": [], "model": "opus-orchestrator", "commit": null, "acceptance": "CLAUDE.md and docs/* scaffold committed and pushed" },
-    { "id": "P0-T02", "title": "Research Instantly.ai, write docs/PRODUCT_SPEC.md with parity checklist", "status": "in_progress", "deps": ["P0-T01"], "model": "sonnet", "commit": null, "acceptance": "Every spec section mapped to checklist items with Instantly behavior notes and sources" },
-    { "id": "P0-T03", "title": "Write docs/IMPLEMENTATION_PLAN.md", "status": "todo", "deps": ["P0-T02"], "model": "opus-orchestrator", "commit": null, "acceptance": "All parity items mapped to tasks with files, interfaces, tests" },
-    { "id": "P0-T04", "title": "Independent plan review until Approved", "status": "todo", "deps": ["P0-T03"], "model": "opus", "commit": null, "acceptance": "REVIEW_LOG.md records an Approved verdict" }
+    { "id": "P0-T02", "title": "Research Instantly.ai, write docs/PRODUCT_SPEC.md with parity checklist", "status": "done", "deps": ["P0-T01"], "model": "sonnet", "commit": null, "acceptance": "Every spec section mapped to checklist items with Instantly behavior notes and sources" },
+    { "id": "P0-T03", "title": "Write docs/IMPLEMENTATION_PLAN.md", "status": "done", "deps": ["P0-T02"], "model": "opus-orchestrator", "commit": null, "acceptance": "All parity items mapped to tasks with files, interfaces, tests" },
+    { "id": "P0-T04", "title": "Independent plan review until Approved", "status": "in_progress", "deps": ["P0-T03"], "model": "opus", "commit": null, "acceptance": "REVIEW_LOG.md records an Approved verdict" }
   ]
 }

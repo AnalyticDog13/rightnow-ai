@@ -1,7 +1,7 @@
 # Handoff
 
 **Phase:** 0 — Initialization / planning
-**Current task:** P0-T02 research Instantly.ai → `docs/PRODUCT_SPEC.md`
+**Current task:** P0-T04 independent plan review (Opus reviewer running; if interrupted, re-dispatch the review per IMPLEMENTATION_PLAN)
 **Branch / commit:** `main`, see `git log -1`
 **Tests:** none yet
 **Review status:** plan not yet written
