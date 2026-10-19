@@ -23,3 +23,6 @@ clock file, argon2 decision (D8), attachment column exclusion. Resolution: plan 
 ## 2026-10-19 · Plan review round 3 · same independent agent (opus) · **APPROVED**
 C5, I-A..I-D and round-2 minors resolved; no new Critical/Important. Four minor notes applied directly (P5-T05 wording,
 late accept after manual release, claimToken on stale-claim release, first-sync window). Plan rev 3 is the approved plan.
+
+## 2026-10-19 · P1-T01 monorepo scaffold · task reviewer (sonnet) · **Approved**
+Spec ✅, quality approved. Minors deferred: Node engines vs CI version, Prettier not enforced, README link ahead of P1-T06.

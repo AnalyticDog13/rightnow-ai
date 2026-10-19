@@ -43,3 +43,7 @@ provider cap makes two adjacent days unable to exceed the rolling cap. Cold-emai
 ## 2026-10-19 · D8 · Password hashing: better-auth default (scrypt)
 PS-SEC-03 names argon2id; scrypt is an equally recommended memory-hard KDF (OWASP) and avoids a native dependency
 that complicates Windows dev and the Docker image. Revisit only if a compliance requirement names argon2id.
+
+## 2026-10-19 · D9 · TypeScript 5.9.3 (not 7.x)
+typescript-eslint 8.72 (latest) supports `typescript <6.1.0`. 5.9.3 is the newest version satisfying both it and the
+"latest 5.x" fallback in the plan. Revisit when typescript-eslint supports 7.x. ESLint 10 and Vitest 5 work.

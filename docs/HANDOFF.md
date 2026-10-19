@@ -1,9 +1,9 @@
 # Handoff
 
 **Phase:** 1 — Foundation (branch `phase-1-foundation`)
-**Current task:** P1-T01 monorepo scaffold (see `docs/TASKS.json` for live status)
+**Current task:** P1-T02 DB package + embedded-postgres harness (P1-T01 done 6cb2b6f)
 **Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 — APPROVED (REVIEW_LOG round 3). Phase step plan: `docs/plans/phase-1.md`.
-**Tests:** none yet
+**Tests:** smoke test green; CI green on phase-1-foundation
 
 ## Next exact action
 Implement the first `todo` task in `docs/TASKS.json` per `docs/plans/phase-1.md` on branch `phase-1-foundation`,

@@ -47,19 +47,20 @@
    "id": "P1-T01",
    "phase": 1,
    "title": "Monorepo scaffold, tooling, CI",
-   "status": "todo",
+   "status": "done",
    "deps": [
     "P0-T04"
    ],
    "model": "sonnet",
-   "commit": null,
-   "acceptance": "install/lint/typecheck/test pass on Windows; CI green."
+   "commit": "6cb2b6f",
+   "acceptance": "install/lint/typecheck/test pass on Windows; CI green.",
+   "review": "clean (sonnet); 3 minors deferred"
   },
   {
    "id": "P1-T02",
    "phase": 1,
    "title": "DB package + embedded-postgres test harness",
-   "status": "todo",
+   "status": "in_progress",
    "deps": [
     "P1-T01"
    ],
