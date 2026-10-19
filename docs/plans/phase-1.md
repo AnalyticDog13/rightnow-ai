@@ -49,7 +49,7 @@ Schema now: `Workspace(id cuid, name, slug unique, createdAt)`, `AuditLog(id, wo
 
 Owns: PS-SEC-05 (env-only secrets, never logged; `docs/ops/KEY_ROTATION.md` with re-encrypt script `scripts/rotate-key.ts` taking old+new keys).
 
-Files: `packages/core/src/{crypto.ts,env.ts}`, tests.
+Files: `packages/core/src/{crypto.ts,env.ts,clock.ts}`, tests.
 
 - `encrypt(plain: string, key?: Buffer): string` → `"v1:" + base64(iv12 | tag16 | ciphertext)`; `decrypt(enc: string, key?: Buffer): string`; default key from `getEnv().ENCRYPTION_KEY`.
 - `getEnv()` zod schema, memoized, throws listing every missing/invalid var.
@@ -60,7 +60,7 @@ Files: `packages/core/src/{crypto.ts,env.ts}`, tests.
 
 Owns: PS-UI-01, PS-UI-05 (theme + accessible primitives), PS-SEC-03 (except 2FA → P7-T07), PS-SEC-04, PS-SEC-06, PS-DEPLOY-04/05 (wrapper behavior).
 
-Files: `apps/web/**` (create-next-app equivalent by hand or CLI, then trim), `apps/web/lib/{auth.ts,auth-client.ts,workspace.ts,api.ts}`, `apps/web/app/api/auth/[...all]/route.ts`, `apps/web/app/(auth)/{sign-in,sign-up}/page.tsx`, `apps/web/app/(app)/layout.tsx` (sidebar), `apps/web/app/(app)/<section>/page.tsx` for: dashboard, accounts, deliverability, campaigns, leads, inbox, crm, analytics, automations, settings. `apps/web/app/api/health/route.ts` (`{ok:true, db:true}` after `select 1`). Playwright config `apps/web/playwright.config.ts` using embedded-postgres via a small `e2e/global-setup.ts` that reuses `@rightnow/db` test harness and starts `next dev` with that DATABASE_URL.
+Files: `apps/web/**` (create-next-app equivalent by hand or CLI, then trim), `apps/web/lib/{auth.ts,auth-client.ts,workspace.ts,api.ts}`, `apps/web/app/api/auth/[...all]/route.ts`, `apps/web/app/(auth)/{sign-in,sign-up}/page.tsx`, `apps/web/app/(app)/layout.tsx` (sidebar), `apps/web/app/(app)/<section>/page.tsx` for: dashboard, accounts, deliverability, campaigns, leads, inbox, crm, analytics, automations, settings. `apps/web/app/api/healthz/route.ts` (liveness `{ok:true}`; `/api/readyz` comes in P1-T07). Playwright config `apps/web/playwright.config.ts` using embedded-postgres via a small `e2e/global-setup.ts` that reuses `@rightnow/db` test harness and starts `next dev` with that DATABASE_URL.
 
 - Sign-up: first owner only with the correct `SETUP_TOKEN` (form field) while zero users exist; race-safe (Postgres advisory lock or unique singleton row); creates the user, Workspace, OWNER membership; afterwards only invites. Login rate limit (better-auth rate-limit config).
 - `requireWorkspace(): Promise<{ userId: string; workspaceId: string }>` — redirects to `/sign-in` in pages; in API throws `HttpError(401)`.
@@ -88,9 +88,9 @@ Owns: PS-DEPLOY-03, 07, 08, 09, 10 (backup/restore incl. ENCRYPTION_KEY note), 1
 
 Files: `docker/Dockerfile`, `docker/Caddyfile`, `docker-compose.yml`, `.dockerignore`, `scripts/{start,stop,upgrade,backup,restore}.sh` + `.ps1`, `docs/ops/LOCAL.md`, `docs/ops/VPS.md`, CI job `compose-smoke`.
 
-- One image; entry `docker/entrypoint.sh` with `web` | `worker` | `migrate`. Postgres 18 (`postgres:18-alpine`) volume `pgdata`; `migrate` service runs `prisma migrate deploy` and web/worker `depends_on: migrate: condition: service_completed_successfully`; `restart: unless-stopped`; healthchecks (pg_isready, `/api/health`, worker `/healthz`). Caddy in profile `vps` with `{$DOMAIN}` reverse_proxy web:3000.
+- One image; entry `docker/entrypoint.sh` with `web` | `worker` | `migrate`. Postgres 18 (`postgres:18-alpine`) volume `pgdata`; `migrate` service runs `prisma migrate deploy` and web/worker `depends_on: migrate: condition: service_completed_successfully`; `restart: unless-stopped`; healthchecks (pg_isready, `/api/healthz`, worker `/healthz`). Caddy in profile `vps` with `{$DOMAIN}` reverse_proxy web:3000.
 - backup = `pg_dump -Fc` via `docker compose exec` to `backups/rightnow-<ts>.dump`; restore = stop web/worker, `pg_restore --clean`, start.
-- [ ] CI `compose-smoke`: `docker compose up -d --build`, poll `/api/health` 120 s, run backup script, restore into fresh volume, health again.
+- [ ] CI `compose-smoke`: `docker compose up -d --build`, poll `/api/healthz` 120 s, run backup script, restore into fresh volume, `/api/readyz` again.
 - [ ] Commit `feat(deploy): docker image, compose, scripts, ops docs`.
 
 ## P1-T07 API keys + audit log + readiness

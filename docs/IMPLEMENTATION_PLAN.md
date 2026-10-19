@@ -1,4 +1,4 @@
-# rightnow-ai Implementation Plan (rev 2)
+# rightnow-ai Implementation Plan (rev 3)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this
 > plan task-by-task. Each phase also has a step-level plan in `docs/plans/phase-N.md`, written and independently
@@ -43,7 +43,7 @@ Provider rules: `docs/PROVIDER_COMPLIANCE.md`. Review history: `docs/REVIEW_LOG.
 ## Review Focus
 
 1. Worker dies after the provider accepted a send but before the DB update → no duplicate; message ends `SENT` (found) or `HELD` (P3-T11 test `uncertain send never auto-resent`).
-2. Laptop asleep 1/7/30 days (no restart) or powered off, replies/bounces/unsubs arrive meanwhile, some in a different mailbox of the same company → no follow-up to repliers, nothing sent before fresh sync, backlog spread under quota, Gmail history expiry → full reconcile, re-warm allowance applies on first send after 30 days (P4-T07 tests).
+2. Laptop asleep 1/7/30 days (no restart) or powered off, replies/bounces/unsubs arrive meanwhile, some in a different mailbox of the same company → no follow-up to repliers, nothing sent before fresh sync, backlog spread under quota, Gmail history expiry → full reconcile (P4-T07 tests); P5-T06 extends that suite: re-warm allowance applies on the first send after 30 days.
 3. Two workers ticking concurrently, account at 49/50, a claim at 23:59:59 that completes at 00:00:01 → exactly one more send, and usage is credited to the claim day (P3-T09 tests).
 4. CSV with BOM, semicolons, duplicate and mixed-case emails, invalid rows → exact imported/skipped counts with reasons (P3-T02).
 5. OAuth refresh token revoked while a campaign is active → account `NEEDS_ATTENTION`, its follow-ups wait (not re-routed), step-1 messages re-route, no crash loop; reconnect keeps id and history; P5 re-warm applies if idle past threshold (P2-T04, P5-T06).
@@ -97,42 +97,57 @@ Automation (P7): `AutomationRule`, `Webhook(url, secretEnc, events[], headers Js
    window, select `CampaignLead`s with `nextDueAt <= now` and no open ScheduledMessage for the current step
    (new leads limited by `maxNewLeadsPerDay`; order per `prioritizeNewLeads`). Step 1: pick account via
    `rotation.pickAccount` (eligible = assigned, lifecycle ACTIVE|REWARMING, fresh, remaining allowance > 0,
-   provider/ESP routing rules; tie-break least sent today, then round-robin) and store it on CampaignLead
-   (sticky). Follow-ups: the sticky account. Choose variant (weights / auto-optimize). Upsert ScheduledMessage by
+   provider/ESP routing rules; tie-break least sent today, then round-robin); `CampaignLead.accountId` becomes sticky
+   only when step 1 is SENT (a re-routed step 1 never leaves a stale account). Follow-ups: the sticky account.
+   New-lead and per-company daily limits are enforced here (planner counts `CampaignDailyUsage.newLeads` /
+   step-1 messages per `companyDomain` today) — they are pacing limits, not hard provider limits. Choose variant (weights / auto-optimize). Upsert ScheduledMessage by
    `idempotencyKey` (insert or revive a CANCELLED row only when re-planning is intended; SENT/SENDING/UNCERTAIN/HELD
    rows are never touched). Render subject/body now and store them (preview = what will be sent).
 2. **Dispatcher claim** (`core/dispatch.ts claimDue(db, clock, limit)`): one transaction:
    `SELECT sm.* FROM ScheduledMessage sm JOIN CampaignLead cl … JOIN EmailAccount a … WHERE sm.status='SCHEDULED'
-   AND sm.dueAt<=now AND cl.state='ACTIVE' AND a.lifecycle IN (…) AND a.lastSyncCompletedAt >= now-staleness
-   AND (company-stop freshness) AND a.nextSendAt<=now FOR UPDATE OF sm SKIP LOCKED LIMIT n`. For each row, inside a
-   SAVEPOINT: reserve account usage via `INSERT … ON CONFLICT (accountId, day) DO UPDATE SET reserved = reserved + :u
-   WHERE sent + reserved + :u <= :allowance RETURNING`, then the same for campaign and workspace, then
+   AND sm.dueAt<=now AND cl.state='ACTIVE' AND c.status='ACTIVE' AND (c.endAt IS NULL OR c.endAt > now)
+   AND a.deletedAt IS NULL AND a.lifecycle IN (…) AND a.lastSyncCompletedAt >= now-staleness
+   AND (company-stop freshness) AND a.nextSendAt<=now FOR UPDATE OF sm SKIP LOCKED LIMIT 1` — **one message per transaction** (no multi-account lock
+   ordering → no deadlocks; retry on `40P01`/`40001` anyway). Company-stop freshness ignores soft-deleted/unassigned
+   accounts; a NEEDS_ATTENTION account blocks. Inside the transaction: if `!isInWindow(schedules, now)` → `dueAt =
+   nextWindowStart`, done (never send outside the window, e.g. backlog after wake at 03:00). Reserve account usage via
+   `INSERT … SELECT :acct, :day, 0, :u WHERE :u <= :allowance ON CONFLICT (accountId, day) DO UPDATE SET reserved =
+   reserved + :u WHERE sent + reserved + :u <= :allowance RETURNING` (the SELECT guard covers the first claim of a
+   day; zero rows = full), then the same for campaign and workspace, then
    `UPDATE EmailAccount SET nextSendAt = now + gap + rand WHERE id=… AND nextSendAt <= now`. Any zero-row result →
-   ROLLBACK TO SAVEPOINT and set `dueAt` = next window start / next day (status stays SCHEDULED). Else set
+   ROLLBACK the reservations (savepoint) and set `dueAt` = next window start / next day (status stays SCHEDULED). Else set
    `status=SENDING, claimToken=uuid, claimedAt, claimBootId, usageDay/wsUsageDay/campUsageDay, reservedUnits, rfcMessageId`.
    Re-check suppression in the same transaction.
 3. **Send** (`core/sender.ts`): build MIME with our `Message-ID`, unsubscribe headers, threading headers;
-   provider timeout (60 s) ≪ lease (10 min). Results:
+   provider timeout (60 s) ≪ lease (10 min). If `now − claimedAt > 2 min` before calling the provider (machine slept
+   between claim and send) → release reservations, back to SCHEDULED (conditional on claimToken), no send. Results:
    - accepted → `UPDATE … WHERE id AND claimToken` to SENT; move `reserved→sent` on the stored day rows; Event
      ACCEPTED; advance CampaignLead (`nextDueAt` = sentAt + next step delay, aligned to schedule). If the
-     conditional update matches 0 rows (lease lost), still record as SENT by rfcMessageId (never re-send).
+     conditional update matches 0 rows (lease lost): row UNCERTAIN → set SENT (reservation → sent); row HELD (reservation
+     already released) → set SENT and add `sent += units` without touching `reserved`; row already SENT → no change; row SCHEDULED again or re-claimed under another claimToken (user released a HELD row) →
+     set SENT, cancel the pending re-send. Rows are always matched by id + current state, never blindly.
    - connect/DNS failure before any bytes written, or 429/`Retry-After` → back to SCHEDULED with backoff (1 m·2^n,
      max 5 attempts), release reservations on stored days; 429 also pushes `EmailAccount.nextSendAt`.
-   - timeout/reset after write → UNCERTAIN (keep reservation).
+   - timeout/reset after write, or provider-API HTTP 5xx (Gmail/Graph may have accepted) → UNCERTAIN (keep
+     reservation). SMTP: 4xx → retry path, 5xx → permanent.
    - permanent error → FAILED, release reservation, increment account error counters (→ automation/health).
    - `AuthError` → account NEEDS_ATTENTION, message back to SCHEDULED, reservation released.
-4. **Recovery** (`core/recovery.ts`, on boot + every 5 min): SENDING rows whose lease expired AND whose
-   `claimBootId` is stopped or stale (no heartbeat 2 min) → UNCERTAIN. `resolveUncertain`: search Sent by
+4. **Recovery** (`core/recovery.ts`, on boot + every 5 min): SENDING rows whose lease (10 min) expired → UNCERTAIN
+   (lease alone is safe: provider timeout ≪ lease and the claimToken blocks late writes). `resolveUncertain`: search Sent by
    rfcMessageId → found: SENT (reservation → sent on stored day). Not found: wait 15 min, search again → still not
    found: HELD (reservation released). HELD rows appear in "Scheduled emails" view with Release / Cancel.
    Graph sends use create-draft + send so the message id is known before sending.
 
 ## Reconciliation (P4)
 `sync.reconcileAccount(account, clock)`: `listChangesSince(cursor)`; expired → `fullReconcile(since = lastSyncCompletedAt − 2 d)`
-over INBOX + SENT. Each message → ingest (dedupe on `(accountId, rfcMessageId)`; providerMessageId secondary), thread
+over INBOX + SENT (first-ever sync: `since` = historical-import window start). Each message → ingest (dedupe on `(accountId, rfcMessageId)`; providerMessageId secondary), thread
 match, classify, events (dedupeKey), stop rules (cancel CampaignLead + open ScheduledMessages; company-level stop),
-automations. Sends made outside the app are recorded. On success: cursor + `lastSyncCompletedAt = now`.
-Startup additionally runs the inactivity check (P5) before marking accounts fresh, so re-warm limits apply to the first send.
+automations. Sends made outside the app are recorded. On success: cursor + `lastSyncCompletedAt = syncStartedAt`
+(the watermark is the sync's start, never its end). Messages without a Message-ID get a synthetic
+`<sha256(from,date,subject,body-prefix)@rightnow.synthetic>` so dedupe works.
+Inactivity/re-warm cannot depend on a startup path (sleep/wake never boots): `effectiveAllowance` derives the
+inactivity state on the fly from `lastSentAt` + workspace thresholds, so the first send after any downtime already
+uses the re-warm allowance; P5-T05 additionally runs `computeLifecycle` inside every `reconcileAccount`.
 
 ---
 
@@ -168,14 +183,14 @@ Model: `S` sonnet, `H` haiku, `O` opus. State-file and checklist updates: H.
 - **P3-T06 (S)** Sequences: steps (minute/hour/day delays), variants (≤26), subsequences with triggers and pre-delay; enrollment from lists/filters with cross-campaign conflict check.
 - **P3-T07 (S)** Schedule math (`isInWindow`, `nextWindowStart`, `addDelay` with units, DST, overnight windows) + day-key helpers.
 - **P3-T08 (S)** Unsubscribe early: signed tokens, `/u/[token]` page + RFC 8058 POST, mailto handling hook, suppression on unsubscribe, physical-address setting, footer injection.
-- **P3-T09 (O)** Quota + dispatcher claim exactly as specified above. *Accept:* parallel claim test; midnight crossing; campaign/workspace caps; savepoint rollback; first-of-day usage row; freshness and sticky gates; suppression re-check.
+- **P3-T09 (O)** Quota + dispatcher claim exactly as specified above. *Accept:* parallel claim test (2 dispatchers × 2 accounts, no deadlock, no over-quota); midnight crossing; campaign/workspace caps; reservation rollback; first-of-day claim with allowance 0 and with units > allowance → not claimed; paused campaign / past endAt → not claimed; overdue row at 03:00 → not sent until window opens; freshness and sticky gates; suppression re-check.
 - **P3-T10 (S)** Planner + rotation + sequence advancement + subsequence entry + campaign completion. *Accept:* even rotation; sticky follow-ups; step-1 re-route on ineligible account; revive-not-duplicate re-plan.
-- **P3-T11 (O)** Sender + recovery + HELD view API (error classification, lease/claimToken, UNCERTAIN → SENT/HELD). *Accept:* Review Focus #1; 429 pushes account; ambiguous timeout → UNCERTAIN; end-to-end 3-step sequence over simulated days with Fake provider.
+- **P3-T11 (O)** Sender + recovery + HELD view API (error classification, lease/claimToken, UNCERTAIN → SENT/HELD). *Accept:* Review Focus #1; 429 pushes account; ambiguous timeout and API 5xx → UNCERTAIN; late accept on HELD row credits `sent` once; stale claim (>2 min) not sent; handler crash in a live worker → recovered after lease; end-to-end 3-step sequence over simulated days with Fake provider.
 - **P3-T12 (S)** Campaign builder UI (list with status/progress; tabs Leads/Sequences/Schedule/Options/Accounts; preview with real lead; Scheduled emails view incl. HELD actions).
 - **P3-T13 (S)** Ramp-up + workspace/campaign cap settings feeding `effectiveAllowance`.
 
 ### Phase 4 — Incoming mail & tracking
-- **P4-T01 (S)** Threading + ingest (dedupe on rfcMessageId; UIDVALIDITY resync no duplicates).
+- **P4-T01 (S)** Threading + ingest (dedupe on rfcMessageId, synthetic id when missing; UIDVALIDITY resync no duplicates; list queries never select attachment `data`).
 - **P4-T02 (S)** Classification (DSN hard/soft, auto-reply headers + OOO return date, unsubscribe intent, interest rules, uncertain; AI hook) with ≥30-email corpus.
 - **P4-T03 (S)** Stop rules (reply, auto-reply option, OOO reschedule via revive, unsubscribe, bounce, company stop, subsequence triggers from replies/status).
 - **P4-T04 (S)** Event store + open/click tracking (signed tokens, open-redirect protection, proxy/bot → isEstimated, custom tracking domain).
@@ -189,7 +204,7 @@ Model: `S` sonnet, `H` haiku, `O` opus. State-file and checklist updates: H.
 - **P5-T02 (S)** Health score, automatic slowdown/pause, BounceProtect campaign status, ACCOUNTS_UNHEALTHY.
 - **P5-T03 (S)** Warm-up engine (opt-in peer pool, custom curve, reply rate, weekdays-only, peer tag, `WarmupProvider` interface for external services, separate storage, no spam-folder manipulation).
 - **P5-T04 (S)** Inbox placement test with opt-in seeds.
-- **P5-T05 (S)** Inactivity detection (`computeLifecycle`, thresholds 7/14/30/60, recommend/auto) running in the sync startup path.
+- **P5-T05 (S)** Inactivity detection (`computeLifecycle`, thresholds 7/14/30/60, recommend/auto) run inside every `reconcileAccount` (and derived on the fly in `effectiveAllowance`).
 - **P5-T06 (S)** Re-warm mode (button, DNS + connectivity recheck, plan, allowance in quota, health-based pause/reduce, completion restores previous settings, history preserved). *Accept:* five spec scenarios.
 - **P5-T07 (S)** Deliverability + reactivation dashboards (statuses, idle days, allowance vs target, progress, warnings, schedule labelled "configurable plan").
 - **P5-T08 (S)** Verification hooks (`EmailVerifier`, built-in MX check, one HTTP integration template; risky handling per campaign).

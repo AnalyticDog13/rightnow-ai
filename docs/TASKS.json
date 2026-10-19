@@ -1,8 +1,743 @@
 {
-  "tasks": [
-    { "id": "P0-T01", "title": "Initialize CLAUDE.md and project-state docs", "status": "done", "deps": [], "model": "opus-orchestrator", "commit": null, "acceptance": "CLAUDE.md and docs/* scaffold committed and pushed" },
-    { "id": "P0-T02", "title": "Research Instantly.ai, write docs/PRODUCT_SPEC.md with parity checklist", "status": "done", "deps": ["P0-T01"], "model": "sonnet", "commit": null, "acceptance": "Every spec section mapped to checklist items with Instantly behavior notes and sources" },
-    { "id": "P0-T03", "title": "Write docs/IMPLEMENTATION_PLAN.md", "status": "done", "deps": ["P0-T02"], "model": "opus-orchestrator", "commit": null, "acceptance": "All parity items mapped to tasks with files, interfaces, tests" },
-    { "id": "P0-T04", "title": "Independent plan review until Approved", "status": "in_progress", "deps": ["P0-T03"], "model": "opus", "commit": null, "acceptance": "REVIEW_LOG.md records an Approved verdict" }
-  ]
+ "note": "deps are sequential by default; parallel-safe groups are declared in phase step plans",
+ "tasks": [
+  {
+   "id": "P0-T01",
+   "title": "Initialize CLAUDE.md and project-state docs",
+   "status": "done",
+   "deps": [],
+   "model": "opus-orchestrator",
+   "commit": null,
+   "acceptance": "CLAUDE.md and docs/* scaffold committed and pushed"
+  },
+  {
+   "id": "P0-T02",
+   "title": "Research Instantly.ai, write docs/PRODUCT_SPEC.md with parity checklist",
+   "status": "done",
+   "deps": [
+    "P0-T01"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "Every spec section mapped to checklist items with Instantly behavior notes and sources"
+  },
+  {
+   "id": "P0-T03",
+   "title": "Write docs/IMPLEMENTATION_PLAN.md",
+   "status": "done",
+   "deps": [
+    "P0-T02"
+   ],
+   "model": "opus-orchestrator",
+   "commit": null,
+   "acceptance": "All parity items mapped to tasks with files, interfaces, tests"
+  },
+  {
+   "id": "P0-T04",
+   "title": "Independent plan review until Approved",
+   "status": "done",
+   "deps": [
+    "P0-T03"
+   ],
+   "model": "opus",
+   "commit": null,
+   "acceptance": "REVIEW_LOG.md records an Approved verdict"
+  },
+  {
+   "id": "P1-T01",
+   "phase": 1,
+   "title": "Monorepo scaffold, tooling, CI",
+   "status": "todo",
+   "deps": [
+    "P0-T04"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "install/lint/typecheck/test pass on Windows; CI green."
+  },
+  {
+   "id": "P1-T02",
+   "phase": 1,
+   "title": "DB package + embedded-postgres test harness",
+   "status": "todo",
+   "deps": [
+    "P1-T01"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "isolated per-file DBs; Workspace round-trip."
+  },
+  {
+   "id": "P1-T03",
+   "phase": 1,
+   "title": "Crypto + env + clock",
+   "status": "todo",
+   "deps": [
+    "P1-T02"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "encrypt/decrypt tamper tests; env errors list all vars; `systemClock`/`fixedClock`."
+  },
+  {
+   "id": "P1-T04",
+   "phase": 1,
+   "title": "Web shell + better-auth workspaces + `route()` with roles + SETUP_TOKEN first-owner",
+   "status": "todo",
+   "deps": [
+    "P1-T03"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "Vitest route wrapper (401/403/400/200); Playwright sign-up with token → dashboard → sign-out; second owner sign-up blocked; race-safe."
+  },
+  {
+   "id": "P1-T05",
+   "phase": 1,
+   "title": "Worker skeleton (pg-boss, WorkerBoot heartbeat, `/healthz`)",
+   "status": "todo",
+   "deps": [
+    "P1-T04"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "demo job runs; clean stop."
+  },
+  {
+   "id": "P1-T06",
+   "phase": 1,
+   "title": "Docker, Compose, Caddy profile, scripts, ops docs, CI compose smoke incl. backup/restore",
+   "status": "todo",
+   "deps": [
+    "P1-T05"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "CI job green."
+  },
+  {
+   "id": "P1-T07",
+   "phase": 1,
+   "title": "Scoped API keys + audit log + `/api/healthz` + `/api/readyz` (DB ok, worker heartbeat, sync-gate summary)",
+   "status": "todo",
+   "deps": [
+    "P1-T06"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "scope enforcement tests."
+  },
+  {
+   "id": "P2-T01",
+   "phase": 2,
+   "title": "Provider interface, MIME build/parse, Fake provider, contract test suite (incl. \"Message-ID preserved and findable in Sent\", threading headers, List-Unsubscribe headers, UTF-8). `send()` returns `{ rfcMessageId, providerMessageId?, providerThreadId? }`; errors `RateLimitedError`, `AuthError`, `Perma",
+   "status": "todo",
+   "deps": [
+    "P1-T07"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-2.md; tests listed there pass"
+  },
+  {
+   "id": "P2-T02",
+   "phase": 2,
+   "title": "Google OAuth connect (state+PKCE, minimal scopes, OAuth session object with status polling PS-ACC-02, reconnect updates same account), `docs/ops/GOOGLE_SETUP.md` incl. \"In production\" consent screen",
+   "status": "todo",
+   "deps": [
+    "P2-T01"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-2.md; tests listed there pass"
+  },
+  {
+   "id": "P2-T03",
+   "phase": 2,
+   "title": "Gmail provider (send raw + threadId, history.list, 404→expired, query listing, rfc822msgid search, token refresh persistence, error mapping). Contract suite on recorded fixtures via injected fetch",
+   "status": "todo",
+   "deps": [
+    "P2-T02"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-2.md; tests listed there pass"
+  },
+  {
+   "id": "P2-T04",
+   "phase": 2,
+   "title": "Account service/API/UI: CRUD, soft delete, pause/resume, limits (clamped), gaps, signature, replyTo, tags, bulk actions, diagnostics, mark-as-fixed, account→campaigns view, AuthError → NEEDS_ATTENTION",
+   "status": "todo",
+   "deps": [
+    "P2-T03"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-2.md; tests listed there pass"
+  },
+  {
+   "id": "P2-T05",
+   "phase": 2,
+   "title": "Microsoft Graph connect + provider (draft+send, delta Inbox+SentItems, internetMessageId search), `docs/ops/MICROSOFT_SETUP.md`. (Pulled forward from spec Phase 7 so rotation and sync are provider-agnostic from the start.)",
+   "status": "todo",
+   "deps": [
+    "P2-T04"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-2.md; tests listed there pass"
+  },
+  {
+   "id": "P2-T06",
+   "phase": 2,
+   "title": "IMAP/SMTP provider (SMTP send; APPEND to Sent when needed; UID/MODSEQ cursor; UIDVALIDITY → expired; header search) + connect form with test",
+   "status": "todo",
+   "deps": [
+    "P2-T05"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-2.md; tests listed there pass"
+  },
+  {
+   "id": "P2-T07",
+   "phase": 2,
+   "title": "Test-send + `docs/ops/LIVE_VERIFICATION.md`",
+   "status": "todo",
+   "deps": [
+    "P2-T06"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-2.md; tests listed there pass"
+  },
+  {
+   "id": "P3-T01",
+   "phase": 3,
+   "title": "Leads service/API: fields above, custom fields/labels, tags, statuses, bulk edit, merge, round-robin owner assign, filters/pagination, contact history, GDPR delete (suppression hash kept)",
+   "status": "todo",
+   "deps": [
+    "P2-T07"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-3.md; tests listed there pass"
+  },
+  {
+   "id": "P3-T02",
+   "phase": 3,
+   "title": "CSV import/export (BOM, delimiter sniff, auto/manual mapping, validation, dedupe modes, authorized-import confirmation, source/lawful basis), ESP detection via MX (`leads/esp.ts`), background ImportJob",
+   "status": "todo",
+   "deps": [
+    "P3-T01"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-3.md; tests listed there pass"
+  },
+  {
+   "id": "P3-T03",
+   "phase": 3,
+   "title": "Lead lists + blocklist/suppression UI and API (email + domain, import/export) + Leads UI",
+   "status": "todo",
+   "deps": [
+    "P3-T02"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-3.md; tests listed there pass"
+  },
+  {
+   "id": "P3-T04",
+   "phase": 3,
+   "title": "Template engine: variables, `{{var | fallback}}`, sender vars, `{{RANDOM | a | b}}` with nested vars, `{% if %}` blocks, validation; seeded determinism",
+   "status": "todo",
+   "deps": [
+    "P3-T03"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-3.md; tests listed there pass"
+  },
+  {
+   "id": "P3-T05",
+   "phase": 3,
+   "title": "Campaign service/API: CRUD, duplicate, archive, delete, JSON export/import, evergreen, all options listed in data model, schedules, account assignment, launch validation (accounts, steps, schedule, physical address, DNS gate hook, unsubscribe reachability) + \"why not sending\" explainer",
+   "status": "todo",
+   "deps": [
+    "P3-T04"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-3.md; tests listed there pass"
+  },
+  {
+   "id": "P3-T06",
+   "phase": 3,
+   "title": "Sequences: steps (minute/hour/day delays), variants (≤26), subsequences with triggers and pre-delay; enrollment from lists/filters with cross-campaign conflict check",
+   "status": "todo",
+   "deps": [
+    "P3-T05"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-3.md; tests listed there pass"
+  },
+  {
+   "id": "P3-T07",
+   "phase": 3,
+   "title": "Schedule math (`isInWindow`, `nextWindowStart`, `addDelay` with units, DST, overnight windows) + day-key helpers",
+   "status": "todo",
+   "deps": [
+    "P3-T06"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-3.md; tests listed there pass"
+  },
+  {
+   "id": "P3-T08",
+   "phase": 3,
+   "title": "Unsubscribe early: signed tokens, `/u/[token]` page + RFC 8058 POST, mailto handling hook, suppression on unsubscribe, physical-address setting, footer injection",
+   "status": "todo",
+   "deps": [
+    "P3-T07"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-3.md; tests listed there pass"
+  },
+  {
+   "id": "P3-T09",
+   "phase": 3,
+   "title": "Quota + dispatcher claim exactly as specified above",
+   "status": "todo",
+   "deps": [
+    "P3-T08"
+   ],
+   "model": "opus",
+   "commit": null,
+   "acceptance": "parallel claim test (2 dispatchers × 2 accounts, no deadlock, no over-quota); midnight crossing; campaign/workspace caps; reservation rollback; first-of-day claim with allowance 0 and with units > allowance → not claimed; paused campaign / past endAt → not claimed; overdue row at 03:00 → not sent until window opens; freshness and sticky gates; suppression re-check."
+  },
+  {
+   "id": "P3-T10",
+   "phase": 3,
+   "title": "Planner + rotation + sequence advancement + subsequence entry + campaign completion",
+   "status": "todo",
+   "deps": [
+    "P3-T09"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "even rotation; sticky follow-ups; step-1 re-route on ineligible account; revive-not-duplicate re-plan."
+  },
+  {
+   "id": "P3-T11",
+   "phase": 3,
+   "title": "Sender + recovery + HELD view API (error classification, lease/claimToken, UNCERTAIN → SENT/HELD)",
+   "status": "todo",
+   "deps": [
+    "P3-T10"
+   ],
+   "model": "opus",
+   "commit": null,
+   "acceptance": "Review Focus #1; 429 pushes account; ambiguous timeout and API 5xx → UNCERTAIN; late accept on HELD row credits `sent` once; stale claim (>2 min) not sent; handler crash in a live worker → recovered after lease; end-to-end 3-step sequence over simulated days with Fake provider."
+  },
+  {
+   "id": "P3-T12",
+   "phase": 3,
+   "title": "Campaign builder UI (list with status/progress; tabs Leads/Sequences/Schedule/Options/Accounts; preview with real lead; Scheduled emails view incl. HELD actions)",
+   "status": "todo",
+   "deps": [
+    "P3-T11"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-3.md; tests listed there pass"
+  },
+  {
+   "id": "P3-T13",
+   "phase": 3,
+   "title": "Ramp-up + workspace/campaign cap settings feeding `effectiveAllowance`",
+   "status": "todo",
+   "deps": [
+    "P3-T12"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-3.md; tests listed there pass"
+  },
+  {
+   "id": "P4-T01",
+   "phase": 4,
+   "title": "Threading + ingest (dedupe on rfcMessageId, synthetic id when missing; UIDVALIDITY resync no duplicates; list queries never select attachment `data`)",
+   "status": "todo",
+   "deps": [
+    "P3-T13"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-4.md; tests listed there pass"
+  },
+  {
+   "id": "P4-T02",
+   "phase": 4,
+   "title": "Classification (DSN hard/soft, auto-reply headers + OOO return date, unsubscribe intent, interest rules, uncertain; AI hook) with ≥30-email corpus",
+   "status": "todo",
+   "deps": [
+    "P4-T01"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-4.md; tests listed there pass"
+  },
+  {
+   "id": "P4-T03",
+   "phase": 4,
+   "title": "Stop rules (reply, auto-reply option, OOO reschedule via revive, unsubscribe, bounce, company stop, subsequence triggers from replies/status)",
+   "status": "todo",
+   "deps": [
+    "P4-T02"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-4.md; tests listed there pass"
+  },
+  {
+   "id": "P4-T04",
+   "phase": 4,
+   "title": "Event store + open/click tracking (signed tokens, open-redirect protection, proxy/bot → isEstimated, custom tracking domain)",
+   "status": "todo",
+   "deps": [
+    "P4-T03"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-4.md; tests listed there pass"
+  },
+  {
+   "id": "P4-T05",
+   "phase": 4,
+   "title": "Sync job (incremental + full + historical import + outside-app sends), sets `lastSyncCompletedAt`",
+   "status": "todo",
+   "deps": [
+    "P4-T04"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-4.md; tests listed there pass"
+  },
+  {
+   "id": "P4-T06",
+   "phase": 4,
+   "title": "Inbox API: threads, filters, saved views, search, read/unread, category override, labels, notes, reminders, attach-to-lead, macros, reply/forward (threaded) with attachments",
+   "status": "todo",
+   "deps": [
+    "P4-T05"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-4.md; tests listed there pass"
+  },
+  {
+   "id": "P4-T07",
+   "phase": 4,
+   "title": "Freshness gate + downtime simulation tests: cold boot and sleep-without-restart × 1/7/30 days with replies (incl. cross-mailbox company reply), bounces, unsubscribes; history expiry; `docs/ops/OFFLINE_RECOVERY.md` (non-reconstructable events)",
+   "status": "todo",
+   "deps": [
+    "P4-T06"
+   ],
+   "model": "opus",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-4.md; tests listed there pass"
+  },
+  {
+   "id": "P4-T08",
+   "phase": 4,
+   "title": "Unified inbox UI (sanitized HTML, attachments, compose, lead panel, views, macros)",
+   "status": "todo",
+   "deps": [
+    "P4-T07"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-4.md; tests listed there pass"
+  },
+  {
+   "id": "P5-T01",
+   "phase": 5,
+   "title": "DNS checks (SPF incl. lookup count, DKIM selectors, DMARC, MX, DNSBL) + launch gate wiring",
+   "status": "todo",
+   "deps": [
+    "P4-T08"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-5.md; tests listed there pass"
+  },
+  {
+   "id": "P5-T02",
+   "phase": 5,
+   "title": "Health score, automatic slowdown/pause, BounceProtect campaign status, ACCOUNTS_UNHEALTHY",
+   "status": "todo",
+   "deps": [
+    "P5-T01"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-5.md; tests listed there pass"
+  },
+  {
+   "id": "P5-T03",
+   "phase": 5,
+   "title": "Warm-up engine (opt-in peer pool, custom curve, reply rate, weekdays-only, peer tag, `WarmupProvider` interface for external services, separate storage, no spam-folder manipulation)",
+   "status": "todo",
+   "deps": [
+    "P5-T02"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-5.md; tests listed there pass"
+  },
+  {
+   "id": "P5-T04",
+   "phase": 5,
+   "title": "Inbox placement test with opt-in seeds",
+   "status": "todo",
+   "deps": [
+    "P5-T03"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-5.md; tests listed there pass"
+  },
+  {
+   "id": "P5-T05",
+   "phase": 5,
+   "title": "Inactivity detection (`computeLifecycle`, thresholds 7/14/30/60, recommend/auto) run inside every reconcileAccount",
+   "status": "todo",
+   "deps": [
+    "P5-T04"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-5.md; tests listed there pass"
+  },
+  {
+   "id": "P5-T06",
+   "phase": 5,
+   "title": "Re-warm mode (button, DNS + connectivity recheck, plan, allowance in quota, health-based pause/reduce, completion restores previous settings, history preserved)",
+   "status": "todo",
+   "deps": [
+    "P5-T05"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "five spec scenarios."
+  },
+  {
+   "id": "P5-T07",
+   "phase": 5,
+   "title": "Deliverability + reactivation dashboards (statuses, idle days, allowance vs target, progress, warnings, schedule labelled \"configurable plan\")",
+   "status": "todo",
+   "deps": [
+    "P5-T06"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-5.md; tests listed there pass"
+  },
+  {
+   "id": "P5-T08",
+   "phase": 5,
+   "title": "Verification hooks (`EmailVerifier`, built-in MX check, one HTTP integration template; risky handling per campaign)",
+   "status": "todo",
+   "deps": [
+    "P5-T07"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-5.md; tests listed there pass"
+  },
+  {
+   "id": "P6-T01",
+   "phase": 6,
+   "title": "CRM backend (stages, opportunities unique per lead+campaign, value, cashCollected, tasks, reminders, notes, owner, activity, attribution)",
+   "status": "todo",
+   "deps": [
+    "P5-T08"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-6.md; tests listed there pass"
+  },
+  {
+   "id": "P6-T02",
+   "phase": 6,
+   "title": "CRM UI (accessible Kanban, opportunity drawer, tasks)",
+   "status": "todo",
+   "deps": [
+    "P6-T01"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-6.md; tests listed there pass"
+  },
+  {
+   "id": "P6-T03",
+   "phase": 6,
+   "title": "Analytics queries (campaign/account/variant/step/segment/date; capacity; revenue per lead; conversion; exact fixtures)",
+   "status": "todo",
+   "deps": [
+    "P6-T02"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-6.md; tests listed there pass"
+  },
+  {
+   "id": "P6-T04",
+   "phase": 6,
+   "title": "Dashboard + Analytics pages + CSV export",
+   "status": "todo",
+   "deps": [
+    "P6-T03"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-6.md; tests listed there pass"
+  },
+  {
+   "id": "P7-T01",
+   "phase": 7,
+   "title": "Automation rules engine with spec §12 defaults",
+   "status": "todo",
+   "deps": [
+    "P6-T04"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md; tests listed there pass"
+  },
+  {
+   "id": "P7-T02",
+   "phase": 7,
+   "title": "Webhooks: HMAC signing, custom headers, SSRF-safe delivery (block private ranges), retries, auto-disable, delivery log UI",
+   "status": "todo",
+   "deps": [
+    "P7-T01"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md; tests listed there pass"
+  },
+  {
+   "id": "P7-T03",
+   "phase": 7,
+   "title": "Public API resource completion (accounts, campaigns, leads, lists, emails, analytics, blocklist, webhooks, jobs 202) + OpenAPI from zod + `docs/API.md`",
+   "status": "todo",
+   "deps": [
+    "P7-T02"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md; tests listed there pass"
+  },
+  {
+   "id": "P7-T04",
+   "phase": 7,
+   "title": "A/B auto-optimize",
+   "status": "todo",
+   "deps": [
+    "P7-T03"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md; tests listed there pass"
+  },
+  {
+   "id": "P7-T05",
+   "phase": 7,
+   "title": "AI module (all §13 features, approval workflow for recipient-facing text)",
+   "status": "todo",
+   "deps": [
+    "P7-T04"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md; tests listed there pass"
+  },
+  {
+   "id": "P7-T06",
+   "phase": 7,
+   "title": "Push sync (Gmail watch + Pub/Sub JWT verify, Graph subscriptions + clientState), renewal jobs",
+   "status": "todo",
+   "deps": [
+    "P7-T05"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md; tests listed there pass"
+  },
+  {
+   "id": "P7-T07",
+   "phase": 7,
+   "title": "Security hardening (rate limits, CSP, 2FA, password hashing per better-auth, data export/deletion, audit view, dependency audit)",
+   "status": "todo",
+   "deps": [
+    "P7-T06"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md; tests listed there pass"
+  },
+  {
+   "id": "P7-T08",
+   "phase": 7,
+   "title": "UI polish + accessibility (axe in Playwright per section)",
+   "status": "todo",
+   "deps": [
+    "P7-T07"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md; tests listed there pass"
+  },
+  {
+   "id": "P8-T01",
+   "phase": 8,
+   "title": "Complete E2E suite per mapping below",
+   "status": "todo",
+   "deps": [
+    "P7-T08"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-8.md; tests listed there pass"
+  },
+  {
+   "id": "P8-T02",
+   "phase": 8,
+   "title": "Local→VPS migration test in CI (backup, restore into fresh stack, attachments + encrypted credentials still decrypt)",
+   "status": "todo",
+   "deps": [
+    "P8-T01"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-8.md; tests listed there pass"
+  },
+  {
+   "id": "P8-T03",
+   "phase": 8,
+   "title": "Final independent review → `docs/FINAL_ASSESSMENT.md`; fix findings; repeat",
+   "status": "todo",
+   "deps": [
+    "P8-T02"
+   ],
+   "model": "opus",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-8.md; tests listed there pass"
+  }
+ ]
 }
