@@ -1,7 +1,7 @@
 # Handoff
 
 **Phase:** 1 — Foundation (branch `phase-1-foundation`)
-**Current task:** P1-T02 DB package + embedded-postgres harness (P1-T01 done 6cb2b6f)
+**Current task:** P1-T03 crypto + env + clock (P1-T02 done b56a5b0)
 **Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 — APPROVED (REVIEW_LOG round 3). Phase step plan: `docs/plans/phase-1.md`.
 **Tests:** smoke test green; CI green on phase-1-foundation
 

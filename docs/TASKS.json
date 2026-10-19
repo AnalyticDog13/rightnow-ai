@@ -60,19 +60,20 @@
    "id": "P1-T02",
    "phase": 1,
    "title": "DB package + embedded-postgres test harness",
-   "status": "in_progress",
+   "status": "done",
    "deps": [
     "P1-T01"
    ],
    "model": "sonnet",
-   "commit": null,
-   "acceptance": "isolated per-file DBs; Workspace round-trip."
+   "commit": "724c4f3..b56a5b0",
+   "acceptance": "isolated per-file DBs; Workspace round-trip.",
+   "review": "1 fix round (expectIsolated, root .env, pool size); clean"
   },
   {
    "id": "P1-T03",
    "phase": 1,
    "title": "Crypto + env + clock",
-   "status": "todo",
+   "status": "in_progress",
    "deps": [
     "P1-T02"
    ],
