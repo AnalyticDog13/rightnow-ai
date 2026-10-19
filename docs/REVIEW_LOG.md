@@ -30,3 +30,6 @@ Spec ✅, quality approved. Minors deferred: Node engines vs CI version, Prettie
 ## 2026-10-19 · P1-T02 db package + harness · task reviewer (sonnet) · Spec ❌ → fixed → **Approved**
 Missing expectIsolated helper; dotenv read packages/db/.env (elevated to Important); DB_POOL_MAX NaN. All addressed in
 b56a5b0 (scoped re-review). Minors deferred: client throws at import without DATABASE_URL, AuditLog cascade on workspace delete.
+
+## 2026-10-19 · P1-T03 crypto/env/clock/key rotation · task reviewer (sonnet) · **Approved**
+Crypto verified correct. 7 minors deferred (see ledger); tsx accepted.

@@ -1,7 +1,7 @@
 # Handoff
 
 **Phase:** 1 — Foundation (branch `phase-1-foundation`)
-**Current task:** P1-T03 crypto + env + clock (P1-T02 done b56a5b0)
+**Current task:** P1-T04 web shell + better-auth workspaces + route() (P1-T03 done af461ea)
 **Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 — APPROVED (REVIEW_LOG round 3). Phase step plan: `docs/plans/phase-1.md`.
 **Tests:** smoke test green; CI green on phase-1-foundation
 

@@ -73,19 +73,20 @@
    "id": "P1-T03",
    "phase": 1,
    "title": "Crypto + env + clock",
-   "status": "in_progress",
+   "status": "done",
    "deps": [
     "P1-T02"
    ],
    "model": "sonnet",
-   "commit": null,
-   "acceptance": "encrypt/decrypt tamper tests; env errors list all vars; `systemClock`/`fixedClock`."
+   "commit": "af461ea",
+   "acceptance": "encrypt/decrypt tamper tests; env errors list all vars; `systemClock`/`fixedClock`.",
+   "review": "clean; 7 minors deferred"
   },
   {
    "id": "P1-T04",
    "phase": 1,
    "title": "Web shell + better-auth workspaces + `route()` with roles + SETUP_TOKEN first-owner",
-   "status": "todo",
+   "status": "in_progress",
    "deps": [
     "P1-T03"
    ],
@@ -151,7 +152,7 @@
    ],
    "model": "sonnet",
    "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-2.md; tests listed there pass"
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-2.md; tests listed there pass; append credentialsEnc to ENCRYPTED_COLUMNS and add rotate-key DB-loop test"
   },
   {
    "id": "P2-T03",

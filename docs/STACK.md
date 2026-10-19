@@ -27,6 +27,7 @@ Checked 2026-10-19 with `npm view <pkg> version` (npm `latest` tag). Pin exact v
 | nodemailer | 10.1.7 | SMTP send; also builds MIME for Gmail API raw send. |
 | mailparser | 3.10.0 | `simpleParser` for inbound/replies. |
 | recharts | 3.10.1 | v3; client components only. |
+| tsx | 4.23.15 | Runs TS scripts and the worker (dev + prod), per phase-1 fixed names. |
 | papaparse | 5.7.0 | CSV lead import; add `@types/papaparse`. |
 | @tanstack/react-table | 9.3.1 | v9 line (latest tag); API differs from v8 tutorials. Check docs before copying snippets. |
 | eslint | 10.13.0 | Flat config only (`eslint.config.mjs`). |
