@@ -1,240 +1,250 @@
-# rightnow-ai Implementation Plan
+# rightnow-ai Implementation Plan (rev 2)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this
-> plan task-by-task. Each phase also has a step-level plan in `docs/plans/phase-N.md`, written and reviewed
-> just before that phase starts. Task status lives in `docs/TASKS.json`.
+> plan task-by-task. Each phase also has a step-level plan in `docs/plans/phase-N.md`, written and independently
+> reviewed just before that phase starts; it lists the exact `PS-*` IDs each task owns. Task status: `docs/TASKS.json`.
 
 **Goal:** A self-hosted, MIT-licensed Instantly.ai alternative with real provider sending, inbox sync,
 campaigns, warm-up/re-warm-up, CRM and analytics, runnable locally and on a VPS from one codebase.
 
 **Architecture:** Next.js app (UI + REST API route handlers) and a Node worker process share a Prisma/Postgres
 database. Postgres is the only stateful service: pg-boss runs periodic and retryable jobs, and the send queue is a
-table of `ScheduledMessage` rows claimed with `FOR UPDATE SKIP LOCKED` together with an atomic quota reservation.
+table of `ScheduledMessage` rows claimed with `FOR UPDATE SKIP LOCKED` together with atomic quota reservations.
 Provider differences (Gmail API, Microsoft Graph, IMAP/SMTP) sit behind one `MailProvider` interface.
 
-**Tech Stack:** TypeScript, Next.js (App Router), React, Tailwind, shadcn/ui, Recharts, Prisma + PostgreSQL,
-pg-boss, better-auth (organization plugin), zod, Vitest + embedded-postgres, Playwright, Docker Compose,
-Caddy. Exact versions: `docs/STACK.md`.
+**Tech Stack:** TypeScript, Next.js 16 (App Router), React 19, Tailwind 4, shadcn/ui, Recharts, Prisma 7 + PostgreSQL 18,
+pg-boss 12, better-auth (organization plugin), zod 4, Vitest + embedded-postgres, Playwright, Docker Compose, Caddy.
+Exact versions: `docs/STACK.md`.
 
 **Spec:** `rightnow_ai_master_prompt.md` (authoritative) and `docs/PRODUCT_SPEC.md` (parity checklist, IDs `PS-*`).
-Provider rules: `docs/PROVIDER_COMPLIANCE.md`.
+Provider rules: `docs/PROVIDER_COMPLIANCE.md`. Review history: `docs/REVIEW_LOG.md`.
 
 ## Global Constraints
 
 - Same codebase for local Docker Compose and VPS mode; no feature exists in only one mode.
 - Every DB read/write in services takes `workspaceId` and filters by it.
-- Credentials (OAuth refresh/access tokens, SMTP/IMAP passwords) are stored only AES-256-GCM encrypted with `ENCRYPTION_KEY` (32-byte base64 env).
-- A mailbox never sends until its post-startup reconciliation has completed (`EmailAccount.syncState = READY` and `syncReadyAt >= worker boot time`).
-- Never send more than the effective daily allowance per account (min of user limit, re-warm allowance, health throttle, provider cap) or the workspace daily cap; never send outside a campaign schedule window; never send the same `(campaignLeadId, stepId)` twice.
-- A send whose outcome is unknown (worker died mid-send) becomes `UNCERTAIN` and is resolved by searching the provider's Sent mail for our `Message-ID`; it is never blindly retried.
-- Every outbound campaign email carries `List-Unsubscribe` (https + mailto) and `List-Unsubscribe-Post: List-Unsubscribe=One-Click`; unsubscribe and hard bounce add a workspace suppression immediately.
-- No fabricated engagement or delivery: "accepted by provider" ≠ "delivered"; estimated/automated opens are flagged `isEstimated`.
+- Credentials (OAuth tokens, SMTP/IMAP passwords, webhook secrets, AI keys) stored only AES-256-GCM encrypted with `ENCRYPTION_KEY`. Ops docs state that `ENCRYPTION_KEY` must be backed up with the database.
+- **Freshness gate (not boot gate):** a message may be claimed only if its sending account has `lastSyncCompletedAt >= now − SYNC_MAX_STALENESS` (default 5 min = 2 × poll interval + margin), and, when the campaign has `stopForCompanyOnReply`, every account of that campaign is fresh. The check is inside the claim SQL. This covers cold boot, laptop wake from sleep (containers frozen, not restarted) and silently failing sync.
+- **Sticky sender:** `CampaignLead.accountId` is fixed at step 1; follow-ups always go from it (threading + reply visibility). If that account is not eligible/fresh, the lead waits; only step-1 messages may be re-routed to another account.
+- Never exceed per account, per campaign, or per workspace daily allowances; never send outside a schedule window; never send the same `(campaignLeadId, stepId)` twice. Effective account allowance = min(user limit, re-warm allowance, health throttle, ramp, 50 % of provider rolling-24 h cap — the 50 % clamp makes calendar-day accounting safe against rolling windows). Reservation amount = 1 + cc + bcc recipients.
+- **Unknown outcome is never resent automatically:** a send whose result is unknown (worker died after request written, timeout after write, lease expired) becomes `UNCERTAIN`; resolution searches the provider's Sent for our `Message-ID`, re-searches after 15 min, and if still not found becomes `HELD` for the user to release or cancel in the Scheduled view.
+- All time-dependent code takes an injected clock (`now: () => Date` / `Clock`); worker jobs are plain exported handler functions tested by direct call.
+- Every outbound campaign email carries `List-Unsubscribe` and `List-Unsubscribe-Post: List-Unsubscribe=One-Click` (https link only when `APP_URL` is publicly reachable https; otherwise mailto-only, and an "unsubscribe" reply is treated as an unsubscribe). Unsubscribe, hard bounce, complaint add a workspace suppression immediately (stored with `valueHash` so it survives GDPR deletion). Campaign launch requires the workspace physical address and SPF/DKIM/DMARC pass (or explicit override for DMARC/DKIM warnings with audit).
+- Every item in `docs/PROVIDER_COMPLIANCE.md` → "Rules our code must enforce" is a requirement, except "one recipient per message", which is replaced by recipients counting toward quota (PS-CAMP-29 Cc/Bcc). Bounce auto-pause threshold default 3 % (PS-CAMP-27), configurable.
+- No fabricated engagement or delivery: "accepted by provider" ≠ "delivered"; estimated/automated opens are flagged `isEstimated`. Warm-up traffic is stored in `WarmupMessage`, never in campaign `Event`s.
 - Recipient-facing AI-generated text requires human approval by default.
-- Mocks are explicitly named `Fake*`/`mock*` and live in test code or `packages/providers/src/fake/`; never selectable in production unless `MAIL_PROVIDER_FAKE=1`.
-- Every item in `docs/PROVIDER_COMPLIANCE.md` → "Rules our code must enforce" is a requirement (provider cap defaults + hard clamps, physical address required before campaign sends, auto-pause thresholds, minimal scopes, `invalid_grant` → NEEDS_ATTENTION). Cc/Bcc recipients count toward quota.
-- Versions per `docs/STACK.md`: Prisma 7.10.1 (CLI pinned, not the 8 RC; `prisma-client` generator, `@prisma/adapter-pg`, `prisma.config.ts`), better-auth with `organization()` plugin = workspaces, pg-boss 12 (`createQueue` before `send/work`), zod 4, Tailwind 4. TypeScript: try 7.x; if Next/ESLint/Prisma break, pin latest 5.x and record in DECISIONS.
+- Fakes are named `Fake*` and live in `packages/providers/src/fake/` or test code; selectable only with `MAIL_PROVIDER_FAKE=1`.
+- Versions per `docs/STACK.md`: Prisma 7.10.1 (CLI pinned, `prisma-client` generator, `@prisma/adapter-pg`, `prisma.config.ts`), pg-boss 12 (`createQueue` before `send/work`), zod 4, Tailwind 4. TypeScript: try 7.x; if Next/ESLint/Prisma break, pin latest 5.x and record in DECISIONS. Compose uses `postgres:18-alpine` to match tests. Prisma pool and pg-boss pool sizes set explicitly via env.
 - Provider sync defaults to polling (Gmail `history.list`, Graph delta, IMAP); push is optional (needs public HTTPS).
-- Every task: tests first, `npm test`, `npm run lint`, `npm run typecheck` green before commit.
+- First-owner sign-up requires `SETUP_TOKEN` (env) and is race-safe (unique constraint / advisory lock); later users only by invite.
+- Every task: tests first, then `npm test`, `npm run lint`, `npm run typecheck` green before commit.
+- Git: one branch per phase (`phase-N-<name>`), commit + push after every task, merge to `main` (fast-forward) after the phase gate. `main` stays green.
 
 ## Review Focus
 
-1. Worker crash between provider-accepted send and DB update → restart must not duplicate the email (P3-T09 test `uncertain send found in Sent is marked SENT`).
-2. Laptop asleep 1/7/30 days with replies arriving meanwhile → on startup follow-ups to repliers are cancelled before any send, backlog is spread under quota, Gmail history expiry falls back to full reconcile (P4-T06 tests `downtime 1d/7d/30d`).
-3. Two workers ticking concurrently with one account at 49/50 → exactly one more send (P3-T08 test `parallel dispatchers respect quota`).
-4. CSV with BOM, semicolons, duplicate emails, mixed-case emails, invalid rows → imported counts and skipped reasons are exact (P3-T02 tests).
-5. OAuth refresh token revoked/expired while campaign active → account goes `NEEDS_ATTENTION`, its scheduled messages re-route or wait, no crash loop; reconnect keeps history (P2-T04, P5-T06 tests).
+1. Worker dies after the provider accepted a send but before the DB update → no duplicate; message ends `SENT` (found) or `HELD` (P3-T11 test `uncertain send never auto-resent`).
+2. Laptop asleep 1/7/30 days (no restart) or powered off, replies/bounces/unsubs arrive meanwhile, some in a different mailbox of the same company → no follow-up to repliers, nothing sent before fresh sync, backlog spread under quota, Gmail history expiry → full reconcile, re-warm allowance applies on first send after 30 days (P4-T07 tests).
+3. Two workers ticking concurrently, account at 49/50, a claim at 23:59:59 that completes at 00:00:01 → exactly one more send, and usage is credited to the claim day (P3-T09 tests).
+4. CSV with BOM, semicolons, duplicate and mixed-case emails, invalid rows → exact imported/skipped counts with reasons (P3-T02).
+5. OAuth refresh token revoked while a campaign is active → account `NEEDS_ATTENTION`, its follow-ups wait (not re-routed), step-1 messages re-route, no crash loop; reconnect keeps id and history; P5 re-warm applies if idle past threshold (P2-T04, P5-T06).
 
 ---
 
 ## Repository layout
 
 ```
-apps/web/                 Next.js app: app/(app)/<section>/ pages, app/api/v1/** REST routes, app/t|u/** public tracking/unsubscribe
-  lib/                    auth, session→workspace helper, api handler wrapper (zod + error mapping)
+apps/web/                 Next.js: app/(app)/<section>/ pages, app/api/v1/** REST, app/t|u/** public tracking/unsubscribe, app/api/healthz, app/api/readyz
+  lib/                    auth, workspace/role helper, route() wrapper (zod + auth + role + error mapping)
   components/             shadcn/ui + app components
-apps/worker/              src/index.ts boots pg-boss, registers jobs; src/jobs/*.ts one file per job
-packages/db/              prisma/schema.prisma, migrations, src/index.ts (client), src/test-db.ts (embedded-postgres helper)
-packages/core/src/        pure domain logic, no I/O except via passed-in prisma/provider:
-  crypto.ts template.ts spintax.ts schedule.ts quota.ts dispatch.ts sequence.ts rotation.ts
-  leads/ (csv.ts dedupe.ts validate.ts) classify.ts threading.ts events.ts automations.ts webhooks.ts
-  rewarm.ts warmup.ts health.ts dns.ts analytics.ts crm.ts sync.ts ai/
-packages/providers/src/   types.ts gmail/ graph/ imap-smtp/ fake/ mime.ts
-docker/                   Dockerfile (multi-stage, one image, two commands), Caddyfile
-docker-compose.yml        postgres, web, worker (+ caddy in profile "vps")
-scripts/                  backup.sh restore.sh (+ .ps1 equivalents), migrate-to-vps.md
-docs/                     see CLAUDE.md docs index; docs/ops/*.md user guides
+apps/worker/              src/index.ts boots pg-boss and registers jobs; src/jobs/*.ts exported handlers, one per job
+packages/db/              prisma/schema.prisma, migrations, src/index.ts (client), src/test-db.ts (embedded-postgres harness)
+packages/core/src/        domain logic; I/O only through passed-in prisma/provider/clock:
+  crypto env clock audit apikeys template spintax schedule quota dispatch planner rotation sequence sender recovery
+  leads/(csv dedupe validate esp) classify threading ingest events stoprules tracking sync rewarm warmup health dns
+  analytics crm automations webhooks ai/
+packages/providers/src/   types.ts mime.ts gmail/ graph/ imap-smtp/ fake/ contract/ (shared contract test suite)
+docker/                   Dockerfile (one image: web | worker | migrate), entrypoint.sh, Caddyfile
+docker-compose.yml        postgres, migrate, web, worker (+ caddy under profile "vps")
+scripts/                  start/stop/upgrade/backup/restore (.sh + .ps1)
+docs/ops/                 LOCAL, VPS, GOOGLE_SETUP, MICROSOFT_SETUP, OFFLINE_RECOVERY, LIVE_VERIFICATION, MIGRATE_TO_VPS
 ```
 
-## Data model (packages/db/prisma/schema.prisma) — introduced incrementally by the tasks noted
+## Data model (packages/db/prisma/schema.prisma) — tasks add models as noted
 
-Core (P1): `Workspace`, auth tables (User, Session, Account, Verification, Organization/Member per auth lib), `AuditLog(workspaceId, actorId, action, target, meta, at)`, `ApiKey(workspaceId, name, hash, prefix, lastUsedAt)`.
+Core (P1): `Workspace` (= better-auth organization; + `timezone`, `physicalAddress`, settings JSON), auth tables, `Member(role OWNER|ADMIN|MEMBER|VIEWER)`, `AuditLog`, `ApiKey(workspaceId, name, prefix, hash, scopes[] e.g. "leads:read","all:all", lastUsedAt, revokedAt)`, `WorkerBoot(startedAt, lastHeartbeatAt, stoppedAt)`.
 
-Accounts (P2): `EmailAccount(id, workspaceId, provider GMAIL|MICROSOFT|SMTP, email, fromName, signature, tags[], credentialsEnc, status CONNECTED|ERROR|DISCONNECTED, lifecycle ACTIVE|INACTIVE|REWARMING|PAUSED|NEEDS_ATTENTION, dailyLimit, minGapSec, randomGapSec, timezone, nextSendAt, lastSentAt, lastCampaignActivityAt, lastError, lastErrorAt, syncState PENDING|RUNNING|READY|FAILED, syncCursor Json, syncReadyAt, lastSyncedAt, healthScore, trackingDomain)`; `AccountDailyUsage(accountId, day, sent, reserved, @@id[accountId,day])`; `WorkspaceDailyUsage(workspaceId, day, sent, reserved)`.
+Accounts (P2): `EmailAccount(workspaceId, provider GMAIL|MICROSOFT|SMTP, email, fromName, replyTo, signature, tags[], credentialsEnc, status CONNECTED|ERROR|DISCONNECTED, lifecycle ACTIVE|INACTIVE|REWARMING|PAUSED|NEEDS_ATTENTION, dailyLimit, minGapSec, randomGapSec, timezone, nextSendAt, lastSentAt, lastCampaignActivityAt, lastError, lastErrorAt, errorCount24h, syncState, syncCursor Json, lastSyncCompletedAt, healthScore, trackingDomain, espType, deletedAt)`; `AccountDailyUsage(accountId, day date, sent, reserved, @@id)`; `WorkspaceDailyUsage(workspaceId, day, sent, reserved)`; `CampaignDailyUsage(campaignId, day, sent, reserved, newLeads)`. Day keys: account timezone for account rows, workspace timezone for workspace and campaign rows, computed with `Intl`.
 
-Leads (P3): `Lead(workspaceId, email citext-like lowercased unique per workspace, firstName, lastName, companyName, jobTitle, website, industry, phone, customFields Json, tags[], status, interestStatus, verificationStatus, ownerId)`; `LeadList`, `LeadListMember`; `Suppression(workspaceId, kind EMAIL|DOMAIN, value, reason, source, createdAt, unique[workspaceId,kind,value])`; `ImportJob`.
+Leads (P3): `Lead(workspaceId, email (lowercased) unique per workspace, firstName, lastName, companyName, companyDomain, jobTitle, website, industry, phone, personalization, customFields Json, tags[], labels[], status, interestStatus int (spec codes), verificationStatus, espType, plValue, ownerId, source, lawfulBasis, country, counters: emailsSent, opens, clicks, replies, lastContactedAt, deletedAt)`; `LeadList`, `LeadListMember`; `Suppression(workspaceId, kind EMAIL|DOMAIN, value?, valueHash, reason, source)`; `ImportJob(…, confirmedAuthorized bool)`.
 
-Campaigns (P3): `Campaign(workspaceId, name, status DRAFT|ACTIVE|PAUSED|COMPLETED|ARCHIVED, dailyLimit, maxNewLeadsPerDay, stopOnReply, stopOnAutoReply, stopForCompanyOnReply, trackOpens, trackClicks, textOnly, prioritizeNewLeads, matchProvider, unsubscribeHeader, cc[], bcc[], startAt, endAt, ownerId, abAutoOptimize)`; `CampaignSchedule(campaignId, name, timezone, days int bitmask, from 'HH:mm', to 'HH:mm')`; `CampaignAccount(campaignId, accountId)`; `SequenceStep(campaignId, order, delayDays, parentStepId?, branch ALWAYS|IF_NO_REPLY|IF_REPLY_INTERESTED|IF_REPLY_NOT_INTERESTED)`; `StepVariant(stepId, label, subject, body, weight, active)`; `CampaignLead(campaignId, leadId, state QUEUED|ACTIVE|PAUSED|COMPLETED|STOPPED, stopReason, currentStepId, nextDueAt, accountId, unique[campaignId,leadId])`.
+Campaigns (P3): `Campaign(workspaceId, name, status DRAFT|ACTIVE|PAUSED|COMPLETED|ARCHIVED|ACCOUNTS_UNHEALTHY|BOUNCE_PROTECT, evergreen, dailyLimit, maxNewLeadsPerDay, perCompanyDailyLimit, minGapSec?, stopOnReply, stopOnAutoReply, stopForCompanyOnReply, trackOpens, trackClicks, textOnly, firstEmailTextOnly, prioritizeNewLeads, matchProvider, espRoutingRules Json, allowRisky, bounceProtect, unsubscribeHeader, cc[], bcc[], startAt, endAt, ownerId, plValue, abAutoOptimize, abWinnerMetric)`; `CampaignSchedule(campaignId, name, timezone, days int bitmask Sun=bit0, from 'HH:mm', to 'HH:mm')`; `CampaignAccount`; `Subsequence(campaignId, name, trigger Json {kind: LEAD_STATUS|ACTIVITY|REPLY_KEYWORD, ...}, preDelayMinutes, active)`; `SequenceStep(campaignId, subsequenceId?, order, delayValue, delayUnit MINUTES|HOURS|DAYS)`; `StepVariant(stepId, label, subject, body, weight, active)`; `CampaignLead(campaignId, leadId, subsequenceId?, state QUEUED|ACTIVE|PAUSED|COMPLETED|STOPPED, stopReason, currentStepId, nextDueAt, accountId (sticky), threadRef, unique[campaignId,leadId])`.
 
-Send queue (P3): `ScheduledMessage(id, workspaceId, campaignLeadId, stepId, variantId, accountId, dueAt, status SCHEDULED|SENDING|SENT|FAILED|CANCELLED|UNCERTAIN|DEFERRED, attempts, idempotencyKey unique = campaignLeadId:stepId, rfcMessageId, providerMessageId, providerThreadId, claimedAt, sentAt, error)`.
+Send queue (P3): `ScheduledMessage(id, workspaceId, campaignId, campaignLeadId, stepId, variantId, accountId, dueAt, status SCHEDULED|SENDING|SENT|FAILED|CANCELLED|UNCERTAIN|HELD, attempts, idempotencyKey unique = campaignLeadId:stepId, claimToken, claimedAt, claimBootId, usageDay, wsUsageDay, campUsageDay, reservedUnits, rfcMessageId, providerMessageId?, providerThreadId?, sentAt, error, renderedSubject, renderedBody)`. Re-planning (OOO resume, unpause) updates the existing row back to SCHEDULED; never inserts a duplicate.
 
-Mail (P2/P4): `Thread(workspaceId, accountId, providerThreadId, subject, leadId, campaignId, lastMessageAt, isRead, category, reminderAt, unique[accountId,providerThreadId])`; `Message(workspaceId, accountId, threadId, providerMessageId, rfcMessageId, inReplyTo, references[], direction IN|OUT, from, to[], cc[], subject, text, html, sentAt, isAutoReply, isBounce, bounceType, unique[accountId,providerMessageId])`; `Attachment(messageId, filename, contentType, size, storageKey)`; `Note(workspaceId, leadId?, threadId?, opportunityId?, body, authorId)`.
+Mail (P2/P4): `Thread(workspaceId, accountId, providerThreadId, subject, leadId, campaignId, lastMessageAt, isRead, category, labels[], reminderAt)`; `Message(workspaceId, accountId, threadId, providerMessageId, rfcMessageId, inReplyTo, references[], direction, from, to[], cc[], subject, text, html, sentAt, isAutoReply, isBounce, bounceType, unique[accountId, rfcMessageId], index[accountId, providerMessageId])`; `Attachment(messageId, filename, contentType, size, data bytea ≤ 25 MB)` (in Postgres → covered by backup); `Note`; `Macro(workspaceId, name, body)`; `InboxView(workspaceId, name, filters Json)`.
 
-Events (P4): `Event(workspaceId, type, occurredAt, leadId, campaignId, accountId, stepId, variantId, messageId, isEstimated, meta Json, dedupeKey unique)`. Types: SCHEDULED, SEND_ATTEMPT, ACCEPTED, SEND_FAILED, BOUNCE_HARD, BOUNCE_SOFT, UNSUBSCRIBE, REPLY, REPLY_POSITIVE, REPLY_NEGATIVE, OPEN, CLICK, MEETING, OPPORTUNITY, DEAL_WON, DEAL_LOST, WARMUP_SENT, WARMUP_RECEIVED, ACCOUNT_PAUSED.
+Events (P4): `Event(workspaceId, type, occurredAt, leadId, campaignId, accountId, stepId, variantId, messageId, isEstimated, meta, dedupeKey unique)` (types as before). `WarmupMessage` separate (P5).
 
-Deliverability (P5): `DomainCheck(workspaceId, domain, spf, dkim, dmarc, mx Json, status, checkedAt)`; `WarmupSettings(accountId, enabled, dailyTarget, increasePerDay, startVolume, replyRatePct, weekdaysOnly, peerTag)`; `RewarmPlan(accountId, startedAt, startAllowance, incrementPerDay, targetLimit, currentAllowance, state ACTIVE|PAUSED|COMPLETED, criteria Json)`; `WorkspaceSettings(workspaceId, inactivityThresholdDays, autoRewarm OFF|RECOMMEND|AUTO, workspaceDailyCap, bounceThresholdPct, physicalAddress, ...)`.
+Deliverability (P5): `DomainCheck(…, spf, dkim, dmarc, mx, dnsbl Json)`; `WarmupSettings(accountId, enabled, dailyTarget, increasePerDay, startVolume, replyRatePct, weekdaysOnly, peerTag, customCurve Json?)`; `WarmupMessage(…)`; `RewarmPlan(accountId, startedAt, startAllowance, incrementPerDay, targetLimit, currentAllowance, state ACTIVE|PAUSED|COMPLETED, criteria Json, previousSettings Json)`; workspace settings: inactivity thresholds, autoRewarm OFF|RECOMMEND|AUTO, workspaceDailyCap, bounceThresholdPct.
 
-CRM (P6): `PipelineStage(workspaceId, name, order, kind OPEN|WON|LOST)`; `Opportunity(workspaceId, leadId, campaignId?, stageId, title, value Decimal, currency, expectedCloseAt, ownerId, closedAt)`; `Task(workspaceId, title, dueAt, doneAt, leadId?, opportunityId?, assigneeId)`; `Activity` = `Event` rows (no separate table).
+CRM (P6): `PipelineStage`, `Opportunity(workspaceId, leadId, campaignId?, stageId, title, value Decimal, cashCollected Decimal, currency, expectedCloseAt, ownerId, closedAt, unique[leadId, campaignId])`, `Task`.
 
-Automation (P7): `AutomationRule(workspaceId, name, trigger, conditions Json, actions Json, enabled)`; `Webhook(workspaceId, url, secretEnc, events[], enabled)`; `WebhookDelivery(webhookId, eventId, status, attempts, lastError, unique[webhookId,eventId])`; `AiSettings(workspaceId, provider, apiKeyEnc, model, features Json)`.
+Automation (P7): `AutomationRule`, `Webhook(url, secretEnc, events[], headers Json, enabled, consecutiveFailures, disabledAt)`, `WebhookDelivery(unique[webhookId,eventId])`, `BackgroundJob(workspaceId, kind, status, progress, result)` (202 pattern), `AiSettings`.
 
-## Send pipeline (P3-T07..T10) — the critical algorithm
+## Send pipeline — the critical algorithm
 
-1. **Planner** (pg-boss cron every minute, singleton): for each ACTIVE campaign currently inside a schedule window,
-   pick `CampaignLead`s with `nextDueAt <= now` and no open ScheduledMessage (new leads limited by
-   `maxNewLeadsPerDay`, ordering per `prioritizeNewLeads`), choose an account via rotation
-   (`rotation.pickAccount`: eligible = assigned, lifecycle not PAUSED/NEEDS_ATTENTION, syncState READY,
-   remaining allowance > 0, provider match if enabled; tie-break least sent today, then round-robin), choose
-   variant (weighted / auto-optimized), insert `ScheduledMessage(status SCHEDULED, dueAt = max(now, account.nextSendAt))`.
-   Unique `idempotencyKey` makes double-planning a no-op.
-2. **Dispatcher** (pg-boss cron every 30 s + loop until empty, any number of workers): in one transaction
-   `SELECT … WHERE status='SCHEDULED' AND dueAt<=now FOR UPDATE SKIP LOCKED LIMIT 20`; for each, conditional
-   updates: `AccountDailyUsage.reserved+1 WHERE sent+reserved < allowance`, same for workspace, and
-   `EmailAccount.nextSendAt = now + minGap + rand(0..randomGap) WHERE nextSendAt <= now`; if any fails → set
-   `DEFERRED`/new dueAt and continue; else `status=SENDING, claimedAt=now, rfcMessageId=<generated>`. Commit.
-   Re-check suppression + CampaignLead state immediately before calling the provider.
-3. **Send**: render (template + spintax seeded by idempotencyKey so retries render identically), build MIME with
-   our `Message-ID`, unsubscribe headers, threading headers for follow-ups; `provider.send`. Success →
-   `SENT`, `sent+1, reserved-1`, Event ACCEPTED, advance CampaignLead (`nextDueAt = sentAt + next.delayDays`
-   aligned to schedule). Retryable provider error (429/5xx/network before request was accepted) → back to
-   SCHEDULED with exponential backoff (1m·2^n, max 5), release reservation. Permanent error → FAILED, account
-   error counters, automation `SEND_FAILURE_THRESHOLD`.
-4. **Recovery** (worker boot + every 5 min): `SENDING` rows with `claimedAt < now-5m` → `UNCERTAIN`;
-   `resolveUncertain` searches provider Sent for `rfcMessageId`: found → SENT (count usage), not found → SCHEDULED.
-5. **Startup gate**: worker boot sets all accounts `syncState=PENDING`; `sync-account` jobs reconcile; planner and
-   dispatcher ignore accounts not READY since boot. Overdue messages from downtime are just "due"; quota and
-   min-gap spread them; no catch-up beyond today's allowance.
+1. **Planner** (`core/planner.ts`, pg-boss cron each minute, singleton): for each ACTIVE campaign inside a schedule
+   window, select `CampaignLead`s with `nextDueAt <= now` and no open ScheduledMessage for the current step
+   (new leads limited by `maxNewLeadsPerDay`; order per `prioritizeNewLeads`). Step 1: pick account via
+   `rotation.pickAccount` (eligible = assigned, lifecycle ACTIVE|REWARMING, fresh, remaining allowance > 0,
+   provider/ESP routing rules; tie-break least sent today, then round-robin) and store it on CampaignLead
+   (sticky). Follow-ups: the sticky account. Choose variant (weights / auto-optimize). Upsert ScheduledMessage by
+   `idempotencyKey` (insert or revive a CANCELLED row only when re-planning is intended; SENT/SENDING/UNCERTAIN/HELD
+   rows are never touched). Render subject/body now and store them (preview = what will be sent).
+2. **Dispatcher claim** (`core/dispatch.ts claimDue(db, clock, limit)`): one transaction:
+   `SELECT sm.* FROM ScheduledMessage sm JOIN CampaignLead cl … JOIN EmailAccount a … WHERE sm.status='SCHEDULED'
+   AND sm.dueAt<=now AND cl.state='ACTIVE' AND a.lifecycle IN (…) AND a.lastSyncCompletedAt >= now-staleness
+   AND (company-stop freshness) AND a.nextSendAt<=now FOR UPDATE OF sm SKIP LOCKED LIMIT n`. For each row, inside a
+   SAVEPOINT: reserve account usage via `INSERT … ON CONFLICT (accountId, day) DO UPDATE SET reserved = reserved + :u
+   WHERE sent + reserved + :u <= :allowance RETURNING`, then the same for campaign and workspace, then
+   `UPDATE EmailAccount SET nextSendAt = now + gap + rand WHERE id=… AND nextSendAt <= now`. Any zero-row result →
+   ROLLBACK TO SAVEPOINT and set `dueAt` = next window start / next day (status stays SCHEDULED). Else set
+   `status=SENDING, claimToken=uuid, claimedAt, claimBootId, usageDay/wsUsageDay/campUsageDay, reservedUnits, rfcMessageId`.
+   Re-check suppression in the same transaction.
+3. **Send** (`core/sender.ts`): build MIME with our `Message-ID`, unsubscribe headers, threading headers;
+   provider timeout (60 s) ≪ lease (10 min). Results:
+   - accepted → `UPDATE … WHERE id AND claimToken` to SENT; move `reserved→sent` on the stored day rows; Event
+     ACCEPTED; advance CampaignLead (`nextDueAt` = sentAt + next step delay, aligned to schedule). If the
+     conditional update matches 0 rows (lease lost), still record as SENT by rfcMessageId (never re-send).
+   - connect/DNS failure before any bytes written, or 429/`Retry-After` → back to SCHEDULED with backoff (1 m·2^n,
+     max 5 attempts), release reservations on stored days; 429 also pushes `EmailAccount.nextSendAt`.
+   - timeout/reset after write → UNCERTAIN (keep reservation).
+   - permanent error → FAILED, release reservation, increment account error counters (→ automation/health).
+   - `AuthError` → account NEEDS_ATTENTION, message back to SCHEDULED, reservation released.
+4. **Recovery** (`core/recovery.ts`, on boot + every 5 min): SENDING rows whose lease expired AND whose
+   `claimBootId` is stopped or stale (no heartbeat 2 min) → UNCERTAIN. `resolveUncertain`: search Sent by
+   rfcMessageId → found: SENT (reservation → sent on stored day). Not found: wait 15 min, search again → still not
+   found: HELD (reservation released). HELD rows appear in "Scheduled emails" view with Release / Cancel.
+   Graph sends use create-draft + send so the message id is known before sending.
 
-## Reconciliation (P4-T05/T06)
-`sync.reconcileAccount(account)`: provider `listChangesSince(cursor)` (Gmail history.list, Graph delta, IMAP
-UIDNEXT/MODSEQ); on cursor expired → `fullReconcile(since = lastSyncedAt - 2d)` listing INBOX+SENT by date.
-Each message → upsert Message (dedupe on providerMessageId), thread match (`In-Reply-To`/`References` vs our
-`rfcMessageId`s, provider thread id fallback), classify (bounce DSN / auto-reply headers / unsubscribe / human
-reply), emit Events with dedupeKey, apply stop rules (cancel CampaignLead + open ScheduledMessages), run
-automations. Then set cursor, `syncState=READY`. Also detects sends made outside the app from Sent (e.g. manual
-replies) and records them.
+## Reconciliation (P4)
+`sync.reconcileAccount(account, clock)`: `listChangesSince(cursor)`; expired → `fullReconcile(since = lastSyncCompletedAt − 2 d)`
+over INBOX + SENT. Each message → ingest (dedupe on `(accountId, rfcMessageId)`; providerMessageId secondary), thread
+match, classify, events (dedupeKey), stop rules (cancel CampaignLead + open ScheduledMessages; company-level stop),
+automations. Sends made outside the app are recorded. On success: cursor + `lastSyncCompletedAt = now`.
+Startup additionally runs the inactivity check (P5) before marking accounts fresh, so re-warm limits apply to the first send.
 
 ---
 
 ## Phases and tasks
 
-Each task: ID · title · files · produces · acceptance tests. Step-level detail lives in `docs/plans/phase-N.md`.
-Model: `S`=sonnet, `H`=haiku, `O`=opus.
+Format: ID (model) title — files/produces — acceptance. Step-level detail and per-task PS-ID lists: `docs/plans/phase-N.md`.
+Model: `S` sonnet, `H` haiku, `O` opus. State-file and checklist updates: H.
 
-### Phase 1 — Foundation
-
-- **P1-T01 (S) Monorepo scaffold & tooling.** Root `package.json` (workspaces, scripts dev/test/lint/typecheck/e2e/db:*), `tsconfig.base.json`, ESLint flat config, Prettier, `LICENSE` (MIT), `README.md`, `.env.example`, Vitest workspace config, GitHub Actions `ci.yml` (install, lint, typecheck, test). *Accept:* `npm install && npm run lint && npm run typecheck && npm test` pass on Windows; CI green.
-- **P1-T02 (S) Database package + test harness.** `packages/db`: Prisma schema (Workspace, AuditLog, ApiKey + auth tables), first migration, client export, `src/test-db.ts` (`startTestDb(): Promise<{url, prisma, stop}>` using embedded-postgres, migrate deploy, per-file schema isolation). *Accept:* test creates Workspace and reads it back; works on Windows.
-- **P1-T03 (S) Core crypto + env.** `packages/core/src/crypto.ts` `encrypt(plain:string):string`, `decrypt(enc:string):string` (AES-256-GCM, `v1:` prefix, key from `ENCRYPTION_KEY`); `packages/core/src/env.ts` zod-validated env. *Accept:* round-trip, tamper → throws, wrong key → throws, missing key → clear error.
-- **P1-T04 (S) Web app shell + auth.** `apps/web` Next.js + Tailwind + shadcn; auth (sign-up first owner creates workspace, sign-in, sign-out, session), `lib/workspace.ts` `requireWorkspace(): Promise<{userId, workspaceId}>`, `lib/api.ts` `route(schema, handler)` wrapper (zod, auth, error → JSON), sidebar with the 10 sections (placeholders labelled "coming in phase N" only until filled), responsive layout, dark mode. *Accept:* Vitest for `route` wrapper (401, 400, 200); Playwright: sign up → land on Dashboard → sign out.
-- **P1-T05 (S) Worker skeleton.** `apps/worker/src/index.ts`: env, pg-boss start, job registry, graceful SIGTERM, `boot` record (`WorkerBoot` row with startedAt used by the startup gate), health endpoint `:8081/healthz`. *Accept:* test boots worker against test DB, a demo job runs, shutdown clean.
-- **P1-T06 (S) Docker & deploy baseline.** `docker/Dockerfile` (multi-stage, standalone Next output, one image; cmd `web` or `worker` or `migrate`), `docker-compose.yml` (postgres:17 with volume + healthcheck, migrate one-shot, web, worker, restart: unless-stopped; caddy under profile `vps`), `docker/Caddyfile`, `scripts/{start,stop,upgrade,backup,restore}.{sh,ps1}`, `docs/ops/LOCAL.md`, `docs/ops/VPS.md`. CI job builds image and runs compose up + `/api/health`. *Accept:* CI compose smoke test green.
-- **P1-T07 (S) API keys + audit log.** `/api/v1` bearer API keys (hashed, prefix shown once), audit helper `audit(ctx, action, target, meta)`, Settings → API Keys page. *Accept:* key auth works, revoked key 401, audit rows written.
+### Phase 1 — Foundation  (step plan: docs/plans/phase-1.md)
+- **P1-T01 (S)** Monorepo scaffold, tooling, CI. *Accept:* install/lint/typecheck/test pass on Windows; CI green.
+- **P1-T02 (S)** DB package + embedded-postgres test harness. *Accept:* isolated per-file DBs; Workspace round-trip.
+- **P1-T03 (S)** Crypto + env + clock. *Accept:* encrypt/decrypt tamper tests; env errors list all vars; `systemClock`/`fixedClock`.
+- **P1-T04 (S)** Web shell + better-auth workspaces + `route()` with roles + SETUP_TOKEN first-owner. *Accept:* Vitest route wrapper (401/403/400/200); Playwright sign-up with token → dashboard → sign-out; second owner sign-up blocked; race-safe.
+- **P1-T05 (S)** Worker skeleton (pg-boss, WorkerBoot heartbeat, `/healthz`). *Accept:* demo job runs; clean stop.
+- **P1-T06 (S)** Docker, Compose, Caddy profile, scripts, ops docs, CI compose smoke incl. backup/restore. *Accept:* CI job green.
+- **P1-T07 (S)** Scoped API keys + audit log + `/api/healthz` + `/api/readyz` (DB ok, worker heartbeat, sync-gate summary). *Accept:* scope enforcement tests.
 
 ### Phase 2 — Email provider connections
-
-- **P2-T01 (O) Provider interface + fake.** `packages/providers/src/types.ts`: `MailProvider { send(msg: OutboundMime): Promise<{providerMessageId, providerThreadId?}>; findSentByMessageId(rfcId): Promise<RemoteMessage|null>; listChangesSince(cursor): Promise<{messages: RemoteMessage[], cursor} | {expired: true}>; listMessagesSince(date, folders): AsyncIterable<RemoteMessage>; getMessage(id); markRead(id, read); verify(): Promise<Diagnostics> }`, error classes `RateLimitedError(retryAfter)`, `AuthError`, `PermanentSendError`, `TransientError`. `fake/` in-memory provider with controllable failures. `mime.ts` `buildMime(opts): {raw, messageId}` (nodemailer MailComposer) and `parseMime(raw): RemoteMessage` (mailparser). *Accept:* MIME tests (headers incl. List-Unsubscribe*, In-Reply-To/References, UTF-8 subjects), fake provider contract test suite reusable by real providers.
-- **P2-T02 (S) Google OAuth connect.** `/api/v1/accounts/google/start|callback` (state+PKCE, least-privilege scopes per PROVIDER_COMPLIANCE.md, offline access, prompt=consent), store encrypted tokens, multiple mailboxes, Workspace + consumer, `docs/ops/GOOGLE_SETUP.md`. *Accept:* callback handler test with mocked token endpoint; state mismatch rejected; reconnect same email updates credentials not duplicates.
-- **P2-T03 (S) Gmail provider.** `packages/providers/src/gmail/` send (users.messages.send raw, threadId for follow-ups), history.list changes, 404 → expired, list by query `after:`, rfc822msgid search, token refresh with persistence callback, error mapping (429/403 rateLimitExceeded → RateLimitedError, invalid_grant → AuthError). *Accept:* contract suite against recorded HTTP fixtures (msw/nock-free: inject fetch).
-- **P2-T04 (S) Account management service + API + UI.** CRUD, pause/resume, limits, gaps, signature, tags, bulk actions (pause/resume/set limits/tag/delete), diagnostics (`verify()` + DNS later), revoke/disconnect, reconnect flow keeps id/history, AuthError → `NEEDS_ATTENTION`. Email Accounts page: table with status, sent today/limit, health, warm-up, re-warm button placeholder wired in P5. *Accept:* service tests (tenant isolation, reconnect keeps id), Playwright list/edit.
-- **P2-T05 (S) Microsoft Graph connect + provider.** MSAL auth code flow, `graph/` send (sendMail with internetMessageHeaders / MIME), delta on Inbox+SentItems, search by internetMessageId, `docs/ops/MICROSOFT_SETUP.md`. *Accept:* contract suite with fixtures. (Moved earlier than spec Phase 7 because offline sync and rotation must be provider-agnostic from the start; spec order is a default, not a constraint.)
-- **P2-T06 (S) IMAP/SMTP provider.** `imap-smtp/` nodemailer SMTP send + IMAP APPEND to Sent when server doesn't auto-save, imapflow UID/MODSEQ cursor per folder, UIDVALIDITY change → expired, search HEADER Message-ID; connect form with test-connection. *Accept:* contract suite against a local in-process IMAP/SMTP test server or fixtures.
-- **P2-T07 (S) Test-send.** "Send test email" from an account (UI + API), event logged, real-integration checklist `docs/ops/LIVE_VERIFICATION.md`. *Accept:* fake-provider test; live check documented, executed when credentials exist.
+- **P2-T01 (S)** Provider interface, MIME build/parse, Fake provider, contract test suite (incl. "Message-ID preserved and findable in Sent", threading headers, List-Unsubscribe headers, UTF-8). `send()` returns `{ rfcMessageId, providerMessageId?, providerThreadId? }`; errors `RateLimitedError`, `AuthError`, `PermanentSendError`, `TransientBeforeSendError`, `AmbiguousSendError`.
+- **P2-T02 (S)** Google OAuth connect (state+PKCE, minimal scopes, OAuth session object with status polling PS-ACC-02, reconnect updates same account), `docs/ops/GOOGLE_SETUP.md` incl. "In production" consent screen.
+- **P2-T03 (S)** Gmail provider (send raw + threadId, history.list, 404→expired, query listing, rfc822msgid search, token refresh persistence, error mapping). Contract suite on recorded fixtures via injected fetch.
+- **P2-T04 (S)** Account service/API/UI: CRUD, soft delete, pause/resume, limits (clamped), gaps, signature, replyTo, tags, bulk actions, diagnostics, mark-as-fixed, account→campaigns view, AuthError → NEEDS_ATTENTION.
+- **P2-T05 (S)** Microsoft Graph connect + provider (draft+send, delta Inbox+SentItems, internetMessageId search), `docs/ops/MICROSOFT_SETUP.md`. (Pulled forward from spec Phase 7 so rotation and sync are provider-agnostic from the start.)
+- **P2-T06 (S)** IMAP/SMTP provider (SMTP send; APPEND to Sent when needed; UID/MODSEQ cursor; UIDVALIDITY → expired; header search) + connect form with test.
+- **P2-T07 (S)** Test-send + `docs/ops/LIVE_VERIFICATION.md`.
 
 ### Phase 3 — Campaign automation
-
-- **P3-T01 (S) Leads schema + service + API.** CRUD, custom fields, tags, statuses, bulk edit, filters/search (server-side pagination), contact history (events + messages), GDPR delete (cascade + suppression keep hashed). *Accept:* service tests incl. tenant isolation, delete removes PII.
-- **P3-T02 (S) CSV import/export.** `core/leads/csv.ts` parse (papaparse, BOM, delimiter sniff), `autoMap(headers)`, manual mapping, `validateEmail` (syntax + optional MX), dedupe modes (skip if in workspace / list / campaign; update existing), suppression filtering, ImportJob progress via worker for large files; export filtered leads to CSV. *Accept:* fixtures in Review Focus #4 with exact counts.
-- **P3-T03 (S) Lead lists, suppression/blocklist UI.** Lists CRUD, add/remove, blocklist (email + domain), import/export blocklist. *Accept:* suppressed lead cannot be enrolled.
-- **P3-T04 (S) Template engine + spintax.** `core/template.ts` `render(tpl, ctx, seed): {text, missing[]}`: `{{var}}`, `{{var|fallback}}` per PRODUCT_SPEC syntax, custom fields, sender vars; `core/spintax.ts` `{{RANDOM | a | b}}` (nested, seeded); `validateTemplate` lists unknown vars. *Accept:* table tests incl. missing var with/without fallback, nested spintax, deterministic seed.
-- **P3-T05 (S) Campaign + sequence service/API.** CRUD, duplicate, archive, delete, steps (unlimited), delays, variants, branching conditions, schedules (multiple, tz, days, window), options (all `PS-CAMP-*`), account assignment, lead enrollment from lists/filters with cross-campaign conflict check, launch/pause/resume validation (has accounts, steps, schedule). *Accept:* service tests for each validation, duplicate deep-copies steps/variants but not leads.
-- **P3-T06 (S) Campaign builder UI.** Campaigns list (status, progress, metrics), builder tabs Leads / Sequences (step editor, variants, preview with real lead), Schedule, Options, Accounts; preview modal. *Accept:* Playwright create→launch flow.
-- **P3-T07 (S) Schedule math.** `core/schedule.ts` `isInWindow(schedules, at)`, `nextWindowStart(schedules, after)`, `addBusinessDelay(from, days, schedules)`; DST-safe via `Intl`. *Accept:* DST transition, weekend skip, overnight window tests.
-- **P3-T08 (O) Quota + dispatcher.** `core/quota.ts` `effectiveAllowance(account, day, settings, rewarm, health)`, `core/dispatch.ts` `claimDue(prisma, now, limit)` as designed above. *Accept:* parallel-dispatcher test (Review Focus #3), workspace cap, min gap, DEFERRED rescheduling into next window.
-- **P3-T09 (S) Planner, rotation, sender job, recovery.** `core/rotation.ts`, `core/sequence.ts` (next step, branching), worker jobs `plan-sends`, `dispatch-sends`, `recover-sends`; retries/backoff, UNCERTAIN resolution, CampaignLead advancement, campaign completion. *Accept:* end-to-end with fake provider: 3-step sequence over simulated days; uncertain send test (Review Focus #1); rotation spreads evenly; account error → re-route.
-- **P3-T10 (S) Ramp-up + workspace caps settings UI.** Settings → Sending (workspace cap, default gaps), per-campaign daily limit, gradual ramp (`rampStart`, `rampIncrement`) feeding `effectiveAllowance`. *Accept:* allowance tests.
+- **P3-T01 (S)** Leads service/API: fields above, custom fields/labels, tags, statuses, bulk edit, merge, round-robin owner assign, filters/pagination, contact history, GDPR delete (suppression hash kept).
+- **P3-T02 (S)** CSV import/export (BOM, delimiter sniff, auto/manual mapping, validation, dedupe modes, authorized-import confirmation, source/lawful basis), ESP detection via MX (`leads/esp.ts`), background ImportJob.
+- **P3-T03 (S)** Lead lists + blocklist/suppression UI and API (email + domain, import/export) + Leads UI.
+- **P3-T04 (S)** Template engine: variables, `{{var | fallback}}`, sender vars, `{{RANDOM | a | b}}` with nested vars, `{% if %}` blocks, validation; seeded determinism.
+- **P3-T05 (S)** Campaign service/API: CRUD, duplicate, archive, delete, JSON export/import, evergreen, all options listed in data model, schedules, account assignment, launch validation (accounts, steps, schedule, physical address, DNS gate hook, unsubscribe reachability) + "why not sending" explainer.
+- **P3-T06 (S)** Sequences: steps (minute/hour/day delays), variants (≤26), subsequences with triggers and pre-delay; enrollment from lists/filters with cross-campaign conflict check.
+- **P3-T07 (S)** Schedule math (`isInWindow`, `nextWindowStart`, `addDelay` with units, DST, overnight windows) + day-key helpers.
+- **P3-T08 (S)** Unsubscribe early: signed tokens, `/u/[token]` page + RFC 8058 POST, mailto handling hook, suppression on unsubscribe, physical-address setting, footer injection.
+- **P3-T09 (O)** Quota + dispatcher claim exactly as specified above. *Accept:* parallel claim test; midnight crossing; campaign/workspace caps; savepoint rollback; first-of-day usage row; freshness and sticky gates; suppression re-check.
+- **P3-T10 (S)** Planner + rotation + sequence advancement + subsequence entry + campaign completion. *Accept:* even rotation; sticky follow-ups; step-1 re-route on ineligible account; revive-not-duplicate re-plan.
+- **P3-T11 (O)** Sender + recovery + HELD view API (error classification, lease/claimToken, UNCERTAIN → SENT/HELD). *Accept:* Review Focus #1; 429 pushes account; ambiguous timeout → UNCERTAIN; end-to-end 3-step sequence over simulated days with Fake provider.
+- **P3-T12 (S)** Campaign builder UI (list with status/progress; tabs Leads/Sequences/Schedule/Options/Accounts; preview with real lead; Scheduled emails view incl. HELD actions).
+- **P3-T13 (S)** Ramp-up + workspace/campaign cap settings feeding `effectiveAllowance`.
 
 ### Phase 4 — Incoming mail & tracking
-
-- **P4-T01 (S) Threading + ingest.** `core/threading.ts` `matchThread(msg, lookup)`, `core/ingest.ts` `ingestMessage(prisma, account, remote)` upsert + dedupe + lead association. *Accept:* reply via In-Reply-To, via References only, via provider thread id, duplicate ingest no-op.
-- **P4-T02 (S) Classification.** `core/classify.ts` deterministic: DSN/bounce (hard vs soft by status code), auto-reply (`Auto-Submitted`, `X-Autoreply`, OOO phrases, return date extraction), unsubscribe intent, then interested/not/meeting/neutral keyword rules → `uncertain`; optional AI hook. *Accept:* fixture corpus of ≥30 real-shaped emails.
-- **P4-T03 (S) Stop rules + suppression.** On reply/OOO/unsub/bounce: stop or reschedule per campaign options (OOO → resume after return date), stopForCompanyOnReply, cancel ScheduledMessages, suppress, update lead status. *Accept:* each rule test.
-- **P4-T04 (S) Event store + tracking routes.** `core/events.ts` `recordEvent` with dedupeKey; `/t/o/[token]` pixel, `/t/c/[token]` redirect (signed tokens, allowlisted target), `/u/[token]` unsubscribe page + RFC 8058 POST; proxy/bot detection → `isEstimated`; custom tracking domain support. *Accept:* duplicate notifications produce one event; tampered token 400; one-click POST suppresses.
-- **P4-T05 (S) Sync job (incremental + full).** worker `sync-account` (every 2 min per account + Gmail push/Graph webhook optional trigger), historical import (configurable days), outside-app sends recorded. *Accept:* fake provider: incremental, expired cursor → full, no duplicates.
-- **P4-T06 (O) Startup gate + downtime simulation.** boot → PENDING, gate in planner/dispatcher, tests simulating 1/7/30 days downtime (clock injection) with replies, bounces, unsubscribes during the gap. *Accept:* Review Focus #2; no ScheduledMessage dispatched before READY; documented non-reconstructable events in `docs/ops/OFFLINE_RECOVERY.md`.
-- **P4-T07 (S) Unified inbox UI + API.** Thread list (all accounts, filters: account, campaign, category, unread, search), thread view (sanitized HTML via DOMPurify-equivalent server sanitizer, attachments download), compose reply/forward from the receiving account (threaded), notes, read/unread, category override, reminders (job notifies + shows in inbox), lead side panel. *Accept:* Playwright reply flow with fake provider; XSS fixture rendered safe.
+- **P4-T01 (S)** Threading + ingest (dedupe on rfcMessageId; UIDVALIDITY resync no duplicates).
+- **P4-T02 (S)** Classification (DSN hard/soft, auto-reply headers + OOO return date, unsubscribe intent, interest rules, uncertain; AI hook) with ≥30-email corpus.
+- **P4-T03 (S)** Stop rules (reply, auto-reply option, OOO reschedule via revive, unsubscribe, bounce, company stop, subsequence triggers from replies/status).
+- **P4-T04 (S)** Event store + open/click tracking (signed tokens, open-redirect protection, proxy/bot → isEstimated, custom tracking domain).
+- **P4-T05 (S)** Sync job (incremental + full + historical import + outside-app sends), sets `lastSyncCompletedAt`.
+- **P4-T06 (S)** Inbox API: threads, filters, saved views, search, read/unread, category override, labels, notes, reminders, attach-to-lead, macros, reply/forward (threaded) with attachments.
+- **P4-T07 (O)** Freshness gate + downtime simulation tests: cold boot and sleep-without-restart × 1/7/30 days with replies (incl. cross-mailbox company reply), bounces, unsubscribes; history expiry; `docs/ops/OFFLINE_RECOVERY.md` (non-reconstructable events).
+- **P4-T08 (S)** Unified inbox UI (sanitized HTML, attachments, compose, lead panel, views, macros).
 
 ### Phase 5 — Deliverability, warm-up, re-warm-up
-
-- **P5-T01 (S) DNS checks.** `core/dns.ts` SPF (parse, include lookup count ≤10), DKIM (common selectors + user-provided), DMARC policy, MX; injected resolver. UI in Warm-Up & Deliverability. *Accept:* fixture resolver tests.
-- **P5-T02 (S) Health score + automatic slowdown/pause.** `core/health.ts` from bounce rate, provider errors, complaint/unsub rates, DNS; thresholds pause account or reduce allowance; events + automation triggers. *Accept:* threshold tests.
-- **P5-T03 (S) Warm-up engine (honest).** Opt-in peer pool of the workspace's own accounts (+ `WarmupProvider` interface for external legitimate services, disabled by default), daily schedule with ramp, reply-rate, weekdays-only, peer tag header, separate from campaign metrics, inbox-placement recording (where landed) without moving mail out of spam. *Accept:* schedule tests; warm-up never counted in campaign analytics.
-- **P5-T04 (S) Inbox placement test.** Send test to opt-in seed accounts, report inbox/spam/missing per provider. *Accept:* fake-provider test.
-- **P5-T05 (S) Inactivity detection.** `core/rewarm.ts` `computeLifecycle(account, stats, settings)`; nightly + on-boot job; thresholds 7/14/30/60 configurable; flags + recommendation; auto mode creates RewarmPlan before next campaign send. *Accept:* 30-day and 60-day inactive tests.
-- **P5-T06 (S) Re-warm mode.** "Re-Warm Account" button: recheck DNS + connectivity, create plan (conservative start, daily increment, target = previous normal limit), `effectiveAllowance` uses it, health deterioration pauses/reduces, completion restores limits; preserves history. *Accept:* the five spec scenarios (30d, 60d, OAuth expired then reconnect, bounce threshold exceeded, returns to normal).
-- **P5-T07 (S) Deliverability & reactivation dashboards.** Per-account status (Active/Inactive/Re-Warming/Paused/Needs Attention), days idle, allowance vs target, progress, indicators, warnings, estimated schedule labelled as plan. *Accept:* Playwright view.
-- **P5-T08 (S) Verification hooks.** `EmailVerifier` interface + none/MX-only built-in + one HTTP integration template (disabled until configured). *Accept:* import marks statuses; risky handling per campaign option.
+- **P5-T01 (S)** DNS checks (SPF incl. lookup count, DKIM selectors, DMARC, MX, DNSBL) + launch gate wiring.
+- **P5-T02 (S)** Health score, automatic slowdown/pause, BounceProtect campaign status, ACCOUNTS_UNHEALTHY.
+- **P5-T03 (S)** Warm-up engine (opt-in peer pool, custom curve, reply rate, weekdays-only, peer tag, `WarmupProvider` interface for external services, separate storage, no spam-folder manipulation).
+- **P5-T04 (S)** Inbox placement test with opt-in seeds.
+- **P5-T05 (S)** Inactivity detection (`computeLifecycle`, thresholds 7/14/30/60, recommend/auto) running in the sync startup path.
+- **P5-T06 (S)** Re-warm mode (button, DNS + connectivity recheck, plan, allowance in quota, health-based pause/reduce, completion restores previous settings, history preserved). *Accept:* five spec scenarios.
+- **P5-T07 (S)** Deliverability + reactivation dashboards (statuses, idle days, allowance vs target, progress, warnings, schedule labelled "configurable plan").
+- **P5-T08 (S)** Verification hooks (`EmailVerifier`, built-in MX check, one HTTP integration template; risky handling per campaign).
 
 ### Phase 6 — CRM & analytics
-
-- **P6-T01 (S) CRM backend.** Stages (defaults per spec, customizable), opportunities, tasks, reminders, notes, owner, activity history from Events, revenue attribution to campaign. *Accept:* service tests.
-- **P6-T02 (S) CRM UI.** Kanban drag-drop (accessible), opportunity drawer, tasks list. *Accept:* Playwright move card → event + analytics update.
-- **P6-T03 (S) Analytics queries.** `core/analytics.ts` aggregates from Event table by campaign/account/variant/step/segment/date with rates; account usage & remaining capacity; revenue per lead; conversion. *Accept:* fixture events → exact numbers (spec E2E #14).
-- **P6-T04 (S) Dashboards + exports.** Dashboard home + Analytics page (Recharts), filters, CSV export, campaign analytics tab, A/B results. *Accept:* Playwright filter + export.
+- **P6-T01 (S)** CRM backend (stages, opportunities unique per lead+campaign, value, cashCollected, tasks, reminders, notes, owner, activity, attribution).
+- **P6-T02 (S)** CRM UI (accessible Kanban, opportunity drawer, tasks).
+- **P6-T03 (S)** Analytics queries (campaign/account/variant/step/segment/date; capacity; revenue per lead; conversion; exact fixtures).
+- **P6-T04 (S)** Dashboard + Analytics pages + CSV export.
 
 ### Phase 7 — Advanced
-
-- **P7-T01 (S) Automation rules engine.** Triggers (event types, quota reached, failure threshold, deal won), conditions, actions (stop sequence, create opportunity, suppress, pause account, add tag, move stage, send webhook, notify); defaults from spec section 12 seeded. *Accept:* each default rule test.
-- **P7-T02 (S) Webhooks + public API completion.** Signed (HMAC-SHA256, timestamp) deliveries with retry/backoff and delivery log; API v2-like resources documented in `docs/API.md` (OpenAPI generated from zod). *Accept:* signature verify test, retry test.
-- **P7-T03 (S) A/B auto-optimize.** Variant stats, auto-pick winner after min sample by reply rate. *Accept:* deterministic test.
-- **P7-T04 (S) AI module.** `core/ai/` provider-agnostic interface (Anthropic default, optional), features: draft, personalize, follow-up suggestion, reply classification, summary, lead scoring, CRM recommendation, campaign analysis; recipient-facing output stored as draft requiring approval. *Accept:* fake AI tests; disabled when no key.
-- **P7-T05 (S) Push sync.** Gmail watch + Pub/Sub push endpoint and Graph subscriptions (when publicly reachable, VPS), fall back to polling. *Accept:* notification triggers sync job, dedupe.
-- **P7-T06 (S) Compliance & security hardening.** Rate limiting on auth/API, CSP headers, physical address footer setting, data deletion, audit view, dependency audit, session settings. *Accept:* security test list.
-- **P7-T07 (S) UI polish pass.** Empty states, loading, errors, accessibility (web-design-guidelines review). *Accept:* axe checks in Playwright on each section.
+- **P7-T01 (S)** Automation rules engine with spec §12 defaults.
+- **P7-T02 (S)** Webhooks: HMAC signing, custom headers, SSRF-safe delivery (block private ranges), retries, auto-disable, delivery log UI.
+- **P7-T03 (S)** Public API resource completion (accounts, campaigns, leads, lists, emails, analytics, blocklist, webhooks, jobs 202) + OpenAPI from zod + `docs/API.md`.
+- **P7-T04 (S)** A/B auto-optimize.
+- **P7-T05 (S)** AI module (all §13 features, approval workflow for recipient-facing text).
+- **P7-T06 (S)** Push sync (Gmail watch + Pub/Sub JWT verify, Graph subscriptions + clientState), renewal jobs.
+- **P7-T07 (S)** Security hardening (rate limits, CSP, 2FA, password hashing per better-auth, data export/deletion, audit view, dependency audit).
+- **P7-T08 (S)** UI polish + accessibility (axe in Playwright per section).
 
 ### Phase 8 — Final verification
+- **P8-T01 (S)** Complete E2E suite per mapping below.
+- **P8-T02 (S)** Local→VPS migration test in CI (backup, restore into fresh stack, attachments + encrypted credentials still decrypt).
+- **P8-T03 (O)** Final independent review → `docs/FINAL_ASSESSMENT.md`; fix findings; repeat.
 
-- **P8-T01 (S) E2E suite completion.** The 16 spec E2E scenarios, each mapped to a test file (mocks for providers). *Accept:* all green.
-- **P8-T02 (S) Local→VPS migration test.** Backup on "local" compose, restore into fresh stack in CI. *Accept:* CI job green.
-- **P8-T03 (O) Final independent review.** Fresh Opus reviewer against spec + parity checklist; fix findings; `docs/FINAL_ASSESSMENT.md` (parity table, known limitations, verification report).
+## Spec §28 E2E mapping (files under `apps/web/e2e/` unless noted; providers faked, live checks in LIVE_VERIFICATION.md)
 
-## Parity coverage map
+| # | Scenario | Test file | Built in |
+|---|---|---|---|
+| 1 | Google account connection | `accounts-google.spec.ts` (mock OAuth endpoints) | P2-T02 |
+| 2 | Authorized test-email sending | `test-send.spec.ts` | P2-T07 |
+| 3 | Lead CSV import | `leads-import.spec.ts` | P3-T03 |
+| 4 | Campaign creation | `campaign-create.spec.ts` | P3-T12 |
+| 5 | Automated multistep sending | `packages/core/test/e2e/multistep.test.ts` | P3-T11 |
+| 6 | Quota enforcement | `packages/core/test/e2e/quota.test.ts` | P3-T09 |
+| 7 | Account rotation | `packages/core/test/e2e/rotation.test.ts` | P3-T10 |
+| 8 | Reply synchronization | `packages/core/test/e2e/reply-sync.test.ts` | P4-T05 |
+| 9 | Follow-up cancellation | `packages/core/test/e2e/followup-cancel.test.ts` | P4-T03 |
+| 10 | Bounce detection & suppression | `packages/core/test/e2e/bounce.test.ts` | P4-T03 |
+| 11 | Inbox threading | `inbox-thread.spec.ts` | P4-T08 |
+| 12 | CRM opportunity creation | `crm.spec.ts` | P6-T02 |
+| 13 | Revenue recording | `crm-revenue.spec.ts` | P6-T02 |
+| 14 | Analytics accuracy | `packages/core/test/e2e/analytics.test.ts` | P6-T03 |
+| 15 | Worker restart recovery | `apps/worker/test/restart.test.ts` (kill worker process mid-dispatch, restart, assert no dup) | P3-T11 |
+| 16 | Session interruption & resumption | `apps/worker/test/browser-closed.test.ts` (sending proceeds with no web session) + `docs/ops/RESUME_DRILL.md` scripted keep-going drill executed in P8 | P3-T11 / P8-T01 |
 
-Every `PS-*` item in `docs/PRODUCT_SPEC.md` is owned by a task. An implementer reads all items of their area,
-implements the ones their task owns, and the phase gate ticks them (`[x]`) in PRODUCT_SPEC.md.
-Defaults (gaps, limits, warm-up numbers, status codes, spintax/fallback syntax) come from PRODUCT_SPEC, not from memory.
+## Parity coverage
 
-| Area | Owning tasks |
-|---|---|
-| UI | P1-T04 (nav, shell), each feature's UI task, P7-T07 (polish, a11y), P6-T04 (dashboard widgets) |
-| ACC | P2-T02..T07, P5-T07 (status dashboards) |
-| WARM | P5-T03, P5-T04, P5-T07 |
-| CAMP | P3-T05, P3-T06, P3-T10, P7-T03 |
-| SEQ | P3-T04, P3-T05, P3-T09 (branching/subsequences), P4-T03 (OOO reschedule) |
-| SEND | P3-T07..T10, P5-T02 |
-| LEAD | P3-T01..T03, P5-T08 |
-| INBOX | P4-T01, P4-T02, P4-T07, P7-T04 (AI reply) |
-| TRACK | P4-T04, P6-T03 |
-| CRM | P6-T01, P6-T02 |
-| ANALYTICS | P6-T03, P6-T04 |
-| AUTO | P7-T01, P7-T02 |
-| AI | P7-T04 |
-| SEC | P1-T03, P1-T04, P1-T07, P7-T06 |
-| REWARM | P5-T05, P5-T06, P5-T07 |
-| SYNC | P4-T05, P4-T06, P7-T05 |
-| DEPLOY | P1-T01, P1-T06, P8-T02, P7-T02 (API/OpenAPI) |
-
-PS-DEPLOY-02's Redis+BullMQ default is superseded by DECISIONS D1 (spec permits an equivalent).
+Each phase step plan lists per task the exact `PS-*` IDs it owns; together they must cover every ID in
+`docs/PRODUCT_SPEC.md`. The plan reviewer for that phase checks completeness. Defaults (gaps, limits, warm-up numbers,
+status codes, syntax) come from PRODUCT_SPEC. Area ownership: UI P1-T04/feature UIs/P7-T08 · ACC P2 · WARM P5-T03/T04/T07 ·
+CAMP P3-T05/T12/T13, P5-T02, P7-T04 · SEQ P3-T04/T06/T10, P4-T03 · SEND P3-T07..T11/T13, P5-T02 · LEAD P3-T01..T03, P5-T08 ·
+INBOX P4-T01/T02/T06/T08, P7-T05 · TRACK P4-T04, P6-T03 · CRM P6-T01/T02 · ANALYTICS P6-T03/T04 · AUTO P7-T01..T03 ·
+AI P7-T05 · SEC P1-T03/T04/T07, P7-T07 · REWARM P5-T05..T07 · SYNC P4-T05/T07, P7-T06 · DEPLOY P1-T01/T06, P7-T03, P8-T02.
 
 ## Phase-end gate (every phase)
-Full test suite, lint, typecheck, `ponytail-audit` (fresh Sonnet reviewer), resolve significant findings, update
-PRODUCT_SPEC checklist ticks, PROGRESS, HANDOFF, push.
+Full test suite, lint, typecheck, Playwright, CI green; `ponytail-audit` by a fresh Sonnet reviewer; resolve significant
+findings; tick PRODUCT_SPEC items; update PROGRESS/HANDOFF/REVIEW_LOG; merge phase branch to `main`; push.

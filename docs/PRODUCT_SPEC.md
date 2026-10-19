@@ -20,6 +20,8 @@ Status: research draft, 2026-10-19. Sources are Instantly's public help center (
 
 Areas: UI, ACC, WARM, CAMP, SEQ, SEND, LEAD, INBOX, TRACK, CRM, ANALYTICS, AUTO, AI, SEC, REWARM, SYNC, DEPLOY.
 
+**Superseded by `docs/DECISIONS.md` D1:** every mention of Redis/BullMQ in this file (incl. PS-DEPLOY-02/08/10/12, PS-SEND-01/05, PS-REWARM-06/12) means the Postgres job queue (pg-boss + `ScheduledMessage` row claiming). The behavior required by those items still applies.
+
 ---
 
 ## 1. Technical Architecture (master §1)

@@ -23,3 +23,19 @@ Long-running work never runs in the web process; it lives in `apps/worker`.
 The primary dev machine has no Docker and no WSL. `embedded-postgres` downloads real Postgres binaries
 per platform, so tests exercise real SQL (SKIP LOCKED, constraints) everywhere. CI additionally builds
 and smoke-tests the Docker Compose stack.
+
+## 2026-10-19 · D4 · Freshness gate + sticky sender instead of a boot gate
+A laptop that sleeps never "boots", so gating on worker start is unsafe. A send is claimable only when its account
+(and, for company-stop campaigns, every campaign account) synced within `SYNC_MAX_STALENESS_SEC`. Follow-ups always
+use the step-1 account so its sync covers the lead's replies and threading stays intact.
+
+## 2026-10-19 · D5 · Unknown send outcomes are held, not resent
+"Not found in Sent" is not proof of non-delivery (SMTP append gap, index lag). After a 15-minute re-search the
+message becomes HELD for a human decision. Duplicate cold emails are worse than one delayed email.
+
+## 2026-10-19 · D6 · Attachments stored in Postgres (bytea, ≤ 25 MB)
+Keeps backup/restore and local→VPS migration to a single `pg_dump`.
+
+## 2026-10-19 · D7 · Provider caps clamped to 50 % for calendar-day accounting
+Providers enforce rolling 24 h windows; usage rows are per calendar day. Clamping the effective limit to half the
+provider cap makes two adjacent days unable to exceed the rolling cap. Cold-email limits (≈30/day) sit far below it.
