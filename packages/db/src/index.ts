@@ -10,7 +10,7 @@ const g = globalThis as unknown as { __rnPrisma?: PrismaClient };
 function create(): PrismaClient {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) throw new Error("DATABASE_URL is not set");
-  const max = Number(process.env.DB_POOL_MAX ?? 10);
+  const max = Number.parseInt(process.env.DB_POOL_MAX ?? "", 10) || 10;
   return new PrismaClient({ adapter: new PrismaPg({ connectionString, max }) });
 }
 

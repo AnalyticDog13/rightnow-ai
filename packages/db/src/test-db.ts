@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { PrismaPg } from "@prisma/adapter-pg";
 import pg from "pg";
-import { inject } from "vitest";
+import { expect, inject } from "vitest";
 import { PrismaClient } from "./generated/prisma/client";
 
 /** Clones the migrated template DB; call from a test file (needs the db globalSetup). */
@@ -28,4 +28,19 @@ export async function createTestDb() {
     }
   };
   return { prisma, url, drop };
+}
+
+/** Tenant-isolation check: seeds workspace A only; a workspace-scoped read must see it for A and nothing for B. */
+export async function expectIsolated(opts: {
+  prisma: PrismaClient;
+  seed: (workspaceId: string) => Promise<unknown>;
+  read: (workspaceId: string) => Promise<unknown[]>;
+}) {
+  const tag = randomBytes(4).toString("hex");
+  const [a, b] = await Promise.all(
+    ["a", "b"].map((s) => opts.prisma.workspace.create({ data: { name: s, slug: `iso-${s}-${tag}` } })),
+  );
+  await opts.seed(a!.id);
+  expect((await opts.read(a!.id)).length).toBeGreaterThan(0);
+  expect(await opts.read(b!.id)).toEqual([]);
 }
