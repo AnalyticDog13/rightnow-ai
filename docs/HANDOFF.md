@@ -1,7 +1,7 @@
 # Handoff
 
 **Phase:** 2 — Email provider connections (branch `phase-2-providers`, created from `main` after the Phase 1 merge)
-**Current task:** write `docs/plans/phase-2.md` (step plan with per-task PS-IDs), get it independently reviewed, then P2-T01
+**Current task:** phase-2 step plan written (1401ab7); independent opus review in progress → docs/plans/phase-2-review.md
 **Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 (approved). Phase 1 step plan: `docs/plans/phase-1.md` (complete).
 **Tests:** 54 vitest + 3 Playwright green; CI `check` + `compose-smoke` green on main.
 

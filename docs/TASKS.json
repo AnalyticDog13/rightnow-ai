@@ -147,16 +147,29 @@
    "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-2.md; tests listed there pass; preliminary cleanup from phase-1 gate: M1 CSRF APP_URL via getWebEnv, M2 minPasswordLength 12, M3 drop requireWorkspace kind param, M4 remove unused web devDeps embedded-postgres/pg"
   },
   {
-   "id": "P2-T02",
+   "id": "P2-T02a",
    "phase": 2,
-   "title": "Google OAuth connect (state+PKCE, minimal scopes, OAuth session object with status polling PS-ACC-02, reconnect updates same account), `docs/ops/GOOGLE_SETUP.md` incl. \"In production\" consent screen",
+   "title": "Schema + credential store with refresh lease + key rotation (ENCRYPTED_COLUMNS, I7)",
    "status": "todo",
    "deps": [
     "P2-T01"
    ],
+   "model": "opus",
+   "commit": null,
+   "acceptance": "See docs/plans/phase-2.md P2-T02a"
+  },
+  {
+   "id": "P2-T02b",
+   "phase": 2,
+   "title": "Google OAuth connect (state+PKCE, session polling, reconnect) + opus review of oauth.ts",
+   "status": "todo",
+   "deps": [
+    "P2-T02a",
+    "P2-T01"
+   ],
    "model": "sonnet",
    "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-2.md; tests listed there pass; append credentialsEnc to ENCRYPTED_COLUMNS and add rotate-key DB-loop test; I7 from phase-1 gate: key rotation runnable against a Compose deployment (documented command via docker compose run)"
+   "acceptance": "See docs/plans/phase-2.md P2-T02b"
   },
   {
    "id": "P2-T03",
@@ -164,7 +177,7 @@
    "title": "Gmail provider (send raw + threadId, history.list, 404→expired, query listing, rfc822msgid search, token refresh persistence, error mapping). Contract suite on recorded fixtures via injected fetch",
    "status": "todo",
    "deps": [
-    "P2-T02"
+    "P2-T02b"
    ],
    "model": "sonnet",
    "commit": null,

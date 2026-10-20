@@ -82,3 +82,6 @@ I1 dev script, I2 org deletion disabled, I3 tx-client audit/apikeys atomic, I4 r
 - P1-T06: minor (deferred): backup only mentions ENCRYPTION_KEY in a comment
 - P1-T06: minor (deferred): restore.sh $dir resolved before cd (fails closed from scripts/ dir); restore blocked if current DB unreadable
 - P1-T07: minor (deferred): lastUsedAt write on every request incl. 403 (throttle); audit not atomic with key create/revoke; no direct scopeAllows unit test; APP_URL host mismatch (127.0.0.1 vs localhost) → 403 on writes, document; sign-in audit lacks IP/UA/failures; readyz no rate limit; key-list select duplicated; 2b3e902 alone fails typecheck
+
+## 2026-10-19 · Phase 2 step plan review round 1 · independent agent (opus) · **Changes Required**
+1 Critical (sync paging cursor could lose replies), 12 Important (Graph ImmutableId, refresh-token handling, SSRF/TLS for IMAP-SMTP, interface gaps, Gmail scope decision, Graph revoke, cross-process fake, P2-T02 split + opus), 12 Minor. Full: docs/plans/phase-2-review.md. Planner revising.
