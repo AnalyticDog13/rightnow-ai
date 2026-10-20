@@ -311,19 +311,40 @@ describe("sync", () => {
     expect(c2.messages.map((x) => [x.providerMessageId, x.folder])).toEqual([[m.id, "INBOX"]]);
   });
 
-  test("non-send 4xx map to defined classes, not a bare ProviderError", async () => {
-    const at = (res: Response) =>
-      setup([{ method: "GET", url: API + "profile", respond: async () => res.clone() }]).p;
-    expect(
-      await at(json(403, { error: { errors: [{ reason: "forbidden" }] } }))
-        .currentCursor()
-        .catch((e) => e),
-    ).toEqual(new AuthError("unauthorized"));
-    expect(
-      await at(json(400, errors.invalidArgument))
-        .currentCursor()
-        .catch((e) => e),
-    ).toBeInstanceOf(PermanentSendError);
+  test("non-send 403 reasons: only true auth reasons are AuthError", async () => {
+    const run = async (body: unknown) =>
+      setup([{ method: "GET", url: API + "profile", respond: async () => json(403, body) }])
+        .p.currentCursor()
+        .catch((e) => e);
+    const withReason = (reason?: string) => ({
+      error: { code: 403, ...(reason ? { errors: [{ reason }] } : {}) },
+    });
+    for (const r of ["insufficientPermissions", "ACCESS_TOKEN_SCOPE_INSUFFICIENT", "authError"])
+      expect(await run(withReason(r)), r).toBeInstanceOf(AuthError);
+    for (const r of [
+      "rateLimitExceeded",
+      "userRateLimitExceeded",
+      "quotaExceeded",
+      "concurrentLimitExceeded",
+    ])
+      expect(await run(withReason(r)), r).toEqual(new RateLimitedError(60));
+    expect(await run(withReason("dailyLimitExceeded"))).toEqual(new RateLimitedError(3600));
+    for (const r of ["domainPolicy", "accessNotConfigured", "forbidden", undefined]) {
+      const e = await run(withReason(r));
+      expect(e, String(r)).toBeInstanceOf(TransientBeforeSendError);
+      expect(e).not.toBeInstanceOf(AuthError);
+    }
+  });
+
+  test("other non-send 4xx are PermanentSendError", async () => {
+    const p = setup([
+      {
+        method: "GET",
+        url: API + "profile",
+        respond: async () => json(400, errors.invalidArgument),
+      },
+    ]).p;
+    expect(await p.currentCursor().catch((e) => e)).toBeInstanceOf(PermanentSendError);
   });
 
   test("history 404 is expired", async () => {

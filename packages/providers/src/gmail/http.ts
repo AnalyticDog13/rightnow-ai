@@ -92,9 +92,16 @@ export class GmailHttp {
     if (res.status === 429) throw new RateLimitedError(wait());
     if (res.status === 403) {
       if (reason === "dailyLimitExceeded") throw new RateLimitedError(3600);
-      if (reason === "rateLimitExceeded" || reason === "userRateLimitExceeded")
+      if (
+        reason === "rateLimitExceeded" ||
+        reason === "userRateLimitExceeded" ||
+        reason === "quotaExceeded" ||
+        reason === "concurrentLimitExceeded"
+      )
         throw new RateLimitedError(wait());
-      if (reason === "insufficientPermissions") throw new AuthError("scope_revoked");
+      if (reason === "insufficientPermissions" || reason === "ACCESS_TOKEN_SCOPE_INSUFFICIENT")
+        throw new AuthError("scope_revoked");
+      if (reason === "authError") throw new AuthError("unauthorized");
     }
     if (res.status >= 500) {
       if (o.send) throw new AmbiguousSendError(`gmail ${res.status}`);
@@ -102,7 +109,8 @@ export class GmailHttp {
         throw new RateLimitedError(wait());
       throw new TransientBeforeSendError(`gmail ${res.status}`);
     }
-    if (res.status === 403 && !o.send) throw new AuthError("unauthorized");
+    // unknown 403 on reads (domainPolicy, accessNotConfigured, no reason): AuthError would disconnect a healthy mailbox, so retry as transient
+    if (res.status === 403 && !o.send) throw new TransientBeforeSendError("gmail 403");
     throw new PermanentSendError(reason ?? `http_${res.status}`, `gmail ${res.status}`);
   }
 }

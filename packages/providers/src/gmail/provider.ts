@@ -174,7 +174,8 @@ export class GmailProvider implements MailProvider {
         if (
           (labelIds?.includes("INBOX") || labelIds?.includes("SENT")) &&
           !l.includes("DRAFT") &&
-          !l.includes("SPAM")
+          !l.includes("SPAM") &&
+          !l.includes("TRASH")
         )
           added.add(g.id);
       }
