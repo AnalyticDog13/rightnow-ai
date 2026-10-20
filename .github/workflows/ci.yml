@@ -57,6 +57,4 @@ jobs:
         if: failure()
         run: |
           docker compose ps -a
-          m=$( (docker compose logs --tail=40) 2>&1 | tail -c 12000 | tr -d ''); m=${m//%/%25}; m=${m//$'
-'/%0A}
-          echo "::error title=compose diagnostics::$m"
+          docker compose logs --tail=40 | head -c 6000 | tr '\n' '|' | sed 's/^/::error title=compose logs::/'
