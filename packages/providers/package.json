@@ -1,0 +1,21 @@
+{
+  "name": "@rightnow/providers",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./contract": "./src/contract/suite.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "mailparser": "3.10.0",
+    "nodemailer": "10.1.7"
+  },
+  "devDependencies": {
+    "@types/mailparser": "3.9.0",
+    "@types/nodemailer": "8.0.2"
+  }
+}

@@ -31,7 +31,9 @@ describe("env", () => {
   });
 
   test("key must decode to 32 bytes", () => {
-    expect(() => parseEnv({ ...good, ENCRYPTION_KEY: randomBytes(16).toString("base64") })).toThrow(/ENCRYPTION_KEY/);
+    expect(() => parseEnv({ ...good, ENCRYPTION_KEY: randomBytes(16).toString("base64") })).toThrow(
+      /ENCRYPTION_KEY/,
+    );
   });
 
   test("getEnv memoizes", () => {
@@ -42,5 +44,22 @@ describe("env", () => {
     } finally {
       process.env = old;
     }
+  });
+});
+
+describe("mail provider env", () => {
+  test("Google/MS vars are optional; MS_TENANT defaults to common", () => {
+    const e = parseEnv(good);
+    expect(e.GOOGLE_CLIENT_ID).toBeUndefined();
+    expect(e.MS_TENANT).toBe("common");
+  });
+
+  test("MAIL_PROVIDER_FAKE=1 is refused in vps mode, naming the var", () => {
+    expect(() => parseEnv({ ...good, MODE: "vps", MAIL_PROVIDER_FAKE: "1" })).toThrow(
+      /MAIL_PROVIDER_FAKE/,
+    );
+    expect(parseEnv({ ...good, MODE: "local", MAIL_PROVIDER_FAKE: "1" }).MAIL_PROVIDER_FAKE).toBe(
+      "1",
+    );
   });
 });
