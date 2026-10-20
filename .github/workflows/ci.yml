@@ -56,8 +56,7 @@ jobs:
         if: failure()
         run: |
           docker ps -a
-          docker logs "$(docker ps -aq --filter ancestor=greenmail/standalone:2.1.14 | head -1)" 2>&1 | tail -60 | head -c 6000 | tr "
-" "|" | sed "s/^/::error title=greenmail logs::/"
+          docker logs "$(docker ps -aq --filter ancestor=greenmail/standalone:2.1.14 | head -1)" 2>&1 | tail -60 | head -c 6000 | tr "\n" "|" | sed "s/^/::error title=greenmail logs::/"
   compose-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 25
