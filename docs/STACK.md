@@ -20,12 +20,14 @@ Checked 2026-10-19 with `npm view <pkg> version` (npm `latest` tag). Pin exact v
 | vitest | 5.0.5 | |
 | @playwright/test | 1.64.1 | `npx playwright install chromium`. Next peers ^1.51. |
 | embedded-postgres | 18.4.0-beta.17 | Tested OK on this machine (below). Postgres 18.4, Windows x64 binary `@embedded-postgres/windows-x64`. |
-| @googleapis/gmail | 22.0.2 | Gmail only (not the 400MB `googleapis`). |
-| google-auth-library | 11.3.1 | OAuth2Client; handles refresh. |
-| @azure/msal-node | 7.1.0 | Auth-code flow with token cache; Graph calls via plain fetch (skip Graph SDK). |
+| @googleapis/gmail | 22.0.2 | NOT USED (D10): Gmail via plain fetch. |
+| google-auth-library | 11.3.1 | NOT USED (D10). |
+| @azure/msal-node | 7.1.0 | NOT USED (D10): hides refresh tokens; OAuth and Graph via plain fetch. |
 | imapflow | 2.5.8 | IMAP IDLE, async API. |
 | nodemailer | 10.1.7 | SMTP send; also builds MIME for Gmail API raw send. |
 | mailparser | 3.10.0 | `simpleParser` for inbound/replies. |
+| smtp-server (dev) | 3.20.2 | In-process SMTP test server (D11); `@types/smtp-server` 3.5.13. |
+| hoodiecrow-imap (dev) | 3.3.1 | In-process scriptable IMAP test server (D11); young, see spike and `imap-real` CI job (GreenMail container). |
 | recharts | 3.10.1 | v3; client components only. |
 | tsx | 4.23.15 | Runs TS scripts and the worker (dev + prod), per phase-1 fixed names. |
 | papaparse | 5.7.0 | CSV lead import; add `@types/papaparse`. |

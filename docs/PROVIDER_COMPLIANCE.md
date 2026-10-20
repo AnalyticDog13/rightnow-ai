@@ -58,7 +58,7 @@ Sources: https://www.ftc.gov/business-guidance/resources/can-spam-act-compliance
 - [ ] Auto-pause mailbox/campaign when bounce rate >2% or complaint rate >0.1% over a rolling window (Gmail hard line is 0.3%).
 - [ ] Pre-send DNS check per sending domain: SPF, DKIM (>=1024 bit), DMARC present and aligned; warn loudly, block campaigns when absent.
 - [ ] Self-hosted per-owner OAuth clients (Google project, Entra app); never ship a shared client; client secrets and tokens encrypted at rest. Setup docs: publish Google consent screen to "In production".
-- [ ] Minimal scopes: gmail.send + gmail.readonly (modify only if marking read is required); Graph delegated Mail.Send + Mail.ReadWrite.
+- [ ] Minimal scopes: gmail.send + gmail.modify (D12: modify instead of readonly so spam rescue and mark-read need no later reconnect); Graph delegated Mail.Send + Mail.ReadWrite.
 - [ ] Gmail watch and Graph subscription renewal jobs (daily) plus polling fallback; on Gmail history 404 run a full resync.
 - [ ] Reply, out-of-office and bounce detection stops the sequence for that lead; GDPR delete/export removes personal data but keeps a hashed suppression entry.
 - [ ] Sends respect lead/campaign timezone and business-hours window, and never run while the mailbox is paused.
