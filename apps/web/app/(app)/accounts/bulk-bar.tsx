@@ -17,16 +17,20 @@ type Setting = keyof typeof SETTINGS;
 
 export function BulkBar({
   ids,
+  names,
   isAdmin,
   onDone,
 }: {
   ids: string[];
+  /** id to email, for the clamp notice. */
+  names: Record<string, string>;
   isAdmin: boolean;
   onDone: (message: string) => void;
 }) {
   const [setting, setSetting] = useState<Setting>("set_daily_limit");
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState("");
 
   async function run(action: string, v?: unknown) {
     if (action === "delete" && !confirm(`Delete ${ids.length} account(s)? Sent history is kept.`))
@@ -34,19 +38,35 @@ export function BulkBar({
     setBusy(true);
     const r = await call("/api/v1/accounts/bulk", "POST", { ids, action, value: v });
     setBusy(false);
-    const results = (r.json.results ?? []) as { ok: boolean; error?: string }[];
+    const results = (r.json.results ?? []) as {
+      id: string;
+      ok: boolean;
+      error?: string;
+      warnings?: { field: string; clampedTo: number }[];
+    }[];
     const failed = results.filter((x) => !x.ok);
+    const clamped = results.flatMap((x) =>
+      (x.warnings ?? []).map((w) => `${names[x.id] ?? x.id} was set to ${w.clampedTo}`),
+    );
     onDone(
       !r.ok
         ? errorText(r)
-        : failed.length
-          ? `${failed.length} of ${results.length} failed (${[...new Set(failed.map((f) => f.error))].join(", ")})`
-          : "",
+        : [
+            failed.length &&
+              `${failed.length} of ${results.length} failed (${[...new Set(failed.map((f) => f.error))].join(", ")}).`,
+            clamped.length && `Limited by the provider: ${clamped.join("; ")}.`,
+          ]
+            .filter(Boolean)
+            .join(" "),
     );
   }
 
   function apply() {
     const kind = SETTINGS[setting].kind;
+    if ((kind === "number" || kind === "minutes") && !Number.isFinite(parseFloat(value))) {
+      setProblem("Enter a number first.");
+      return;
+    }
     const v =
       kind === "number"
         ? Number(value)
@@ -58,6 +78,7 @@ export function BulkBar({
                 .map((t) => t.trim())
                 .filter(Boolean)
             : value;
+    setProblem("");
     void run(setting, v);
   }
 
@@ -95,6 +116,11 @@ export function BulkBar({
       <Button disabled={busy} onClick={apply}>
         Apply
       </Button>
+      {problem && (
+        <p role="alert" className="w-full text-sm text-destructive">
+          {problem}
+        </p>
+      )}
       {isAdmin && (
         <Button variant="outline" disabled={busy} onClick={() => run("delete")}>
           Delete

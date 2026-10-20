@@ -446,3 +446,74 @@ test("listAccounts is workspace-scoped", async () => {
     read: async (w) => (await listAccounts(db.prisma, w, {}, o)).accounts,
   });
 });
+
+describe("review fixes", () => {
+  test("bulk set_daily_limit reports clamp warnings per account", async () => {
+    const a = await mk({}, "OUTLOOK_COM");
+    const [r] = await bulkApply(
+      db.prisma,
+      ws,
+      { ids: [a.id], action: "set_daily_limit", value: 999 },
+      o,
+    );
+    expect(r).toEqual({
+      id: a.id,
+      ok: true,
+      warnings: [{ field: "dailyLimit", clampedTo: 125, reason: "provider_cap" }],
+    });
+  });
+
+  const failing = (err: Error) => ({
+    providerFor: () =>
+      ({
+        diagnostics: async () => {
+          throw err;
+        },
+      }) as unknown as MailProvider,
+  });
+  test("a transient diagnostics failure records lastError but keeps status", async () => {
+    const a = await mk();
+    await runDiagnostics(db.prisma, ws, a.id, {
+      ...o,
+      ...failing(new TransientBeforeSendError("x")),
+    });
+    const row = (await db.prisma.emailAccount.findUnique({ where: { id: a.id } }))!;
+    expect(row.status).toBe("CONNECTED");
+    expect(row.lifecycle).toBe("ACTIVE");
+    expect(row.lastError).toMatchObject({ kind: "CONNECTION" });
+    await runDiagnostics(db.prisma, ws, a.id, { ...o, ...failing(new RateLimitedError(5)) });
+    expect((await db.prisma.emailAccount.findUnique({ where: { id: a.id } }))!.status).toBe(
+      "CONNECTED",
+    );
+  });
+
+  test("an auth failure marks ERROR and needs attention, but a user pause wins; audited", async () => {
+    const authBad = {
+      providerFor: () =>
+        ({
+          diagnostics: async () => ({
+            ok: false,
+            checks: [{ name: "token", ok: false, code: "invalid_grant" }],
+          }),
+        }) as unknown as MailProvider,
+    };
+    const active = await mk();
+    await runDiagnostics(db.prisma, ws, active.id, { ...o, ...authBad });
+    expect(await db.prisma.emailAccount.findUnique({ where: { id: active.id } })).toMatchObject({
+      status: "ERROR",
+      lifecycle: "NEEDS_ATTENTION",
+    });
+    const paused = await mk({ lifecycle: "PAUSED" });
+    await runDiagnostics(db.prisma, ws, paused.id, { ...o, ...authBad });
+    expect(await db.prisma.emailAccount.findUnique({ where: { id: paused.id } })).toMatchObject({
+      status: "ERROR",
+      lifecycle: "PAUSED",
+      lastError: { code: "invalid_grant" },
+    });
+    expect(
+      await db.prisma.auditLog.count({
+        where: { target: paused.id, action: "account.diagnostics" },
+      }),
+    ).toBe(1);
+  });
+});

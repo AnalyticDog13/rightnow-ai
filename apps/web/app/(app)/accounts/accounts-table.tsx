@@ -112,6 +112,7 @@ export function AccountsTable({
       {canEdit && selected.size > 0 && (
         <BulkBar
           ids={[...selected]}
+          names={Object.fromEntries(accounts.map((a) => [a.id, a.email]))}
           isAdmin={isAdmin}
           onDone={(text) => {
             setMsg(text);

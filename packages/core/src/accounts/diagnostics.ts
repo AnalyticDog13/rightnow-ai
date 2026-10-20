@@ -1,5 +1,6 @@
 import { Prisma, type PrismaClient } from "@rightnow/db/client";
 import type { Diagnostics } from "@rightnow/providers";
+import { audit } from "../audit";
 import { systemClock } from "../clock";
 import { AccountError, live, mutate, providerOf, type Opts } from "./service";
 
@@ -21,7 +22,7 @@ const clip = (d: Diagnostics): Diagnostics => ({
   checks: d.checks.map((c) => (c.response ? { ...c, response: c.response.slice(0, 200) } : c)),
 });
 
-/** Runs the provider's checks; a failure is stored as `lastError` (PS-ACC-15) and flips the account to ERROR. */
+/** Runs the provider's checks; a failure is stored as `lastError` (PS-ACC-15); only a failing connection check flips the account to ERROR. */
 export async function runDiagnostics(
   prisma: PrismaClient,
   ws: string,
@@ -44,21 +45,36 @@ export async function runDiagnostics(
   const bad = d.checks.find((c) => !c.ok);
   if (bad) {
     const code = bad.code ?? bad.name;
-    await prisma.emailAccount.updateMany({
-      where: { id, workspaceId: ws, deletedAt: null },
-      data: {
-        status: "ERROR",
-        ...(bad.name === "token" &&
-          AUTH_CODES.has(code) && { lifecycle: "NEEDS_ATTENTION" as const }),
-        lastError: {
-          kind: "CONNECTION",
-          code,
-          command: bad.command,
-          response: bad.response,
-          message: bad.message,
-        } as Prisma.InputJsonObject,
-        lastErrorAt: (o.clock ?? systemClock).now(),
-      },
+    // Only a failing connection check marks the account ERROR; anything else (scopes, api, a thrown
+    // transient error) is recorded in lastError and leaves status alone.
+    const connection = CONNECTION_CHECKS.has(bad.name);
+    const auth = bad.name === "token" && AUTH_CODES.has(code);
+    await prisma.$transaction(async (tx) => {
+      const r = await tx.emailAccount.updateMany({
+        where: { id, workspaceId: ws, deletedAt: null },
+        data: {
+          ...(connection && { status: "ERROR" as const }),
+          lastError: {
+            kind: "CONNECTION",
+            code,
+            command: bad.command,
+            response: bad.response,
+            message: bad.message,
+          } as Prisma.InputJsonObject,
+          lastErrorAt: (o.clock ?? systemClock).now(),
+        },
+      });
+      if (!r.count) return;
+      // User pause wins: an auth failure never replaces PAUSED (the error still shows via lastError).
+      if (auth)
+        await tx.emailAccount.updateMany({
+          where: { id, workspaceId: ws, lifecycle: { not: "PAUSED" } },
+          data: { lifecycle: "NEEDS_ATTENTION" },
+        });
+      await audit(tx, { workspaceId: ws, actorId: o.actorId }, "account.diagnostics", id, {
+        code,
+        check: bad.name,
+      });
     });
   }
   return { ...d, dns: null };

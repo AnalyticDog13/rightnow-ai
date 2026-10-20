@@ -104,3 +104,20 @@ describe("accountsAutofix", () => {
     for (const x of [auth, attention]) expect((await get(x.id)).autofixState).toBe("NONE");
   });
 });
+
+test("a disconnect during autofix stays disconnected", async () => {
+  const a = await mk({ status: "ERROR", lastError: { kind: "CONNECTION", code: "network" } });
+  const providerFor = () =>
+    ({
+      diagnostics: async () => {
+        // the user disconnects while the check runs
+        await db.prisma.emailAccount.update({
+          where: { id: a.id },
+          data: { status: "DISCONNECTED", credentialsEnc: null, credentialGen: { increment: 1 } },
+        });
+        return { ok: true, checks: [{ name: "token", ok: true }] };
+      },
+    }) as unknown as MailProvider;
+  await accountsAutofix(db.prisma, fixedClock(new Date("2026-11-01T00:00:00Z")), providerFor);
+  expect(await get(a.id)).toMatchObject({ status: "DISCONNECTED", credentialsEnc: null });
+});

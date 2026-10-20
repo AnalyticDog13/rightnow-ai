@@ -44,16 +44,18 @@ export async function revokeApiKey(
   return r.count === 1;
 }
 
+const WRITE_VERBS = ["create", "update", "delete"];
+
 /** `leads:read` is allowed by itself, `leads:all` or `all:all`. */
 export function scopeAllows(scopes: string[], scope: string) {
   const [resource, action] = scope.split(":");
-  // `<resource>:write` covers create, update and delete, not read.
+  // `<resource>:write` covers exactly create, update and delete; any other verb needs its own scope.
   return scopes.some(
     (s) =>
       s === scope ||
       s === `${resource}:all` ||
       s === "all:all" ||
-      (s === `${resource}:write` && action !== "read"),
+      (s === `${resource}:write` && WRITE_VERBS.includes(action!)),
   );
 }
 

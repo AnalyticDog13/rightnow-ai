@@ -10,7 +10,7 @@ import { z } from "zod";
 import { audit } from "../audit";
 import { type Clock, systemClock } from "../clock";
 import { getEnv } from "../env";
-import { applyLimits } from "./caps";
+import { applyLimits, type LimitWarning } from "./caps";
 import { setCredentials } from "./credentials";
 import { dayKey } from "./daykey";
 import { createProvider } from "./factory";
@@ -307,14 +307,17 @@ export async function bulkApply(prisma: Db, ws: string, input: unknown, o: Opts 
         : action === "pause"
           ? z.coerce.date().optional().parse(value)
           : undefined;
-  const out: { id: string; ok: boolean; error?: string }[] = [];
+  const out: { id: string; ok: boolean; error?: string; warnings?: LimitWarning[] }[] = [];
   for (const id of ids) {
+    let warnings: LimitWarning[] = [];
     try {
       if (action === "pause") await pauseAccount(prisma, ws, id, v as Date | undefined, o);
       else if (action === "resume") await resumeAccount(prisma, ws, id, o);
       else if (action === "delete") await softDeleteAccount(prisma, ws, id, o);
       else if (action in field)
-        await updateAccount(prisma, ws, id, { [field[action as keyof typeof field]]: v }, o);
+        warnings = (
+          await updateAccount(prisma, ws, id, { [field[action as keyof typeof field]]: v }, o)
+        ).warnings;
       else {
         const have = new Set((await live(prisma, ws, id)).tags);
         const change = v as string[];
@@ -324,7 +327,7 @@ export async function bulkApply(prisma: Db, ws: string, input: unknown, o: Opts 
             : [...have].filter((t) => !change.includes(t));
         await updateAccount(prisma, ws, id, { tags }, o);
       }
-      out.push({ id, ok: true });
+      out.push({ id, ok: true, ...(warnings.length && { warnings }) });
     } catch (e) {
       const error =
         e instanceof AccountError

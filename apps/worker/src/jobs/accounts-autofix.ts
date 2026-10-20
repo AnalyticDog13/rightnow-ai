@@ -39,7 +39,15 @@ export async function accountsAutofix(
       // stays failed
     }
     await prisma.emailAccount.updateMany({
-      where: { id: a.id },
+      // Only if nothing changed since the claim: a disconnect or delete during diagnostics must win.
+      where: {
+        id: a.id,
+        status: "ERROR",
+        deletedAt: null,
+        credentialsEnc: { not: null },
+        credentialGen: a.credentialGen,
+        autofixState: "IN_PROGRESS",
+      },
       data: ok
         ? {
             status: "CONNECTED",
