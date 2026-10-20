@@ -1,8 +1,7 @@
 # Back up first (scripts\backup.ps1).
-$ErrorActionPreference = "Stop"
 . "$PSScriptRoot\_mode.ps1"
-git pull --ff-only
-docker compose @P pull --ignore-buildable
-docker compose @P build
-docker compose @P run --rm migrate
-docker compose @P up -d
+X git pull --ff-only
+X docker compose @P pull --ignore-buildable
+X docker compose @P build
+X docker compose @P run --rm migrate
+X docker compose @P up -d

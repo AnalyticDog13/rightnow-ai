@@ -2,8 +2,10 @@
 FROM node:24-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+RUN mkdir /app && chown node:node /app
+USER node
 WORKDIR /app
-COPY . .
+COPY --chown=node:node . .
 # postinstall runs `prisma generate` (needs no database)
 RUN npm ci
 # Placeholders so env parsing at import succeeds during `next build`; the real values come from compose at runtime.
@@ -14,6 +16,5 @@ RUN DATABASE_URL=postgresql://build:build@localhost:5432/build \
     APP_URL=http://localhost:3000 \
     npm run build -w @rightnow/web
 ENV NODE_ENV=production
-RUN chmod +x docker/entrypoint.sh
 ENTRYPOINT ["/app/docker/entrypoint.sh"]
 CMD ["web"]

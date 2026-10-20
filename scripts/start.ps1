@@ -1,2 +1,2 @@
 . "$PSScriptRoot\_mode.ps1"
-docker compose @P up -d --build
+X docker compose @P up -d --build

@@ -44,15 +44,29 @@ jobs:
           docker compose up -d --build
           for i in $(seq 60); do curl -fsS http://localhost:3000/api/healthz && exit 0; sleep 2; done
           exit 1
+      - name: Bad dump is rejected and changes nothing
+        run: |
+          echo junk > backups/bad.dump
+          if sh scripts/restore.sh backups/bad.dump; then echo "bad dump accepted"; exit 1; fi
+          docker compose exec -T postgres psql -U rightnow -d rightnow -tAc "select count(*) from _prisma_migrations" | grep -qx 3
+          curl -fsS http://localhost:3000/api/healthz
       - name: Restore
         run: |
-          ! docker compose exec -T postgres psql -U rightnow -d rightnow -tAc "select v from ci_marker"
-          sh scripts/restore.sh backups/*.dump
+          if docker compose exec -T postgres psql -U rightnow -d rightnow -tAc "select v from ci_marker"; then echo "marker present before restore"; exit 1; fi
+          sh scripts/restore.sh backups/rightnow-*.dump
+          ls -l backups
+          test "$(stat -c %a backups)" = 700
+          test "$(stat -c %a backups/rightnow-*.dump)" = 600
+          ls backups/pre-restore-*.dump
       - name: Healthy after restore, data back
         run: |
-          for i in $(seq 60); do curl -fsS http://localhost:3000/api/healthz && break; sleep 2; done
+          ok=
+          for i in $(seq 60); do curl -fsS http://localhost:3000/api/healthz && ok=1 && break; sleep 2; done
+          test -n "$ok"
           docker compose exec -T postgres psql -U rightnow -d rightnow -tAc "select v from ci_marker" | grep -qx 42
-          docker compose ps
+          test "$(docker compose ps --format '{{.Health}}' web)" = healthy
+          test "$(docker compose ps --format '{{.Health}}' worker)" = healthy
+          docker compose exec -T web id -u | grep -vqx 0
       - name: Diagnostics
         if: failure()
         run: |
