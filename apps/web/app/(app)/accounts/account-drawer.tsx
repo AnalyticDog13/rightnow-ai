@@ -7,6 +7,7 @@ import { Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
 import { call, errorText } from "./api-client";
 import { ConnectMenu } from "./connect-menu";
+import { isNumeric } from "./numeric";
 
 type Kind = "text" | "number" | "minutes" | "nullable";
 // Gaps are stored in seconds and shown in minutes (PS-ACC-13).
@@ -83,10 +84,7 @@ export function AccountDrawer({
     for (const f of FIELDS) {
       const v = form[f.k as keyof Form] as string;
       if (v === init[f.k as keyof Form]) continue;
-      if (
-        (f.kind === "number" || f.kind === "minutes") &&
-        !(v.trim() !== "" && Number.isFinite(Number(v)))
-      )
+      if ((f.kind === "number" || f.kind === "minutes") && !isNumeric(v))
         return setError(`${f.label}: enter a number.`);
       patch[f.k] =
         f.kind === "nullable"

@@ -94,6 +94,7 @@ describe("accountsAutofix", () => {
   test("not retried within 15 minutes; auth errors never autofixed", async () => {
     const a = await broken("network");
     const auth = await broken("invalid_grant");
+    const scope = await broken("scope_missing");
     const attention = await broken("network", { lifecycle: "NEEDS_ATTENTION" });
     await accountsAutofix(db.prisma, fixedClock(min(100)), providerFor(false));
     expect((await get(a.id)).autofixState).toBe("FAILED");
@@ -101,7 +102,7 @@ describe("accountsAutofix", () => {
     expect((await get(a.id)).autofixState).toBe("FAILED");
     await accountsAutofix(db.prisma, fixedClock(min(116)), providerFor(true));
     expect((await get(a.id)).autofixState).toBe("SUCCEEDED");
-    for (const x of [auth, attention]) expect((await get(x.id)).autofixState).toBe("NONE");
+    for (const x of [auth, scope, attention]) expect((await get(x.id)).autofixState).toBe("NONE");
   });
 });
 

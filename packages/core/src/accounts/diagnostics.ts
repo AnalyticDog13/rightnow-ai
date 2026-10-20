@@ -10,6 +10,7 @@ export const AUTH_CODES = new Set([
   "unauthorized",
   "scope_revoked",
   "bad_credentials",
+  "scope_missing", // only a reconnect can grant the scopes again
 ]);
 /** Checks that prove the account can work (login and scopes); mark-as-fixed requires them to pass. */
 const CONNECTION_CHECKS = new Set(["token", "scopes", "imap_login", "smtp_auth"]);
@@ -59,7 +60,7 @@ export async function runDiagnostics(
     // Only a failing connection check marks the account ERROR; anything else (scopes, api, a thrown
     // transient error) is recorded in lastError and leaves status alone.
     const connection = CONNECTION_CHECKS.has(bad.name);
-    const auth = bad.name === "token" && AUTH_CODES.has(code);
+    const auth = connection && AUTH_CODES.has(code);
     await prisma.$transaction(async (tx) => {
       const r = await tx.emailAccount.updateMany({
         where: { id, workspaceId: ws, deletedAt: null },

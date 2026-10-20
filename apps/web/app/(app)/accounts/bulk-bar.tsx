@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { call, errorText } from "./api-client";
+import { isNumeric } from "./numeric";
 
 // value kinds: "number" (minutes for gaps), "text", "tags" (comma separated)
 const SETTINGS = {
@@ -63,10 +64,7 @@ export function BulkBar({
 
   function apply() {
     const kind = SETTINGS[setting].kind;
-    if (
-      (kind === "number" || kind === "minutes") &&
-      !(value.trim() !== "" && Number.isFinite(Number(value)))
-    ) {
+    if ((kind === "number" || kind === "minutes") && !isNumeric(value)) {
       setProblem("Enter a number first.");
       return;
     }

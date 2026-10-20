@@ -562,3 +562,52 @@ describe("diagnostics severity", () => {
     });
   });
 });
+
+describe("diagnostics edge cases", () => {
+  const throwing = (err: Error) => ({
+    providerFor: () =>
+      ({
+        diagnostics: async () => {
+          throw err;
+        },
+      }) as unknown as MailProvider,
+  });
+  const row = (id: string) => db.prisma.emailAccount.findUnique({ where: { id } });
+
+  test("a thrown non-auth error keeps status and records lastError", async () => {
+    const a = await mk();
+    await runDiagnostics(db.prisma, ws, a.id, { ...o, ...throwing(new Error("boom")) });
+    expect(await row(a.id)).toMatchObject({
+      status: "CONNECTED",
+      lifecycle: "ACTIVE",
+      lastError: { kind: "CONNECTION" },
+    });
+  });
+
+  test("a thrown AuthError on a user-paused account stays PAUSED", async () => {
+    const a = await mk({ lifecycle: "PAUSED" });
+    await runDiagnostics(db.prisma, ws, a.id, {
+      ...o,
+      ...throwing(new AuthError("invalid_grant")),
+    });
+    expect(await row(a.id)).toMatchObject({ status: "ERROR", lifecycle: "PAUSED" });
+  });
+
+  test("scope_missing needs attention (unless paused)", async () => {
+    const bad = {
+      providerFor: () =>
+        ({
+          diagnostics: async () => ({
+            ok: false,
+            checks: [{ name: "scopes", ok: false, code: "scope_missing" }],
+          }),
+        }) as unknown as MailProvider,
+    };
+    const a = await mk();
+    await runDiagnostics(db.prisma, ws, a.id, { ...o, ...bad });
+    expect(await row(a.id)).toMatchObject({ status: "ERROR", lifecycle: "NEEDS_ATTENTION" });
+    const p = await mk({ lifecycle: "PAUSED" });
+    await runDiagnostics(db.prisma, ws, p.id, { ...o, ...bad });
+    expect((await row(p.id))!.lifecycle).toBe("PAUSED");
+  });
+});
