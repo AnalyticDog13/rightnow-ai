@@ -357,6 +357,9 @@ describe("reconnect", () => {
     const p1 = await prep({ lifecycle: "PAUSED", status: "CONNECTED" });
     await connect(p1.c, "re@corp.example", { reconnectAccountId: p1.id });
     expect((await account(p1.id)).lifecycle).toBe("PAUSED");
+    const p3 = await prep({ lifecycle: "PAUSED" }); // paused, then an AuthError left status ERROR
+    await connect(p3.c, "re@corp.example", { reconnectAccountId: p3.id });
+    expect(await account(p3.id)).toMatchObject({ lifecycle: "PAUSED", status: "CONNECTED" });
     const p2 = await prep({ lifecycle: "PAUSED", status: "DISCONNECTED", credentialsEnc: null });
     await connect(p2.c, "re@corp.example", { reconnectAccountId: p2.id });
     expect((await account(p2.id)).lifecycle).toBe("ACTIVE");

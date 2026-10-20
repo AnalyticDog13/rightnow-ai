@@ -17,11 +17,15 @@ export async function recordProviderError(
       where: live,
       data: {
         status: "ERROR",
-        lifecycle: "NEEDS_ATTENTION",
         lastError: { kind: "CONNECTION", code: err.reason, message: err.message },
         lastErrorAt: now,
         errorCount24h: count,
       },
+    });
+    // User pause wins (as in diagnostics): a paused account stays paused, and so does a reconnect of it.
+    await prisma.emailAccount.updateMany({
+      where: { ...live, lifecycle: { not: "PAUSED" } },
+      data: { lifecycle: "NEEDS_ATTENTION" },
     });
   } else if (err instanceof PermanentSendError) {
     await prisma.emailAccount.updateMany({

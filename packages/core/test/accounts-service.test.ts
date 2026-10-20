@@ -216,6 +216,18 @@ describe("recordProviderError", () => {
   });
 });
 
+describe("recordProviderError on a paused account", () => {
+  test("AuthError records the error but keeps the user pause", async () => {
+    const a = await mk({ lifecycle: "PAUSED" });
+    await recordProviderError(db.prisma, clock, a.id, new AuthError("invalid_grant"));
+    expect(await db.prisma.emailAccount.findUnique({ where: { id: a.id } })).toMatchObject({
+      status: "ERROR",
+      lifecycle: "PAUSED",
+      lastError: { kind: "CONNECTION", code: "invalid_grant" },
+    });
+  });
+});
+
 describe("pause / resume", () => {
   test("pause is immediate; until sets pausedUntil; resume clears it; audited with the actor", async () => {
     const a = await mk();
