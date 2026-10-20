@@ -66,6 +66,16 @@ describe("organization endpoints are locked down", () => {
     expect(await db.prisma.workspace.count()).toBe(1);
   });
 
+  it("the OWNER cannot delete the workspace", async () => {
+    await expect(
+      auth.api.deleteOrganization({
+        headers: await login("owner@x.io"),
+        body: { organizationId: workspaceId },
+      }),
+    ).rejects.toThrow();
+    expect(await db.prisma.workspace.count()).toBe(1);
+  });
+
   it("a VIEWER cannot invite; the OWNER can", async () => {
     const body = { email: "new@x.io", role: "member" as const, organizationId: workspaceId };
     await expect(

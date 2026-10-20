@@ -47,6 +47,7 @@ export const auth = betterAuth({
   plugins: [
     organization({
       allowUserToCreateOrganization: false, // workspaces are created only by /api/setup
+      disableOrganizationDeletion: true, // deleting the only workspace cascades everything and locks the owner out
       // Workspace = better-auth organization.
       schema: {
         organization: { modelName: "workspace" },
