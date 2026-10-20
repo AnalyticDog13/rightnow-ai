@@ -14,3 +14,4 @@ backups/
 packages/db/src/generated/
 *.tsbuildinfo
 next-env.d.ts
+apps/web/AGENTS.md
