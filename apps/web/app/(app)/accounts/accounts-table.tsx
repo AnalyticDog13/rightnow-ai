@@ -9,6 +9,7 @@ import { Input } from "../../../components/ui/input";
 import { AccountDrawer } from "./account-drawer";
 import { call, errorText } from "./api-client";
 import { BulkBar } from "./bulk-bar";
+import type { Provider } from "./connect-menu";
 
 const PROVIDER = { GMAIL: "Google", MICROSOFT: "Microsoft", SMTP: "SMTP" } as const;
 export const STATUS_LABEL: Record<DisplayStatus, string> = {
@@ -30,12 +31,12 @@ export function AccountsTable({
   accounts,
   canEdit,
   isAdmin,
-  googleConfigured,
+  configured,
 }: {
   accounts: ApiAccount[];
   canEdit: boolean;
   isAdmin: boolean;
-  googleConfigured: boolean;
+  configured: Record<Provider, boolean>;
 }) {
   const router = useRouter();
   const [q, setQ] = useState("");
@@ -198,7 +199,7 @@ export function AccountsTable({
                       >
                         Limits
                       </Button>
-                      {isAdmin && a.provider === "GMAIL" && (
+                      {isAdmin && a.provider !== "SMTP" && (
                         <Button
                           variant="outline"
                           className={small}
@@ -249,7 +250,7 @@ export function AccountsTable({
           account={open}
           canEdit={canEdit}
           isAdmin={isAdmin}
-          googleConfigured={googleConfigured}
+          configured={configured}
           onClose={() => setOpenId(null)}
           onChanged={() => router.refresh()}
         />

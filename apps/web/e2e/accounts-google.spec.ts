@@ -1,12 +1,26 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 
 // Runs after auth.spec (project dependency), which created the owner. MAIL_PROVIDER_FAKE=1, see global-setup.
-test.beforeEach(async ({ page }) => {
+// Sign in once: the sign-in endpoint allows 5 attempts a minute, fewer than this file has tests.
+const STATE = join(tmpdir(), "rightnow-e2e-ada.json");
+test.use({ storageState: STATE });
+test.beforeAll(async ({ browser }, info) => {
+  const ctx = await browser.newContext({
+    baseURL: info.project.use.baseURL,
+    storageState: undefined,
+  });
+  const page = await ctx.newPage();
   await page.goto("/sign-in");
   await page.getByLabel("Email").fill("ada@example.com");
   await page.getByLabel("Password").fill("correct horse battery");
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).toHaveURL(/\/dashboard/);
+  await ctx.storageState({ path: STATE });
+  await ctx.close();
+});
+test.beforeEach(async ({ page }) => {
   await page.goto("/accounts");
 });
 
@@ -74,4 +88,20 @@ test("Cancel stops waiting and invalidates the server session; a closed popup al
   await page.getByRole("button", { name: "Connect Google" }).click();
   await expect.poll(() => polls.s2).toBeGreaterThan(1);
   expect(polls.s1).toBe(settled);
+});
+
+test("Connect Microsoft lists a Microsoft account and Reconnect appears in its drawer", async ({
+  page,
+}) => {
+  // The UI has no email field; steer the fake provider to its own mailbox through the start body.
+  await page.route("**/api/v1/oauth/microsoft/start", (r) =>
+    r.continue({ postData: JSON.stringify({ loginHint: "ms@example.test" }) }),
+  );
+  await page.getByRole("button", { name: "Connect Microsoft" }).click();
+  await expect(row(page, "ms@example.test")).toContainText("Microsoft");
+
+  await page.getByRole("button", { name: "Reconnect ms@example.test" }).click();
+  const drawer = page.getByRole("dialog");
+  await expect(drawer.getByRole("button", { name: "Reconnect Microsoft" })).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "Reconnect Google" })).toHaveCount(0);
 });

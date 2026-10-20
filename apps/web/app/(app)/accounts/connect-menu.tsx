@@ -4,17 +4,22 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "../../../components/ui/button";
 
+export type Provider = "google" | "microsoft";
+const NAME: Record<Provider, string> = { google: "Google", microsoft: "Microsoft" };
+
 const MESSAGES: Record<string, string> = {
   account_exists: "That mailbox is already connected.",
-  email_mismatch: "You signed in with a different Google account than the one being reconnected.",
+  email_mismatch: "You signed in with a different account than the one being reconnected.",
   state_invalid: "That connection attempt is no longer valid. Please try again.",
   expired: "The connection attempt expired. Please try again.",
-  access_denied: "Google access was not granted.",
-  scope_missing: "Both Gmail permissions are required. Please try again and tick every box.",
+  access_denied: "Access was not granted.",
+  scope_missing: "Every requested permission is required. Please try again and tick every box.",
   no_refresh_token:
-    "Google did not return a refresh token. Remove the app at myaccount.google.com/permissions, then try again.",
-  provider_unavailable: "Google is unavailable right now. Please try again in a few minutes.",
-  exchange_failed: "Google rejected the sign-in. Please try again.",
+    "No refresh token was returned. Remove the app at myaccount.google.com/permissions (Google) or myapps.microsoft.com (Microsoft), then try again.",
+  admin_consent_required:
+    "Your organization requires an administrator to approve this app before mailboxes can connect.",
+  provider_unavailable: "The provider is unavailable right now. Please try again in a few minutes.",
+  exchange_failed: "The provider rejected the sign-in. Please try again.",
   server_error:
     "Something went wrong connecting the account. If you were reconnecting, it may have been deleted.",
 };
@@ -23,16 +28,17 @@ const KEY = "oauth-session";
 type Poll = { status: "pending" | "success" | "error" | "expired"; errorCode?: string };
 
 export function ConnectMenu({
-  googleConfigured,
-  reconnectAccountId,
+  configured,
+  reconnect,
 }: {
-  googleConfigured: boolean;
-  /** Reconnect this account instead of connecting a new one. */
-  reconnectAccountId?: string;
+  configured: Record<Provider, boolean>;
+  /** Reconnect this account (with its own provider) instead of connecting a new one. */
+  reconnect?: { id: string; provider: Provider };
 }) {
   const router = useRouter();
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
+  const [active, setActive] = useState<Provider>("google");
 
   // Every attempt gets a number; a loop whose number is no longer current exits without touching state.
   const attempt = useRef(0);
@@ -92,15 +98,16 @@ export function ConnectMenu({
     }
   }, [poll]);
 
-  async function connect() {
+  async function connect(provider: Provider) {
     setMsg("");
+    setActive(provider);
     const mine = ++attempt.current;
     setBusy(true);
     const w = window.open("", "oauth", "popup,width=520,height=680"); // must open inside the click
-    const res = await fetch("/api/v1/oauth/google/start", {
+    const res = await fetch(`/api/v1/oauth/${provider}/start`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(reconnectAccountId ? { reconnectAccountId } : {}),
+      body: JSON.stringify(reconnect ? { reconnectAccountId: reconnect.id } : {}),
     }).catch(() => null);
     const j = (await res?.json().catch(() => ({}))) as {
       sessionId?: string;
@@ -113,7 +120,7 @@ export function ConnectMenu({
         setBusy(false);
         setMsg(
           j.error === "not_configured"
-            ? "Google is not configured on this server."
+            ? `${NAME[provider]} is not configured on this server.`
             : "Could not start the connection.",
         );
       }
@@ -136,23 +143,33 @@ export function ConnectMenu({
     }
   }
 
-  const verb = reconnectAccountId ? "Reconnect" : "Connect";
+  const verb = reconnect ? "Reconnect" : "Connect";
+  const providers = reconnect ? [reconnect.provider] : (["google", "microsoft"] as const);
+  const missing = providers.filter((p) => !configured[p]);
   return (
     <div className="flex flex-col gap-2">
       <div className="flex gap-2">
-        <Button onClick={connect} disabled={busy || !googleConfigured}>
-          {busy ? "Waiting for Google..." : `${verb} Google`}
-        </Button>
+        {providers.map((p) => (
+          <Button key={p} onClick={() => connect(p)} disabled={busy || !configured[p]}>
+            {busy && active === p ? `Waiting for ${NAME[p]}...` : `${verb} ${NAME[p]}`}
+          </Button>
+        ))}
         {busy && (
           <Button variant="outline" onClick={cancel}>
             Cancel
           </Button>
         )}
       </div>
-      {!googleConfigured && (
+      {missing.includes("google") && (
         <p className="text-sm text-muted-foreground">
           Google is not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET (see
           docs/ops/GOOGLE_SETUP.md).
+        </p>
+      )}
+      {missing.includes("microsoft") && (
+        <p className="text-sm text-muted-foreground">
+          Microsoft is not configured. Set MS_CLIENT_ID and MS_CLIENT_SECRET (see
+          docs/ops/MICROSOFT_SETUP.md).
         </p>
       )}
       <p role="alert" className="min-h-5 text-sm text-destructive">

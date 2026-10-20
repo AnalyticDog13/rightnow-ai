@@ -16,20 +16,20 @@ export default async function Page() {
   // shortcut: first 500 accounts, filtered in the browser; add server paging past that (API takes `cursor`).
   const { accounts } = await listAccounts(prisma, info.workspaceId, { take: 500 });
   const env = getEnv();
-  const googleConfigured = !!(
-    env.MAIL_PROVIDER_FAKE ||
-    (env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET)
-  );
+  const configured = {
+    google: !!(env.MAIL_PROVIDER_FAKE || (env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET)),
+    microsoft: !!(env.MAIL_PROVIDER_FAKE || (env.MS_CLIENT_ID && env.MS_CLIENT_SECRET)),
+  };
   const isAdmin = info.role === "OWNER" || info.role === "ADMIN";
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-2xl font-semibold tracking-tight">Email Accounts</h1>
-      {isAdmin && <ConnectMenu googleConfigured={googleConfigured} />}
+      {isAdmin && <ConnectMenu configured={configured} />}
       <AccountsTable
         accounts={accounts}
         canEdit={info.role !== "VIEWER"}
         isAdmin={isAdmin}
-        googleConfigured={googleConfigured}
+        configured={configured}
       />
     </div>
   );

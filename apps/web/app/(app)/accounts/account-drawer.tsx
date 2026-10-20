@@ -6,7 +6,7 @@ import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
 import { call, errorText } from "./api-client";
-import { ConnectMenu } from "./connect-menu";
+import { ConnectMenu, type Provider } from "./connect-menu";
 import { isNumeric } from "./numeric";
 
 type Kind = "text" | "number" | "minutes" | "nullable";
@@ -54,14 +54,14 @@ export function AccountDrawer({
   account,
   canEdit,
   isAdmin,
-  googleConfigured,
+  configured,
   onClose,
   onChanged,
 }: {
   account: ApiAccount;
   canEdit: boolean;
   isAdmin: boolean;
-  googleConfigured: boolean;
+  configured: Record<Provider, boolean>;
   onClose: () => void;
   onChanged: () => void;
 }) {
@@ -240,8 +240,14 @@ export function AccountDrawer({
               ))}
             </ul>
           )}
-          {isAdmin && account.provider === "GMAIL" && (
-            <ConnectMenu googleConfigured={googleConfigured} reconnectAccountId={account.id} />
+          {isAdmin && account.provider !== "SMTP" && (
+            <ConnectMenu
+              configured={configured}
+              reconnect={{
+                id: account.id,
+                provider: account.provider === "GMAIL" ? "google" : "microsoft",
+              }}
+            />
           )}
         </section>
       )}
