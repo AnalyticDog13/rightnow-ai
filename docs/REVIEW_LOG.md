@@ -88,3 +88,6 @@ I1 dev script, I2 org deletion disabled, I3 tx-client audit/apikeys atomic, I4 r
 
 ## 2026-10-19 · Phase 2 step plan review round 2 · same independent agent (opus) · **APPROVED**
 C1 + 12 Important resolved. 3 new Important (lease cleared on disconnect/reconnect, Graph deleteDraft only isDraft, GreenMail CI TLS/folders) appended to plan as Revision 3.
+
+## 2026-10-20 · P2-T01 provider interface/MIME/Fake/contract · task reviewer (sonnet) · fixes → **Approved**
+Pre-review interface fixes (receiver ids, reopen, IPv6 byte parsing); round 1: ::1 loopback, MIME CRLF + reserved headers + Bcc-leak check, zero-assertion guard, SSRF ranges, Fake clearFailures, env empty flags, Retry-After decimals.

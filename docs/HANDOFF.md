@@ -1,7 +1,7 @@
 # Handoff
 
 **Phase:** 2 — Email provider connections (branch `phase-2-providers`, created from `main` after the Phase 1 merge)
-**Current task:** P2-T01 implemented (64d94ee..c83a824, CI green) — independent task REVIEW NOT YET RUN. Next: review diff d9a2108..c83a824 against docs/plans/phase-2.md P2-T01, fix findings, then P2-T02a (opus).
+**Current task:** P2-T02a credential store + refresh lease + key rotation (opus). P2-T01 done 0016267.
 **Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 (approved). Phase 1 step plan: `docs/plans/phase-1.md` (complete).
 **Tests:** 54 vitest + 3 Playwright green; CI `check` + `compose-smoke` green on main.
 

@@ -138,20 +138,20 @@
    "id": "P2-T01",
    "phase": 2,
    "title": "Provider interface, MIME build/parse, Fake provider, contract test suite (incl. \"Message-ID preserved and findable in Sent\", threading headers, List-Unsubscribe headers, UTF-8). `send()` returns `{ rfcMessageId, providerMessageId?, providerThreadId? }`; errors `RateLimitedError`, `AuthError`, `Perma",
-   "status": "in_progress",
+   "status": "done",
    "deps": [
     "P1-T07"
    ],
    "model": "sonnet",
-   "commit": "64d94ee..c83a824",
+   "commit": "64d94ee..0016267",
    "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-2.md; tests listed there pass; preliminary cleanup from phase-1 gate: M1 CSRF APP_URL via getWebEnv, M2 minPasswordLength 12, M3 drop requireWorkspace kind param, M4 remove unused web devDeps embedded-postgres/pg",
-   "review": "PENDING: implemented + CI green; independent task review not yet run"
+   "review": "concern fixes + 1 fix round; clean"
   },
   {
    "id": "P2-T02a",
    "phase": 2,
    "title": "Schema + credential store with refresh lease + key rotation (ENCRYPTED_COLUMNS, I7)",
-   "status": "todo",
+   "status": "in_progress",
    "deps": [
     "P2-T01"
    ],
@@ -218,7 +218,7 @@
    ],
    "model": "sonnet",
    "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-2.md; tests listed there pass"
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-2.md; tests listed there pass; SSRF: block IPv4-compatible ::a.b.c.d forms (from P2-T01 re-review)"
   },
   {
    "id": "P2-T07",
