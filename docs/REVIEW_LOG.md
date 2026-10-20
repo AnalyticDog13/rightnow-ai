@@ -42,3 +42,6 @@ Fixed: idempotent teardown, startup partial-failure cleanup, injected clock + he
 
 ## 2026-10-19 · P1-T06 Docker/compose/scripts · task reviewer (sonnet) · Spec ❌ → fixed → **Approved**
 Critical restore.ps1 data-loss path fixed; dump validation + safety backup; 0600 backups; non-root image; explicit migrate; CI asserts can fail. .ps1 scripts syntax-checked only (never executed: no Docker on Windows).
+
+## 2026-10-19 · P1-T07 API keys/audit/readyz · task reviewer (sonnet) · **Approved**
+Security checks passed (CSPRNG tokens, hash lookup, workspace-scoped revoke/list, fail-closed CSRF). Minors deferred to phase-gate triage.

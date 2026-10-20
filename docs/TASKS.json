@@ -125,13 +125,14 @@
    "id": "P1-T07",
    "phase": 1,
    "title": "Scoped API keys + audit log + `/api/healthz` + `/api/readyz` (DB ok, worker heartbeat, sync-gate summary); Origin check for state-changing routes (from P1-T04 review)",
-   "status": "in_progress",
+   "status": "done",
    "deps": [
     "P1-T06"
    ],
    "model": "sonnet",
-   "commit": null,
-   "acceptance": "scope enforcement tests."
+   "commit": "2b3e902..78b5dbc",
+   "acceptance": "scope enforcement tests.",
+   "review": "clean; minors deferred"
   },
   {
    "id": "P2-T01",

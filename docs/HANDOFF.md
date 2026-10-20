@@ -1,7 +1,7 @@
 # Handoff
 
 **Phase:** 1 — Foundation (branch `phase-1-foundation`)
-**Current task:** P1-T07 API keys + audit + readyz (P1-T06 done 835b97f). Then Phase 1 gate.
+**Current task:** Phase 1 gate — whole-branch final review (Opus) + ponytail audit, then merge phase-1-foundation → main
 **Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 — APPROVED (REVIEW_LOG round 3). Phase step plan: `docs/plans/phase-1.md`.
 **Tests:** smoke test green; CI green on phase-1-foundation
 
