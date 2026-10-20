@@ -209,6 +209,7 @@ Authed requests: refresh first when `expiresAt < now + 60 s`; a 401 refreshes on
   - refresh: expired access token → token endpoint called once and the store holds the new token; a refresh response without `refresh_token` leaves the stored refresh token unchanged; token endpoint 503 → `TransientBeforeSendError` and the account creds untouched; `invalid_grant` → `AuthError`; two providers sharing one real `accountCredentialStore` sending concurrently call the token endpoint once (Review Focus 1); no thrown error contains token text.
   - Review Focus 5, revoked mid-send: (a) token expired, refresh returns `400 invalid_grant` → `AuthError("invalid_grant")` and the send route was called 0 times; (b) send returns 401, refresh returns `invalid_grant` → `AuthError`, send route called exactly once (never re-posted).
   - `revoke` posts `https://oauth2.googleapis.com/revoke`; a 400 `invalid_token` resolves.
+- [ ] Review rulings: findSent searches all mail incl. trash (review ruling: `rfc822msgid:` with `includeSpamTrash=true`, then SENT label or From match, replacing `in:sent`); `historyTypes` also includes `labelAdded`.
 - [ ] Commit `feat(providers): Gmail provider with contract suite on fixtures`.
 
 ## P2-T04 Account service, API and UI

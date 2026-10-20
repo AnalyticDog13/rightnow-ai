@@ -2,7 +2,6 @@ import {
   AmbiguousSendError,
   AuthError,
   PermanentSendError,
-  ProviderError,
   RateLimitedError,
   TransientBeforeSendError,
 } from "../errors";
@@ -50,6 +49,7 @@ export class GmailHttp {
       const res = await this.once(path, o, creds);
       if (res.status !== 401) return this.handle<T>(res, o);
       // 401 means the request was not processed, so one refresh and one retry is safe even for send
+      void res.body?.cancel().catch(() => {});
       if (retried) throw new AuthError("unauthorized");
       creds = await this.refresh(creds);
     }
@@ -82,7 +82,7 @@ export class GmailHttp {
 
   private async handle<T>(res: Response, o: CallOpts): Promise<T | null> {
     if (res.ok) return (await res.json().catch(() => ({}))) as T;
-    if (res.status === 404 && o.ok404) return null;
+    if (res.status === 404 && o.ok404) return (void res.body?.cancel().catch(() => {}), null);
     const body = (await res.json().catch(() => ({}))) as {
       error?: { errors?: { reason?: string }[]; status?: string };
     };
@@ -102,7 +102,7 @@ export class GmailHttp {
         throw new RateLimitedError(wait());
       throw new TransientBeforeSendError(`gmail ${res.status}`);
     }
-    if (o.send) throw new PermanentSendError(reason ?? `http_${res.status}`, `gmail ${res.status}`);
-    throw new ProviderError(`gmail ${res.status}${reason ? `: ${reason}` : ""}`);
+    if (res.status === 403 && !o.send) throw new AuthError("unauthorized");
+    throw new PermanentSendError(reason ?? `http_${res.status}`, `gmail ${res.status}`);
   }
 }

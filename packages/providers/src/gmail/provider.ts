@@ -19,7 +19,11 @@ import { GOOGLE_SCOPES } from "./oauth";
 
 type GMsg = { id: string; threadId?: string; labelIds?: string[]; raw?: string };
 type GHistory = {
-  history?: { messagesAdded?: { message: GMsg }[]; messagesDeleted?: { message: GMsg }[] }[];
+  history?: {
+    messagesAdded?: { message: GMsg }[];
+    messagesDeleted?: { message: GMsg }[];
+    labelsAdded?: { message: GMsg; labelIds?: string[] }[];
+  }[];
   nextPageToken?: string;
   historyId?: string;
 };
@@ -76,33 +80,52 @@ export class GmailProvider implements MailProvider {
     };
   }
 
-  private async search(rfcMessageId: string, scope: "in:sent" | "in:anywhere") {
+  private async search(rfcMessageId: string) {
     const r = await this.http.call<{ messages?: GMsg[] }>("messages", {
-      query: { q: `rfc822msgid:${rfcMessageId.replace(/^<|>$/g, "")} ${scope}`, maxResults: 1 },
+      query: { q: `rfc822msgid:${rfcMessageId.replace(/^<|>$/g, "")} in:anywhere`, maxResults: 1 },
     });
     return r.messages?.[0]?.id;
   }
 
   private async fetchRaw(id: string, folder?: Folder): Promise<RemoteMessage | null> {
+    return (await this.getRaw(id, folder))?.msg ?? null;
+  }
+
+  private async getRaw(id: string, folder?: Folder) {
     const m = await this.http.call<GMsg>(`messages/${id}`, {
       query: { format: "raw" },
       ok404: true,
     });
     if (!m?.raw) return null; // deleted since it was listed
-    return parseRaw(Buffer.from(m.raw, "base64url"), {
+    const labels = m.labelIds ?? [];
+    const msg = await parseRaw(Buffer.from(m.raw, "base64url"), {
       providerMessageId: m.id,
       ...(m.threadId ? { providerThreadId: m.threadId } : {}),
-      folder: folder ?? (m.labelIds?.includes("SENT") ? "SENT" : "INBOX"),
+      folder: folder ?? (labels.includes("SENT") ? "SENT" : "INBOX"),
     });
+    return { msg, labels };
   }
 
+  /** Searches all mail incl. spam and trash (review ruling): a user who trashed the Sent copy must not cause a resend. */
   async findSent(rfcMessageId: string): Promise<RemoteMessage | null> {
-    const id = await this.search(rfcMessageId, "in:sent");
-    return id ? this.fetchRaw(id, "SENT") : null;
+    const r = await this.http.call<{ messages?: GMsg[] }>("messages", {
+      query: {
+        q: `rfc822msgid:${rfcMessageId.replace(/^<|>$/g, "")}`,
+        includeSpamTrash: "true",
+        maxResults: 10,
+      },
+    });
+    for (const { id } of r.messages ?? []) {
+      const g = await this.getRaw(id, "SENT");
+      // ours = carries SENT, or is From us; a received message reusing the id is not our send
+      if (g && (g.labels.includes("SENT") || g.msg.from.email.toLowerCase() === this.address))
+        return g.msg;
+    }
+    return null;
   }
 
   async locate(rfcMessageId: string): Promise<Location | null> {
-    const id = await this.search(rfcMessageId, "in:anywhere");
+    const id = await this.search(rfcMessageId);
     if (!id) return null;
     const m = await this.http.call<GMsg>(`messages/${id}`, {
       query: { format: "minimal" },
@@ -130,7 +153,7 @@ export class GmailProvider implements MailProvider {
     const h = await this.http.call<GHistory>("history", {
       query: {
         startHistoryId: cursor.historyId,
-        historyTypes: ["messageAdded", "messageDeleted"],
+        historyTypes: ["messageAdded", "messageDeleted", "labelAdded"],
         maxResults: opts.limit ?? 200,
         pageToken: cursor.pageToken,
       },
@@ -144,6 +167,16 @@ export class GmailProvider implements MailProvider {
         const l = g.labelIds ?? [];
         // drafts and spam are never reported
         if ((l.includes("INBOX") || l.includes("SENT")) && !l.includes("DRAFT")) added.add(g.id);
+      }
+      // SPAM->INBOX, or gaining INBOX/SENT later: report the message with its current folder
+      for (const { message: g, labelIds } of rec.labelsAdded ?? []) {
+        const l = g.labelIds ?? [];
+        if (
+          (labelIds?.includes("INBOX") || labelIds?.includes("SENT")) &&
+          !l.includes("DRAFT") &&
+          !l.includes("SPAM")
+        )
+          added.add(g.id);
       }
       for (const { message: g } of rec.messagesDeleted ?? []) removed.add(g.id);
     }

@@ -20,7 +20,7 @@ type Msg = {
   seq: number;
   rfc: string;
 };
-type Rec = { id: number; added?: Msg; deleted?: Msg };
+type Rec = { id: number; added?: Msg; deleted?: Msg; labelAdded?: { msg: Msg; ids: string[] } };
 type Req = { url: string; body?: string; headers: Record<string, string> };
 
 export function memoryStore(init: Partial<OAuthCreds> = {}) {
@@ -162,6 +162,13 @@ export function createFakeGmail(address = "me@rn.test") {
               history: items.map((r) => ({
                 id: String(r.id),
                 ...(r.added ? { messagesAdded: [{ message: labels(r.added) }] } : {}),
+                ...(r.labelAdded
+                  ? {
+                      labelsAdded: [
+                        { message: labels(r.labelAdded.msg), labelIds: r.labelAdded.ids },
+                      ],
+                    }
+                  : {}),
                 ...(r.deleted ? { messagesDeleted: [{ message: labels(r.deleted) }] } : {}),
               })),
             }
@@ -177,6 +184,8 @@ export function createFakeGmail(address = "me@rn.test") {
       let all = [...msgs.values()].reverse(); // newest first, like Gmail
       all = all.filter((m) => want.every((l) => m.labelIds.includes(l)));
       if (rfc) all = all.filter((m) => m.rfc === `<${rfc}>`);
+      if (u.searchParams.get("includeSpamTrash") !== "true" && !/in:anywhere/.test(q))
+        all = all.filter((m) => !m.labelIds.some((l) => l === "SPAM" || l === "TRASH"));
       if (/in:sent/.test(q)) all = all.filter((m) => m.labelIds.includes("SENT"));
       return json(200, page(all, u));
     }),
@@ -238,5 +247,20 @@ export function createFakeGmail(address = "me@rn.test") {
     },
     sentRaw,
   };
-  return { fetch, store, stats, add, simple, scenario, setFloor: (n: number) => (floor = n) };
+  const relabel = (id: string, plus: string[], minus: string[] = []) => {
+    const m = msgs.get(id)!;
+    m.labelIds = [...m.labelIds.filter((l) => !minus.includes(l)), ...plus];
+    history.push({ id: ++hid, labelAdded: { msg: m, ids: plus } });
+  };
+  return {
+    fetch,
+    store,
+    stats,
+    add,
+    relabel,
+    msgs,
+    simple,
+    scenario,
+    setFloor: (n: number) => (floor = n),
+  };
 }

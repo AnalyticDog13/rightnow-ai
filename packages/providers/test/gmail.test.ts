@@ -142,7 +142,7 @@ describe("send", () => {
 });
 
 describe("lookup", () => {
-  test("findSent queries rfc822msgid in:sent then fetches raw", async () => {
+  test("findSent searches all mail incl. trash by rfc822msgid, then fetches raw", async () => {
     const { p, fetch } = setup([
       {
         method: "GET",
@@ -153,7 +153,7 @@ describe("lookup", () => {
         method: "GET",
         url: /messages\/g9\?/,
         respond: async () =>
-          json(200, { id: "g9", threadId: "t9", labelIds: ["SENT"], raw: raw("c1") }),
+          json(200, { id: "g9", threadId: "t9", labelIds: ["TRASH", "SENT"], raw: raw("c1") }),
       },
     ]);
     const m = await p.findSent("<c1@rn.test>");
@@ -163,8 +163,41 @@ describe("lookup", () => {
       folder: "SENT",
       rfcMessageId: "<c1@x.test>",
     });
-    expect(q(fetch.calls[0]!.url).get("q")).toBe("rfc822msgid:c1@rn.test in:sent");
+    const s = q(fetch.calls[0]!.url);
+    expect(s.get("q")).toBe("rfc822msgid:c1@rn.test");
+    expect(s.get("includeSpamTrash")).toBe("true");
     expect(q(fetch.calls[1]!.url).get("format")).toBe("raw");
+  });
+
+  test("findSent finds a trashed sent copy end to end", async () => {
+    const g = createFakeGmail();
+    const p = new GmailProvider({
+      address: "me@rn.test",
+      store: g.store,
+      oauth: new GoogleOAuth({ clientId: "c", clientSecret: "s", fetch: g.fetch }),
+      fetch: g.fetch,
+    });
+    const r = await p.send(mime);
+    g.msgs.get(r.providerMessageId!)!.labelIds = ["TRASH", "SENT"];
+    expect((await p.findSent("<c1@rn.test>"))?.providerMessageId).toBe(r.providerMessageId);
+    g.msgs.get(r.providerMessageId!)!.labelIds = ["TRASH"]; // SENT label gone: still ours by From
+    expect((await p.findSent("<c1@rn.test>"))?.providerMessageId).toBe(r.providerMessageId);
+  });
+
+  test("a received message reusing our Message-ID is not our send", async () => {
+    const { p } = setup([
+      {
+        method: "GET",
+        url: /messages\?/,
+        respond: async () => json(200, { messages: [{ id: "g1" }] }),
+      },
+      {
+        method: "GET",
+        url: /messages\/g1\?/,
+        respond: async () => json(200, { id: "g1", labelIds: ["INBOX"], raw: raw("c1") }), // From x@x.test
+      },
+    ]);
+    expect(await p.findSent("<c1@x.test>")).toBeNull();
   });
 
   test("findSent returns null on no hit", async () => {
@@ -250,10 +283,47 @@ describe("sync", () => {
     const h = fetch.calls.filter((c) => /history\?/.test(c.url));
     const u = q(h[0]!.url);
     expect(u.get("startHistoryId")).toBe("100");
-    expect(u.getAll("historyTypes")).toEqual(["messageAdded", "messageDeleted"]);
+    expect(u.getAll("historyTypes")).toEqual(["messageAdded", "messageDeleted", "labelAdded"]);
     expect(u.get("maxResults")).toBe("2");
     expect(q(h[1]!.url).get("pageToken")).toBe("p2");
     expect(q(h[1]!.url).get("startHistoryId")).toBe("100");
+  });
+
+  test("a reply delivered to SPAM and later moved to INBOX is reported with its current folder", async () => {
+    const g = createFakeGmail();
+    const p = new GmailProvider({
+      address: "me@rn.test",
+      store: g.store,
+      oauth: new GoogleOAuth({ clientId: "c", clientSecret: "s", fetch: g.fetch }),
+      fetch: g.fetch,
+    });
+    const cursor = await p.currentCursor();
+    const m = g.add(
+      g.simple({ from: "x@rn.test", to: "me@rn.test", subject: "re", id: "<re@x.test>" }),
+      ["SPAM"],
+    );
+    const c1 = await p.listChangesSince(cursor);
+    if (c1.expired) throw new Error("expired");
+    expect(c1.messages).toHaveLength(0);
+    g.relabel(m.id, ["INBOX"], ["SPAM"]);
+    const c2 = await p.listChangesSince(c1.cursor);
+    if (c2.expired) throw new Error("expired");
+    expect(c2.messages.map((x) => [x.providerMessageId, x.folder])).toEqual([[m.id, "INBOX"]]);
+  });
+
+  test("non-send 4xx map to defined classes, not a bare ProviderError", async () => {
+    const at = (res: Response) =>
+      setup([{ method: "GET", url: API + "profile", respond: async () => res.clone() }]).p;
+    expect(
+      await at(json(403, { error: { errors: [{ reason: "forbidden" }] } }))
+        .currentCursor()
+        .catch((e) => e),
+    ).toEqual(new AuthError("unauthorized"));
+    expect(
+      await at(json(400, errors.invalidArgument))
+        .currentCursor()
+        .catch((e) => e),
+    ).toBeInstanceOf(PermanentSendError);
   });
 
   test("history 404 is expired", async () => {
