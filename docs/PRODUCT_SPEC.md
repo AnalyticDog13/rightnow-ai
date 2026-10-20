@@ -26,11 +26,11 @@ Areas: UI, ACC, WARM, CAMP, SEQ, SEND, LEAD, INBOX, TRACK, CRM, ANALYTICS, AUTO,
 
 ## 1. Technical Architecture (master §1)
 
-- [ ] PS-DEPLOY-01: Monorepo with separate packages for web frontend, API, provider integrations, campaign scheduler, sending workers, inbox sync, analytics, CRM — Instantly is a single hosted SaaS; internal structure not public (undocumented).
+- [x] PS-DEPLOY-01: Monorepo with separate packages for web frontend, API, provider integrations, campaign scheduler, sending workers, inbox sync, analytics, CRM — Instantly is a single hosted SaaS; internal structure not public (undocumented).
 - [ ] PS-DEPLOY-02: Default stack Next.js/React/TS/Tailwind/shadcn-ui, Node backend, PostgreSQL+Prisma, Redis+BullMQ, Auth.js, Recharts, Docker Compose, Vitest+Playwright — master-spec choice, no Instantly counterpart.
-- [ ] PS-SEC-01: Every table carries `workspaceId`; all queries filtered by it; single-owner UI at launch but workspace switcher data model present — Instantly: workspaces own accounts, leads, campaigns, API keys, blocklists; accounts can be moved between workspaces; workspace members have roles (S23 Workspace, Workspace Member, "Move accounts between workspaces").
-- [ ] PS-SEC-02: Workspace-scoped API keys with scoped permissions (`resource:action`, e.g. `accounts:create`, `leads:read`, `all:all`) — Instantly API v2 uses bearer keys with scopes of that form (S4, S5, S10).
-- [ ] PS-DEPLOY-03: Repo ships MIT LICENSE, setup docs, Prisma migrations, Dockerfile/compose, `.env.example`, tests, deployment instructions — master §1.
+- [x] PS-SEC-01: Every table carries `workspaceId`; all queries filtered by it; single-owner UI at launch but workspace switcher data model present — Instantly: workspaces own accounts, leads, campaigns, API keys, blocklists; accounts can be moved between workspaces; workspace members have roles (S23 Workspace, Workspace Member, "Move accounts between workspaces").
+- [x] PS-SEC-02: Workspace-scoped API keys with scoped permissions (`resource:action`, e.g. `accounts:create`, `leads:read`, `all:all`) — Instantly API v2 uses bearer keys with scopes of that form (S4, S5, S10).
+- [x] PS-DEPLOY-03: Repo ships MIT LICENSE, setup docs, Prisma migrations, Dockerfile/compose, `.env.example`, tests, deployment instructions — master §1.
 - [ ] PS-DEPLOY-04: REST API v1 prefix `/api/v1`, JSON, bearer auth, 429 on rate-limit, 402-equivalent not needed (no billing) — Instantly API v2: base `/api/v2`, bearer, limits 100 req/s and 6,000 req/min per workspace shared across keys, 429 on excess (S22).
 - [ ] PS-DEPLOY-05: API error contract: 400 invalid body (reject unknown properties), 401 bad/revoked key, 404, 429 — Instantly schemas set additionalProperties false on create bodies (S3, S4, S5).
 - [ ] PS-DEPLOY-06: OpenAPI document published for the RightNow API — Instantly publishes OpenAPI (api_v2.json) (S23).
@@ -39,7 +39,7 @@ Areas: UI, ACC, WARM, CAMP, SEQ, SEND, LEAD, INBOX, TRACK, CRM, ANALYTICS, AUTO,
 
 ## 2. Product Interface (master §2)
 
-- [ ] PS-UI-01: Left navigation with exactly: Dashboard, Email Accounts, Warm-Up & Deliverability, Campaigns, Leads, Unified Inbox, CRM, Analytics, Automations, Settings — master §2; Instantly's own nav groups Campaigns, Accounts, Unibox, CRM, Analytics, Lead Finder/SuperSearch (no SuperSearch clone) (S15).
+- [x] PS-UI-01: Left navigation with exactly: Dashboard, Email Accounts, Warm-Up & Deliverability, Campaigns, Leads, Unified Inbox, CRM, Analytics, Automations, Settings — master §2; Instantly's own nav groups Campaigns, Accounts, Unibox, CRM, Analytics, Lead Finder/SuperSearch (no SuperSearch clone) (S15).
 - [ ] PS-UI-02: Responsive layouts, searchable/sortable/paginated tables, saved filters, bulk-select action bar — Instantly list views support filter+search and bulk action bars (S14).
 - [ ] PS-UI-03: Every control wired to real backend behavior; no dead buttons; Playwright smoke test walks each nav item — master §2.
 - [ ] PS-UI-04: Dashboard widgets: sends today vs capacity, active campaigns progress, reply/positive/bounce rates, account health strip, remaining daily capacity, pending reminders/tasks — master §11 + Instantly workspace analytics (S16).
@@ -375,9 +375,9 @@ All AI items are `[optional]`, off by default, provider-pluggable (BYO API key),
 ## 15. Security and Compliance (master §14)
 
 - [ ] PS-SEC-03: Auth.js sessions (httpOnly, SameSite, rotation), password hashing (argon2id), optional TOTP 2FA, login rate limit — master §14.
-- [ ] PS-SEC-04: Role-based access (owner, admin, member, read-only); every API checks workspace membership and role — S23 workspace members.
-- [ ] PS-SEC-05: Secrets from environment/secret manager only; encryption key rotation procedure documented; no secret in logs — master §14.
-- [ ] PS-SEC-06: Input validation on all endpoints (zod schemas), unknown properties rejected — S3, S4, S5.
+- [x] PS-SEC-04: Role-based access (owner, admin, member, read-only); every API checks workspace membership and role — S23 workspace members.
+- [x] PS-SEC-05: Secrets from environment/secret manager only; encryption key rotation procedure documented; no secret in logs — master §14.
+- [x] PS-SEC-06: Input validation on all endpoints (zod schemas), unknown properties rejected — S3, S4, S5.
 - [ ] PS-SEC-07: Audit log for security-relevant actions (login, account connect/revoke, API key create, export, delete, setting change) — S23 audit log.
 - [ ] PS-SEC-08: CSRF protection, strict CSP, SSRF-safe webhook delivery (block private IP ranges) — master §14.
 - [ ] PS-SEC-09: Unsubscribe link in every campaign email by default (opt-out of auto-footer needs a warning); unsubscribes processed within the next scheduler tick; suppression durable — master §14, S1.
@@ -432,16 +432,16 @@ Instantly has no dedicated reactivation product: users lower limits manually, re
 
 ## 18. Local-First and VPS-Ready Deployment
 
-- [ ] PS-DEPLOY-07: One codebase, two modes; mode selected by env profile (`MODE=local|vps`).
-- [ ] PS-DEPLOY-08: Local: Docker Compose runs web, workers, scheduler, Postgres, Redis; named volumes; Redis AOF persistence; start/stop commands; no work while machine asleep, correct recovery afterwards (SYNC).
-- [ ] PS-DEPLOY-09: VPS: same compose with health checks, restart policies (`unless-stopped`), durable volumes, HTTPS via reverse proxy (Caddy or Traefik with automatic certs), secrets via env files/Docker secrets, ops runbook.
-- [ ] PS-DEPLOY-10: Scripts for both modes: start, stop, upgrade (migrate then restart), backup (pg_dump + Redis snapshot + encryption-key note), restore; tested.
+- [x] PS-DEPLOY-07: One codebase, two modes; mode selected by env profile (`MODE=local|vps`).
+- [x] PS-DEPLOY-08: Local: Docker Compose runs web, workers, scheduler, Postgres, Redis; named volumes; Redis AOF persistence; start/stop commands; no work while machine asleep, correct recovery afterwards (SYNC).
+- [x] PS-DEPLOY-09: VPS: same compose with health checks, restart policies (`unless-stopped`), durable volumes, HTTPS via reverse proxy (Caddy or Traefik with automatic certs), secrets via env files/Docker secrets, ops runbook.
+- [x] PS-DEPLOY-10: Scripts for both modes: start, stop, upgrade (migrate then restart), backup (pg_dump + Redis snapshot + encryption-key note), restore; tested.
 - [ ] PS-DEPLOY-11: Tested local-to-VPS migration procedure (dump, transfer, restore, verify checkpoints, rotate OAuth redirect URIs, DNS/tracking-domain switch, first-start sync gate).
-- [ ] PS-DEPLOY-12: Health endpoints `/healthz` (liveness) and `/readyz` (db, redis, queue, sync gate status).
+- [x] PS-DEPLOY-12: Health endpoints `/healthz` (liveness) and `/readyz` (db, redis, queue, sync gate status).
 - [ ] PS-DEPLOY-13: Tracking endpoint must be publicly reachable to record opens/clicks; local mode documents tunnel/limitations.
 - [ ] PS-DEPLOY-14: Provider Compliance Gate: before enabling live sending, document each provider's current API acceptable-use rules; do not assume a Gmail OAuth app may send unsolicited commercial mail; unsupported channels sit behind a disabled integration interface; campaign creation and tests (dry-run / local SMTP sink) work without live provider access.
 - [ ] PS-DEPLOY-15: Dry-run/sandbox send mode that exercises the full pipeline against a fake SMTP/Graph/Gmail adapter for tests and demos.
-- [ ] PS-DEPLOY-16: CI runs Vitest unit/integration and Playwright e2e on Docker services.
+- [x] PS-DEPLOY-16: CI runs Vitest unit/integration and Playwright e2e on Docker services.
 
 ---
 

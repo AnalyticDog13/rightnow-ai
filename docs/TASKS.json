@@ -144,7 +144,7 @@
    ],
    "model": "sonnet",
    "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-2.md; tests listed there pass"
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-2.md; tests listed there pass; preliminary cleanup from phase-1 gate: M1 CSRF APP_URL via getWebEnv, M2 minPasswordLength 12, M3 drop requireWorkspace kind param, M4 remove unused web devDeps embedded-postgres/pg"
   },
   {
    "id": "P2-T02",
@@ -156,7 +156,7 @@
    ],
    "model": "sonnet",
    "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-2.md; tests listed there pass; append credentialsEnc to ENCRYPTED_COLUMNS and add rotate-key DB-loop test"
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-2.md; tests listed there pass; append credentialsEnc to ENCRYPTED_COLUMNS and add rotate-key DB-loop test; I7 from phase-1 gate: key rotation runnable against a Compose deployment (documented command via docker compose run)"
   },
   {
    "id": "P2-T03",

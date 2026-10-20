@@ -13,6 +13,7 @@
    - Leave `MODE=local` and `APP_URL=http://localhost:3000`. (`DATABASE_URL` in `.env` is for running outside Docker; compose overrides it to point at the `postgres` service.)
 2. `scripts/start.sh` (Windows: `scripts\start.ps1`). The first build takes a few minutes.
 3. Open http://localhost:3000/sign-up and create the owner account with your `SETUP_TOKEN`. Sign-up closes after the first owner; everyone else joins by invite.
+   Always open the app at the exact host in `APP_URL` (e.g. `localhost`, not `127.0.0.1`); a mismatch makes the cross-site check reject every form submission with 403.
 
 ## Daily use
 

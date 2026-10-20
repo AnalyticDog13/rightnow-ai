@@ -45,3 +45,40 @@ Critical restore.ps1 data-loss path fixed; dump validation + safety backup; 0600
 
 ## 2026-10-19 · P1-T07 API keys/audit/readyz · task reviewer (sonnet) · **Approved**
 Security checks passed (CSPRNG tokens, hash lookup, workspace-scoped revoke/list, fail-closed CSRF). Minors deferred to phase-gate triage.
+
+## 2026-10-19 · Phase 1 gate · whole-branch review (opus) + ponytail audit · Fix first → **Approved**
+I1 dev script, I2 org deletion disabled, I3 tx-client audit/apikeys atomic, I4 route params, I5 job deps, I6 createPrisma factory — fixed b595457..47d6aec, scoped re-review clean. I7 → P2-T02. M1–M4 → P2-T01 preliminary cleanup.
+
+### Phase 1 rulings (from the SDD ledger)
+- | P1-T02 ↔ P1-T04 | Workspace model vs better-auth organization | T02 creates Workspace; T04 maps better-auth organization modelName→workspace and reconciles fields. Ruling: T04 owns the reconciliation migration — avoids guessing better-auth schema in T02 — cost if wrong: one extra migration. |
+- | P1-T03 ↔ P1-T04/T05/T07 | `getEnv()` | T03 defines the env schema; later tasks extend it (SETUP_TOKEN, WORKER_HEALTH_PORT). Ruling: each task adds its vars to env.ts + .env.example. |
+- | P1-T04 ↔ P1-T07 | `route()` auth modes | T04 defines `auth: "session-or-apikey"` + `scope`; T07 implements apikey verification. Ruling: T04 ships the option with apikey path returning 401 until T07 — cost if wrong: none. |
+- | P1-T06 | entrypoint `migrate` | needs prisma CLI in the image → keep prisma as a dependency of @rightnow/db (not dev). Ruling recorded for T06 dispatch. |
+- P1-T02: dispatched (sonnet), BASE 8ef0af3. Ruling: prisma CLI in dependencies of @rightnow/db — Docker migrate needs it — cost if wrong: slightly larger image
+- P1-T02: review spec ❌ (expectIsolated missing). Ruling: dotenv-path minor elevated to Important — root .env is the documented location, db:migrate would fail for users — cost if wrong: a few lines of churn.
+- P1-T03 pre-dispatch Ruling: rotate-key iterates an exported ENCRYPTED_COLUMNS list (empty now; P2+ tasks append) — no encrypted columns exist yet — cost if wrong: script refactor later.
+- P1-T03 pre-dispatch Ruling: getEnv() validates shared vars (DATABASE_URL, ENCRYPTION_KEY, MODE, APP_URL, DB_POOL_MAX, SYNC_MAX_STALENESS_SEC); app-only vars (BETTER_AUTH_SECRET, SETUP_TOKEN, WORKER_HEALTH_PORT) validated by web/worker via exported schema extension — avoids worker requiring web secrets — cost if wrong: minor.
+- P1-T03: Ruling: accept tsx devDependency (plan already runs worker with tsx); added to STACK.md
+- P1-T04: Ruling: invite-acceptance flow deferred to P7-T07 (single owner at launch per spec) — cost if wrong: invited users cannot join until P7.
+- P1-T06 pre-dispatch Ruling: compose-smoke uses /api/healthz after restore (readyz arrives in P1-T07, which then switches the CI check) — plan ordering defect — cost if wrong: none
+- P1-T06: Ruling: raised minors to fix round (CI restore check can't fail; ps1 LASTEXITCODE; nested .env in image; .env.example DOMAIN/POSTGRES_PASSWORD) — data-safety/secret-leak class — cost if wrong: a little extra churn
+- P1-T06: Ruling: accepted deviations — restore drops/recreates DB (pg_restore --clean fails on pg-boss partitions); plain next start image (worker/migrate need full node_modules)
+- PHASE GATE Ruling: single Opus whole-branch review combining SDD final review + ponytail-audit lens — avoids two full-repo passes — cost if wrong: a less specialized simplicity audit
+- PHASE GATE Ruling: fix I1–I6 now (I1/I2 block merge; I3–I6 are interfaces Phase 2 builds on — cheaper now); I7 (key rotation vs compose) → P2-T02 — cost if wrong: small rework in P2-T02
+- PHASE GATE Ruling: M1–M4 (CSRF APP_URL via getWebEnv, minPasswordLength 12, dead requireWorkspace kind param, unused web devDeps) carried into P2-T01 dispatch as preliminary cleanup — no second fix wave per SDD — cost if wrong: minors live a few more commits
+
+### Phase 1 deferred minors (triaged in PHASE-GATE review)
+- P1-T01: minor (deferred): engines node >=22.12 vs CI Node 24 (README too) — align later
+- P1-T01: minor (deferred): prettier configured but not enforced in lint/CI
+- P1-T01: minor (deferred): README links docs/ops/LOCAL.md before P1-T06 creates it (resolved by P1-T06)
+- P1-T02: minor (deferred): prisma client created at import time throws without DATABASE_URL
+- P1-T02: minor (deferred): AuditLog onDelete Cascade deletes audit trail with workspace
+- P1-T02: minor (deferred): DB_POOL_MAX parseInt accepts "5abc"/negatives
+- P1-T03: minor (deferred): lenient base64 in key/payload parsing; missing tag/IV-flip + empty-plaintext tests; rotate-key errors lack model/row; rotate-key outside typecheck; env.test replaces process.env; getEnv validates full schema on default-key crypto; formatting noise
+- P1-T04: minor (deferred): /api/setup no rate limit; better-auth rate limit keyed on spoofable XFF, in-memory store (→ P7-T07)
+- P1-T04: minor (deferred): viewer rejection tests use bare rejects.toThrow (not FORBIDDEN-specific)
+- P1-T05: minor (deferred): pool size hard-coded 5 ignores DB_POOL_MAX; index.ts exports schema from side-effect file; healthz select 1 no timeout
+- P1-T05: minor (deferred): no test for createQueue failure path (same catch as EADDRINUSE)
+- P1-T06: minor (deferred): backup only mentions ENCRYPTION_KEY in a comment
+- P1-T06: minor (deferred): restore.sh $dir resolved before cd (fails closed from scripts/ dir); restore blocked if current DB unreadable
+- P1-T07: minor (deferred): lastUsedAt write on every request incl. 403 (throttle); audit not atomic with key create/revoke; no direct scopeAllows unit test; APP_URL host mismatch (127.0.0.1 vs localhost) → 403 on writes, document; sign-in audit lacks IP/UA/failures; readyz no rate limit; key-list select duplicated; 2b3e902 alone fails typecheck
