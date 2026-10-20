@@ -170,3 +170,6 @@ Atomic per-account rate limit (advisory xact lock, send outside tx), live-verify
 
 ## 2026-10-21 · Phase 3 step plan review round 1 · independent agent (opus) · **Changes Required**
 2 Critical (cancelled HELD row re-planned → double send; claim lacked current-step check → stale main-sequence follow-up after subsequence entry), 12 Important (D18 blocklist-as-hard-bounce, account errors pause leads not account, UNCERTAIN without time cap, planner/claim deadlock, one bad row blocks all workspaces, …), 19 Minor. D16/D17 sound and unbypassable; D18 fits frozen interface. Planner revising.
+
+## 2026-10-21 · Phase 3 step plan review round 2 · same independent agent (opus) · **APPROVED**
+0 Critical, 0 Important, 7 Minor (appended to plan as Revision 3). Deviations accepted (rotation-first split; import files documented). D16 sending blocked until P4 sync; D17 ProviderVerification gate; D18 rev 2 scope; D19.

@@ -772,3 +772,11 @@ Full `npm test`, lint, typecheck, Playwright, and CI (`check`, `compose-smoke`, 
 No finding was rejected. Two deviations from the reviewer's fixes:
 - **I12:** T10a/T10b keep the reviewer's content split, but rotation comes first because the planner calls it.
 - **I10:** `ImportJob.data` is documented rather than scanned at erasure. Scanning up to 50 MB blobs inside the erasure transaction costs more than it protects: the data is short-lived, and any re-run is blocked by the suppression.
+
+## Revision 3 — round-2 review minors (binding on the owning tasks; details in `docs/plans/phase-3-review.md` "Round 2")
+
+- **P3-T11b:** the 24 h UNCERTAIN→HELD cap runs only after at least one `findSent` attempt (a machine that slept >24 h still searches once before holding).
+- **P3-T09/T10b/T11a:** the documented lock order must match the code (Lead before CampaignLead if that is how the code locks); the planner/sender exception path keeps deadlock retry.
+- **P3-T11a (D18):** classify SMTP 5.1.7/5.1.8 (sender-side) as account/unknown, not recipient; treat Microsoft 365 `5.4.1 … Access denied` (recipient-domain policy) as unknown without counting toward the 3-in-a-row account pause.
+- **P3-T06/T10b:** edit hooks must not leave stale rendered text in a claimed row; `attempts` counts send retries only (claim errors separate).
+- **P3-T08:** `unsubscribeLead` text and its test must agree. **P3-T02:** long imports emit progress during MX lookups so the job timeout is not hit.

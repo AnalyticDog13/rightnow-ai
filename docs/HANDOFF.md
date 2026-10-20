@@ -1,7 +1,7 @@
 # Handoff
 
 **Phase:** 3 — Campaign automation (branch `phase-3-campaigns`, from `main` after the Phase 2 merge)
-**Current task:** phase-3 step plan written (af83332); independent opus review in progress → docs/plans/phase-3-review.md
+**Current task:** P3-T01 leads service/API (phase 3 plan approved rev 3)
 **Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 (approved). Done step plans: `docs/plans/phase-1.md`, `docs/plans/phase-2.md`.
 **Tests:** 522 vitest + 16 Playwright (prod build) green; CI `check`, `compose-smoke`, `imap-real` green.
 

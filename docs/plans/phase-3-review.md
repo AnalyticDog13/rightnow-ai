@@ -195,3 +195,69 @@ These parts are correct as written:
 Critical 2 · Important 12 · Minor 19
 
 VERDICT: Changes Required
+
+---
+
+## Round 2 (rev 2, commit 3a1c803; TASKS.json split in ed966af)
+
+I re-read the plan in full against the round-1 findings, `DECISIONS.md` D16–D19 and the Phase 1–2 code.
+
+### Round-1 findings
+
+**C1: resolved.**
+- `cancelScheduled` and `skipStep` now run in one transaction.
+- The upsert brings back only `CANCELLED AND uncertainAt IS NULL` rows, and `uncertainAt` is no longer reset.
+- I checked this against the late-accept table:
+  - Cancel a HELD step-k row, then the original send is accepted late. The row goes CANCELLED → SENT with `creditSent`. `advanceLead` does nothing because the stepId is stale, so the lead stays at k+1 and is not advanced twice. The step-k row is never planned again, because its idempotencyKey belongs to a step the lead has left.
+  - Cancel at step 1: the lead is STOPPED MANUAL. A late accept marks the row SENT and credits it once. This is correct.
+
+**C2: resolved.**
+- The claim now requires `sm.stepId = cl.currentStepId`.
+- `enterSubsequence` cancels the lead's rows, and the housekeeping pass cancels non-current rows.
+- The pre-call re-check covers a step that stopped being current between claim and send.
+- `releaseHeld` and `retryFailed` return 409 for a step that is not current.
+- A `deleteStep` that skips a row locked by a claim is still safe: the pre-call check then finds the step non-current and sets the row CANCELLED.
+
+**I1–I11: resolved**, each with a named test that can fail.
+
+**I12: resolved.** The order is reversed (T10a rotation and explainer on sonnet, then T10b planner on opus). I accept this: the planner calls `pickAccount`. All the correctness-critical re-plan logic is in T10b on opus, and TASKS.json deps and models match.
+
+**Deviation on I10 (import files documented, not scanned): accepted.**
+- `data` is cleared when the job finishes.
+- A stuck RUNNING job is reset and re-run by the cron, and the re-run skips the erased address as blocklisted.
+- Scanning 50 MB blobs inside the erasure transaction would cost more than it protects.
+
+**Minor findings M1–M19: addressed.**
+
+### New in rev 2
+
+**No Critical or Important findings.**
+
+D18 rev 2 is sound. Policy text can no longer become `recipient`, 5.7.x on RCPT TO is unknown, and the Spamhaus test is present.
+
+**Minor**
+
+- **R2-M1. The 24 h cap holds rows that were never searched** (`resolveUncertain`, time cap). The cap runs before any search. After a laptop sleeps more than 24 h, UNCERTAIN rows from before the sleep go HELD without one `findSent`, even though a search would probably have found them SENT. Each then needs a manual decision.
+  - Reservations are fine: the stored day is at least 24 h old, so releasing it cannot raise today's allowance. A late accept credits it.
+  - Fix: apply the cap only when `lastSearchAt > uncertainAt` (at least one search was attempted after the wake), or run the search loop first and apply the cap to rows whose search threw.
+- **R2-M2. The planner's lock-order exception is not deadlock-free against the sender's result transaction.**
+  - The planner locks `CampaignLead` and then `CampaignDailyUsage.newLeads`.
+  - The sender's result transaction locks `CampaignDailyUsage` (in `commitUsage`) and then `CampaignLead` (in `advanceLead`). That is a cycle.
+  - Both run in `withTxRetry`, so it self-heals, and the "planner deadlock retry" test covers the retry.
+  - Fix, either one: bump `newLeads` in a follow-up transaction after the batch commits, or record the cycle in the exception text.
+  - The global order also lists `CampaignLead → Lead`, while the sender and `updateLead` lock `Lead` before `CampaignLead`. The two are consistent with each other, so this is only a wording fix: state `Lead` before `CampaignLead`.
+- **R2-M3. Edit hooks with `SKIP LOCKED` can leave old text in a row** (T10b Editing). A SCHEDULED row that a claim holds only briefly (to push it back for the window or a full quota) is skipped. It stays SCHEDULED with the old text and is sent unedited later.
+  - The re-render is a single `UPDATE` that locks only `ScheduledMessage` rows, so it cannot be part of a deadlock cycle.
+  - Fix: use a plain `UPDATE … WHERE status='SCHEDULED'`, which waits and then re-checks. Keep `SKIP LOCKED` only for the re-route pass.
+- **R2-M4. Some SMTP codes still land in the wrong scope** (D18 rev 2 SMTP mapping).
+  - `5.1.7`/`5.1.8` (bad sender address) match "5.1.x → recipient". They are account scope; exclude them, or check the command (on MAIL FROM → account).
+  - Microsoft 365's common non-existent-recipient reply `550 5.4.1 Recipient address rejected: Access denied` falls to unknown. Three in a row would PAUSE a healthy account under the new `consecutivePermanentErrors` rule.
+  - Fix: add `5.4.1` with recipient-rejected wording as recipient. "Access denied" currently matches `POLICY` through `denied`, so make the 5.4.1 rule take precedence or narrow that word.
+- **R2-M5. `attempts` counts two different things** (claim isolation and transient backoff). Claim errors and transient send failures add to the same counter, so a mix reaches FAILED early. The upsert that brings a row back also does not reset `attempts`. Fix: use a separate `claimErrors` counter, or reset `attempts` on revive and on a successful claim.
+- **R2-M6. `unsubscribeLead` contradicts itself** (T08). The text says `"already"` only when no lead row exists, but the test expects `"done"` then `"already"` on two calls for an existing lead. Fix: `"already"` = no row, or the UNSUBSCRIBE suppression already existed.
+- **R2-M7. The `lead-import` RUNNING timeout depends on `updatedAt`.** Make sure `runImport` touches `updatedAt` (progress) during the ESP-lookup phase too, or a large file is reset to PENDING mid-run. That is harmless because `runImport` is idempotent, but it wastes work.
+
+### Round 2 counts
+Critical 0 · Important 0 · Minor 7. These can be fixed during implementation in the owning tasks (T08, T10b, T11a, T11b).
+
+VERDICT: Approved
