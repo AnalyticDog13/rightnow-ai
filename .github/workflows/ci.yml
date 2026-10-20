@@ -77,6 +77,17 @@ jobs:
             test -n "$ok" || { echo "$svc not healthy"; exit 1; }
           done
           docker compose exec -T web id -u | grep -vqx 0
+      - name: Rotate key runs in Compose
+        run: |
+          # limit: CI has no seeded credential rows (0 re-encrypted); correctness is packages/core/test/rotate.test.ts
+          out=$(sh scripts/rotate-key.sh)
+          echo "$out" | grep -v -e '^New ENCRYPTION_KEY' -e '^Next:'
+          echo "$out" | grep -qx "EmailAccount.credentialsEnc: re-encrypted 0"
+          # .env still holds the old key: start again on it and check readiness
+          docker compose up -d
+          ok=
+          for i in $(seq 40); do curl -fsS http://localhost:3000/api/readyz && ok=1 && break; sleep 3; done
+          test -n "$ok"
       - name: Diagnostics
         if: failure()
         run: |

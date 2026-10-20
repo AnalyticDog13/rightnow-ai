@@ -5,5 +5,7 @@ case "$1" in
   web) cd /app/apps/web && exec node ../../node_modules/next/dist/bin/next start -H 0.0.0.0 -p 3000 ;;
   worker) cd /app/apps/worker && exec node --import tsx src/index.ts ;;
   migrate) cd /app/packages/db && exec ../../node_modules/.bin/prisma migrate deploy ;;
-  *) echo "usage: entrypoint.sh web|worker|migrate" >&2; exit 2 ;;
+  # needs OLD_ENCRYPTION_KEY and NEW_ENCRYPTION_KEY; run via scripts/rotate-key.sh|.ps1
+  rotate-key) cd /app && exec node --import tsx scripts/rotate-key.ts ;;
+  *) echo "usage: entrypoint.sh web|worker|migrate|rotate-key" >&2; exit 2 ;;
 esac

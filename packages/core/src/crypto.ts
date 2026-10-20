@@ -41,4 +41,7 @@ export function skipOrReencrypt(enc: string, oldKey: Buffer, newKey: Buffer): st
 }
 
 // Later tasks append { model, field } for every encrypted DB column; rotate-key.ts walks this.
-export const ENCRYPTED_COLUMNS: Array<{ model: string; field: string }> = [];
+export const ENCRYPTED_COLUMNS: Array<{ model: string; field: string }> = [
+  { model: "EmailAccount", field: "credentialsEnc" },
+  { model: "OAuthSession", field: "codeVerifierEnc" },
+];

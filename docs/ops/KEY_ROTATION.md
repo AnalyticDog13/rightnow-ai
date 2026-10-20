@@ -1,12 +1,26 @@
 # Rotating ENCRYPTION_KEY
 
-`ENCRYPTION_KEY` encrypts every stored credential. Lose it and they are unrecoverable, so always back it up together with the database.
+`ENCRYPTION_KEY` encrypts every stored credential (mailbox OAuth tokens and SMTP/IMAP passwords, pending OAuth verifiers). Lose it and they are unrecoverable, so always back it up together with the database.
 
-1. Back up the database (and the current key).
-2. Stop web and worker.
-3. Generate a new key: `openssl rand -base64 32`.
-4. Run, with `DATABASE_URL` pointing at the database:
-   `OLD_ENCRYPTION_KEY=<old> NEW_ENCRYPTION_KEY=<new> npx tsx scripts/rotate-key.ts`
-   The script re-encrypts each column in `ENCRYPTED_COLUMNS` in one transaction per column. Rerunning after a failure is safe: values already on the new key are skipped. If a value decrypts with neither key, that column is left unchanged and the script exits non-zero.
-5. Set `ENCRYPTION_KEY` to the new key in your env and back it up.
-6. Start web and worker.
+## Docker Compose (local and VPS)
+
+Run from the repo root, optionally passing the new key (one is generated with `openssl rand -base64 32` otherwise):
+
+- Linux/macOS: `scripts/rotate-key.sh [NEW_KEY]`
+- Windows: `scripts\rotate-key.ps1 [NEW_KEY]`
+
+The script:
+
+1. Prints the new key first. Store it safely right away.
+2. Backs up the database (`scripts/backup.*`).
+3. Stops web and worker (`docker compose stop web worker`); Postgres keeps running.
+4. Runs `docker compose run --rm --no-deps -e OLD_ENCRYPTION_KEY -e NEW_ENCRYPTION_KEY migrate rotate-key`, which re-encrypts every column in `ENCRYPTED_COLUMNS` from the `.env` key to the new one and prints `Model.field: re-encrypted N` per column.
+5. Leaves `.env` unchanged. Then set `ENCRYPTION_KEY=<new key>` in `.env`, back up the new key, and start with `scripts/start.*`.
+
+Each column is re-encrypted in one transaction. If a value decrypts with neither key, that column is left unchanged and the script exits non-zero with the column and row id. Rerunning with the same two keys is safe: values already on the new key are skipped. Until you change `.env`, the old key stays valid for any column that was not rotated.
+
+## Without Compose
+
+Stop web and worker, back up, then with `DATABASE_URL` pointing at the database:
+`OLD_ENCRYPTION_KEY=<old> NEW_ENCRYPTION_KEY=<new> npx tsx scripts/rotate-key.ts`
+Then set `ENCRYPTION_KEY` to the new key, back it up, and start web and worker.
