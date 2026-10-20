@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./create": "./src/create.ts",
     "./client": "./src/generated/prisma/client.ts",
     "./test-db": "./src/test-db.ts",
     "./global-setup": "./test/global-setup.ts"

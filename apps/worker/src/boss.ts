@@ -1,7 +1,7 @@
 import { hostname } from "node:os";
-import { PrismaPg } from "@prisma/adapter-pg";
 import { systemClock, type Clock } from "@rightnow/core";
-import { PrismaClient } from "@rightnow/db/client";
+import type { PrismaClient } from "@rightnow/db/client";
+import { createPrisma } from "@rightnow/db/create";
 import { PgBoss, type Job, type QueueOptions } from "pg-boss";
 import { startHealthServer } from "./health";
 import { jobs as defaultJobs } from "./jobs";
@@ -11,11 +11,10 @@ export type JobDef = {
   name: string;
   cron?: string;
   options?: QueueOptions;
-  handler: (jobs: Job[]) => Promise<void>;
+  handler: (jobs: Job[], deps: JobDeps) => Promise<void>;
 };
 
-// Fixed small pools: the worker needs few connections (boss: polling + maintenance; prisma: heartbeat/boot row/health).
-const POOL_MAX = 5;
+export type JobDeps = { prisma: PrismaClient; clock: Clock };
 
 export async function startWorker(opts: {
   databaseUrl: string;
@@ -23,12 +22,13 @@ export async function startWorker(opts: {
   healthPort?: number;
   heartbeatMs?: number;
   clock?: Clock;
+  /** Pool size for both Prisma and pg-boss (env DB_POOL_MAX). */
+  poolMax?: number;
 }) {
   const clock = opts.clock ?? systemClock;
-  const prisma = new PrismaClient({
-    adapter: new PrismaPg({ connectionString: opts.databaseUrl, max: POOL_MAX }),
-  });
-  const boss = new PgBoss({ connectionString: opts.databaseUrl, max: POOL_MAX });
+  const max = opts.poolMax ?? 5;
+  const prisma = createPrisma(opts.databaseUrl, max);
+  const boss = new PgBoss({ connectionString: opts.databaseUrl, max });
   boss.on("error", (e) => console.error("pg-boss error", e));
   let started = false;
   let bootId: string | undefined;
@@ -67,7 +67,7 @@ export async function startWorker(opts: {
 
     for (const j of opts.jobs ?? defaultJobs) {
       await boss.createQueue(j.name, j.options);
-      await boss.work(j.name, j.handler);
+      await boss.work<object>(j.name, (js) => j.handler(js, { prisma, clock }));
       if (j.cron) await boss.schedule(j.name, j.cron, {});
     }
 

@@ -13,6 +13,7 @@ const env = parseEnv(process.env, workerEnvSchema);
 const worker = await startWorker({
   databaseUrl: env.DATABASE_URL,
   healthPort: env.WORKER_HEALTH_PORT,
+  poolMax: env.DB_POOL_MAX,
 });
 console.log(`worker ${worker.bootId} up, health on :${worker.healthPort}`);
 

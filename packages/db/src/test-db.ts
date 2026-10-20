@@ -1,8 +1,8 @@
 import { randomBytes } from "node:crypto";
-import { PrismaPg } from "@prisma/adapter-pg";
 import pg from "pg";
 import { expect, inject } from "vitest";
-import { PrismaClient } from "./generated/prisma/client";
+import { createPrisma } from "./create";
+import type { PrismaClient } from "./generated/prisma/client";
 
 /** Clones the migrated template DB; call from a test file (needs the db globalSetup). */
 export async function createTestDb() {
@@ -16,7 +16,7 @@ export async function createTestDb() {
     await admin.end();
   }
   const url = `${base}/${name}`;
-  const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: url, max: 5 }) });
+  const prisma = createPrisma(url, 5);
   const drop = async () => {
     await prisma.$disconnect();
     const a = new pg.Client({ connectionString: `${base}/postgres` });
@@ -38,7 +38,9 @@ export async function expectIsolated(opts: {
 }) {
   const tag = randomBytes(4).toString("hex");
   const [a, b] = await Promise.all(
-    ["a", "b"].map((s) => opts.prisma.workspace.create({ data: { name: s, slug: `iso-${s}-${tag}` } })),
+    ["a", "b"].map((s) =>
+      opts.prisma.workspace.create({ data: { name: s, slug: `iso-${s}-${tag}` } }),
+    ),
   );
   await opts.seed(a!.id);
   expect((await opts.read(a!.id)).length).toBeGreaterThan(0);
