@@ -20,6 +20,16 @@ const call = (h: (r: Request) => Promise<Response>, method: string, url: string,
     }),
   );
 
+// Next passes the dynamic segment as `params`.
+const del = (id: string) =>
+  one.DELETE(
+    new Request(`${ORIGIN}/api/v1/api-keys/${id}`, {
+      method: "DELETE",
+      headers: { cookie, origin: ORIGIN },
+    }),
+    { params: Promise.resolve({ id }) },
+  );
+
 beforeAll(async () => {
   db = await createTestDb();
   Object.assign(process.env, {
@@ -74,8 +84,8 @@ describe("api-keys routes + audit", () => {
     const list = await (await call(keys.GET, "GET", "/api/v1/api-keys")).text();
     expect(list).toContain(id);
     expect(list).not.toContain(token);
-    expect((await call(one.DELETE, "DELETE", `/api/v1/api-keys/${id}`)).status).toBe(200);
-    expect((await call(one.DELETE, "DELETE", `/api/v1/api-keys/${id}`)).status).toBe(404);
+    expect((await del(id)).status).toBe(200);
+    expect((await del(id)).status).toBe(404);
     const rows = await db.prisma.auditLog.findMany({ where: { target: id } });
     expect(rows.map((a) => a.action).sort()).toEqual(["apikey.create", "apikey.revoke"]);
     expect(JSON.stringify(await db.prisma.auditLog.findMany())).not.toContain(token);

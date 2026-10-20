@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createApiKey, fixedClock, revokeApiKey, verifyApiKey } from "@rightnow/core";
+import { audit, createApiKey, fixedClock, revokeApiKey, verifyApiKey } from "@rightnow/core";
 import { createTestDb } from "@rightnow/db/test-db";
 import { route } from "../lib/api";
 import { apiKeyResolver } from "../lib/apikey-auth";
@@ -34,6 +34,19 @@ describe("API keys", () => {
       scopes: ["leads:read"],
     });
     expect((await db.prisma.apiKey.findUniqueOrThrow({ where: { id } })).lastUsedAt).not.toBeNull();
+  });
+
+  it("create/revoke + audit run in one transaction and roll back together", async () => {
+    await expect(
+      db.prisma.$transaction(async (tx) => {
+        const { id } = await createApiKey(tx, w1, "tx", ["all:all"]);
+        await revokeApiKey(tx, w1, id);
+        await audit(tx, { workspaceId: w1 }, "apikey.create", id);
+        throw new Error("boom");
+      }),
+    ).rejects.toThrow("boom");
+    expect(await db.prisma.apiKey.count({ where: { name: "tx" } })).toBe(0);
+    expect(await db.prisma.auditLog.count({ where: { workspaceId: w1 } })).toBe(0);
   });
 
   it("wrong secret, garbage and revoked keys -> null", async () => {

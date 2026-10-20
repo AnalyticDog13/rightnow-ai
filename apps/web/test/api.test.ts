@@ -17,6 +17,14 @@ const post = (body: unknown) =>
 const body = z.strictObject({ name: z.string().min(1) });
 
 describe("route()", () => {
+  it("passes dynamic route params to the handler", async () => {
+    const h = route({}, async ({ params }) => ({ id: params.id }), as("VIEWER"));
+    const res = await h(new Request("http://x/api/t/abc/"), {
+      params: Promise.resolve({ id: "abc" }),
+    });
+    expect(await res.json()).toEqual({ id: "abc" });
+  });
+
   it("unauthenticated -> 401", async () => {
     const h = route({ body }, async () => ({}), none);
     const res = await h(post({ name: "a" }));

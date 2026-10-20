@@ -28,10 +28,12 @@ const body = z.strictObject({
 
 /** The token is in this response only; it cannot be retrieved later. */
 export const POST = route({ role: "ADMIN", body }, async ({ workspaceId, userId, body }) => {
-  const { id, token } = await createApiKey(prisma, workspaceId, body.name, body.scopes);
-  await audit(prisma, { workspaceId, actorId: userId }, "apikey.create", id, {
-    name: body.name,
-    scopes: body.scopes,
+  return prisma.$transaction(async (tx) => {
+    const { id, token } = await createApiKey(tx, workspaceId, body.name, body.scopes);
+    await audit(tx, { workspaceId, actorId: userId }, "apikey.create", id, {
+      name: body.name,
+      scopes: body.scopes,
+    });
+    return { id, token };
   });
-  return { id, token };
 });

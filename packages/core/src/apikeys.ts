@@ -6,7 +6,7 @@ const alnum = (n: number) => randomBytes(n).toString("base64url").replace(/[-_]/
 
 /** Token `rn_<prefix8>_<secret32>`; only sha256(token) is stored. The token is returned once. */
 export async function createApiKey(
-  prisma: PrismaClient,
+  prisma: Pick<PrismaClient, "apiKey">,
   workspaceId: string,
   name: string,
   scopes: string[],
@@ -32,7 +32,11 @@ export async function verifyApiKey(
 }
 
 /** Workspace-scoped revoke; false if the key is not in this workspace or already revoked. */
-export async function revokeApiKey(prisma: PrismaClient, workspaceId: string, id: string) {
+export async function revokeApiKey(
+  prisma: Pick<PrismaClient, "apiKey">,
+  workspaceId: string,
+  id: string,
+) {
   const r = await prisma.apiKey.updateMany({
     where: { id, workspaceId, revokedAt: null },
     data: { revokedAt: new Date() },

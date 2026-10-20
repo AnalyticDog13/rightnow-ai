@@ -4,7 +4,7 @@ export type AuditCtx = { workspaceId: string; actorId?: string | null };
 
 /** PS-SEC-07: append an AuditLog row. `meta` must never contain secrets. */
 export async function audit(
-  prisma: PrismaClient,
+  prisma: Pick<PrismaClient, "auditLog">, // a $transaction client also fits
   ctx: AuditCtx,
   action: string,
   target?: string,

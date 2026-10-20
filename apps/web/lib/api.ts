@@ -28,6 +28,8 @@ type Ctx<B extends z.ZodType, Q extends z.ZodType, A extends Auth> = {
   userId?: string;
   body: z.infer<B>;
   query: z.infer<Q>;
+  /** Next dynamic segments, e.g. `params.id` in `[id]/route.ts`. */
+  params: Record<string, string | undefined>;
   req: Request;
 } & (A extends "public" ? unknown : { workspaceId: string });
 
@@ -61,7 +63,10 @@ export function route<
   getSession: SessionGetter = defaultGetSession,
   keyResolver: ApiKeyResolver = resolveApiKey,
 ) {
-  return async (req: Request): Promise<Response> => {
+  return async (
+    req: Request,
+    rc?: { params: Promise<Record<string, string | undefined>> },
+  ): Promise<Response> => {
     try {
       const auth = opts.auth ?? "session";
       let info: SessionInfo | null = null;
@@ -90,6 +95,7 @@ export function route<
         ...(info && { workspaceId: info.workspaceId }),
         body,
         query,
+        params: (await rc?.params) ?? {},
         req,
       } as Ctx<B, Q, A>);
       if (out instanceof Response) return out;
