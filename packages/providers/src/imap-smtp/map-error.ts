@@ -22,10 +22,10 @@ type Raw = {
 };
 const raw = (e: unknown) => (e && typeof e === "object" ? (e as Raw) : {});
 
-/** assertPublicHost refused the host (internal address in vps mode). */
-export class HostNotAllowedError extends ProviderError {
+/** assertPublicHost refused the host (internal address in vps mode). Raised before any socket opens, so it is a retryable non-send error: a DNS rebind must not fail a message for good. */
+export class HostNotAllowedError extends TransientBeforeSendError {
   constructor() {
-    super("host is not a public address");
+    super("host resolves to a private address");
   }
 }
 
@@ -37,7 +37,11 @@ export function mapSmtpError(e: unknown, dataStarted: boolean): ProviderError {
   if (e instanceof ProviderError) return e;
   const r = raw(e);
   const rc = r.responseCode;
-  if (r.code === "EAUTH" && !(rc && rc >= 400 && rc < 500)) return new AuthError("bad_credentials");
+  if (r.code === "ETLS" || r.command === "STARTTLS")
+    return new TransientBeforeSendError("tls_required");
+  // Only a reply that says the credentials were refused is an auth failure (535; 534/530: mechanism or auth required).
+  if ((r.code === "EAUTH" || rc === 535) && rc !== undefined && [530, 534, 535].includes(rc))
+    return new AuthError("bad_credentials");
   if (rc && rc >= 400 && rc < 500) return new TransientBeforeSendError(`smtp ${rc}`);
   if (rc && rc >= 500) return new PermanentSendError(`smtp_${rc}`);
   if (dataStarted)
@@ -49,18 +53,23 @@ export function mapSmtpError(e: unknown, dataStarted: boolean): ProviderError {
 export function mapImapError(e: unknown): ProviderError {
   if (e instanceof ProviderError) return e;
   const r = raw(e);
-  if (r.authenticationFailed) return new AuthError("bad_credentials");
-  const text = `${r.serverResponseCode ?? ""} ${r.responseText ?? ""}`;
-  if (
-    /THROTTLED|LIMIT/i.test(r.serverResponseCode ?? "") ||
-    /too many|rate limit|throttl/i.test(text)
-  )
+  // imapflow sets authenticationFailed on ANY tagged NO/BAD to LOGIN, throttling and outages included.
+  const text = `${r.responseText ?? ""} ${r.response ?? ""} ${r.message ?? ""}`;
+  const code = (r.serverResponseCode ?? "").toUpperCase();
+  if (/THROTTLED|^LIMIT/.test(code) || /too many|rate limit|throttl/i.test(text))
     return new RateLimitedError(60);
+  if (
+    /UNAVAILABLE|SERVERBUG|INUSE|TRYLATER/.test(code) ||
+    /unavailable|try again|busy|temporar/i.test(text)
+  )
+    return new TransientBeforeSendError(code.toLowerCase() || "unavailable");
+  if (r.authenticationFailed && !/^(E[A-Z]+|NoConnection)$/.test(r.code ?? ""))
+    return new AuthError("bad_credentials");
   return new TransientBeforeSendError(tlsOrCode(r));
 }
 
 function tlsOrCode(r: Raw): string {
-  if (r.tlsFailed) return "tls_required";
+  if (r.tlsFailed || r.code === "ETLS" || r.command === "STARTTLS") return "tls_required";
   if (TLS_CERT.test(r.message ?? "") || TLS_CERT.test(r.code ?? "")) return "tls_certificate";
   return r.code ?? r.serverResponseCode ?? "connection";
 }
@@ -79,7 +88,7 @@ export function diagnose(e: unknown): { code: string; message: string } {
   if (e instanceof HostNotAllowedError)
     return {
       code: "host_not_public",
-      message: "This host is not allowed: it is not a public address.",
+      message: "This host resolves to a private address, which is not allowed here.",
     };
   const r = raw(e);
   const code = tlsOrCode(r);

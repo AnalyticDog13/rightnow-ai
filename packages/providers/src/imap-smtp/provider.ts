@@ -39,6 +39,7 @@ export type ImapSmtpOptions = {
   allowPrivate: boolean;
   resolve?: (host: string) => Promise<string[]>; // tests
   logger?: ImapFlowOptions["logger"]; // tests
+  maxPageBytes?: number; // default 20 MB; tests
 };
 
 type FolderCursor = {
@@ -53,7 +54,7 @@ type Check = Diagnostics["checks"][number];
 
 const TIMEOUTS = { connectionTimeout: 15_000, greetingTimeout: 15_000, socketTimeout: 60_000 };
 const CHUNK = 20; // messages fetched per command, so a page never sits in memory whole
-const MAX_PAGE_BYTES = 20 * 1024 * 1024;
+const DEFAULT_PAGE_BYTES = 20 * 1024 * 1024;
 const FOLDERS: Folder[] = ["INBOX", "SENT"];
 const EMPTY: FolderCursor = { uidValidity: "0", lastUid: 0, uidNext: 1 };
 const tls = (t: Target) => ({
@@ -218,7 +219,6 @@ export class ImapSmtpProvider implements MailProvider {
     try {
       await this.smtpSession(creds.smtp, { raw, to, from: m.from.email });
     } catch (e) {
-      if (e instanceof HostNotAllowedError) throw new PermanentSendError("host_not_public");
       throw e instanceof SmtpFailure ? mapSmtpError(e.error, e.dataStarted) : e;
     }
     if (this.o.appendToSent ?? defaultAppendToSent(creds.smtp.host)) {
@@ -333,26 +333,43 @@ export class ImapSmtpProvider implements MailProvider {
   }
 
   /** Fetches `uids` (ascending) in small chunks and stops once the page holds ~20 MB. */
-  private async read(c: ImapFlow, path: string, uv: string, folder: Folder, uids: number[]) {
+  private async read(
+    c: ImapFlow,
+    path: string,
+    uv: string,
+    folder: Folder,
+    uids: number[],
+    since?: Date,
+  ) {
     const messages: RemoteMessage[] = [];
     let bytes = 0;
     let consumed = 0;
     let last: number | undefined;
-    for (let i = 0; i < uids.length && bytes < MAX_PAGE_BYTES; i += CHUNK) {
+    for (
+      let i = 0;
+      i < uids.length && bytes < (this.o.maxPageBytes ?? DEFAULT_PAGE_BYTES);
+      i += CHUNK
+    ) {
       const chunk = uids.slice(i, i + CHUNK);
-      const rows = await c.fetchAll(chunk.join(","), { uid: true, source: true }, { uid: true });
+      const rows = await c.fetchAll(
+        chunk.join(","),
+        { uid: true, source: true, internalDate: true },
+        { uid: true },
+      );
       rows.sort((a, b) => a.uid - b.uid);
       for (const r of rows) {
         if (!r.source) continue;
         bytes += r.source.length;
+        last = r.uid;
+        // SINCE is searched a day early (server-local dates); the exact instant is checked here
+        if (since && r.internalDate && new Date(r.internalDate) < since) continue;
         messages.push(
           await parseRaw(r.source, { providerMessageId: pid(path, uv, r.uid), folder }),
         );
-        last = r.uid;
       }
       consumed += chunk.length;
     }
-    return { messages, last, drained: consumed >= uids.length };
+    return { messages, last, examined: uids[consumed - 1], drained: consumed >= uids.length };
   }
 
   async listChangesSince(cursor: SyncCursor, opts: { limit?: number } = {}): Promise<Changes> {
@@ -416,18 +433,20 @@ export class ImapSmtpProvider implements MailProvider {
         const [tokenUv, after] = (q.pageToken ?? `${uv}:0`).split(":");
         if (tokenUv !== uv)
           throw new TransientBeforeSendError("mailbox changed, restart the import");
-        // shortcut: IMAP SINCE has day granularity, so the first day may include a few earlier messages.
+        // SINCE compares calendar dates in the server's zone, so ask for one day earlier and filter by the exact instant.
+        const day = new Date(q.since.getTime() - 86_400_000);
         const found =
-          (await c.search(q.since.getTime() > 0 ? { since: q.since } : { all: true }, {
-            uid: true,
-          })) || [];
+          (await c.search(q.since.getTime() > 0 ? { since: day } : { all: true }, { uid: true })) ||
+          [];
         const uids = found.filter((u) => u > Number(after)).sort((a, b) => a - b);
         const limit = q.limit ?? 100;
-        const page = await this.read(c, path, uv, q.folder, uids.slice(0, limit));
-        const more = uids.length > limit && page.last !== undefined;
+        const take = uids.slice(0, limit);
+        const page = await this.read(c, path, uv, q.folder, take, q.since);
+        // also when the byte cap ended the page early: the token resumes after the last UID examined
+        const more = (!page.drained || uids.length > take.length) && page.examined !== undefined;
         return {
           messages: page.messages,
-          ...(more ? { nextPageToken: `${uv}:${page.last}` } : {}),
+          ...(more ? { nextPageToken: `${uv}:${page.examined}` } : {}),
         };
       } finally {
         lock.release();

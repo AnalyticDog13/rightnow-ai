@@ -117,6 +117,45 @@ describe("sync details", () => {
     expect(seen.map((m) => m.subject)).toEqual(["m0", "m1", "m2", "m3", "m4"]);
   });
 
+  it("listMessages: a page ended by the byte cap hands out a token and nothing is lost", async () => {
+    const s = await start();
+    const p = s.provider({ maxPageBytes: 3000 }); // one 20-message chunk exceeds it
+    await s.scenario.seedInbound(45);
+    const ids: string[] = [];
+    let token: string | undefined;
+    let pages = 0;
+    do {
+      const r = await p.listMessages({
+        since: new Date(0),
+        folder: "INBOX",
+        pageToken: token,
+        limit: 100,
+      });
+      ids.push(...r.messages.map((m) => m.providerMessageId));
+      token = r.nextPageToken;
+      pages++;
+    } while (token && pages < 20);
+    expect(pages).toBeGreaterThan(1);
+    expect(new Set(ids).size).toBe(45);
+  });
+
+  it("listMessages: SINCE is applied to the exact instant, also when the server's calendar date differs", async () => {
+    const s = await start();
+    const p = s.provider();
+    const since = new Date("2026-01-02T00:30:00Z");
+    const msg = (id: string) =>
+      Buffer.from(
+        `From: x@rn.test\r\nTo: me@rn.test\r\nSubject: ${id}\r\nMessage-ID: <${id}@x.test>\r\n\r\nhi\r\n`,
+      );
+    await s.admin(async (c) => {
+      await c.append("INBOX", msg("after"), [], new Date("2026-01-02T11:50:00Z"));
+      await c.append("INBOX", msg("before"), [], new Date("2026-01-02T00:10:00Z"));
+      await c.append("INBOX", msg("older"), [], new Date("2025-12-20T00:10:00Z"));
+    });
+    const r = await p.listMessages({ since, folder: "INBOX" });
+    expect(r.messages.map((m) => m.subject).sort()).toEqual(["after"]);
+  });
+
   it("a message without Message-ID has rfcMessageId null", async () => {
     const s = await start();
     const p = s.provider();
@@ -266,16 +305,43 @@ describe("diagnostics", () => {
 
   it("diagnostics response longer than 200 characters is truncated and the password is scrubbed", async () => {
     const long = "x".repeat(600);
+    const PW = "Zz9-echoed-password";
+    // a real failing AUTH whose 535 reply echoes the password, as some servers do
     const s = await start({
       smtp: {
-        onAuth: (_a: unknown, _s: unknown, cb: (e: Error) => void) =>
-          cb(Object.assign(new Error(`535 5.7.8 ${long} p`), { responseCode: 535 })),
+        onAuth: (a: { password?: string }, _s: unknown, cb: (e: Error) => void) =>
+          cb(
+            Object.assign(new Error(`535 5.7.8 bad password ${a.password} ${long}`), {
+              responseCode: 535,
+            }),
+          ),
       } as never,
     });
-    const d = await s.provider().diagnostics();
+    const logs = vi.spyOn(console, "log").mockImplementation(() => {});
+    const warns = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { lines, logger } = commandLog();
+    const creds = async () => ({ ...s.creds(), smtp: { ...s.creds().smtp, password: PW } });
+    const p = s.provider({ credentials: creds, logger });
+    const d = await p.diagnostics();
     const c = d.checks.find((k) => k.name === "smtp_auth")!;
     expect(c.ok).toBe(false);
+    expect(c.code).toBe("bad_credentials");
     expect(c.response!.length).toBeLessThanOrEqual(200);
+    expect(c.response).toContain("bad password"); // the response is shown, the secret in it is not
+    const e = await p
+      .send({ from: { email: ADDRESS }, to: [x], subject: "s", text: "t", messageId: "<a@b>" })
+      .catch((k) => k);
+    expect(e).toBeInstanceOf(AuthError);
+    const seen = JSON.stringify([
+      d,
+      e.message,
+      e.stack,
+      Object.entries(e),
+      logs.mock.calls,
+      warns.mock.calls,
+      lines,
+    ]);
+    expect(seen).not.toContain(PW);
   });
 
   it("msSmtpHint", () => {
@@ -331,8 +397,11 @@ describe("transport security", () => {
     const e = await p
       .send({ from: { email: ADDRESS }, to: [x], subject: "s", text: "t", messageId: "<a@b>" })
       .catch((k) => k);
-    expect(e).toBeInstanceOf(PermanentSendError);
-    expect(e.code).toBe("host_not_public");
+    // retryable and before any byte is written: a DNS rebind must not fail the message for good
+    expect(e).toBeInstanceOf(TransientBeforeSendError);
+    expect(e).not.toBeInstanceOf(PermanentSendError);
+    expect(e.message).toMatch(/private address/);
+    expect(d.checks.find((c) => c.name === "smtp_auth")?.message).toMatch(/private address/);
     await expect(p.findSent("<a@b>")).rejects.toThrow();
     for (const sp of spies) expect(sp).not.toHaveBeenCalled();
   });
@@ -359,6 +428,99 @@ describe("transport security", () => {
     const d2 = await p.diagnostics();
     expect(d2.checks.find((c) => c.name === "imap_login")?.code).toBe("host_not_public");
     expect(spies.reduce((n, sp) => n + sp.mock.calls.length, 0)).toBe(connects);
+  });
+
+  /** A server that offers no STARTTLS and records every byte it receives. */
+  const bareServer = async (greeting: string, reply: (line: string) => string | null) => {
+    const bytes: string[] = [];
+    const srv = net.createServer((sock) => {
+      sock.write(greeting);
+      let buf = "";
+      sock.on("data", (d) => {
+        bytes.push(d.toString("latin1"));
+        buf += d.toString("latin1");
+        let i;
+        while ((i = buf.indexOf("\r\n")) >= 0) {
+          const out = reply(buf.slice(0, i));
+          buf = buf.slice(i + 2);
+          if (out) sock.write(out);
+        }
+      });
+      sock.on("error", () => {});
+    });
+    await new Promise<void>((r) => srv.listen(0, "127.0.0.1", r));
+    return { port: (srv.address() as net.AddressInfo).port, bytes, close: () => srv.close() };
+  };
+  const SECRET = "Tr0ub4dor&3-secret";
+  const b64 = (s: string) => Buffer.from(s).toString("base64");
+
+  it("credentials are never sent to an SMTP server that does not offer STARTTLS (bytes on the wire)", async () => {
+    const srv = await bareServer("220 bare ESMTP\r\n", (l) =>
+      /^EHLO/i.test(l)
+        ? "250-bare\r\n250 AUTH PLAIN LOGIN\r\n"
+        : /^QUIT/i.test(l)
+          ? "221 bye\r\n"
+          : "502 no\r\n",
+    );
+    try {
+      const s = {
+        host: "127.0.0.1",
+        port: srv.port,
+        secure: false,
+        username: "ann",
+        password: SECRET,
+      };
+      const p = await provider({
+        ...vps,
+        allowPrivate: true,
+        credentials: async () => ({ imap: s, smtp: s }),
+      });
+      const e = await p
+        .send({ from: { email: ADDRESS }, to: [x], subject: "s", text: "t", messageId: "<a@b>" })
+        .catch((k) => k);
+      expect(e).toBeInstanceOf(TransientBeforeSendError);
+      const wire = srv.bytes.join("");
+      expect(wire).toMatch(/EHLO/i); // it did talk to the server
+      for (const secret of [SECRET, b64(SECRET), b64(`\0ann\0${SECRET}`), b64("ann")])
+        expect(wire).not.toContain(secret);
+      expect(wire).not.toMatch(/^AUTH/im);
+    } finally {
+      srv.close();
+    }
+  });
+
+  it("credentials are never sent to an IMAP server that does not offer STARTTLS (bytes on the wire)", async () => {
+    const srv = await bareServer("* OK bare ready\r\n", (l) => {
+      const [tag, cmd] = l.split(" ");
+      return /^CAPABILITY$/i.test(cmd ?? "")
+        ? `* CAPABILITY IMAP4rev1 AUTH=PLAIN\r\n${tag} OK done\r\n`
+        : `${tag} BAD no\r\n`;
+    });
+    try {
+      const s = {
+        host: "127.0.0.1",
+        port: srv.port,
+        secure: false,
+        username: "ann",
+        password: SECRET,
+      };
+      const p = await provider({
+        ...vps,
+        allowPrivate: true,
+        credentials: async () => ({ imap: s, smtp: s }),
+      });
+      const d = await p.diagnostics();
+      expect(d.checks.find((c) => c.name === "imap_login")).toMatchObject({
+        ok: false,
+        code: "tls_required",
+      });
+      const wire = srv.bytes.join("");
+      expect(wire).toMatch(/CAPABILITY/i);
+      expect(wire).not.toMatch(/LOGIN|AUTHENTICATE/i);
+      for (const secret of [SECRET, b64(`\0ann\0${SECRET}`)]) expect(wire).not.toContain(secret);
+    } finally {
+      srv.close();
+    }
   });
 
   it("a server that hides STARTTLS gets no AUTH in vps mode and the send fails before it", async () => {
@@ -416,7 +578,10 @@ describe("error mapping", () => {
   it.each([
     ["EAUTH 535", smtp("EAUTH", 535, "AUTH PLAIN"), false, AuthError],
     ["EAUTH 534", smtp("EAUTH", 534), false, AuthError],
+    ["EAUTH 530", smtp("EAUTH", 530), false, AuthError],
     ["EAUTH 454 temporary", smtp("EAUTH", 454), false, TransientBeforeSendError],
+    ["EAUTH without a code", smtp("EAUTH"), false, TransientBeforeSendError],
+    ["EAUTH 550", smtp("EAUTH", 550), false, PermanentSendError],
     ["RCPT 450", smtp("EENVELOPE", 450, "RCPT TO"), false, TransientBeforeSendError],
     ["MAIL 421", smtp("EENVELOPE", 421), false, TransientBeforeSendError],
     ["DATA 451 (answered)", smtp("EMESSAGE", 451, "DATA"), true, TransientBeforeSendError],
@@ -437,11 +602,33 @@ describe("error mapping", () => {
   });
 
   const imap = (o: Record<string, unknown>) => Object.assign(new Error("secret reply"), o);
+  /** imapflow's login.js: serverResponseCode from the reply, authenticationFailed on ANY tagged NO/BAD, response = reply text */
+  const login = (serverResponseCode: string | undefined, response: string) =>
+    imap({ authenticationFailed: true, responseStatus: "NO", serverResponseCode, response });
   it.each([
     [
-      "LOGIN failed",
-      imap({ authenticationFailed: true, serverResponseCode: "AUTHENTICATIONFAILED" }),
+      "LOGIN [AUTHENTICATIONFAILED]",
+      login("AUTHENTICATIONFAILED", "Invalid credentials"),
       AuthError,
+    ],
+    ["LOGIN plain NO", login(undefined, "Login failed"), AuthError],
+    ["LOGIN NO [UNAVAILABLE]", login("UNAVAILABLE", "Try later"), TransientBeforeSendError],
+    ["LOGIN NO [THROTTLED]", login("THROTTLED", "Slow down"), RateLimitedError],
+    ["LOGIN NO [LIMIT]", login("LIMIT", "Too many logins"), RateLimitedError],
+    [
+      "LOGIN NO too many connections",
+      login(undefined, "Too many simultaneous connections"),
+      RateLimitedError,
+    ],
+    [
+      "LOGIN NO server busy",
+      login(undefined, "Server busy, try again later"),
+      TransientBeforeSendError,
+    ],
+    [
+      "connection drop during auth",
+      imap({ authenticationFailed: true, code: "ECONNRESET" }),
+      TransientBeforeSendError,
     ],
     [
       "THROTTLED",
