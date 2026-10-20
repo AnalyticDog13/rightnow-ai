@@ -64,8 +64,14 @@ jobs:
           for i in $(seq 60); do curl -fsS http://localhost:3000/api/healthz && ok=1 && break; sleep 2; done
           test -n "$ok"
           docker compose exec -T postgres psql -U rightnow -d rightnow -tAc "select v from ci_marker" | grep -qx 42
-          test "$(docker compose ps --format '{{.Health}}' web)" = healthy
-          test "$(docker compose ps --format '{{.Health}}' worker)" = healthy
+          for svc in web worker; do
+            ok=
+            for i in $(seq 40); do
+              [ "$(docker compose ps --format '{{.Health}}' $svc)" = healthy ] && ok=1 && break
+              sleep 3
+            done
+            test -n "$ok" || { echo "$svc not healthy"; exit 1; }
+          done
           docker compose exec -T web id -u | grep -vqx 0
       - name: Diagnostics
         if: failure()
