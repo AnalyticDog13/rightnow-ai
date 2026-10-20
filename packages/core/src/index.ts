@@ -17,3 +17,5 @@ export * from "./accounts/service";
 export * from "./accounts/status";
 export * from "./accounts/tracking-domain";
 export * from "./accounts/smtp-connect";
+export * from "./accounts/test-send";
+export * from "./accounts/live-verify";

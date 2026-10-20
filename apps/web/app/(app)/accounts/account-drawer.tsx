@@ -70,6 +70,9 @@ export function AccountDrawer({
   const [form, setForm] = useState<Form>(init);
   const [notes, setNotes] = useState<string[]>([]);
   const [error, setError] = useState("");
+  const [testTo, setTestTo] = useState("");
+  const [testOk, setTestOk] = useState(false);
+  const [testMsg, setTestMsg] = useState("");
   const [checks, setChecks] = useState<{ name: string; ok: boolean; code?: string }[]>([]);
 
   useEffect(() => {
@@ -140,6 +143,17 @@ export function AccountDrawer({
     setChecks((r.json.checks as typeof checks) ?? []);
     setError(r.ok ? "" : errorText(r));
     onChanged();
+  }
+
+  async function sendTest(e: React.FormEvent) {
+    e.preventDefault();
+    setTestMsg("Sending...");
+    const r = await call(`/api/v1/accounts/${account.id}/test-send`, "POST", {
+      to: testTo,
+      confirmAuthorized: testOk,
+    });
+    setTestMsg(r.ok ? "Test email sent." : errorText(r));
+    if (r.ok) onChanged();
   }
 
   const broken = account.status !== "CONNECTED" || account.lifecycle === "NEEDS_ATTENTION";
@@ -239,6 +253,33 @@ export function AccountDrawer({
                 </li>
               ))}
             </ul>
+          )}
+          {isAdmin && (
+            <form onSubmit={sendTest} aria-label="Send test email" className="flex flex-col gap-2">
+              <Label htmlFor="test-to">Send test email to</Label>
+              <Input
+                id="test-to"
+                type="email"
+                value={testTo}
+                onChange={(e) => setTestTo(e.target.value)}
+              />
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={testOk}
+                  onChange={(e) => setTestOk(e.target.checked)}
+                />
+                I am authorized to send from this account
+              </label>
+              <div className="flex items-center gap-3">
+                <Button type="submit" variant="outline" disabled={!testOk || !testTo.trim()}>
+                  Send test email
+                </Button>
+                <p aria-live="polite" className="text-sm">
+                  {testMsg}
+                </p>
+              </div>
+            </form>
           )}
           {isAdmin && account.provider !== "SMTP" && (
             <ConnectMenu

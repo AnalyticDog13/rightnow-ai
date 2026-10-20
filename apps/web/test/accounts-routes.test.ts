@@ -215,3 +215,39 @@ describe("SMTP connect routes", () => {
     expect((await create({ ...body(), imap: { ...srv("a.io"), port: 70000 } })).status).toBe(400);
   });
 });
+
+describe("test-send and the fake mailbox route", () => {
+  it("test-send: MEMBER 403, foreign account 404, bad body 400", async () => {
+    const [ts, box] = await Promise.all([
+      import("../app/api/v1/accounts/[id]/test-send/route"),
+      import("../app/api/v1/%5Ffake/mailbox/[address]/route"),
+    ]);
+    const body = { to: "me@dest.example", confirmAuthorized: true };
+    const send = (id: string) =>
+      ts.POST(req("POST", `/api/v1/accounts/${id}/test-send`, body), p(id));
+    await setRole("member");
+    expect((await send(accountId)).status).toBe(403);
+    await setRole("owner");
+    expect((await send(foreignId)).status).toBe(404);
+    const bad = await ts.POST(
+      req("POST", `/api/v1/accounts/${accountId}/test-send`, {}),
+      p(accountId),
+    );
+    expect(bad.status).toBe(400);
+
+    const get = () =>
+      box.GET(req("GET", "/api/v1/%5Ffake/mailbox/mine@acme.io"), {
+        params: Promise.resolve({ address: "mine@acme.io" }),
+      });
+    expect((await get()).status).toBe(200);
+    const { resetEnvCache } = await import("@rightnow/core");
+    delete process.env.MAIL_PROVIDER_FAKE;
+    resetEnvCache();
+    try {
+      expect((await get()).status).toBe(404);
+    } finally {
+      process.env.MAIL_PROVIDER_FAKE = "1";
+      resetEnvCache();
+    }
+  });
+});

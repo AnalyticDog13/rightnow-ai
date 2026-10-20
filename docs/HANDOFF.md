@@ -18,3 +18,6 @@ independent plan reviewer, then execute P2-T01 (carrying the M1–M4 cleanup lis
 - Docker Desktop not installed on dev machine (Compose verified only in CI; `.ps1` scripts syntax-checked, never run).
 - Google Cloud OAuth client, Microsoft Entra app, SMTP/IMAP test mailbox credentials — needed only for live
   verification (P2-T07 / LIVE_VERIFICATION.md); provider code is tested with fakes/fixtures until then.
+- **Message-ID checks gate P3-T11 (not the Phase 2 merge):** Gmail must preserve our `Message-ID`; Graph must preserve it for MIME
+  drafts, or the hint-by-id fallback must be confirmed. They need the user's credentials: run `docs/ops/LIVE_VERIFICATION.md`
+  steps G4, M2 and M3 and record the result there before P3-T11 starts.
