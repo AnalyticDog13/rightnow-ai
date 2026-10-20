@@ -7,5 +7,7 @@ case "$1" in
   migrate) cd /app/packages/db && exec ../../node_modules/.bin/prisma migrate deploy ;;
   # needs OLD_ENCRYPTION_KEY and NEW_ENCRYPTION_KEY; run via scripts/rotate-key.sh|.ps1
   rotate-key) cd /app && exec node --import tsx scripts/rotate-key.ts ;;
-  *) echo "usage: entrypoint.sh web|worker|migrate|rotate-key" >&2; exit 2 ;;
+  # real-mailbox smoke run; args are --account <id> --to <address> (docs/ops/LIVE_VERIFICATION.md)
+  live-verify) shift; cd /app && exec node --import tsx scripts/live-verify.ts "$@" ;;
+  *) echo "usage: entrypoint.sh web|worker|migrate|rotate-key|live-verify" >&2; exit 2 ;;
 esac

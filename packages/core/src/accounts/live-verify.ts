@@ -56,20 +56,17 @@ export async function liveVerify(
       messageId,
       headers: { "X-RightNow-Test": "1" },
     });
-    return {
-      ok: true,
-      detail:
-        r.rfcMessageId === messageId
-          ? "Message-ID kept"
-          : `Message-ID changed to ${r.rfcMessageId}`,
-      value: r,
-    };
+    return { ok: true, value: r };
   });
   if (!sent) return out;
 
   await step("findSent", async () => {
     const m = await provider.findSent(messageId, { providerMessageId: sent.providerMessageId });
-    return { ok: !!m && !m.headers.bcc?.length, detail: m ? undefined : "not found in Sent" };
+    if (!m) return { ok: false, detail: "not found in Sent" };
+    // the id hint can find a copy whose header the provider rewrote; P4 reply matching needs it kept
+    if (m.rfcMessageId !== messageId)
+      return { ok: false, detail: `Message-ID rewritten to ${m.rfcMessageId}` };
+    return { ok: !m.headers.bcc?.length, detail: "Message-ID kept" };
   });
   await step("locate", async () => {
     const l = await provider.locate(messageId);

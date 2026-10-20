@@ -25,22 +25,22 @@ npx tsx scripts/live-verify.ts --account <accountId> --to <your address>
 Needs `DATABASE_URL`, `ENCRYPTION_KEY` and the provider's OAuth variables of the running app in the environment. Compose variant, from the repo root:
 
 ```
-docker compose run --rm migrate npx tsx scripts/live-verify.ts --account <accountId> --to <your address>
+docker compose run --rm migrate live-verify --account <accountId> --to <your address>
 ```
 
 It sends one real message with header `X-RightNow-Test: 1`, then checks the provider. Expected output:
 
 ```
 PASS diagnostics
-PASS send (Message-ID kept)
-PASS findSent
+PASS send
+PASS findSent (Message-ID kept)
 PASS locate (SENT)
 PASS cursor (gmail, graph or imap)
 PASS changes
 ```
 
 Exit code 0 means everything passed. `changes` waits up to 60 s for the sent copy to show up in the incremental sync. A failed `send` ends the run. Note every `FAIL` detail in the results table.
-`send` printing `Message-ID changed to ...` is exactly what P3-T11 needs to know: record it.
+`findSent` failing with `Message-ID rewritten to ...` is exactly what P3-T11 needs to know (the provider changed our id): record it. The `locate` and `changes` steps then fail too.
 
 ## 2. Google
 
@@ -56,16 +56,16 @@ Exit code 0 means everything passed. `changes` waits up to 60 s for the sent cop
 | G8 | `users.messages.get?format=minimal` for a message. | The response contains `labelIds`. | The provider relies on it in `locate`; if absent, switch to `format=metadata`. |
 | G9 | (Optional, hard to provoke) Make Google answer 403/429 (hit a quota, or call the API with a revoked grant) and read the body. | `error.errors[0].reason` such as `rateLimitExceeded`, `userRateLimitExceeded`, `dailyLimitExceeded`; `Retry-After` on 429. | Error mapping and fixtures in `packages/providers/src/gmail/` and `gmail.test.ts`. |
 | G10 | Revoke the app at myaccount.google.com/permissions. In the app: Account > Run diagnostics, then Send test email. | Account shows "Needs attention"; test-send answers 409 `needs_attention`. | `recordProviderError` in `packages/core/src/accounts/health.ts`, Gmail `invalid_grant` mapping. |
+| G11 | (Docs check) A consent screen left in "Testing". | Refresh tokens die after 7 days with `invalid_grant`. Keep "In production". | `docs/ops/GOOGLE_SETUP.md`. |
 | G12 | API explorer: `users.messages.list` with `q=after:<epoch seconds> in:inbox` combined with `labelIds=INBOX`, and once with `labelIds=SENT`. | Only messages after the date and carrying the label are returned (the two filters AND together). Record the result here. | The listMessages query building in `packages/providers/src/gmail/provider.ts` and its fixture routes in `gmail.test.ts`. |
 | G13 | Same call with `maxResults=2` over a mailbox with at least 5 messages; follow `nextPageToken` until it is absent. | Newest first; `nextPageToken` is an opaque string that resumes exactly after the last item (no gaps or repeats across pages). | Ordering/paging assumptions in `gmail-fake.ts` and the `listMessages pages and resumes` fixture. |
-| G11 | (Docs check) A consent screen left in "Testing". | Refresh tokens die after 7 days with `invalid_grant`. Keep "In production". | `docs/ops/GOOGLE_SETUP.md`. |
 
 ## 3. Microsoft
 
 | # | Step | Expected | If it differs |
 |---|---|---|---|
 | M1 | Connect Microsoft (popup), then the scripted run. | All PASS. | See below. |
-| M2 | Open the received message and view its internet headers (Outlook: File > Properties). | `Message-ID` identical to the sent one (MIME drafts keep it). **Gates P3-T11.** If Graph rewrote it, confirm `findSent(id, { providerMessageId })` still finds the item through the draft id hint, the fallback the design allows, and record that. | `packages/providers/src/graph/provider.ts`, `packages/providers/test/graph-fake.ts`; tell P3-T11. |
+| M2 | Open the received message and view its internet headers (Outlook: File > Properties). | `Message-ID` identical to the sent one (MIME drafts keep it). **Gates P3-T11.** If Graph rewrote it, the script reports `findSent` FAIL with `Message-ID rewritten to ...` (the draft id hint still finds the item). Record that. | `packages/providers/src/graph/provider.ts`, `packages/providers/test/graph-fake.ts`; tell P3-T11. |
 | M3 | The provider sets `Prefer: IdType="ImmutableId"`. Compare the draft id returned at send with the id of the item in Sent Items (`GET /me/mailFolders/sentitems/messages?$select=id,internetMessageId,isDraft`). | Identical ids, `isDraft` false. | The `deleteDraft` guard and send recovery in the Graph provider. |
 | M4 | `GET /me/messages?$filter=internetMessageId eq '<id>'` and `GET /me/mailFolders/junkemail/messages?$select=id,isDraft,from`. | Both return the expected items. | Query strings in `graph/provider.ts`. |
 | M5 | Delta on inbox and sentitems: permanently delete one message, move one message from Junk to Inbox, call the saved delta link again. | A deleted item has `@removed.reason` ("deleted"; a move out of the folder is "changed"). The Junk to Inbox move appears as an added item in the inbox delta. | `@removed` handling and delta fixtures in `graph.test.ts` / `graph-fake.ts`. |
@@ -73,7 +73,6 @@ Exit code 0 means everything passed. `changes` waits up to 60 s for the sent cop
 | M7 | Read a throttling response (many sends from a test tenant) or a mailbox without Exchange Online. | 429 with `Retry-After`; no mailbox gives 403 `MailboxNotEnabledForRESTAPI`. | `THROTTLE` regex in `packages/providers/src/graph/http.ts`. |
 | M8 | Revoke at myapps.microsoft.com, then Run diagnostics and Send test email. | Account "Needs attention"; test-send answers 409 `needs_attention`. | Auth mapping. |
 | M9 | Connect from a tenant that requires admin consent. | Connect ends with `admin_consent_required` (AADSTS65001 / 90094). | `graph/oauth.ts`. |
-
 | M10 | `POST /me/messages` with a base64 text/plain MIME body (what send does), including a Bcc recipient; read the response and then `GET /me/messages/<id>?$select=bccRecipients,conversationId,internetMessageId`. | The response contains `id` and `conversationId`; `bccRecipients` is kept on the draft; the draft's `internetMessageId` is our `Message-ID`. | Draft response fixtures in `graph.test.ts` / `graph-fake.ts`. |
 | M11 | Delta call with `Prefer: odata.maxpagesize=2` over at least 5 changed items. | Pages hold at most 2 items and end with `@odata.deltaLink`; intermediate pages carry `@odata.nextLink`. | Paging fixtures and the `hasMore` cursor handling in `graph/provider.ts`. |
 | M12 | Delta with `$filter=receivedDateTime ge <date>` and `$select=id`. | Accepted (no 400) and returns only ids at or after the date. If Graph rejects the combination, record the error. | The first-sync delta URL in `graph/provider.ts` and its fixtures. |

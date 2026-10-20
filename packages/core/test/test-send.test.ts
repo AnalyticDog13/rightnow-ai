@@ -175,6 +175,21 @@ describe("liveVerify", () => {
       "changes",
     ]);
     expect(r.filter((s) => !s.ok)).toEqual([]);
+    expect(r.find((s) => s.step === "findSent")!.detail).toBe("Message-ID kept");
+  });
+
+  test("findSent fails when the provider rewrote our Message-ID", async () => {
+    const p = new FakeProvider(`lv${++n}@acme.io`);
+    const find = p.findSent.bind(p);
+    p.findSent = async (id, hint) => {
+      const m = await find(id, hint);
+      return m && { ...m, rfcMessageId: "<rewritten@provider.test>" };
+    };
+    const r = await liveVerify(p, "me@dest.example", clock);
+    expect(r.find((s) => s.step === "findSent")).toMatchObject({
+      ok: false,
+      detail: "Message-ID rewritten to <rewritten@provider.test>",
+    });
   });
 
   test("a failing send stops the run", async () => {
