@@ -1,0 +1,49 @@
+{
+  "_note": "hand-written from the Gmail API v1 users.history.list reference; verified against live Gmail in P2-T07",
+  "pages": [
+    {
+      "history": [
+        {
+          "id": "101",
+          "messagesAdded": [
+            { "message": { "id": "m1", "threadId": "t1", "labelIds": ["INBOX", "UNREAD"] } }
+          ]
+        },
+        {
+          "id": "102",
+          "messagesAdded": [{ "message": { "id": "m2", "threadId": "t2", "labelIds": ["SENT"] } }]
+        }
+      ],
+      "nextPageToken": "p2",
+      "historyId": "110"
+    },
+    {
+      "history": [
+        {
+          "id": "103",
+          "messagesAdded": [{ "message": { "id": "m3", "threadId": "t3", "labelIds": ["SPAM"] } }]
+        },
+        {
+          "id": "104",
+          "messagesAdded": [{ "message": { "id": "m4", "threadId": "t4", "labelIds": ["INBOX"] } }]
+        }
+      ],
+      "nextPageToken": "p3",
+      "historyId": "110"
+    },
+    {
+      "history": [
+        { "id": "105", "messagesDeleted": [{ "message": { "id": "m0", "threadId": "t0" } }] },
+        {
+          "id": "106",
+          "messagesAdded": [{ "message": { "id": "m5", "threadId": "t5", "labelIds": ["INBOX"] } }]
+        },
+        {
+          "id": "107",
+          "messagesAdded": [{ "message": { "id": "m6", "threadId": "t6", "labelIds": ["INBOX"] } }]
+        }
+      ],
+      "historyId": "110"
+    }
+  ]
+}

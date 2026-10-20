@@ -9,3 +9,4 @@ export { GoogleOAuth, GOOGLE_SCOPES } from "./gmail/oauth";
 export { getFakeProvider } from "./fake/registry";
 export { createFixtureFetch, type Call, type Route } from "./contract/fixture-fetch";
 // runProviderContract imports vitest, so it lives at "@rightnow/providers/contract".
+export { GmailProvider } from "./gmail/provider";

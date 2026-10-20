@@ -1,0 +1,57 @@
+{
+  "_note": "error envelope shapes from the Gmail / Google API error reference",
+  "rateLimitExceeded": {
+    "error": {
+      "code": 403,
+      "message": "Rate Limit Exceeded",
+      "errors": [{ "reason": "rateLimitExceeded", "domain": "usageLimits" }],
+      "status": "PERMISSION_DENIED"
+    }
+  },
+  "userRateLimitExceeded": {
+    "error": {
+      "code": 403,
+      "message": "User-rate limit exceeded",
+      "errors": [{ "reason": "userRateLimitExceeded", "domain": "usageLimits" }]
+    }
+  },
+  "dailyLimitExceeded": {
+    "error": {
+      "code": 403,
+      "message": "Daily Limit Exceeded",
+      "errors": [{ "reason": "dailyLimitExceeded", "domain": "usageLimits" }]
+    }
+  },
+  "insufficientPermissions": {
+    "error": {
+      "code": 403,
+      "message": "Request had insufficient authentication scopes.",
+      "errors": [{ "reason": "insufficientPermissions", "domain": "global" }],
+      "status": "PERMISSION_DENIED"
+    }
+  },
+  "invalidArgument": {
+    "error": {
+      "code": 400,
+      "message": "Invalid value",
+      "errors": [{ "reason": "invalidArgument", "domain": "global" }],
+      "status": "INVALID_ARGUMENT"
+    }
+  },
+  "notFound": {
+    "error": {
+      "code": 404,
+      "message": "Requested entity was not found.",
+      "errors": [{ "reason": "notFound", "domain": "global" }],
+      "status": "NOT_FOUND"
+    }
+  },
+  "unauthorized": {
+    "error": {
+      "code": 401,
+      "message": "Invalid Credentials",
+      "errors": [{ "reason": "authError", "domain": "global" }],
+      "status": "UNAUTHENTICATED"
+    }
+  }
+}
