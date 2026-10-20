@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 config({ path: fileURLToPath(new URL("../../.env", import.meta.url)), quiet: true });
 
 const nextConfig: NextConfig = {
-  transpilePackages: ["@rightnow/db", "@rightnow/core"],
+  transpilePackages: ["@rightnow/db", "@rightnow/core", "@rightnow/providers"],
   serverExternalPackages: ["pg", "@prisma/adapter-pg"],
 };
 export default nextConfig;
