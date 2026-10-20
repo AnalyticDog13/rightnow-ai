@@ -1,7 +1,7 @@
 # Handoff
 
 **Phase:** 3 — Campaign automation (branch `phase-3-campaigns`, from `main` after the Phase 2 merge)
-**Current task:** write `docs/plans/phase-3.md` (step plan with per-task PS-IDs), get it independently reviewed, then P3-T01
+**Current task:** phase-3 step plan written (af83332); independent opus review in progress → docs/plans/phase-3-review.md
 **Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 (approved). Done step plans: `docs/plans/phase-1.md`, `docs/plans/phase-2.md`.
 **Tests:** 522 vitest + 16 Playwright (prod build) green; CI `check`, `compose-smoke`, `imap-real` green.
 

@@ -285,7 +285,8 @@
    ],
    "model": "sonnet",
    "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-3.md; tests listed there pass"
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-3.md; tests listed there pass",
+   "note": "parallel-safe with P3-T01..T03 (disjoint files) per phase-3 plan"
   },
   {
    "id": "P3-T05",
@@ -321,7 +322,8 @@
    ],
    "model": "sonnet",
    "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-3.md; tests listed there pass"
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-3.md; tests listed there pass",
+   "note": "parallel-safe with P3-T01..T03 (disjoint files) per phase-3 plan"
   },
   {
    "id": "P3-T08",
@@ -360,16 +362,28 @@
    "acceptance": "even rotation; sticky follow-ups; step-1 re-route on ineligible account; revive-not-duplicate re-plan."
   },
   {
-   "id": "P3-T11",
+   "id": "P3-T11a",
    "phase": 3,
-   "title": "Sender + recovery + HELD view API (error classification, lease/claimToken, UNCERTAIN → SENT/HELD); persist ProviderError.providerMessageId on ScheduledMessage for findSent hint (from P2-T05); phase-2 gate I-8 (PermanentSendError must distinguish recipient vs account failures)",
+   "title": "Sender (send claimed, error classification, late-accept, lease/claimToken) — GATED by ProviderVerification (D17)",
    "status": "todo",
    "deps": [
     "P3-T10"
    ],
    "model": "opus",
    "commit": null,
-   "acceptance": "Review Focus #1; 429 pushes account; ambiguous timeout and API 5xx → UNCERTAIN; late accept on HELD row credits `sent` once; stale claim (>2 min) not sent; handler crash in a live worker → recovered after lease; end-to-end 3-step sequence over simulated days with Fake provider."
+   "acceptance": "See docs/plans/phase-3.md P3-T11a"
+  },
+  {
+   "id": "P3-T11b",
+   "phase": 3,
+   "title": "Recovery (UNCERTAIN→findSent→HELD) + HELD view API",
+   "status": "todo",
+   "deps": [
+    "P3-T11a"
+   ],
+   "model": "opus",
+   "commit": null,
+   "acceptance": "See docs/plans/phase-3.md P3-T11b"
   },
   {
    "id": "P3-T12",
@@ -377,7 +391,7 @@
    "title": "Campaign builder UI (list with status/progress; tabs Leads/Sequences/Schedule/Options/Accounts; preview with real lead; Scheduled emails view incl. HELD actions)",
    "status": "todo",
    "deps": [
-    "P3-T11"
+    "P3-T11b"
    ],
    "model": "sonnet",
    "commit": null,
