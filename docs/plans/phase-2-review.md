@@ -125,3 +125,64 @@ Overall the plan is strong. Names are pinned, every behaviour has a test, Review
 9. **Proportion.** Detail is appropriate overall. Over-specified: the double CONDSTORE suite (M5). Under-specified: IMAP/SMTP transport security, refresh semantics and cursor paging.
 
 VERDICT: Changes Required
+
+---
+
+## Round 2 (plan rev 2, commit a23b645)
+
+Re-checked `docs/plans/phase-2.md` rev 2, D10–D15 in `docs/DECISIONS.md`, `docs/STACK.md`, `docs/PROVIDER_COMPLIANCE.md` and the P2 entries in `docs/TASKS.json` (T02a/T02b split present).
+
+### Round 1 findings
+
+| Finding | Status |
+|---|---|
+| C1 | **Resolved.** The `Changes` contract is documented, the Gmail `pageToken`, Graph nextLink and IMAP `lastUid` rules are stated, and every provider runs the contract case (2/2/1, then a new message) plus its own 3-page test. Gmail 404-on-get is skipped. |
+| I1 | **Resolved.** `attachments`, `locate`, `removed`, `truncated` and the `PushSource` note are in; D12 picks `gmail.modify`. |
+| I2 | **Resolved.** ImmutableId is set on every call and asserted, and the id-equality test is in. |
+| I3 | **Resolved, with a better mechanism than I proposed.** The D13 lease keeps the HTTP call out of every transaction and the `pg_stat_activity` test proves it. That is stronger than my advisory-lock-plus-timeout fix. Refresh-token retention and transient-vs-auth mapping are tested. One new gap is listed as R2-I1. |
+| I4 | **Resolved.** Atomic claim, `createdByUserId` and both concurrency tests are in. Two wording details are in R2-M1. |
+| I5 | **Resolved.** |
+| I6 | **Resolved.** The resolved IP is checked on every connect in web and worker, the connection is pinned to that IP with `servername`, and there is a rebind test (public on test-connection, 127.0.0.1 on the next connect). TLS is required before AUTH. Range gaps are in R2-M2. |
+| I7 | **Resolved.** |
+| I8 | **Resolved.** Test-isolation and robustness details are in R2-M3. |
+| I9 | **Resolved.** The GreenMail job has setup gaps (R2-I3). |
+| I10 | **Resolved.** The hint-by-id fallback is in, and HANDOFF gates P3-T11. The new `deleteDraft` export has a hazard (R2-I2). |
+| I11, I12 | **Resolved.** |
+| M1–M12 | **Resolved.** Keeping the `TransientBeforeSendError` name (M4) is fine on the merits: the documented meaning is clear and renaming would only churn text. |
+
+### New Important (each is small; apply in the owning task)
+
+**R2-I1. Credential writes outside the store do not clear the refresh lease, so an in-flight refresh can resurrect or overwrite credentials.** Location: T02a refresh algorithm step (3), T02b reconnect, T04 disconnect and soft delete.
+- **Problem:** Step (3) writes when `refreshLeaseId = mine`. If a user disconnects or soft-deletes the account while a refresh is in flight, `credentialsEnc` is set to null and then step (3) writes fresh tokens back. Purged credentials return, which breaks PS-ACC-09 and PS-ACC-28. The same race lets a reconnect's new grant be overwritten by tokens from the old grant.
+- **Fix:** Every `credentialsEnc` write outside the store (reconnect, disconnect, soft delete, rotation) also sets `refreshLeaseId = NULL, refreshLeaseUntil = NULL`. Step (3) additionally requires `credentialsEnc IS NOT NULL AND "deletedAt" IS NULL`.
+- **Test (T02a):** `doRefresh` pending; disconnect the account; release `doRefresh`; `credentialsEnc` stays null. The same pattern for reconnect: the new credentials survive.
+
+**R2-I2. `deleteDraft` can delete the real sent message.** Location: T05 Send ("also exported as `deleteDraft(providerMessageId)` for P3-T11 recovery when a send resolves HELD and not found").
+- **Problem:** With immutable ids, the draft id is also the id of the Sent Items copy. If Graph accepted the send late, after `findSent` missed it, recovery deletes the user's sent mail.
+- **Fix:** `deleteDraft` first runs `GET /me/messages/{id}?$select=isDraft,parentFolderId` and deletes only when `isDraft === true`. Otherwise it returns `"sent"`, which recovery should treat as SENT. The step-2 4xx path may keep deleting directly, because 4xx means not sent.
+- **Test:** a message moved to sentitems is not deleted, and the call reports it as sent.
+
+**R2-I3. The GreenMail gate job fails as written.** Location: T06 spike/`imap-real`, D11.
+- **Problem:** `greenmail/standalone` has no TLS on its plain ports and a self-signed certificate on its TLS ports. Rev 2 forbids plaintext AUTH except to loopback in `MODE=local`, and never disables certificate checks. A container job addressing the service as `greenmail` resolves to a private IP, and in vps mode it is refused outright. GreenMail also creates no Sent or Junk folders by default, so the `sent_folder` check, `findSent` and `locate` fail.
+- **Fix:** Run the job on the runner, not in a container. Connect to `127.0.0.1` on the plain ports with `MODE=local` (loopback plaintext is allowed by design), or use the TLS ports with GreenMail's certificate in `NODE_EXTRA_CA_CERTS`. Have the harness `CREATE` `Sent` and `Junk` (and `Drafts`) before the suite. Pin an exact image tag. The spike should also confirm that recreating Sent on GreenMail yields a new UIDVALIDITY.
+
+### New Minor
+
+- **R2-M1 (T02b claim).** The atomic `UPDATE` must include `"workspaceId"=$ws AND "createdByUserId"=$user` in its WHERE clause, so a wrong user's callback does not consume the real user's session. The plan's `expiresAt>now` in the claim yields zero rows for an expired state, but the test expects `expired`. On zero rows, look up the session by `stateHash`: if it is PENDING and past `expiresAt`, set it EXPIRED and return `expired`; otherwise return `state_invalid`.
+- **R2-M2 (`assertPublicHost`).** The block list misses `fe80::/10`, `64:ff9b::/96` (NAT64), `2002::/16` (6to4, check the embedded IPv4), multicast `224.0.0.0/4` and `ff00::/8`, reserved `240.0.0.0/4`, `198.18.0.0/15` and `192.0.0.0/24`. It is simpler to accept only public unicast and reject everything else. Add these to `net.test.ts`.
+- **R2-M3 (file-backed Fake).**
+  - A crashed process leaves the `wx` lock behind. Break locks older than 10 s.
+  - The default `FAKE_MAIL_DIR` in os tmp is shared across runs and across parallel Vitest workers. Harnesses should use `mkdtemp`, and Playwright global-setup should set a fresh dir, or a stale message from a previous run can make `test-send.spec.ts` pass falsely.
+  - The `[address]` route parameter becomes a file name. Validate it with `z.email()` and encode it (for example `encodeURIComponent`) to rule out path traversal.
+- **R2-M4 (paging bounds).** Gmail and Graph can only resume at page granularity, so the "~20 MB" bound must be enforced by lowering the requested page size, never by stopping inside a page. Graph needs `Prefer: odata.maxpagesize=<limit>` combined with the ImmutableId preference (one `Prefer` header with both values). Adjust the "every call has Prefer: IdType" assertion to allow both.
+- **R2-M5 (lease).**
+  - When the 25 s wait budget runs out, throw `TransientBeforeSendError`.
+  - Optional hardening: step (3) could also accept the write when the stored ciphertext is byte-identical to the one read in step (1). That keeps a rotated Microsoft token even after a lease expiry such as a laptop sleeping mid-refresh.
+- **R2-M6 (Compose local mode).** A mail bridge on the host (Proton Bridge) is reached from containers via `host.docker.internal`, which is not loopback. It therefore needs TLS with the bridge certificate. Document `NODE_EXTRA_CA_CERTS` in LOCAL.md.
+- **R2-M7.** The "Models" section says T02a depends on P1-T07, but TASKS.json says P2-T01. TASKS is fine (T02a needs nothing from T01, but the order is harmless); align the plan text.
+
+### Round 2 assessment
+
+No Critical findings. Each of the three new Important findings is a sentence of spec plus one test, applied inside its owning task (T02a, T05, T06), so they do not need another plan round. The interface freeze is now sufficient for P3-T09..T11, P4-T05/T07, P5 placement/spam rescue and P7 push.
+
+VERDICT: Approved

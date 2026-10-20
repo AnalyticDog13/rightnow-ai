@@ -318,3 +318,15 @@ Full `npm test`, lint, typecheck, Playwright, CI incl. `compose-smoke` rotation 
 | M11 | No response bodies in errors; `JSON.stringify` tests in T01/T02b/T03 |
 | M12 | Env cache reset in the M1 test; M4 grep note |
 No finding was rejected; M4 and the I3 lock mechanism are adjusted as shown.
+
+## Revision 3 — round-2 review findings (binding on the owning tasks)
+
+- **R2-I1 (P2-T02a):** disconnect, soft delete and reconnect clear `refreshLeaseId/refreshLeaseUntil` and bump a credential
+  generation; a refresh that finishes after that writes nothing (conditional update on lease id + generation).
+  Tests: `refresh finishing after disconnect does not restore tokens`, `refresh finishing after reconnect does not overwrite new grant`.
+- **R2-I2 (P2-T05):** Graph recovery `deleteDraft` deletes only when `isDraft === true` (ImmutableId means the draft id is the
+  Sent Items id). Test: `deleteDraft never deletes a sent message`.
+- **R2-I3 (P2-T06):** GreenMail CI job connects via 127.0.0.1 in local mode (plain ports allowed only when
+  `MODE=local` and host is loopback), creates Sent/Junk folders before the suite, pins the image tag.
+- Minor round-2 items (OAuth expired vs state_invalid wording, extra SSRF ranges, Fake isolation/stale locks/path
+  traversal) are applied by the owning task's implementer; details in `docs/plans/phase-2-review.md` "Round 2".
