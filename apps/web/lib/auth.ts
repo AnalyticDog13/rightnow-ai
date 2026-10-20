@@ -1,3 +1,4 @@
+import { audit } from "@rightnow/core";
 import { prisma } from "@rightnow/db";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
@@ -18,6 +19,30 @@ export const auth = betterAuth({
     window: 60,
     max: 100,
     customRules: { "/sign-in/email": { window: 60, max: 5 } },
+  },
+  databaseHooks: {
+    session: {
+      // PS-SEC-07: every sign-in is audited. A failing audit write must not lock users out.
+      create: {
+        after: async (session) => {
+          try {
+            const m = await prisma.member.findFirst({
+              where: { userId: session.userId },
+              orderBy: { createdAt: "asc" },
+              select: { workspaceId: true },
+            });
+            if (m)
+              await audit(
+                prisma,
+                { workspaceId: m.workspaceId, actorId: session.userId },
+                "auth.sign_in",
+              );
+          } catch (e) {
+            console.error("audit sign-in failed", e);
+          }
+        },
+      },
+    },
   },
   plugins: [
     organization({

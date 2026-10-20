@@ -129,6 +129,7 @@ model ApiKey {
   name        String
   prefix      String
   hash        String    @unique
+  scopes      String[]
   createdAt   DateTime  @default(now())
   lastUsedAt  DateTime?
   revokedAt   DateTime?

@@ -14,48 +14,64 @@ export type Role = (typeof ROLES)[number];
 export type SessionInfo = { userId?: string; workspaceId: string; role: Role };
 export type SessionGetter = (req: Request) => Promise<SessionInfo | null>;
 
-type Opts<B extends z.ZodType, Q extends z.ZodType> = {
+type Auth = "session" | "session-or-apikey" | "public";
+type Opts<B extends z.ZodType, Q extends z.ZodType, A extends Auth> = {
   body?: B;
   query?: Q;
-  auth?: "session" | "session-or-apikey" | "public";
+  auth?: A;
   /** Minimum role. Default VIEWER for GET/HEAD, MEMBER otherwise. */
   role?: Role;
   /** API key scope, e.g. "leads:read". */
   scope?: string;
 };
-type Ctx<B extends z.ZodType, Q extends z.ZodType> = {
+type Ctx<B extends z.ZodType, Q extends z.ZodType, A extends Auth> = {
   userId?: string;
-  /** Empty string on auth: "public" routes. */
-  workspaceId: string;
   body: z.infer<B>;
   query: z.infer<Q>;
   req: Request;
-};
+} & (A extends "public" ? unknown : { workspaceId: string });
 
-/** P1-T07 seam: verify a workspace API key (Authorization: Bearer) for `scope`. Until then no key is valid. */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- signature is the contract P1-T07 fills
-export async function resolveApiKey(_req: Request, _scope?: string): Promise<SessionInfo | null> {
-  return null;
-}
+export type ApiKeyResolver = (req: Request, scope?: string) => Promise<SessionInfo | null>;
+
+/** Verifies a workspace API key (Authorization: Bearer) for `scope`: null = no valid key (401), HttpError(403) = scope missing. */
+export const resolveApiKey: ApiKeyResolver = async (req, scope) =>
+  (await import("./apikey-auth")).apiKeyResolver((await import("@rightnow/db")).prisma)(req, scope);
 
 async function defaultGetSession(req: Request) {
   return (await import("./workspace")).getSessionInfo(req.headers);
 }
 
-export function route<B extends z.ZodType = z.ZodUndefined, Q extends z.ZodType = z.ZodUndefined>(
-  opts: Opts<B, Q>,
-  handler: (ctx: Ctx<B, Q>) => Promise<unknown>,
+/** CSRF defence for cookie sessions: Origin (else Referer) must be APP_URL's origin. Missing both fails closed. */
+function sameOrigin(req: Request) {
+  const given = req.headers.get("origin") ?? req.headers.get("referer");
+  try {
+    return new URL(given!).origin === new URL(process.env.APP_URL!).origin;
+  } catch {
+    return false;
+  }
+}
+
+export function route<
+  B extends z.ZodType = z.ZodUndefined,
+  Q extends z.ZodType = z.ZodUndefined,
+  A extends Auth = "session",
+>(
+  opts: Opts<B, Q, A>,
+  handler: (ctx: Ctx<B, Q, A>) => Promise<unknown>,
   getSession: SessionGetter = defaultGetSession,
+  keyResolver: ApiKeyResolver = resolveApiKey,
 ) {
   return async (req: Request): Promise<Response> => {
     try {
       const auth = opts.auth ?? "session";
       let info: SessionInfo | null = null;
       if (auth !== "public") {
-        info = await getSession(req);
-        if (!info && auth === "session-or-apikey") info = await resolveApiKey(req, opts.scope);
-        if (!info) throw new HttpError(401, "Unauthorized");
         const read = req.method === "GET" || req.method === "HEAD";
+        info = await getSession(req);
+        if (info && !read && !sameOrigin(req))
+          throw new HttpError(403, "Cross-origin request blocked");
+        if (!info && auth === "session-or-apikey") info = await keyResolver(req, opts.scope);
+        if (!info) throw new HttpError(401, "Unauthorized");
         const min = opts.role ?? (read ? "VIEWER" : "MEMBER");
         if (ROLES.indexOf(info.role) < ROLES.indexOf(min)) throw new HttpError(403, "Forbidden");
       }
@@ -71,11 +87,12 @@ export function route<B extends z.ZodType = z.ZodUndefined, Q extends z.ZodType 
         : undefined;
       const out = await handler({
         userId: info?.userId,
-        workspaceId: info?.workspaceId ?? "",
+        ...(info && { workspaceId: info.workspaceId }),
         body,
         query,
         req,
-      } as Ctx<B, Q>);
+      } as Ctx<B, Q, A>);
+      if (out instanceof Response) return out;
       return Response.json(out ?? { ok: true });
     } catch (e) {
       if (e instanceof HttpError) return Response.json({ error: e.message }, { status: e.status });

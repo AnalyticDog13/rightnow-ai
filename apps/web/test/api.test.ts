@@ -1,6 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { HttpError, route, type SessionInfo } from "../lib/api";
+
+beforeAll(() => {
+  process.env.APP_URL = "http://localhost:3000";
+});
 
 const as = (role: SessionInfo["role"]) => async () => ({ userId: "u1", workspaceId: "w1", role });
 const none = async () => null;
@@ -8,7 +12,7 @@ const post = (body: unknown) =>
   new Request("http://x/api/t", {
     method: "POST",
     body: JSON.stringify(body),
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", origin: "http://localhost:3000" },
   });
 const body = z.strictObject({ name: z.string().min(1) });
 
@@ -40,7 +44,13 @@ describe("route()", () => {
 
   it("malformed JSON -> 400", async () => {
     const h = route({ body }, async () => ({}), as("MEMBER"));
-    const res = await h(new Request("http://x/api/t", { method: "POST", body: "{" }));
+    const res = await h(
+      new Request("http://x/api/t", {
+        method: "POST",
+        body: "{",
+        headers: { origin: "http://localhost:3000" },
+      }),
+    );
     expect(res.status).toBe(400);
   });
 
@@ -53,6 +63,7 @@ describe("route()", () => {
     const req = new Request("http://x/api/t?q=z", {
       method: "POST",
       body: JSON.stringify({ name: "a" }),
+      headers: { origin: "http://localhost:3000" },
     });
     const res = await h(req);
     expect(res.status).toBe(200);
@@ -86,9 +97,42 @@ describe("route()", () => {
   it("public needs no session; session-or-apikey without a valid key -> 401 (P1-T07 seam)", async () => {
     const pub = route({ auth: "public" }, async () => ({ hi: 1 }), none);
     expect((await pub(new Request("http://x/"))).status).toBe(200);
-    const key = route({ auth: "session-or-apikey", scope: "leads:read" }, async () => ({}), none);
+    const key = route(
+      { auth: "session-or-apikey", scope: "leads:read" },
+      async () => ({}),
+      none,
+      none,
+    );
     expect(
       (await key(new Request("http://x/", { headers: { authorization: "Bearer rn_x" } }))).status,
     ).toBe(401);
+  });
+
+  it("session writes need a matching Origin (or Referer); GET and API keys are exempt", async () => {
+    const h = route({}, async () => ({ ok: 1 }), as("OWNER"));
+    const w = (headers: Record<string, string>) =>
+      h(new Request("http://x/api/t", { method: "POST", headers }));
+    expect((await w({})).status).toBe(403);
+    expect((await w({ origin: "https://evil.example" })).status).toBe(403);
+    expect((await w({ origin: "http://localhost:3000" })).status).toBe(200);
+    expect((await w({ referer: "http://localhost:3000/settings" })).status).toBe(200);
+    expect((await w({ referer: "https://evil.example/x" })).status).toBe(403);
+    expect(
+      (await w({ origin: "https://evil.example", referer: "http://localhost:3000/" })).status,
+    ).toBe(403);
+    expect((await h(new Request("http://x/api/t"))).status).toBe(200);
+    const k = route(
+      { auth: "session-or-apikey", scope: "a:write" },
+      async () => ({}),
+      none,
+      async () => ({ workspaceId: "w1", role: "MEMBER" }),
+    );
+    const kr = new Request("http://x/", { method: "POST", headers: { authorization: "Bearer k" } });
+    expect((await k(kr)).status).toBe(200);
+  });
+
+  it("public handler context has no workspaceId", async () => {
+    const pub = route({ auth: "public" }, async (ctx) => ({ has: "workspaceId" in ctx }), none);
+    expect(await (await pub(new Request("http://x/"))).json()).toEqual({ has: false });
   });
 });

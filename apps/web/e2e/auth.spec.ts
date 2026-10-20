@@ -42,6 +42,25 @@ test("first owner signs up, sees the 10 nav items, signs out; second sign-up is 
   await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Main" }).getByRole("link")).toHaveText(NAV);
 
+  // signed-in users skip the auth pages
+  await page.goto("/sign-in");
+  await expect(page).toHaveURL(/\/dashboard/);
+  await page.goto("/sign-up");
+  await expect(page).toHaveURL(/\/dashboard/);
+
+  // API keys: create shows the token once, revoke asks for confirmation
+  await page.goto("/settings/api-keys");
+  await page.getByLabel("Name").fill("ci");
+  await page.getByLabel("leads:read").check();
+  await page.getByRole("button", { name: "Create key" }).click();
+  await expect(page.getByTestId("new-token")).toHaveText(/^rn_[A-Za-z0-9]{8}_[A-Za-z0-9]{32}$/);
+  await page.getByRole("button", { name: "I have copied it" }).click();
+  await expect(page.getByTestId("new-token")).toHaveCount(0);
+  await expect(page.getByRole("cell", { name: "leads:read" })).toBeVisible();
+  page.once("dialog", (d) => d.accept());
+  await page.getByRole("button", { name: "Revoke ci" }).click();
+  await expect(page.getByRole("cell", { name: /^Revoked/ })).toBeVisible();
+
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page).toHaveURL(/\/sign-in/);
 

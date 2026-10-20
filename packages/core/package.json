@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@rightnow/db": "0.1.0",
     "zod": "4.6.7"
   }
 }
