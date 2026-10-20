@@ -86,19 +86,20 @@
    "id": "P1-T04",
    "phase": 1,
    "title": "Web shell + better-auth workspaces + `route()` with roles + SETUP_TOKEN first-owner",
-   "status": "in_progress",
+   "status": "done",
    "deps": [
     "P1-T03"
    ],
    "model": "sonnet",
-   "commit": null,
-   "acceptance": "Vitest route wrapper (401/403/400/200); Playwright sign-up with token → dashboard → sign-out; second owner sign-up blocked; race-safe."
+   "commit": "374d78e..1c16d66",
+   "acceptance": "Vitest route wrapper (401/403/400/200); Playwright sign-up with token → dashboard → sign-out; second owner sign-up blocked; race-safe.",
+   "review": "1 fix round (org self-creation disabled); clean"
   },
   {
    "id": "P1-T05",
    "phase": 1,
    "title": "Worker skeleton (pg-boss, WorkerBoot heartbeat, `/healthz`)",
-   "status": "todo",
+   "status": "in_progress",
    "deps": [
     "P1-T04"
    ],
@@ -121,7 +122,7 @@
   {
    "id": "P1-T07",
    "phase": 1,
-   "title": "Scoped API keys + audit log + `/api/healthz` + `/api/readyz` (DB ok, worker heartbeat, sync-gate summary)",
+   "title": "Scoped API keys + audit log + `/api/healthz` + `/api/readyz` (DB ok, worker heartbeat, sync-gate summary); Origin check for state-changing routes (from P1-T04 review)",
    "status": "todo",
    "deps": [
     "P1-T06"
@@ -685,7 +686,7 @@
   {
    "id": "P7-T07",
    "phase": 7,
-   "title": "Security hardening (rate limits, CSP, 2FA, password hashing per better-auth, data export/deletion, audit view, dependency audit)",
+   "title": "Security hardening (rate limits, CSP, 2FA, password hashing per better-auth, data export/deletion, audit view, dependency audit); invite acceptance flow (deferred from P1-T04); trusted-proxy rate limiting for /api/setup and auth",
    "status": "todo",
    "deps": [
     "P7-T06"

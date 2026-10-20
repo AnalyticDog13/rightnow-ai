@@ -33,3 +33,6 @@ b56a5b0 (scoped re-review). Minors deferred: client throws at import without DAT
 
 ## 2026-10-19 · P1-T03 crypto/env/clock/key rotation · task reviewer (sonnet) · **Approved**
 Crypto verified correct. 7 minors deferred (see ledger); tsx accepted.
+
+## 2026-10-19 · P1-T04 web shell + auth · task reviewer (sonnet) · Needs fix → **Approved**
+next build verified. Fixed: org self-creation (allowUserToCreateOrganization=false) + VIEWER invite test. Deferred: invite acceptance → P7-T07; Origin check → P1-T07; setup rate limit → P7-T07.
