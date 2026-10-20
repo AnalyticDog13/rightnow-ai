@@ -46,8 +46,15 @@ export async function revokeApiKey(
 
 /** `leads:read` is allowed by itself, `leads:all` or `all:all`. */
 export function scopeAllows(scopes: string[], scope: string) {
-  const [resource] = scope.split(":");
-  return scopes.some((s) => s === scope || s === `${resource}:all` || s === "all:all");
+  const [resource, action] = scope.split(":");
+  // `<resource>:write` covers create, update and delete, not read.
+  return scopes.some(
+    (s) =>
+      s === scope ||
+      s === `${resource}:all` ||
+      s === "all:all" ||
+      (s === `${resource}:write` && action !== "read"),
+  );
 }
 
 /** Scopes offered when creating a key (`<resource>:all` stays valid for verification but is not offered). */

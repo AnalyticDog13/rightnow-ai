@@ -32,7 +32,7 @@ type Ctx<B extends z.ZodType, Q extends z.ZodType, A extends Auth> = {
   /** Next dynamic segments, e.g. `params.id` in `[id]/route.ts`. */
   params: Record<string, string | undefined>;
   req: Request;
-} & (A extends "public" ? unknown : { workspaceId: string });
+} & (A extends "public" ? unknown : { workspaceId: string; role: Role });
 
 export type ApiKeyResolver = (req: Request, scope?: string) => Promise<SessionInfo | null>;
 
@@ -93,7 +93,7 @@ export function route<
         : undefined;
       const out = await handler({
         userId: info?.userId,
-        ...(info && { workspaceId: info.workspaceId }),
+        ...(info && { workspaceId: info.workspaceId, role: info.role }),
         body,
         query,
         params: (await rc?.params) ?? {},

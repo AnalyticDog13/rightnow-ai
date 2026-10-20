@@ -1,6 +1,11 @@
 import { createHash, randomBytes } from "node:crypto";
 import { Prisma, type PrismaClient } from "@rightnow/db/client";
-import { GOOGLE_SCOPES, RateLimitedError, TransientBeforeSendError } from "@rightnow/providers";
+import {
+  GOOGLE_SCOPES,
+  getFakeProvider,
+  RateLimitedError,
+  TransientBeforeSendError,
+} from "@rightnow/providers";
 import { setCredentials } from "./accounts/credentials";
 import { getOAuthClient, maxDailyLimit, TIER_CAP, tierFor } from "./accounts/factory";
 import { audit } from "./audit";
@@ -94,6 +99,15 @@ export async function startOAuth(
   return { sessionId: s.id, authUrl, expiresAt: s.expiresAt };
 }
 
+/** Scopes each provider must have granted; Microsoft echoes some as full URLs, which are normalized first. */
+export function missingScopes(provider: Provider, scope: string): string[] {
+  const granted = scope
+    .split(" ")
+    .map((x) => (provider === "microsoft" ? x.replace("https://graph.microsoft.com/", "") : x));
+  const required = provider === "google" ? GOOGLE_SCOPES : ["Mail.Send", "Mail.ReadWrite"];
+  return required.filter((r) => !granted.includes(r));
+}
+
 const isOutage = (e: unknown) =>
   e instanceof TransientBeforeSendError || e instanceof RateLimitedError;
 const isUniqueViolation = (e: unknown) => /P2002|23505/.test(JSON.stringify(e) + String(e));
@@ -158,8 +172,7 @@ export async function completeOAuth(
     if (!x) return await fail("exchange_failed");
     if (!x.creds.refreshToken) return await fail("no_refresh_token");
     if (!getEnv().MAIL_PROVIDER_FAKE) {
-      const granted = x.creds.scope.split(" ");
-      if (!GOOGLE_SCOPES.every((g) => granted.includes(g))) return await fail("scope_missing");
+      if (missingScopes(provider, x.creds.scope).length) return await fail("scope_missing");
     }
     const email = x.email.toLowerCase();
     const creds = { kind: "oauth", ...x.creds } as const;
@@ -242,6 +255,9 @@ export async function completeOAuth(
         if (!(e instanceof Fail) && isUniqueViolation(e)) throw new Fail("account_exists");
         throw e;
       });
+    // A reconnect is a fresh grant: the Fake forgets its queued failures and revoked state.
+    if (s.reconnectAccountId && getEnv().MAIL_PROVIDER_FAKE)
+      getFakeProvider(email, s.provider).clearFailures();
     return { sessionId: s.id, accountId };
   } catch (e) {
     if (!(e instanceof Fail)) console.error("oauth callback failed", (e as Error).name);
@@ -271,4 +287,26 @@ export async function pollSession(
     ...(s.accountId && { accountId: s.accountId }),
     ...((s.errorCode || lapsed) && { errorCode: (s.errorCode ?? "expired") as OAuthErrorCode }),
   };
+}
+
+/**
+ * Cancel (UI Cancel button): a still-pending session of this user stops accepting a callback. Returns false
+ * when there was nothing to cancel (unknown, other user or workspace, already consumed or finished).
+ */
+export async function cancelSession(
+  prisma: PrismaClient,
+  workspaceId: string,
+  userId: string,
+  sessionId: string,
+): Promise<boolean> {
+  const r = await prisma.oAuthSession.deleteMany({
+    where: {
+      id: sessionId,
+      workspaceId,
+      createdByUserId: userId,
+      status: "PENDING",
+      consumedAt: null,
+    },
+  });
+  return r.count === 1;
 }

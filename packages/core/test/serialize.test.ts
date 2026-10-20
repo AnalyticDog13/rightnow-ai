@@ -28,7 +28,10 @@ test("toApiAccount never exposes credentials, cursor or lease", async () => {
   });
   // allowlist: a column added later (here a fake one) stays private by default
   const json = JSON.stringify(
-    toApiAccount({ ...full, futureSecret: "future-secret" } as typeof full),
+    toApiAccount({ ...full, futureSecret: "future-secret" } as typeof full, {
+      sent: 0,
+      reserved: 0,
+    }),
   );
   for (const s of [
     "credentialsEnc",

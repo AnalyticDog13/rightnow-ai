@@ -108,4 +108,27 @@ describe("oauth routes", () => {
     delete process.env.MAIL_PROVIDER_FAKE;
     resetEnvCache();
   });
+
+  it("DELETE cancels a pending session: the callback is rejected and the poll is 404", async () => {
+    process.env.MAIL_PROVIDER_FAKE = "1";
+    const { resetEnvCache } = await import("@rightnow/core");
+    resetEnvCache();
+    const s = (await (await post()).json()) as { sessionId: string; authUrl: string };
+    const del = await sessions.DELETE(
+      new Request(`${ORIGIN}/api/v1/oauth/sessions/${s.sessionId}`, {
+        method: "DELETE",
+        headers: { cookie, origin: ORIGIN },
+      }),
+      params({ id: s.sessionId }),
+    );
+    expect(del.status).toBe(200);
+    const page = await callback.GET(
+      new Request(s.authUrl, { headers: { cookie } }),
+      params({ provider: "google" }),
+    );
+    expect(page.status).toBe(200); // the page always closes the popup, nothing is connected
+    expect(await db.prisma.oAuthSession.count({ where: { id: s.sessionId } })).toBe(0);
+    delete process.env.MAIL_PROVIDER_FAKE;
+    resetEnvCache();
+  });
 });

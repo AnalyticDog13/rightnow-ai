@@ -6,7 +6,14 @@ import { decryptCredentials } from "../src/accounts/credentials";
 import { fixedClock } from "../src/clock";
 import { decrypt } from "../src/crypto";
 import { resetEnvCache } from "../src/env";
-import { completeOAuth, pkce, pollSession, startOAuth } from "../src/oauth";
+import {
+  cancelSession,
+  completeOAuth,
+  missingScopes,
+  pkce,
+  pollSession,
+  startOAuth,
+} from "../src/oauth";
 import { seedAccount, testEnv } from "./accounts-fixture";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
@@ -506,5 +513,53 @@ describe("pollSession", () => {
       status: "error",
       errorCode: "no_refresh_token",
     });
+  });
+});
+
+describe("cancelSession", () => {
+  test("invalidates a pending session: a later callback is state_invalid and nothing is created", async () => {
+    const c = await setup();
+    const fetch = google();
+    const start = await begin(c, fetch);
+    expect(await cancelSession(db.prisma, c.workspaceId, c.userId, start.sessionId)).toBe(true);
+    const r = await finish(c, fetch, {
+      state: stateOf(start.authUrl),
+      code: "code-late@example.com",
+    });
+    expect(r.errorCode).toBe("state_invalid");
+    expect(await count(c)).toBe(0);
+    expect(await pollSession(db.prisma, c.clock, c.workspaceId, start.sessionId)).toBeNull();
+  });
+
+  test("other workspace or user cannot cancel; a finished session is left alone", async () => {
+    const c = await setup();
+    const start = await begin(c, google());
+    expect(await cancelSession(db.prisma, "other", c.userId, start.sessionId)).toBe(false);
+    expect(await cancelSession(db.prisma, c.workspaceId, "u2", start.sessionId)).toBe(false);
+    expect((await session(start.sessionId)).status).toBe("PENDING");
+    const done = await connect(c, "done@example.com");
+    expect(await cancelSession(db.prisma, c.workspaceId, c.userId, done.start.sessionId)).toBe(
+      false,
+    );
+    expect((await session(done.start.sessionId)).status).toBe("SUCCESS");
+  });
+});
+
+describe("missingScopes", () => {
+  test("is per provider", () => {
+    expect(missingScopes("google", SCOPE)).toEqual([]);
+    expect(missingScopes("google", "https://www.googleapis.com/auth/gmail.send")).toHaveLength(1);
+    // Microsoft grants are normalized and judged by Microsoft's scopes, not Google's
+    expect(missingScopes("microsoft", "offline_access User.Read Mail.Send Mail.ReadWrite")).toEqual(
+      [],
+    );
+    expect(
+      missingScopes(
+        "microsoft",
+        "https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/Mail.ReadWrite",
+      ),
+    ).toEqual([]);
+    expect(missingScopes("microsoft", "Mail.Send")).toEqual(["Mail.ReadWrite"]);
+    expect(missingScopes("microsoft", SCOPE)).toEqual(["Mail.Send", "Mail.ReadWrite"]);
   });
 });
