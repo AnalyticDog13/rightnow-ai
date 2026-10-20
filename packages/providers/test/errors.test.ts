@@ -10,6 +10,7 @@ describe("parseRetryAfter", () => {
     expect(parseRetryAfter("garbage", now)).toBe(60);
     expect(parseRetryAfter("99999", now)).toBe(3600);
     expect(parseRetryAfter("0", now)).toBe(1);
+    expect(parseRetryAfter("7.5", now)).toBe(8);
     expect(parseRetryAfter("Wed, 21 Oct 2026 07:00:00 GMT", now)).toBe(1);
   });
 });

@@ -78,4 +78,23 @@ describe("buildMime", () => {
     expect(m.attachments[0]).toMatchObject({ filename: "big.bin", content: null, truncated: true });
     expect(m.attachments[0]!.size).toBe(26 * 1024 * 1024);
   });
+
+  it("rejects CR/LF injection anywhere", async () => {
+    const bad = (o: Partial<OutboundMime>) =>
+      expect(buildMime({ ...base, ...o })).rejects.toThrow(/CR\/LF/);
+    await bad({ subject: "a\r\n" + "Bcc: x@y.z" });
+    await bad({ from: { email: "a@rn.test", name: "A\nB" } });
+    await bad({ to: [{ email: "b@rn.test\r\nX: 1" }] });
+    await bad({ messageId: "<a@b>\r\nX: 1" });
+    await bad({ headers: { "X-A": "v\r\nBcc: x" } });
+    await bad({ headers: { "X-A\nB": "v" } });
+  });
+
+  it("custom headers cannot override reserved ones", async () => {
+    for (const k of ["Message-ID", "from", "To", "Cc", "BCC", "Date", "In-Reply-To", "References"])
+      await expect(buildMime({ ...base, headers: { [k]: "x" } })).rejects.toThrow(/reserved/);
+    await expect(
+      buildMime({ ...base, headers: { "X-RightNow-Test": "1" } }),
+    ).resolves.toBeInstanceOf(Buffer);
+  });
 });

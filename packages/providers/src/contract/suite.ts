@@ -107,6 +107,13 @@ export function runProviderContract(h: ProviderHarness): void {
       expect(att?.content?.equals(content)).toBe(true);
     });
 
+    it("Bcc recipients never appear in the delivered MIME", async () => {
+      const { provider: p, scenario } = await setup();
+      await p.send(mime(p, { bcc: [{ email: "hidden@rn.test" }] }));
+      const raw = rawText((await scenario.sentRaw())[0]!);
+      expect(raw).not.toMatch(/^bcc:/im);
+    });
+
     it("rejects a foreign From", async () => {
       const { provider: p, scenario } = await setup();
       const e = await p.send(mime(p, { from: { email: "other@rn.test" } })).catch((x) => x);
@@ -115,7 +122,20 @@ export function runProviderContract(h: ProviderHarness): void {
       expect(await scenario.sentRaw()).toHaveLength(0);
     });
 
-    it("error mapping", async () => {
+    const FAIL_KINDS: FailKind[] = [
+      "rate_limit",
+      "auth_revoked",
+      "token_5xx",
+      "api_5xx",
+      "timeout_after_write",
+      "smtp_4xx",
+      "connect_refused",
+      "smtp_5xx",
+      "permanent_rejected",
+    ];
+    // skipped visibly (not vacuously passed) when the provider supports none of the kinds
+    it.skipIf(!FAIL_KINDS.some((k) => h.supports.has(k)))("error mapping", async () => {
+      expect.hasAssertions();
       const cases: [FailKind, (e: unknown) => void, number][] = [
         [
           "rate_limit",
@@ -287,9 +307,12 @@ export function runProviderContract(h: ProviderHarness): void {
     });
 
     it("diagnostics", async () => {
-      const { provider: p, scenario } = await setup();
+      const { provider: p } = await setup();
       expect((await p.diagnostics()).ok).toBe(true);
-      if (!h.supports.has("auth_revoked")) return;
+    });
+
+    it.skipIf(!h.supports.has("auth_revoked"))("diagnostics report revoked auth", async () => {
+      const { provider: p, scenario } = await setup();
       scenario.failNext("auth_revoked");
       await p.send(mime(p)).catch(() => {});
       const d = await p.diagnostics();

@@ -170,6 +170,12 @@ export class FakeProvider implements MailProvider {
 
   // ---- controls (tests and the e2e harness) -------------------------------
 
+  /** Drops queued failures and the revoked state (a reconnect with new credentials, P2-T04). */
+  clearFailures(): void {
+    this.pending = [];
+    this.revoked = false;
+  }
+
   failNext(k: FailKind): void {
     this.pending.push(k);
   }

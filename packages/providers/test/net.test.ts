@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertPublicHost } from "../src";
+import { ProviderError, assertPublicHost } from "../src";
 
 const vps = { mode: "vps" as const, allowPrivate: false };
 const dns = (m: Record<string, string[]>) => async (h: string) => m[h] ?? [];
@@ -27,6 +27,15 @@ describe("assertPublicHost", () => {
     "64:ff9b::a00:5",
     "0:0:0:0:0:0:0:1",
     "fe80::1",
+    "fec0::1",
+    "ff02::1",
+    "2002:a00:5::1",
+    "2002:7f00:1::",
+    "192.0.2.1",
+    "198.51.100.7",
+    "203.0.113.9",
+    "224.0.0.1",
+    "0.1.2.3",
   ])("vps rejects literal %s", async (ip) => {
     await expect(assertPublicHost(ip, { ...vps, resolve: dns({}) })).rejects.toThrow();
   });
@@ -48,6 +57,28 @@ describe("assertPublicHost", () => {
       loopback: false,
     });
     expect((await assertPublicHost("2606:4700::1111", vps)).address).toBe("2606:4700::1111");
+  });
+
+  it("a host resolving to ::1 is loopback; :: and ::1 are not read as IPv4", async () => {
+    const r = await assertPublicHost("localhost", {
+      mode: "local",
+      allowPrivate: false,
+      resolve: dns({ localhost: ["::1"] }),
+    });
+    expect(r.loopback).toBe(true);
+    expect(
+      (await assertPublicHost("::ffff:127.0.0.1", { mode: "local", allowPrivate: false })).loopback,
+    ).toBe(true);
+  });
+
+  it("a public 6to4 address passes and DNS failures become ProviderError", async () => {
+    expect((await assertPublicHost("2002:5db8:d822::1", vps)).loopback).toBe(false);
+    const resolve = async () => {
+      throw Object.assign(new Error("boom"), { code: "ENOTFOUND" });
+    };
+    await expect(assertPublicHost("nx.example", { ...vps, resolve })).rejects.toBeInstanceOf(
+      ProviderError,
+    );
   });
 
   it("allowPrivate and local mode pass", async () => {

@@ -9,10 +9,62 @@ const fmt = (a: Addr) => (a.name ? { name: a.name, address: a.email } : a.email)
 
 export const newMessageId = (domain: string) => `<${randomUUID()}@${domain}>`;
 
+const RESERVED = new Set([
+  "message-id",
+  "from",
+  "to",
+  "cc",
+  "bcc",
+  "date",
+  "in-reply-to",
+  "references",
+  "subject",
+  "reply-to",
+  "mime-version",
+  "content-type",
+  "content-transfer-encoding",
+]); // List-Unsubscribe* is deliberately allowed: `headers` is its channel
+
+function checkMime(m: OutboundMime): void {
+  const single = (what: string, v: string | undefined) => {
+    if (v !== undefined && /[\r\n]/.test(v))
+      throw new Error(`buildMime: CR/LF not allowed in ${what}`);
+  };
+  const addr = (what: string, a: Addr | undefined) => (
+    single(`${what} address`, a?.email),
+    single(`${what} name`, a?.name)
+  );
+  addr("from", m.from);
+  addr("replyTo", m.replyTo);
+  for (const [w, l] of [
+    ["to", m.to],
+    ["cc", m.cc],
+    ["bcc", m.bcc],
+  ] as const)
+    l?.forEach((a) => addr(w, a));
+  single("subject", m.subject);
+  single("messageId", m.messageId);
+  single("inReplyTo", m.inReplyTo);
+  m.references?.forEach((r) => single("references", r));
+  m.attachments?.forEach(
+    (a) => (
+      single("attachment filename", a.filename),
+      single("attachment contentType", a.contentType)
+    ),
+  );
+  for (const [k, v] of Object.entries(m.headers ?? {})) {
+    single(`header name ${JSON.stringify(k)}`, k);
+    single(`header ${k}`, v);
+    if (RESERVED.has(k.toLowerCase()))
+      throw new Error(`buildMime: header ${k} is reserved and set from OutboundMime fields`);
+  }
+}
+
 export async function buildMime(
   m: OutboundMime,
   opts: { keepBcc?: boolean } = {},
 ): Promise<Buffer> {
+  checkMime(m);
   const node = new MailComposer({
     from: fmt(m.from),
     to: m.to.map(fmt),

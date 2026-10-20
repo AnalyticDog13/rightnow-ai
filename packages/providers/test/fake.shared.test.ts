@@ -37,3 +37,13 @@ it("diagnostics fail for a host starting with fail.", async () => {
   const p = new FakeProvider("me@rn.test", { dir, kind: "SMTP", host: "fail.example.test" });
   expect((await p.diagnostics()).ok).toBe(false);
 });
+
+it("clearFailures lifts a sticky auth_revoked", async () => {
+  const p = new FakeProvider("me@rn.test", { dir });
+  p.failNext("auth_revoked");
+  await expect(p.send(mime(1))).rejects.toThrow();
+  await expect(p.send(mime(2))).rejects.toThrow();
+  p.clearFailures();
+  await expect(p.send(mime(3))).resolves.toBeDefined();
+  expect((await p.diagnostics()).ok).toBe(true);
+});

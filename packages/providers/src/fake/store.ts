@@ -46,7 +46,8 @@ export async function updateMailbox<T>(file: string, fn: (box: FakeMailbox) => T
       await (await open(lock, "wx")).close();
       break;
     } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
+      // Windows reports EPERM/EACCES while another process's unlink of the lock is pending
+      if (!["EEXIST", "EPERM", "EACCES"].includes((e as NodeJS.ErrnoException).code ?? "")) throw e;
       // a crashed holder must not wedge everyone
       const age = await stat(lock).then(
         (s) => Date.now() - s.mtimeMs,

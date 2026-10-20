@@ -21,9 +21,13 @@ export const envSchema = z.object({
   MS_CLIENT_ID: z.string().optional(),
   MS_CLIENT_SECRET: z.string().optional(),
   MS_TENANT: z.string().default("common"),
-  ALLOW_PRIVATE_MAIL_HOSTS: z.literal("1").optional(),
+  ALLOW_PRIVATE_MAIL_HOSTS: z
+    .union([z.literal("1"), z.literal("").transform(() => undefined)])
+    .optional(),
   FAKE_MAIL_DIR: z.string().optional(),
-  MAIL_PROVIDER_FAKE: z.literal("1").optional(),
+  MAIL_PROVIDER_FAKE: z
+    .union([z.literal("1"), z.literal("").transform(() => undefined)])
+    .optional(),
 });
 export type Env = z.infer<typeof envSchema>;
 

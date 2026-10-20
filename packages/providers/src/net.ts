@@ -1,6 +1,6 @@
 import { lookup } from "node:dns/promises";
 import { BlockList, isIP } from "node:net";
-import { ProviderError } from "./errors";
+import { ProviderError, TransientBeforeSendError } from "./errors";
 
 const blocked = new BlockList();
 for (const [net, bits] of [
@@ -13,6 +13,9 @@ for (const [net, bits] of [
   ["192.0.0.0", 24],
   ["192.168.0.0", 16],
   ["198.18.0.0", 15],
+  ["192.0.2.0", 24], // TEST-NET-1..3
+  ["198.51.100.0", 24],
+  ["203.0.113.0", 24],
   ["224.0.0.0", 3], // multicast, reserved, broadcast
 ] as const)
   blocked.addSubnet(net, bits, "ipv4");
@@ -20,6 +23,8 @@ blocked.addAddress("::", "ipv6");
 blocked.addAddress("::1", "ipv6");
 blocked.addSubnet("fc00::", 7, "ipv6"); // ULA
 blocked.addSubnet("fe80::", 10, "ipv6"); // link-local
+blocked.addSubnet("fec0::", 10, "ipv6"); // site-local (deprecated)
+blocked.addSubnet("ff00::", 8, "ipv6"); // multicast
 
 /** Parses any textual IPv6 form (compressed, expanded, mixed ::ffff:a.b.c.d) to 16 bytes. */
 function v6Bytes(ip: string): number[] {
@@ -51,6 +56,8 @@ function embeddedV4(ip: string): string | null {
     b[2] === 0xff &&
     b[3] === 0x9b &&
     b.slice(4, 12).every((x) => x === 0);
+  if (b[0] === 0x20 && b[1] === 0x02) return b.slice(2, 6).join("."); // 6to4 (2002::/16)
+  if (zero(15)) return null; // :: and ::1 are checked as IPv6, not as 0.0.0.x
   if (!mapped && !nat64 && !zero(12)) return null;
   return b.slice(12).join(".");
 }
@@ -79,7 +86,15 @@ export async function assertPublicHost(
   const resolve =
     o.resolve ??
     (async (h) => (await lookup(h, { all: true, verbatim: true })).map((a) => a.address));
-  const addrs = isIP(bare) ? [bare] : await resolve(bare);
+  let addrs: string[];
+  try {
+    addrs = isIP(bare) ? [bare] : await resolve(bare);
+  } catch (e) {
+    // DNS failure is transient and happens before anything is sent
+    throw new TransientBeforeSendError(
+      `dns lookup failed for ${host}: ${(e as NodeJS.ErrnoException).code ?? "error"}`,
+    );
+  }
   if (addrs.length === 0) throw new ProviderError(`host ${host} did not resolve`);
   if (o.mode === "vps" && !o.allowPrivate && addrs.some(isPrivate))
     throw new ProviderError(`host ${host} resolves to a non-public address`);

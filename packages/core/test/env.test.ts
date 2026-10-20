@@ -54,6 +54,13 @@ describe("mail provider env", () => {
     expect(e.MS_TENANT).toBe("common");
   });
 
+  test("empty flag values (Compose passes unset vars as empty) mean off", () => {
+    const e = parseEnv({ ...good, MAIL_PROVIDER_FAKE: "", ALLOW_PRIVATE_MAIL_HOSTS: "" });
+    expect(e.MAIL_PROVIDER_FAKE).toBeUndefined();
+    expect(e.ALLOW_PRIVATE_MAIL_HOSTS).toBeUndefined();
+    expect(() => parseEnv({ ...good, MAIL_PROVIDER_FAKE: "true" })).toThrow(/MAIL_PROVIDER_FAKE/);
+  });
+
   test("MAIL_PROVIDER_FAKE=1 is refused in vps mode, naming the var", () => {
     expect(() => parseEnv({ ...good, MODE: "vps", MAIL_PROVIDER_FAKE: "1" })).toThrow(
       /MAIL_PROVIDER_FAKE/,
