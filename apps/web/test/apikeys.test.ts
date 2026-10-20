@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { audit, createApiKey, fixedClock, revokeApiKey, verifyApiKey } from "@rightnow/core";
 import { createTestDb } from "@rightnow/db/test-db";
 import { route } from "../lib/api";
+import { resetWebEnvCache } from "../lib/env";
 import { apiKeyResolver } from "../lib/apikey-auth";
 import { readiness } from "../lib/ready";
 
@@ -11,7 +12,15 @@ let w2: string;
 const none = async () => null;
 
 beforeAll(async () => {
-  process.env.APP_URL = "http://localhost:3000";
+  Object.assign(process.env, {
+    MODE: "local",
+    DATABASE_URL: "postgresql://x:x@localhost:5432/x",
+    APP_URL: "http://localhost:3000",
+    ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64"),
+    BETTER_AUTH_SECRET: "x".repeat(40),
+    SETUP_TOKEN: "s".repeat(20),
+  });
+  resetWebEnvCache();
   db = await createTestDb();
   w1 = (await db.prisma.workspace.create({ data: { name: "A", slug: "a" } })).id;
   w2 = (await db.prisma.workspace.create({ data: { name: "B", slug: "b" } })).id;

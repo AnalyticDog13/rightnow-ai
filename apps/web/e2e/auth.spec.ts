@@ -34,6 +34,24 @@ test("wrong setup token is rejected", async ({ page }) => {
   await expect(page.getByRole("main").getByRole("alert")).toContainText("Invalid setup token");
 });
 
+test("an 11-character password is rejected and creates no user", async ({ page }) => {
+  await page.goto("/sign-up");
+  await page.getByLabel("Your name").fill("Short Pw");
+  await page.getByLabel("Email").fill("short@example.com");
+  await page.getByLabel("Password (12+ characters)").fill("elevenchars");
+  await page.getByLabel("Workspace name").fill("Short");
+  await page.getByLabel("Setup token").fill(SETUP_TOKEN);
+  await page.getByRole("button", { name: "Create owner account" }).click();
+  await expect(page.getByRole("main").getByRole("alert")).not.toBeEmpty();
+  await expect(page).toHaveURL(/\/sign-up/);
+  await page.goto("/sign-in");
+  await page.getByLabel("Email").fill("short@example.com");
+  await page.getByLabel("Password").fill("elevenchars");
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByRole("main").getByRole("alert")).not.toBeEmpty();
+  await expect(page).toHaveURL(/\/sign-in/);
+});
+
 test("first owner signs up, sees the 10 nav items, signs out; second sign-up is blocked", async ({
   page,
 }) => {

@@ -13,7 +13,7 @@ export const auth = betterAuth({
   secret: env.BETTER_AUTH_SECRET,
   database: prismaAdapter(prisma, { provider: "postgresql" }),
   // Sign-up is closed: the first owner is created by /api/setup (lib/setup.ts), everyone else by invite.
-  emailAndPassword: { enabled: true, disableSignUp: true },
+  emailAndPassword: { enabled: true, disableSignUp: true, minPasswordLength: 12 },
   rateLimit: {
     enabled: true,
     window: 60,

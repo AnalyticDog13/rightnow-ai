@@ -8,3 +8,6 @@ export const webEnvSchema = envSchema.extend({
 
 let cached: z.infer<typeof webEnvSchema> | undefined;
 export const getWebEnv = () => (cached ??= parseEnv(process.env, webEnvSchema));
+export const resetWebEnvCache = () => {
+  cached = undefined;
+};

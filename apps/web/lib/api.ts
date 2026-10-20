@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { getWebEnv } from "./env";
 
 export class HttpError extends Error {
   constructor(
@@ -47,7 +48,7 @@ async function defaultGetSession(req: Request) {
 function sameOrigin(req: Request) {
   const given = req.headers.get("origin") ?? req.headers.get("referer");
   try {
-    return new URL(given!).origin === new URL(process.env.APP_URL!).origin;
+    return new URL(given!).origin === new URL(getWebEnv().APP_URL).origin;
   } catch {
     return false;
   }

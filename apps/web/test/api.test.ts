@@ -1,9 +1,18 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { HttpError, route, type SessionInfo } from "../lib/api";
+import { resetWebEnvCache } from "../lib/env";
 
 beforeAll(() => {
-  process.env.APP_URL = "http://localhost:3000";
+  Object.assign(process.env, {
+    MODE: "local",
+    DATABASE_URL: "postgresql://x:x@localhost:5432/x",
+    APP_URL: "http://localhost:3000",
+    ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64"),
+    BETTER_AUTH_SECRET: "x".repeat(40),
+    SETUP_TOKEN: "s".repeat(20),
+  });
+  resetWebEnvCache();
 });
 
 const as = (role: SessionInfo["role"]) => async () => ({ userId: "u1", workspaceId: "w1", role });
@@ -137,6 +146,22 @@ describe("route()", () => {
     );
     const kr = new Request("http://x/", { method: "POST", headers: { authorization: "Bearer k" } });
     expect((await k(kr)).status).toBe(200);
+  });
+
+  it("CSRF check uses APP_URL from the validated web env", async () => {
+    const prev = process.env.APP_URL;
+    process.env.APP_URL = "https://app.example.com";
+    resetWebEnvCache();
+    try {
+      const h = route({}, async () => ({ ok: 1 }), as("OWNER"));
+      const w = (origin: string) =>
+        h(new Request("http://x/api/t", { method: "POST", headers: { origin } }));
+      expect((await w("https://app.example.com")).status).toBe(200);
+      expect((await w("https://evil.example")).status).toBe(403);
+    } finally {
+      process.env.APP_URL = prev;
+      resetWebEnvCache();
+    }
   });
 
   it("public handler context has no workspaceId", async () => {
