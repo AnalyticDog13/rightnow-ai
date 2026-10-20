@@ -36,3 +36,19 @@ Containers freeze (they are not restarted). Nothing sends or syncs while asleep.
 ## Limitation: tracking links need a public URL (PS-DEPLOY-13)
 
 With `APP_URL=http://localhost:3000`, open/click tracking links and one-click unsubscribe links point at your own machine, so recipients cannot reach them. Locally, emails carry mailto-only unsubscribe and click/open tracking is unavailable. For tracking, run in VPS mode or expose the app on a public HTTPS URL and set `APP_URL` to it.
+
+## Sending limits per account
+
+The daily limit you set is never allowed above half of the provider's rolling 24-hour cap. Calendar-day
+counting is only safe against a rolling window with that margin. Larger values are saved at the maximum
+and the page tells you so.
+
+| Account type | Provider cap (default / highest you can set) | Highest daily limit | Minimum gap |
+|---|---|---|---|
+| Google Workspace | 1500 / 2000 | 750 | none |
+| Gmail (gmail.com) | 400 / 500 | 200 | none |
+| Microsoft 365 | 5000 / 10000 | 2500 | 3 s |
+| Outlook.com, Hotmail, Live | 250 / 300 | 125 | 3 s |
+| SMTP | 100 / 10000 | 50 | none |
+
+New accounts start at 30 a day (or the maximum, if lower). Counts follow the account's own timezone.

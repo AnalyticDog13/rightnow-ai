@@ -22,23 +22,31 @@ const KEY = "oauth-session";
 
 type Poll = { status: "pending" | "success" | "error" | "expired"; errorCode?: string };
 
-export function ConnectMenu({ googleConfigured }: { googleConfigured: boolean }) {
+export function ConnectMenu({
+  googleConfigured,
+  reconnectAccountId,
+}: {
+  googleConfigured: boolean;
+  /** Reconnect this account instead of connecting a new one. */
+  reconnectAccountId?: string;
+}) {
   const router = useRouter();
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const cancelled = useRef(false);
+  // Every attempt gets a number; a loop whose number is no longer current exits without touching state.
+  const attempt = useRef(0);
+  const sessionId = useRef<string | null>(null);
   const popup = useRef<Window | null>(null);
 
   // Polls until a terminal state, the 10 min session expiry, or Cancel. A closed popup is NOT a cancel:
   // Google sends COOP headers that cut the opener link, so popup.closed is unreliable.
   const poll = useCallback(
-    async (id: string) => {
-      cancelled.current = false;
+    async (id: string, mine: number) => {
       setBusy(true);
-      for (let i = 0; i < 660 && !cancelled.current; i++) {
+      for (let i = 0; i < 660 && attempt.current === mine; i++) {
         const res = await fetch(`/api/v1/oauth/sessions/${id}`).catch(() => null);
-        if (cancelled.current || res?.status === 404) break;
+        if (attempt.current !== mine || res?.status === 404) break;
         const r = res?.ok ? ((await res.json()) as Poll) : null;
         if (r && r.status !== "pending") {
           sessionStorage.removeItem(KEY);
@@ -51,65 +59,96 @@ export function ConnectMenu({ googleConfigured }: { googleConfigured: boolean })
         }
         await new Promise((r) => setTimeout(r, 1000));
       }
-      sessionStorage.removeItem(KEY);
-      setBusy(false);
+      if (attempt.current === mine) {
+        sessionStorage.removeItem(KEY);
+        setBusy(false);
+      }
     },
     [router],
   );
 
+  /** Cancel really cancels: the server session stops accepting the callback, and any old loop exits. */
   function cancel() {
-    cancelled.current = true;
+    attempt.current++;
     popup.current?.close();
+    discard(sessionId.current);
+    sessionId.current = null;
+    sessionStorage.removeItem(KEY);
+    setBusy(false);
   }
+  const discard = (id: string | null) => {
+    if (id)
+      void fetch(`/api/v1/oauth/sessions/${id}`, { method: "DELETE", keepalive: true }).catch(
+        () => {},
+      );
+  };
 
   useEffect(() => {
     // Returned from the full-page flow: pick up its result.
     const id = sessionStorage.getItem(KEY);
-    if (id) void poll(id);
+    if (id) {
+      sessionId.current = id;
+      void poll(id, ++attempt.current);
+    }
   }, [poll]);
 
   async function connect() {
     setMsg("");
+    const mine = ++attempt.current;
+    setBusy(true);
     const w = window.open("", "oauth", "popup,width=520,height=680"); // must open inside the click
     const res = await fetch("/api/v1/oauth/google/start", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: "{}",
-    });
-    const j = (await res.json().catch(() => ({}))) as {
+      body: JSON.stringify(reconnectAccountId ? { reconnectAccountId } : {}),
+    }).catch(() => null);
+    const j = (await res?.json().catch(() => ({}))) as {
       sessionId?: string;
       authUrl?: string;
       error?: string;
     };
-    if (!res.ok || !j.sessionId || !j.authUrl) {
+    if (!res?.ok || !j.sessionId || !j.authUrl) {
       w?.close();
-      setMsg(
-        j.error === "not_configured"
-          ? "Google is not configured on this server."
-          : "Could not start the connection.",
-      );
+      if (attempt.current === mine) {
+        setBusy(false);
+        setMsg(
+          j.error === "not_configured"
+            ? "Google is not configured on this server."
+            : "Could not start the connection.",
+        );
+      }
       return;
     }
+    if (attempt.current !== mine) {
+      // Cancelled while the session was being created.
+      w?.close();
+      discard(j.sessionId);
+      return;
+    }
+    sessionId.current = j.sessionId;
     if (w) {
       popup.current = w;
       w.location.href = j.authUrl;
-      void poll(j.sessionId);
+      void poll(j.sessionId, mine);
     } else {
       sessionStorage.setItem(KEY, j.sessionId); // popup blocked: full-page redirect (the callback page sees this key), finished on return
       location.href = j.authUrl;
     }
   }
 
+  const verb = reconnectAccountId ? "Reconnect" : "Connect";
   return (
     <div className="flex flex-col gap-2">
-      <Button className="self-start" onClick={connect} disabled={busy || !googleConfigured}>
-        {busy ? "Waiting for Google..." : "Connect Google"}
-      </Button>
-      {busy && (
-        <Button variant="outline" className="self-start" onClick={cancel}>
-          Cancel
+      <div className="flex gap-2">
+        <Button onClick={connect} disabled={busy || !googleConfigured}>
+          {busy ? "Waiting for Google..." : `${verb} Google`}
         </Button>
-      )}
+        {busy && (
+          <Button variant="outline" onClick={cancel}>
+            Cancel
+          </Button>
+        )}
+      </div>
       {!googleConfigured && (
         <p className="text-sm text-muted-foreground">
           Google is not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET (see

@@ -9,7 +9,8 @@ import { E2E_PORT, SETUP_TOKEN } from "./env";
 
 const webDir = fileURLToPath(new URL("..", import.meta.url));
 
-// Boots the shared embedded-postgres harness (migrated template DB), then `next dev` against it.
+// Boots the shared embedded-postgres harness (migrated template DB), then `next dev` against it
+// (`E2E_PROD=1` runs `next start` instead; build first. Local `next dev` fails on some machines).
 export default async function setup() {
   let base = "";
   const stopDb = await dbSetup({ provide: (_k: string, v: string) => (base = v) } as never);
@@ -23,12 +24,17 @@ export default async function setup() {
     MAIL_PROVIDER_FAKE: "1",
     FAKE_MAIL_DIR: mkdtempSync(join(tmpdir(), "rn-e2e-mail-")),
   };
+  process.env.E2E_DATABASE_URL = env.DATABASE_URL; // for specs that seed through @rightnow/db
   const next = createRequire(import.meta.url).resolve("next/dist/bin/next");
-  const server = spawn(process.execPath, [next, "dev", "-p", String(E2E_PORT)], {
-    cwd: webDir,
-    env,
-    stdio: "ignore",
-  });
+  const server = spawn(
+    process.execPath,
+    [next, process.env.E2E_PROD ? "start" : "dev", "-p", String(E2E_PORT)],
+    {
+      cwd: webDir,
+      env,
+      stdio: "ignore",
+    },
+  );
   const stop = async () => {
     // kill the whole tree: next dev spawns workers
     if (process.platform === "win32") {

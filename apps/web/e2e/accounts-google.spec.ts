@@ -40,19 +40,38 @@ test("with the popup blocked, the full-page fallback also connects", async ({ pa
   await expect(row(page, "fallback@example.test")).toContainText("Google");
 });
 
-test("Cancel stops waiting; a closed popup alone does not", async ({ page }) => {
+test("Cancel stops waiting and invalidates the server session; a closed popup alone does not", async ({
+  page,
+}) => {
+  let starts = 0;
+  const polls: Record<string, number> = { s1: 0, s2: 0 };
   await page.route("**/api/v1/oauth/google/start", (r) =>
-    r.fulfill({ json: { sessionId: "s1", authUrl: "about:blank", expiresAt: "2099-01-01" } }),
+    r.fulfill({
+      json: { sessionId: `s${++starts}`, authUrl: "about:blank", expiresAt: "2099-01-01" },
+    }),
   );
-  await page.route("**/api/v1/oauth/sessions/s1", (r) =>
-    r.fulfill({ json: { status: "pending" } }),
-  );
+  for (const id of ["s1", "s2"])
+    await page.route(`**/api/v1/oauth/sessions/${id}`, (r) => {
+      if (r.request().method() === "GET") polls[id]!++;
+      return r.fulfill({ json: { status: "pending" } });
+    });
   const opened = page.waitForEvent("popup");
   await page.getByRole("button", { name: "Connect Google" }).click();
   const popup = await opened;
   await popup.close();
   await page.waitForTimeout(2500); // still waiting after the popup closed
   await expect(page.getByRole("button", { name: "Waiting for Google..." })).toBeDisabled();
+  const deleted = page.waitForRequest(
+    (q) => q.method() === "DELETE" && q.url().endsWith("/api/v1/oauth/sessions/s1"),
+  );
   await page.getByRole("button", { name: "Cancel" }).click();
+  await deleted;
   await expect(page.getByRole("button", { name: "Connect Google" })).toBeEnabled();
+
+  // Connect again: the cancelled attempt's loop must not keep polling.
+  await page.waitForTimeout(300); // a request already in flight may still land
+  const settled = polls.s1!;
+  await page.getByRole("button", { name: "Connect Google" }).click();
+  await expect.poll(() => polls.s2).toBeGreaterThan(1);
+  expect(polls.s1).toBe(settled);
 });
