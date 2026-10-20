@@ -57,7 +57,7 @@ function embeddedV4(ip: string): string | null {
     b[3] === 0x9b &&
     b.slice(4, 12).every((x) => x === 0);
   if (b[0] === 0x20 && b[1] === 0x02) return b.slice(2, 6).join("."); // 6to4 (2002::/16)
-  if (zero(15)) return null; // :: and ::1 are checked as IPv6, not as 0.0.0.x
+  if (zero(15) && b[15]! <= 1) return null; // only :: and ::1 are checked as IPv6; ::2 .. ::ff are 0.0.0.x
   if (!mapped && !nat64 && !zero(12)) return null;
   return b.slice(12).join(".");
 }

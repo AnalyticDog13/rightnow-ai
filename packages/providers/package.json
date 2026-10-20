@@ -11,11 +11,15 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "imapflow": "2.5.8",
     "mailparser": "3.10.0",
     "nodemailer": "10.1.7"
   },
   "devDependencies": {
     "@types/mailparser": "3.9.0",
-    "@types/nodemailer": "8.0.2"
+    "@types/nodemailer": "8.0.2",
+    "@types/smtp-server": "3.5.13",
+    "hoodiecrow-imap": "3.3.1",
+    "smtp-server": "3.20.2"
   }
 }
