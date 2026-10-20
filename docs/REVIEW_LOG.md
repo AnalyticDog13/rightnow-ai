@@ -103,3 +103,6 @@ findSent searches all mail incl. trash (overrode brief: no-duplicate-sends), lab
 
 ## 2026-10-20 · P2-T04 account service/API/UI · task reviewer (sonnet) · 3 fix rounds → **Approved**
 Autofix conditional write, explicit :write scope, bulk clamp warnings, diagnostics in tx + audit, most-severe check wins, thrown AuthError/scope_missing → NEEDS_ATTENTION unless user-paused, shared numeric validator.
+
+## 2026-10-20 · P2-T05 Microsoft Graph connect + provider · task reviewer (sonnet) · 1 fix round → **Approved**
+Draft id carried on all post-draft errors, cleanup only when definitely unsent (isDraft guard), invalid_client = app-config not mailbox auth (Google too), guest #EXT# UPN rejected, gap clamp tested.

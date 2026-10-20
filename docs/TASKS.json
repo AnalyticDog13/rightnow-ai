@@ -204,19 +204,20 @@
    "id": "P2-T05",
    "phase": 2,
    "title": "Microsoft Graph connect + provider (draft+send, delta Inbox+SentItems, internetMessageId search), `docs/ops/MICROSOFT_SETUP.md`. (Pulled forward from spec Phase 7 so rotation and sync are provider-agnostic from the start.)",
-   "status": "in_progress",
+   "status": "done",
    "deps": [
     "P2-T04"
    ],
    "model": "sonnet",
-   "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-2.md; tests listed there pass"
+   "commit": "bcdee7f..8fe7e72",
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-2.md; tests listed there pass",
+   "review": "1 fix round (draft id on errors + cleanup, app-credential errors non-auth, guest UPN, button label, gap clamp test); clean"
   },
   {
    "id": "P2-T06",
    "phase": 2,
    "title": "IMAP/SMTP provider (SMTP send; APPEND to Sent when needed; UID/MODSEQ cursor; UIDVALIDITY → expired; header search) + connect form with test",
-   "status": "todo",
+   "status": "in_progress",
    "deps": [
     "P2-T05"
    ],
@@ -234,7 +235,7 @@
    ],
    "model": "sonnet",
    "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-2.md; tests listed there pass; live-verify Google connect popup flow (COOP) from P2-T02b; live-verify Gmail API shapes listed in P2-T03 report (history, queries, minimal labelIds, error envelopes, Message-ID kept, Bcc in sent copy)"
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-2.md; tests listed there pass; live-verify Google connect popup flow (COOP) from P2-T02b; live-verify Gmail API shapes listed in P2-T03 report (history, queries, minimal labelIds, error envelopes, Message-ID kept, Bcc in sent copy); live-verify Graph shapes listed in P2-T05 report"
   },
   {
    "id": "P3-T01",
@@ -359,7 +360,7 @@
   {
    "id": "P3-T11",
    "phase": 3,
-   "title": "Sender + recovery + HELD view API (error classification, lease/claimToken, UNCERTAIN → SENT/HELD)",
+   "title": "Sender + recovery + HELD view API (error classification, lease/claimToken, UNCERTAIN → SENT/HELD); persist ProviderError.providerMessageId on ScheduledMessage for findSent hint (from P2-T05)",
    "status": "todo",
    "deps": [
     "P3-T10"
@@ -443,7 +444,7 @@
   {
    "id": "P4-T05",
    "phase": 4,
-   "title": "Sync job (incremental + full + historical import + outside-app sends), sets `lastSyncCompletedAt`; cap + escalate persistent transient read errors (from P2-T03)",
+   "title": "Sync job (incremental + full + historical import + outside-app sends), sets `lastSyncCompletedAt`; cap + escalate persistent transient read errors (from P2-T03); Graph delta \"changed\" for moves to Deleted Items (from P2-T05)",
    "status": "todo",
    "deps": [
     "P4-T04"

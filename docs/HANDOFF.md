@@ -1,7 +1,7 @@
 # Handoff
 
 **Phase:** 2 — Email provider connections (branch `phase-2-providers`, created from `main` after the Phase 1 merge)
-**Current task:** P2-T05 Microsoft Graph connect + provider (P2-T04 done cbb3bc4).
+**Current task:** P2-T06 IMAP/SMTP provider + connect form (P2-T05 done 8fe7e72).
 **Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 (approved). Phase 1 step plan: `docs/plans/phase-1.md` (complete).
 **Tests:** 54 vitest + 3 Playwright green; CI `check` + `compose-smoke` green on main.
 
