@@ -217,19 +217,20 @@
    "id": "P2-T06",
    "phase": 2,
    "title": "IMAP/SMTP provider (SMTP send; APPEND to Sent when needed; UID/MODSEQ cursor; UIDVALIDITY → expired; header search) + connect form with test",
-   "status": "in_progress",
+   "status": "done",
    "deps": [
     "P2-T05"
    ],
    "model": "sonnet",
-   "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-2.md; tests listed there pass; SSRF: block IPv4-compatible ::a.b.c.d forms (from P2-T01 re-review)"
+   "commit": "f6937a8..05faa53",
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-2.md; tests listed there pass; SSRF: block IPv4-compatible ::a.b.c.d forms (from P2-T01 re-review)",
+   "review": "opus review; 1 fix round (IMAP throttle mapping, listMessages loss, shared openAccount, EAUTH codes, workspace-scoped creds, DNS rebind transient, real security tests); clean"
   },
   {
    "id": "P2-T07",
    "phase": 2,
    "title": "Test-send + `docs/ops/LIVE_VERIFICATION.md`",
-   "status": "todo",
+   "status": "in_progress",
    "deps": [
     "P2-T06"
    ],
@@ -708,7 +709,7 @@
   {
    "id": "P7-T07",
    "phase": 7,
-   "title": "Security hardening (rate limits, CSP, 2FA, password hashing per better-auth, data export/deletion, audit view, dependency audit); invite acceptance flow (deferred from P1-T04); trusted-proxy rate limiting for /api/setup and auth",
+   "title": "Security hardening (rate limits, CSP, 2FA, password hashing per better-auth, data export/deletion, audit view, dependency audit); invite acceptance flow (deferred from P1-T04); trusted-proxy rate limiting for /api/setup and auth; rate-limit IMAP/SMTP test-connection + trim banner exposure (from P2-T06)",
    "status": "todo",
    "deps": [
     "P7-T06"

@@ -1,7 +1,7 @@
 # Handoff
 
 **Phase:** 2 — Email provider connections (branch `phase-2-providers`, created from `main` after the Phase 1 merge)
-**Current task:** P2-T06 IMAP/SMTP provider + connect form (P2-T05 done 8fe7e72).
+**Current task:** P2-T07 test-send + live verification (P2-T06 done 05faa53). Then Phase 2 gate.
 **Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 (approved). Phase 1 step plan: `docs/plans/phase-1.md` (complete).
 **Tests:** 54 vitest + 3 Playwright green; CI `check` + `compose-smoke` green on main.
 

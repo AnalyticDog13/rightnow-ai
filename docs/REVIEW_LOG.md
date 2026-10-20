@@ -106,3 +106,6 @@ Autofix conditional write, explicit :write scope, bulk clamp warnings, diagnosti
 
 ## 2026-10-20 · P2-T05 Microsoft Graph connect + provider · task reviewer (sonnet) · 1 fix round → **Approved**
 Draft id carried on all post-draft errors, cleanup only when definitely unsent (isDraft guard), invalid_client = app-config not mailbox auth (Google too), guest #EXT# UPN rejected, gap clamp tested.
+
+## 2026-10-20 · P2-T06 IMAP/SMTP provider + connect · task reviewer (opus) · 1 fix round → **Approved**
+SSRF/TLS/credential handling verified. Fixed: IMAP throttle/outage at LOGIN not AuthError, listMessages paging + SINCE tz loss, shared openAccount (clears provider state), EAUTH codes, workspace-scoped creds, DNS rebind transient, byte-level STARTTLS + password-scrub tests.
