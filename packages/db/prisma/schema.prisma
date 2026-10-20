@@ -135,3 +135,11 @@ model ApiKey {
 
   @@index([workspaceId])
 }
+
+model WorkerBoot {
+  id              String    @id @default(cuid())
+  startedAt       DateTime  @default(now())
+  hostname        String
+  lastHeartbeatAt DateTime  @default(now())
+  stoppedAt       DateTime?
+}

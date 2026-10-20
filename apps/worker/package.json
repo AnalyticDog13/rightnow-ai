@@ -1,0 +1,19 @@
+{
+  "name": "@rightnow/worker",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "7.10.1",
+    "@rightnow/core": "0.1.0",
+    "@rightnow/db": "0.1.0",
+    "dotenv": "18.0.8",
+    "pg-boss": "12.38.0",
+    "zod": "4.6.7"
+  }
+}
