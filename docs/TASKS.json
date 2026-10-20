@@ -350,16 +350,28 @@
    "acceptance": "parallel claim test (2 dispatchers × 2 accounts, no deadlock, no over-quota); midnight crossing; campaign/workspace caps; reservation rollback; first-of-day claim with allowance 0 and with units > allowance → not claimed; paused campaign / past endAt → not claimed; overdue row at 03:00 → not sent until window opens; freshness and sticky gates; suppression re-check."
   },
   {
-   "id": "P3-T10",
+   "id": "P3-T10a",
    "phase": 3,
-   "title": "Planner + rotation + sequence advancement + subsequence entry + campaign completion",
+   "title": "Rotation (pickAccount), why-not-sending explainer, status route",
    "status": "todo",
    "deps": [
     "P3-T09"
    ],
    "model": "sonnet",
    "commit": null,
-   "acceptance": "even rotation; sticky follow-ups; step-1 re-route on ineligible account; revive-not-duplicate re-plan."
+   "acceptance": "See docs/plans/phase-3.md P3-T10a"
+  },
+  {
+   "id": "P3-T10b",
+   "phase": 3,
+   "title": "Planner + re-planning (revive rules, subsequence entry, lock order, deadlock retry)",
+   "status": "todo",
+   "deps": [
+    "P3-T10a"
+   ],
+   "model": "opus",
+   "commit": null,
+   "acceptance": "See docs/plans/phase-3.md P3-T10b"
   },
   {
    "id": "P3-T11a",
@@ -367,7 +379,7 @@
    "title": "Sender (send claimed, error classification, late-accept, lease/claimToken) — GATED by ProviderVerification (D17)",
    "status": "todo",
    "deps": [
-    "P3-T10"
+    "P3-T10b"
    ],
    "model": "opus",
    "commit": null,

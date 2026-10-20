@@ -167,3 +167,6 @@ Atomic per-account rate limit (advisory xact lock, send outside tx), live-verify
 - P2-T05: carry-forward to P2-T07: live-verify Graph shapes (Message-ID + draft id survive into Sent Items, @removed reasons, 403 codes) per P2-T05 report
 - P2-T05: carry-forward to P3-T11: sender persists ProviderError.providerMessageId onto ScheduledMessage.providerMessageId (findSent hint for Graph)
 - P2-T05: carry-forward to P4-T05: Graph delta "changed" ignored — move to Deleted Items may not reach removed
+
+## 2026-10-21 · Phase 3 step plan review round 1 · independent agent (opus) · **Changes Required**
+2 Critical (cancelled HELD row re-planned → double send; claim lacked current-step check → stale main-sequence follow-up after subsequence entry), 12 Important (D18 blocklist-as-hard-bounce, account errors pause leads not account, UNCERTAIN without time cap, planner/claim deadlock, one bad row blocks all workspaces, …), 19 Minor. D16/D17 sound and unbypassable; D18 fits frozen interface. Planner revising.
