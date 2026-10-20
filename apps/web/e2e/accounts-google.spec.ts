@@ -16,13 +16,15 @@ const row = (page: import("@playwright/test").Page, email: string) =>
 test("Connect Google opens a popup that closes and lists the account; connecting again says it exists", async ({
   page,
 }) => {
-  const popup = page.waitForEvent("popup");
+  const opened = page.waitForEvent("popup");
   await page.getByRole("button", { name: "Connect Google" }).click();
-  await (await popup).waitForEvent("close");
-  await expect(row(page, "fake@example.test")).toContainText("Google", { timeout: 10_000 });
+  const popup = await opened;
+  await expect.poll(() => popup.isClosed()).toBe(true); // may already be closed: no event wait
+
+  await expect(row(page, "fake@example.test")).toContainText("Google");
 
   await page.getByRole("button", { name: "Connect Google" }).click();
-  await expect(page.getByRole("alert")).toContainText("already connected");
+  await expect(page.getByRole("main").getByRole("alert")).toContainText("already connected");
   await expect(row(page, "fake@example.test")).toHaveCount(1);
 });
 
@@ -35,5 +37,5 @@ test("with the popup blocked, the full-page fallback also connects", async ({ pa
     r.continue({ postData: JSON.stringify({ loginHint: "fallback@example.test" }) }),
   );
   await page.getByRole("button", { name: "Connect Google" }).click();
-  await expect(row(page, "fallback@example.test")).toContainText("Google", { timeout: 10_000 });
+  await expect(row(page, "fallback@example.test")).toContainText("Google");
 });
