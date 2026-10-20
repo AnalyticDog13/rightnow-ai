@@ -73,6 +73,7 @@ export function createProvider(
     provider: "GMAIL" | "MICROSOFT" | "SMTP";
     email: string;
     appendToSent?: boolean;
+    workspaceId?: string;
   },
   deps: { prisma: PrismaClient; fetch?: typeof fetch; clock?: Clock },
 ): MailProvider {
@@ -100,9 +101,10 @@ export function createProvider(
       clock: deps.clock,
     });
   }
+  if (!account.workspaceId) throw new Error("an SMTP account needs its workspaceId");
   return new ImapSmtpProvider({
     address: account.email,
-    credentials: smtpCredentials(deps.prisma, account.id),
+    credentials: smtpCredentials(deps.prisma, account.workspaceId, account.id),
     appendToSent: account.appendToSent,
     ...hostPolicy(),
   });

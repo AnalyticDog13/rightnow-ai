@@ -10,10 +10,11 @@ import { z } from "zod";
 import { audit } from "../audit";
 import type { Clock } from "../clock";
 import { getEnv } from "../env";
-import { applyLimits, TIER_MIN_GAP } from "./caps";
+import { applyLimits } from "./caps";
 import { setCredentials } from "./credentials";
 import { clip } from "./diagnostics";
-import { hostPolicy, maxDailyLimit, TIER_CAP } from "./factory";
+import { hostPolicy, TIER_CAP } from "./factory";
+import { openAccount } from "./open-account";
 import { AccountError, getAccount } from "./service";
 
 const server = z.strictObject({
@@ -97,37 +98,20 @@ export async function connectSmtpAccount(
     { providerCap: TIER_CAP[tier], dailyLimit: 30, minGapSec: 0 },
     { providerCap: i.providerCap },
   );
-  const fresh = {
-    provider: "SMTP" as const,
-    capTier: tier,
-    providerCap: values.providerCap,
-    dailyLimit: Math.min(30, maxDailyLimit(values.providerCap)),
-    minGapSec: TIER_MIN_GAP[tier],
-    appendToSent: defaultAppendToSent(i.smtp.host),
-    fromName: `${i.firstName} ${i.lastName}`.trim(),
-    firstName: i.firstName,
-    lastName: i.lastName,
-  };
   const id = await prisma
     .$transaction(async (tx) => {
-      const where = { workspaceId, email: i.email };
-      if (await tx.emailAccount.findFirst({ where: { ...where, deletedAt: null } }))
-        throw new AccountError(409, "account_exists");
-      const dead = await tx.emailAccount.findFirst({
-        where: { ...where, deletedAt: { not: null } },
-        orderBy: { createdAt: "desc" },
+      const opened = await openAccount(tx, workspaceId, {
+        provider: "SMTP",
+        email: i.email,
+        capTier: tier,
+        providerCap: values.providerCap,
+        appendToSent: defaultAppendToSent(i.smtp.host),
+        fromName: `${i.firstName} ${i.lastName}`.trim(),
+        firstName: i.firstName,
+        lastName: i.lastName,
       });
-      let row: { id: string };
-      if (dead) {
-        // Conditional on still being deleted: a concurrent connect that revived it first wins.
-        const won = await tx.emailAccount.updateMany({
-          where: { id: dead.id, workspaceId, deletedAt: { not: null } },
-          data: { ...fresh, deletedAt: null, lifecycle: "ACTIVE" },
-        });
-        if (!won.count) throw new AccountError(409, "account_exists");
-        row = dead;
-      } else
-        row = await tx.emailAccount.create({ data: { workspaceId, email: i.email, ...fresh } });
+      if (!opened) throw new AccountError(409, "account_exists");
+      const row = { id: opened };
       // Credentials are written only through setCredentials.
       const stored = await setCredentials(
         tx,

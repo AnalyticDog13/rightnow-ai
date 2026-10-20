@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createTestDb } from "@rightnow/db/test-db";
 import { ImapSmtpProvider } from "@rightnow/providers";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { decryptCredentials, encryptCredentials } from "../src/accounts/credentials";
 import { createProvider } from "../src/accounts/factory";
 import { AccountError } from "../src/accounts/service";
@@ -127,6 +127,57 @@ describe("connectSmtpAccount", () => {
     expect(again.account.deletedAt).toBeNull();
   });
 
+  test("a Gmail account deleted and revived as SMTP keeps no stale sync state; limits follow one rule", async () => {
+    const g = await db.prisma.emailAccount.create({
+      data: {
+        workspaceId: ws,
+        provider: "GMAIL",
+        email: "mover@example.test",
+        fromName: "Old",
+        firstName: "Old",
+        lastName: "Name",
+        capTier: "GMAIL_WORKSPACE",
+        providerCap: 1500,
+        dailyLimit: 400,
+        minGapSec: 20,
+        syncCursor: { kind: "gmail", historyId: "999" },
+        syncState: "FAILED",
+        lastSyncCompletedAt: new Date(),
+        lastError: { kind: "CONNECTION", code: "invalid_grant", message: "x" },
+        errorCount24h: 4,
+        lifecycle: "NEEDS_ATTENTION",
+        deletedAt: new Date(),
+      },
+    });
+    const r = await connect(input({ email: "mover@example.test" }));
+    expect(r.account.id).toBe(g.id);
+    const row = await db.prisma.emailAccount.findUniqueOrThrow({ where: { id: g.id } });
+    expect(row).toMatchObject({
+      provider: "SMTP",
+      capTier: "SMTP",
+      providerCap: 100,
+      syncCursor: null,
+      syncState: "IDLE",
+      lastSyncCompletedAt: null,
+      lastError: null,
+      errorCount24h: 0,
+      lifecycle: "ACTIVE",
+      firstName: "Ann",
+      // the earlier choices survive, clamped to the new tier: 400 -> floor(100 / 2); the gap keeps the higher value
+      dailyLimit: 50,
+      minGapSec: 20,
+    });
+    // and a smaller earlier limit is kept as is
+    await db.prisma.emailAccount.update({
+      where: { id: g.id },
+      data: { deletedAt: new Date(), dailyLimit: 12 },
+    });
+    await connect(input({ email: "mover@example.test" }));
+    expect(
+      (await db.prisma.emailAccount.findUniqueOrThrow({ where: { id: g.id } })).dailyLimit,
+    ).toBe(12);
+  });
+
   test("invalid input is rejected before any check runs", async () => {
     await expect(connect(input({ imap: { ...server("x.test"), port: 0 } }))).rejects.toThrow();
     await expect(connect(input({ email: "nope" }))).rejects.toThrow();
@@ -162,7 +213,63 @@ describe("testSmtpConnection", () => {
   });
 });
 
+describe("secrets in test-connection", () => {
+  test("a real failing AUTH that echoes the password leaves it out of the response, logs and errors", async () => {
+    const PW = "Echo-me-9f3k-secret";
+    const { SMTPServer } = await import("smtp-server");
+    const smtp = new SMTPServer({
+      authOptional: false,
+      allowInsecureAuth: true,
+      logger: false,
+      onAuth: (a, _s, cb) =>
+        cb(Object.assign(new Error(`535 5.7.8 rejected ${a.password}`), { responseCode: 535 })),
+    });
+    await new Promise<void>((r) => smtp.listen(0, "127.0.0.1", r));
+    delete process.env.MAIL_PROVIDER_FAKE;
+    resetEnvCache();
+    const logs = [vi.spyOn(console, "log"), vi.spyOn(console, "warn"), vi.spyOn(console, "error")];
+    try {
+      const closed = { ...server("127.0.0.1"), port: 1, secure: false, password: PW };
+      const bad = { ...closed, port: (smtp.server.address() as { port: number }).port };
+      const d = await testSmtpConnection({}, input({ imap: closed, smtp: bad }));
+      const c = d.checks.find((k) => k.name === "smtp_auth")!;
+      expect(c).toMatchObject({ ok: false, code: "bad_credentials" });
+      expect(JSON.stringify([d, logs.map((l) => l.mock.calls)])).not.toContain(PW);
+      const e = await connect(input({ imap: closed, smtp: bad })).catch((x) => x);
+      expect(e.status).toBe(422);
+      expect(JSON.stringify([e.body, e.message, e.stack])).not.toContain(PW);
+    } finally {
+      vi.restoreAllMocks();
+      smtp.close();
+      process.env.MAIL_PROVIDER_FAKE = "1";
+      resetEnvCache();
+    }
+  });
+});
+
 describe("createProvider for SMTP accounts", () => {
+  test("only reads credentials of its own workspace", async () => {
+    delete process.env.MAIL_PROVIDER_FAKE;
+    resetEnvCache();
+    try {
+      const closed = { ...server("127.0.0.1"), port: 1, secure: false };
+      const a = await seedAccount(
+        db.prisma,
+        encryptCredentials({ kind: "smtp", imap: closed, smtp: closed }),
+        "iso@example.test",
+      );
+      const other = await db.prisma.workspace.create({ data: { name: "O", slug: "o-iso" } });
+      const p = createProvider(
+        { id: a.id, workspaceId: other.id, provider: "SMTP", email: "iso@example.test" },
+        { prisma: db.prisma },
+      );
+      await expect(p.diagnostics()).rejects.toThrow(/no credentials/);
+    } finally {
+      process.env.MAIL_PROVIDER_FAKE = "1";
+      resetEnvCache();
+    }
+  });
+
   test("builds an ImapSmtpProvider that reads the stored credentials and never leaks the password", async () => {
     delete process.env.MAIL_PROVIDER_FAKE;
     resetEnvCache();
@@ -174,7 +281,13 @@ describe("createProvider for SMTP accounts", () => {
         "ann2@example.test",
       );
       const p = createProvider(
-        { id: a.id, provider: "SMTP", email: "ann2@example.test", appendToSent: false },
+        {
+          id: a.id,
+          workspaceId: a.workspaceId,
+          provider: "SMTP",
+          email: "ann2@example.test",
+          appendToSent: false,
+        },
         { prisma: db.prisma },
       );
       expect(p).toBeInstanceOf(ImapSmtpProvider);

@@ -55,11 +55,12 @@ export async function setCredentials(
 /** Decrypted on every use, so a reconnect with new credentials reaches running providers. */
 export function smtpCredentials(
   prisma: PrismaClient,
+  workspaceId: string,
   accountId: string,
 ): () => Promise<{ imap: MailServer; smtp: MailServer }> {
   return async () => {
     const a = await prisma.emailAccount.findFirst({
-      where: { id: accountId, deletedAt: null },
+      where: { id: accountId, workspaceId, deletedAt: null },
       select: { credentialsEnc: true },
     });
     if (!a?.credentialsEnc) throw new Error(`account ${accountId} has no credentials`);

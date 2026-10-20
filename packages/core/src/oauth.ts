@@ -7,9 +7,9 @@ import {
   RateLimitedError,
   TransientBeforeSendError,
 } from "@rightnow/providers";
-import { TIER_MIN_GAP } from "./accounts/caps";
+import { openAccount } from "./accounts/open-account";
 import { setCredentials } from "./accounts/credentials";
-import { getOAuthClient, maxDailyLimit, TIER_CAP, tierFor } from "./accounts/factory";
+import { getOAuthClient, TIER_CAP, tierFor } from "./accounts/factory";
 import { audit } from "./audit";
 import type { Clock } from "./clock";
 import { decrypt, encrypt } from "./crypto";
@@ -214,49 +214,21 @@ export async function completeOAuth(
           if (!(await setCredentials(tx, p.workspaceId, id, creds, data)))
             throw new Fail("server_error");
         } else {
-          const live = { workspaceId: p.workspaceId, email, deletedAt: null };
-          if (await tx.emailAccount.findFirst({ where: live })) throw new Fail("account_exists");
           const capTier = tierFor(s.provider, email);
-          const providerCap = TIER_CAP[capTier];
-          const dead = await tx.emailAccount.findFirst({
-            where: { workspaceId: p.workspaceId, email, deletedAt: { not: null } },
-            orderBy: { createdAt: "desc" },
-          });
           const name = x.displayName ?? email.split("@")[0]!;
+          const opened = await openAccount(tx, p.workspaceId, {
+            provider: s.provider,
+            email,
+            capTier,
+            providerCap: TIER_CAP[capTier],
+            appendToSent: true,
+            fromName: name,
+            firstName: name,
+            lastName: "",
+          });
+          if (!opened) throw new Fail("account_exists");
+          id = opened;
           // Credentials are written only through setCredentials, once the row is live.
-          if (dead) {
-            // Conditional on still being deleted: a concurrent connect that revived it first wins.
-            const won = await tx.emailAccount.updateMany({
-              where: { id: dead.id, workspaceId: p.workspaceId, deletedAt: { not: null } },
-              data: {
-                provider: s.provider,
-                capTier,
-                providerCap,
-                dailyLimit: Math.min(dead.dailyLimit, maxDailyLimit(providerCap)),
-                minGapSec: Math.max(dead.minGapSec, TIER_MIN_GAP[capTier]),
-                deletedAt: null,
-                lifecycle: "ACTIVE",
-              },
-            });
-            if (!won.count) throw new Fail("account_exists");
-          }
-          const row = dead
-            ? dead
-            : await tx.emailAccount.create({
-                data: {
-                  workspaceId: p.workspaceId,
-                  provider: s.provider,
-                  email,
-                  fromName: name,
-                  firstName: name,
-                  lastName: "",
-                  capTier,
-                  providerCap,
-                  dailyLimit: Math.min(30, maxDailyLimit(providerCap)),
-                  minGapSec: TIER_MIN_GAP[capTier],
-                },
-              });
-          id = row.id;
           if (!(await setCredentials(tx, p.workspaceId, id, creds, base)))
             throw new Fail("server_error");
         }
