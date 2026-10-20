@@ -94,3 +94,6 @@ Pre-review interface fixes (receiver ids, reopen, IPv6 byte parsing); round 1: :
 
 ## 2026-10-20 · P2-T02a credential store/refresh lease/key rotation · task reviewer (opus) · fixes → **Approved**
 Plan defect fixed (lease overrun returned stale token → retry lease). Round 1: reconnect-during-failed-refresh race, toApiAccount allowlist, no writes to soft-deleted accounts.
+
+## 2026-10-20 · P2-T02b Google OAuth connect · task + security reviewer (opus) · fixes → **Approved**
+Security pass on state/PKCE/redirects/secrets/polling. Fixed: provider-mismatch reconnect, popup-closed polling, concurrent revive race, Playwright catch-all, provider_unavailable outage code.

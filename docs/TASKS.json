@@ -164,20 +164,21 @@
    "id": "P2-T02b",
    "phase": 2,
    "title": "Google OAuth connect (state+PKCE, session polling, reconnect) + opus review of oauth.ts",
-   "status": "in_progress",
+   "status": "done",
    "deps": [
     "P2-T02a",
     "P2-T01"
    ],
    "model": "sonnet",
-   "commit": null,
-   "acceptance": "See docs/plans/phase-2.md P2-T02b"
+   "commit": "0a92b28..e883ec4",
+   "acceptance": "See docs/plans/phase-2.md P2-T02b",
+   "review": "opus review incl. OAuth security; 1 fix round (provider mismatch, popup polling, revive race, e2e projects, outage code); clean"
   },
   {
    "id": "P2-T03",
    "phase": 2,
    "title": "Gmail provider (send raw + threadId, history.list, 404→expired, query listing, rfc822msgid search, token refresh persistence, error mapping). Contract suite on recorded fixtures via injected fetch",
-   "status": "todo",
+   "status": "in_progress",
    "deps": [
     "P2-T02b"
    ],
@@ -195,7 +196,7 @@
    ],
    "model": "sonnet",
    "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-2.md; tests listed there pass"
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-2.md; tests listed there pass; from P2-T02b: Cancel invalidates server OAuthSession; no stale poll loop after re-click; OAuth scope check branches per provider"
   },
   {
    "id": "P2-T05",
@@ -231,7 +232,7 @@
    ],
    "model": "sonnet",
    "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-2.md; tests listed there pass"
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-2.md; tests listed there pass; live-verify Google connect popup flow (COOP) from P2-T02b"
   },
   {
    "id": "P3-T01",
