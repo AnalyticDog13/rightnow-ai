@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "../../../components/ui/button";
 
 const MESSAGES: Record<string, string> = {
@@ -13,6 +13,7 @@ const MESSAGES: Record<string, string> = {
   scope_missing: "Both Gmail permissions are required. Please try again and tick every box.",
   no_refresh_token:
     "Google did not return a refresh token. Remove the app at myaccount.google.com/permissions, then try again.",
+  provider_unavailable: "Google is unavailable right now. Please try again in a few minutes.",
   exchange_failed: "Google rejected the sign-in. Please try again.",
   server_error:
     "Something went wrong connecting the account. If you were reconnecting, it may have been deleted.",
@@ -26,14 +27,18 @@ export function ConnectMenu({ googleConfigured }: { googleConfigured: boolean })
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
 
+  const cancelled = useRef(false);
+  const popup = useRef<Window | null>(null);
+
+  // Polls until a terminal state, the 10 min session expiry, or Cancel. A closed popup is NOT a cancel:
+  // Google sends COOP headers that cut the opener link, so popup.closed is unreliable.
   const poll = useCallback(
-    async (id: string, popup: Window | null) => {
+    async (id: string) => {
+      cancelled.current = false;
       setBusy(true);
-      sessionStorage.setItem(KEY, id);
-      let closedPolls = 0;
-      for (let i = 0; i < 700; i++) {
+      for (let i = 0; i < 660 && !cancelled.current; i++) {
         const res = await fetch(`/api/v1/oauth/sessions/${id}`).catch(() => null);
-        if (res?.status === 404) break;
+        if (cancelled.current || res?.status === 404) break;
         const r = res?.ok ? ((await res.json()) as Poll) : null;
         if (r && r.status !== "pending") {
           sessionStorage.removeItem(KEY);
@@ -44,8 +49,6 @@ export function ConnectMenu({ googleConfigured }: { googleConfigured: boolean })
           } else setMsg(MESSAGES[r.errorCode ?? "server_error"] ?? MESSAGES.server_error!);
           return;
         }
-        // The callback finishes before the popup closes, so a closed popup + still pending = cancelled.
-        if (popup?.closed && ++closedPolls > 1) break;
         await new Promise((r) => setTimeout(r, 1000));
       }
       sessionStorage.removeItem(KEY);
@@ -54,15 +57,20 @@ export function ConnectMenu({ googleConfigured }: { googleConfigured: boolean })
     [router],
   );
 
+  function cancel() {
+    cancelled.current = true;
+    popup.current?.close();
+  }
+
   useEffect(() => {
     // Returned from the full-page flow: pick up its result.
     const id = sessionStorage.getItem(KEY);
-    if (id) void poll(id, null);
+    if (id) void poll(id);
   }, [poll]);
 
   async function connect() {
     setMsg("");
-    const popup = window.open("", "oauth", "popup,width=520,height=680"); // must open inside the click
+    const w = window.open("", "oauth", "popup,width=520,height=680"); // must open inside the click
     const res = await fetch("/api/v1/oauth/google/start", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -74,7 +82,7 @@ export function ConnectMenu({ googleConfigured }: { googleConfigured: boolean })
       error?: string;
     };
     if (!res.ok || !j.sessionId || !j.authUrl) {
-      popup?.close();
+      w?.close();
       setMsg(
         j.error === "not_configured"
           ? "Google is not configured on this server."
@@ -82,11 +90,12 @@ export function ConnectMenu({ googleConfigured }: { googleConfigured: boolean })
       );
       return;
     }
-    if (popup) {
-      popup.location.href = j.authUrl;
-      void poll(j.sessionId, popup);
+    if (w) {
+      popup.current = w;
+      w.location.href = j.authUrl;
+      void poll(j.sessionId);
     } else {
-      sessionStorage.setItem(KEY, j.sessionId); // popup blocked: full-page redirect, finished on return
+      sessionStorage.setItem(KEY, j.sessionId); // popup blocked: full-page redirect (the callback page sees this key), finished on return
       location.href = j.authUrl;
     }
   }
@@ -96,6 +105,11 @@ export function ConnectMenu({ googleConfigured }: { googleConfigured: boolean })
       <Button className="self-start" onClick={connect} disabled={busy || !googleConfigured}>
         {busy ? "Waiting for Google..." : "Connect Google"}
       </Button>
+      {busy && (
+        <Button variant="outline" className="self-start" onClick={cancel}>
+          Cancel
+        </Button>
+      )}
       {!googleConfigured && (
         <p className="text-sm text-muted-foreground">
           Google is not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET (see

@@ -39,3 +39,20 @@ test("with the popup blocked, the full-page fallback also connects", async ({ pa
   await page.getByRole("button", { name: "Connect Google" }).click();
   await expect(row(page, "fallback@example.test")).toContainText("Google");
 });
+
+test("Cancel stops waiting; a closed popup alone does not", async ({ page }) => {
+  await page.route("**/api/v1/oauth/google/start", (r) =>
+    r.fulfill({ json: { sessionId: "s1", authUrl: "about:blank", expiresAt: "2099-01-01" } }),
+  );
+  await page.route("**/api/v1/oauth/sessions/s1", (r) =>
+    r.fulfill({ json: { status: "pending" } }),
+  );
+  const opened = page.waitForEvent("popup");
+  await page.getByRole("button", { name: "Connect Google" }).click();
+  const popup = await opened;
+  await popup.close();
+  await page.waitForTimeout(2500); // still waiting after the popup closed
+  await expect(page.getByRole("button", { name: "Waiting for Google..." })).toBeDisabled();
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByRole("button", { name: "Connect Google" })).toBeEnabled();
+});

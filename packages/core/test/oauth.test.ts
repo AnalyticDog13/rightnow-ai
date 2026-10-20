@@ -252,6 +252,10 @@ describe("completeOAuth failures", () => {
     await fail(c, { tokenStatus: 400 }, "exchange_failed");
   });
 
+  test("Google 5xx is provider_unavailable, not a rejection", async () => {
+    await fail(await setup(), { tokenStatus: 503 }, "provider_unavailable");
+  });
+
   test("errors never carry token or response text", async () => {
     const err = await new GoogleOAuth({
       clientId: "c",
@@ -372,7 +376,71 @@ describe("reconnect", () => {
   });
 });
 
+describe("reconnect provider mismatch", () => {
+  const smtp = (c: Ctx) =>
+    db.prisma.emailAccount.create({
+      data: {
+        workspaceId: c.workspaceId,
+        provider: "SMTP",
+        email: "x@corp.example",
+        fromName: "X",
+        firstName: "X",
+        lastName: "",
+        capTier: "SMTP",
+        providerCap: 100,
+        credentialsEnc: null,
+      },
+    });
+
+  test("start rejects an SMTP account", async () => {
+    const c = await setup();
+    const a = await smtp(c);
+    await expect(begin(c, google(), a.id)).rejects.toMatchObject({ code: "account_not_found" });
+  });
+
+  test("complete rejects an account that changed provider since start", async () => {
+    const c = await setup();
+    const fetch = google();
+    const a = await smtp(c);
+    await db.prisma.emailAccount.update({ where: { id: a.id }, data: { provider: "GMAIL" } });
+    const s = await begin(c, fetch, a.id);
+    await db.prisma.emailAccount.update({ where: { id: a.id }, data: { provider: "SMTP" } });
+    const r = await finish(c, fetch, { state: stateOf(s.authUrl), code: "code-x@corp.example" });
+    expect(r.errorCode).toBe("server_error");
+    expect(await account(a.id)).toMatchObject({ provider: "SMTP", credentialsEnc: null });
+  });
+});
+
 describe("reviving a soft-deleted account", () => {
+  test("two concurrent connects revive it once", async () => {
+    const c = await setup();
+    const dead = await db.prisma.emailAccount.create({
+      data: {
+        workspaceId: c.workspaceId,
+        provider: "SMTP",
+        email: "cr@corp.example",
+        fromName: "R",
+        firstName: "R",
+        lastName: "",
+        capTier: "SMTP",
+        providerCap: 100,
+        deletedAt: new Date(),
+      },
+    });
+    const fetch = google();
+    const code = "code-cr@corp.example";
+    const [a, b] = await Promise.all([begin(c, fetch), begin(c, fetch)]);
+    const rs = await Promise.all([
+      finish(c, fetch, { state: stateOf(a.authUrl), code }),
+      finish(c, fetch, { state: stateOf(b.authUrl), code }),
+    ]);
+    expect(rs.map((r) => r.errorCode ?? "ok").sort()).toEqual(["account_exists", "ok"]);
+    expect(await count(c)).toBe(1);
+    expect(
+      await db.prisma.auditLog.count({ where: { action: "account.connect", target: dead.id } }),
+    ).toBe(1);
+  });
+
   test("re-derives provider and cap tier; newest row wins", async () => {
     const c = await setup();
     const mk = (createdAt: Date) =>

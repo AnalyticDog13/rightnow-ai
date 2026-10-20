@@ -10,12 +10,12 @@ export default defineConfig({
   expect: { timeout: 30_000 }, // first requests compile routes in next dev
   use: { baseURL: `http://localhost:${E2E_PORT}` },
   projects: [
-    { name: "auth", testMatch: "auth.spec.ts", use: { browserName: "chromium" } },
-    // needs the owner that auth.spec creates
+    // creates the owner the other specs sign in as; every other spec runs after it
+    { name: "setup", testMatch: "auth.spec.ts", use: { browserName: "chromium" } },
     {
-      name: "accounts",
-      testMatch: "accounts-google.spec.ts",
-      dependencies: ["auth"],
+      name: "chromium",
+      testIgnore: "auth.spec.ts",
+      dependencies: ["setup"],
       use: { browserName: "chromium" },
     },
   ],

@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { Prisma, type PrismaClient } from "@rightnow/db/client";
-import { GOOGLE_SCOPES } from "@rightnow/providers";
+import { GOOGLE_SCOPES, RateLimitedError, TransientBeforeSendError } from "@rightnow/providers";
 import { setCredentials } from "./accounts/credentials";
 import { getOAuthClient, maxDailyLimit, TIER_CAP, tierFor } from "./accounts/factory";
 import { audit } from "./audit";
@@ -23,6 +23,7 @@ export type OAuthErrorCode =
   | "no_refresh_token"
   | "exchange_failed"
   | "admin_consent_required"
+  | "provider_unavailable" // Google 5xx / network / rate limit: retry later
   | "server_error";
 
 /** Thrown by startOAuth only; the route maps not_configured to 412 and account_not_found to 404. */
@@ -64,9 +65,11 @@ export async function startOAuth(
   if (p.reconnectAccountId) {
     const a = await prisma.emailAccount.findFirst({
       where: { id: p.reconnectAccountId, workspaceId: p.workspaceId, deletedAt: null },
-      select: { email: true },
+      select: { email: true, provider: true },
     });
-    if (!a) throw new OAuthStartError("account_not_found");
+    // A different provider's account (SMTP, Microsoft) must not receive these tokens.
+    if (!a || a.provider !== (p.provider === "google" ? "GMAIL" : "MICROSOFT"))
+      throw new OAuthStartError("account_not_found");
     loginHint ??= a.email;
   }
   const state = randomBytes(32).toString("base64url");
@@ -91,6 +94,8 @@ export async function startOAuth(
   return { sessionId: s.id, authUrl, expiresAt: s.expiresAt };
 }
 
+const isOutage = (e: unknown) =>
+  e instanceof TransientBeforeSendError || e instanceof RateLimitedError;
 const isUniqueViolation = (e: unknown) => /P2002|23505/.test(JSON.stringify(e) + String(e));
 
 /** Callback. User-level failures are recorded on the session and returned, never thrown. */
@@ -148,7 +153,8 @@ export async function completeOAuth(
         codeVerifier: decrypt(s.codeVerifierEnc),
         redirectUri: redirectUri(provider),
       })
-      .catch(() => null); // provider errors can hold response text; the session records only a code
+      .catch((e: unknown) => (isOutage(e) ? "outage" : null)); // errors can hold response text; the session records only a code
+    if (x === "outage") return await fail("provider_unavailable");
     if (!x) return await fail("exchange_failed");
     if (!x.creds.refreshToken) return await fail("no_refresh_token");
     if (!getEnv().MAIL_PROVIDER_FAKE) {
@@ -168,6 +174,7 @@ export async function completeOAuth(
             where: { id: s.reconnectAccountId, workspaceId: p.workspaceId, deletedAt: null },
           });
           if (!a) throw new Fail("server_error"); // deleted since start: never report success
+          if (a.provider !== s.provider) throw new Fail("server_error"); // changed since start
           if (a.email !== email) throw new Fail("email_mismatch");
           id = a.id;
           const resume =
@@ -187,18 +194,23 @@ export async function completeOAuth(
           });
           const name = x.displayName ?? email.split("@")[0]!;
           // Credentials are written only through setCredentials, once the row is live.
+          if (dead) {
+            // Conditional on still being deleted: a concurrent connect that revived it first wins.
+            const won = await tx.emailAccount.updateMany({
+              where: { id: dead.id, workspaceId: p.workspaceId, deletedAt: { not: null } },
+              data: {
+                provider: s.provider,
+                capTier,
+                providerCap,
+                dailyLimit: Math.min(dead.dailyLimit, maxDailyLimit(providerCap)),
+                deletedAt: null,
+                lifecycle: "ACTIVE",
+              },
+            });
+            if (!won.count) throw new Fail("account_exists");
+          }
           const row = dead
-            ? await tx.emailAccount.update({
-                where: { id: dead.id },
-                data: {
-                  provider: s.provider,
-                  capTier,
-                  providerCap,
-                  dailyLimit: Math.min(dead.dailyLimit, maxDailyLimit(providerCap)),
-                  deletedAt: null,
-                  lifecycle: "ACTIVE",
-                },
-              })
+            ? dead
             : await tx.emailAccount.create({
                 data: {
                   workspaceId: p.workspaceId,
