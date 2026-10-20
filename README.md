@@ -59,8 +59,8 @@ further users join by invite.
 Generate secrets with `openssl rand -base64 32`. Back up `ENCRYPTION_KEY` together with your database: without
 it, stored mailbox credentials cannot be decrypted. Key rotation: [docs/ops/KEY_ROTATION.md](docs/ops/KEY_ROTATION.md).
 
-Docker Compose (local and VPS modes, backup/restore, HTTPS) arrives with task P1-T06 and will be documented in
-`docs/ops/LOCAL.md` and `docs/ops/VPS.md`.
+Docker Compose (local and VPS modes, backup/restore, HTTPS): [docs/ops/LOCAL.md](docs/ops/LOCAL.md) and
+[docs/ops/VPS.md](docs/ops/VPS.md).
 
 ## Scripts
 

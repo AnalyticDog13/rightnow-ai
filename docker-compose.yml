@@ -1,0 +1,80 @@
+# Local: docker compose up -d --build.  VPS: add --profile vps (Caddy, HTTPS). Secrets come from ./.env.
+x-app: &app
+  build:
+    context: .
+    dockerfile: docker/Dockerfile
+  image: rightnow-ai:local
+  env_file: .env
+  environment:
+    DATABASE_URL: postgresql://rightnow:${POSTGRES_PASSWORD:-rightnow}@postgres:5432/rightnow
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: rightnow
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rightnow}
+      POSTGRES_DB: rightnow
+    volumes:
+      # Postgres 18 images keep data in a versioned subdir of /var/lib/postgresql
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rightnow -d rightnow"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  migrate:
+    <<: *app
+    command: ["migrate"]
+    restart: "no"
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  web:
+    <<: *app
+    command: ["web"]
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  worker:
+    <<: *app
+    command: ["worker"]
+    stop_grace_period: 40s # pg-boss graceful stop can take up to 30 s
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:'+(process.env.WORKER_HEALTH_PORT||8081)+'/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["vps"]
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    depends_on:
+      web: { condition: service_healthy }
+
+volumes:
+  pgdata:
+  caddy_data:

@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
+    "build": "next build",
     "typecheck": "tsc --noEmit",
     "e2e": "playwright test"
   },
