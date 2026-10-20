@@ -22,6 +22,11 @@ model Workspace {
   emailAccounts EmailAccount[]
   oauthSessions OAuthSession[]
   dailyUsage    WorkspaceDailyUsage[]
+  leads         Lead[]
+  leadLabels    LeadLabel[]
+  leadLists     LeadList[]
+  suppressions  Suppression[]
+  importJobs    ImportJob[]
 }
 
 // better-auth tables. Roles are stored lowercase: owner | admin | member | viewer.
@@ -294,4 +299,178 @@ model WorkspaceDailyUsage {
   reserved    Int       @default(0)
 
   @@id([workspaceId, day])
+}
+
+enum VerificationStatus {
+  NOT_VERIFIED
+  VERIFIED
+  PENDING
+  PENDING_JOB
+  INVALID
+  RISKY
+  CATCH_ALL
+  JOB_CHANGE
+}
+
+enum EspType {
+  GOOGLE
+  MICROSOFT
+  ZOHO
+  YAHOO
+  YANDEX
+  OTHER
+  NOT_FOUND
+  IN_QUEUE
+}
+
+enum EnrichmentStatus {
+  ENRICHED
+  PENDING
+  NOT_AVAILABLE
+  ERROR
+}
+
+enum SuppressionKind {
+  EMAIL
+  DOMAIN
+}
+
+enum SuppressionReason {
+  UNSUBSCRIBE
+  HARD_BOUNCE
+  COMPLAINT
+  MANUAL
+  NOT_INTERESTED
+  GDPR_ERASURE
+}
+
+enum ImportStatus {
+  PENDING
+  RUNNING
+  DONE
+  FAILED
+}
+
+// Partial unique index (workspaceId, email) WHERE deletedAt IS NULL lives in the `leads` migration (raw SQL).
+model Lead {
+  id                   String             @id @default(cuid())
+  workspaceId          String
+  workspace            Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  email                String // lowercased
+  firstName            String?
+  lastName             String?
+  companyName          String?
+  companyDomain        String?
+  jobTitle             String?
+  website              String?
+  industry             String?
+  phone                String?
+  personalization      String?
+  customFields         Json               @default("{}")
+  tags                 String[]
+  labels               String[]
+  interestStatus       Int?
+  verificationStatus   VerificationStatus @default(NOT_VERIFIED)
+  espType              EspType            @default(IN_QUEUE)
+  esg                  String?
+  enrichmentStatus     EnrichmentStatus?
+  plValue              Decimal?
+  ownerId              String?
+  source               String?
+  lawfulBasis          String?
+  country              String?
+  importJobId          String?
+  emailsSent           Int                @default(0)
+  opens                Int                @default(0)
+  clicks               Int                @default(0)
+  replies              Int                @default(0)
+  lastContactedAt      DateTime?
+  lastOpenAt           DateTime?
+  lastReplyAt          DateTime?
+  lastClickAt          DateTime?
+  lastInterestChangeAt DateTime?
+  lastTouchAt          DateTime?
+  lastSenderAccountId  String?
+  lastEngagement       Json?
+  mergedIntoId         String?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @default(now()) @updatedAt
+  deletedAt            DateTime?
+  listMembers          LeadListMember[]
+
+  @@index([workspaceId, createdAt, id])
+  @@index([workspaceId, companyDomain])
+}
+
+model LeadLabel {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name          String
+  color         String
+  positive      Boolean   @default(false)
+  aiDescription String?
+
+  @@unique([workspaceId, name])
+}
+
+model LeadList {
+  id          String           @id @default(cuid())
+  workspaceId String
+  workspace   Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name        String
+  createdAt   DateTime         @default(now())
+  members     LeadListMember[]
+
+  @@unique([workspaceId, name])
+}
+
+model LeadListMember {
+  listId String
+  list   LeadList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  leadId String
+  lead   Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@id([listId, leadId])
+  @@index([leadId])
+}
+
+model Suppression {
+  id          String            @id @default(cuid())
+  workspaceId String
+  workspace   Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  kind        SuppressionKind
+  value       String? // null after GDPR erasure
+  valueHash   String // sha256 hex of the lowercased email or domain
+  reason      SuppressionReason
+  source      String?
+  createdAt   DateTime          @default(now())
+
+  @@unique([workspaceId, kind, valueHash])
+}
+
+model ImportJob {
+  id                  String       @id @default(cuid())
+  workspaceId         String
+  workspace           Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdById         String
+  status              ImportStatus @default(PENDING)
+  fileName            String
+  data                Bytes? // cleared when DONE/FAILED
+  mapping             Json
+  options             Json
+  confirmedAuthorized Boolean
+  source              String
+  lawfulBasis         String
+  total               Int          @default(0)
+  imported            Int          @default(0)
+  attached            Int          @default(0)
+  skipped             Json         @default("{}")
+  progress            Int          @default(0)
+  error               String?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+  finishedAt          DateTime?
+
+  @@index([status, createdAt])
 }
