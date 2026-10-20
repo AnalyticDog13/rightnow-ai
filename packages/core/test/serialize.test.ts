@@ -26,7 +26,10 @@ test("toApiAccount never exposes credentials, cursor or lease", async () => {
       refreshLeaseUntil: new Date(),
     },
   });
-  const json = JSON.stringify(toApiAccount(full));
+  // allowlist: a column added later (here a fake one) stays private by default
+  const json = JSON.stringify(
+    toApiAccount({ ...full, futureSecret: "future-secret" } as typeof full),
+  );
   for (const s of [
     "credentialsEnc",
     "syncCursor",
@@ -36,6 +39,7 @@ test("toApiAccount never exposes credentials, cursor or lease", async () => {
     "secret-pw",
     "lease-x",
     "password",
+    "future-secret",
   ])
     expect(json).not.toContain(s);
   expect(JSON.parse(json)).toMatchObject({ id: a.id, email: "a@example.com", status: "CONNECTED" });

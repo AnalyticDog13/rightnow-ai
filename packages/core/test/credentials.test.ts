@@ -1,4 +1,4 @@
-import type { OAuthCreds } from "@rightnow/providers";
+import { AuthError, TransientBeforeSendError, type OAuthCreds } from "@rightnow/providers";
 import { createPrisma } from "@rightnow/db/create";
 import { createTestDb } from "@rightnow/db/test-db";
 import { afterAll, beforeAll, expect, test } from "vitest";
@@ -45,8 +45,9 @@ const stored = async (id: string) => {
 
 function gate<T>() {
   let open!: (v: T) => void;
-  const p = new Promise<T>((res) => (open = res));
-  return { p, open };
+  let fail!: (e: unknown) => void;
+  const p = new Promise<T>((res, rej) => ((open = res), (fail = rej)));
+  return { p, open, fail };
 }
 const until = async (cond: () => boolean) => {
   for (let i = 0; i < 500 && !cond(); i++) await new Promise((r) => setTimeout(r, 10));
@@ -229,6 +230,55 @@ test("a refresh after soft delete fails and writes nothing", async () => {
   expect((await stored(a.id)).credentialsEnc).toBeNull();
 });
 
+test("refresh failing on the old grant after reconnect returns the new grant, not AuthError", async () => {
+  const a = await seed();
+  const grant: OAuthCreds = {
+    accessToken: "at-new",
+    refreshToken: "rt-new",
+    expiresAt: 3,
+    scope: "Mail.Send",
+  };
+  const g = gate<OAuthCreds>();
+  let called = false;
+  const r = accountCredentialStore(worker, a.id, deps()).refresh(
+    stale,
+    () => ((called = true), g.p),
+  );
+  await until(() => called);
+  await setCredentials(db.prisma, a.workspaceId, a.id, { kind: "oauth", ...grant });
+  g.fail(new AuthError("invalid_grant"));
+  expect(await r).toEqual(grant);
+  expect((await stored(a.id)).creds).toEqual({ kind: "oauth", ...grant });
+});
+
+test("refresh failing during disconnect throws no credentials, not AuthError", async () => {
+  const a = await seed();
+  const g = gate<OAuthCreds>();
+  let called = false;
+  const r = accountCredentialStore(worker, a.id, deps()).refresh(
+    stale,
+    () => ((called = true), g.p),
+  );
+  await until(() => called);
+  await setCredentials(db.prisma, a.workspaceId, a.id, null, { status: "DISCONNECTED" });
+  g.fail(new AuthError("invalid_grant"));
+  const err = await r.catch((e: unknown) => e);
+  expect(err).not.toBeInstanceOf(AuthError);
+  expect((err as Error).message).toMatch(/no credentials/);
+});
+
+test("setCredentials never writes to a soft-deleted account", async () => {
+  const a = await seed();
+  await setCredentials(db.prisma, a.workspaceId, a.id, null, { deletedAt: new Date() });
+  const gen = (await stored(a.id)).credentialGen;
+  expect(await setCredentials(db.prisma, a.workspaceId, a.id, { kind: "oauth", ...fresh })).toBe(
+    false,
+  );
+  const s = await stored(a.id);
+  expect(s.credentialsEnc).toBeNull();
+  expect(s.credentialGen).toBe(gen);
+});
+
 test("setCredentials is scoped by workspace", async () => {
   const a = await seed();
   expect(await setCredentials(db.prisma, "other-ws", a.id, null)).toBe(false);
@@ -244,6 +294,8 @@ test("waiting on a live lease gives up after 25 s and leaves the lease alone", a
   const clock = fixedClock(new Date("2026-10-20T10:00:00Z"));
   const sleep = async (ms: number) => clock.advance(ms);
   const store = accountCredentialStore(db.prisma, a.id, { clock, sleep });
-  await expect(store.refresh(stale, async () => fresh)).rejects.toThrow(/lease/);
+  const err = await store.refresh(stale, async () => fresh).catch((e: unknown) => e);
+  expect(err).toBeInstanceOf(TransientBeforeSendError);
+  expect((err as Error).message).toMatch(/lease/);
   expect((await stored(a.id)).refreshLeaseId).toBe("other");
 });

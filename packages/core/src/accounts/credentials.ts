@@ -29,7 +29,8 @@ const POLL_MS = 250;
 /**
  * The only way to replace credentials (disconnect, soft delete, reconnect): clears the refresh lease and
  * bumps `credentialGen`, so a refresh still in flight writes nothing (R2-I1). `data` carries the
- * caller's other fields (status, deletedAt). Returns false when no account matched in this workspace.
+ * caller's other fields (status, deletedAt). Returns false (nothing written) when no live account matched in
+ * this workspace, including a soft-deleted one: it cannot be reconnected, connect creates a new account.
  */
 export async function setCredentials(
   db: Pick<PrismaClient, "emailAccount">,
@@ -39,7 +40,7 @@ export async function setCredentials(
   data: Prisma.EmailAccountUpdateManyMutationInput = {},
 ): Promise<boolean> {
   const r = await db.emailAccount.updateMany({
-    where: { id: accountId, workspaceId },
+    where: { id: accountId, workspaceId, deletedAt: null }, // soft-deleted accounts are never written
     data: {
       ...data,
       credentialsEnc: creds && encryptCredentials(creds),
@@ -122,9 +123,18 @@ export function accountCredentialStore(
         try {
           next = await doRefresh(stale);
         } catch (e) {
-          await prisma.emailAccount
+          const released = await prisma.emailAccount
             .updateMany({ where: mine, data: { refreshLeaseId: null, refreshLeaseUntil: null } })
-            .catch(() => {}); // the lease expires on its own; keep the provider's error
+            .then(
+              (r) => r.count,
+              () => 1,
+            ); // a failed release expires on its own; keep the provider's error
+          if (released === 0) {
+            // Lease lost or credentials replaced: the old grant's error must not reach a reconnected
+            // account (return the new creds) or a disconnected one (get() throws "no credentials").
+            const current = await get();
+            if (current.accessToken !== stale.accessToken) return current;
+          }
           throw e;
         }
         const r = await prisma.emailAccount.updateMany({
