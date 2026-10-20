@@ -48,10 +48,27 @@ and the final cross-system review. Escalate one task, never the whole project. N
 
 ## Commands
 
-Not yet confirmed; filled in by task P1-T01. Planned: `npm install`, `npm run dev`, `npm test`,
-`npm run lint`, `npm run typecheck`, `npm run e2e`, `docker compose up -d`.
-Docker is NOT installed on the primary dev machine (Windows, no WSL): tests use `embedded-postgres`;
-Docker builds are verified in GitHub Actions CI.
+Setup (Windows/macOS/Linux, Node 22.12+; CI and Docker use Node 24):
+- `npm ci`: install; `postinstall` runs `prisma generate` (client in `packages/db/src/generated`, gitignored)
+- `cp .env.example .env`, then fill in `ENCRYPTION_KEY`, `BETTER_AUTH_SECRET` (`openssl rand -base64 32`), `SETUP_TOKEN` (16+ chars), `DATABASE_URL`
+
+Develop:
+- `npm run dev`: web (http://localhost:3000) + worker (health :8081) together via `scripts/dev.mjs` (Ctrl-C stops both). Single app: `npm run dev -w @rightnow/web` / `-w @rightnow/worker`
+- `npm run db:migrate`: create/apply a migration (`prisma migrate dev`, reads repo-root `.env`)
+- `npm run db:deploy`: apply migrations · `npm run db:generate`: regenerate the client
+
+Verify (every task; no Docker or Postgres needed, tests start embedded Postgres 18):
+- `npm test`: all Vitest projects. One project: `npx vitest run --project @rightnow/web`; one file: `npx vitest run apps/web/test/api.test.ts`
+- `npm run lint` · `npm run typecheck` (`tsc --noEmit` per workspace)
+- `npm run e2e`: Playwright (boots embedded Postgres + `next dev` on :3100). First time: `npx playwright install chromium`
+
+Docker (not installed on the primary dev machine; verified by CI job `compose-smoke`):
+- `scripts/start.sh|.ps1` (`docker compose up -d --build`; adds `--profile vps` when `.env` has `MODE=vps`)
+- `scripts/stop.sh|.ps1` (keeps the `pgdata` volume) · `scripts/upgrade.sh|.ps1` (back up first)
+- `scripts/backup.sh|.ps1` → `backups/rightnow-<ts>.dump` · `scripts/restore.sh <dump>` / `scripts\restore.ps1 <dump>`
+- Key rotation: `OLD_ENCRYPTION_KEY=… NEW_ENCRYPTION_KEY=… npx tsx scripts/rotate-key.ts` (see docs/ops/KEY_ROTATION.md)
+
+CI status (`gh` is not installed): `curl -s "https://api.github.com/repos/AnalyticDog13/rightnow-ai/actions/runs?per_page=1"`
 
 ## Development workflow (every task)
 
