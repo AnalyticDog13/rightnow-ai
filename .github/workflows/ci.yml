@@ -28,29 +28,35 @@ jobs:
           sed -i "s|^ENCRYPTION_KEY=.*|ENCRYPTION_KEY=$(openssl rand -base64 32)|" .env
           sed -i "s|^BETTER_AUTH_SECRET=.*|BETTER_AUTH_SECRET=$(openssl rand -base64 32)|" .env
           sed -i "s|^SETUP_TOKEN=.*|SETUP_TOKEN=ci-setup-token-0123456789|" .env
-      - name: Up, backup, restore into a fresh volume
-        shell: bash
+      - name: Build and start
+        run: docker compose up -d --build
+      - name: Healthy
         run: |
-          set -eE
-          trap 'echo "::error title=failed at line $LINENO::$BASH_COMMAND"' ERR
-          dump() { m=$( (docker compose ps -a; docker compose logs --tail=40) 2>&1 | tail -c 12000 | tr -d '\r'); m=${m//%/%25}; m=${m//$'\n'/%0A}; echo "::error title=compose diagnostics::$m"; }
-          wait_health() {
-            for i in $(seq 60); do
-              curl -fsS http://localhost:3000/api/healthz && return 0
-              sleep 2
-            done
-            dump; return 1
-          }
-          docker compose up -d --build || { dump; exit 1; }
-          wait_health
+          for i in $(seq 60); do curl -fsS http://localhost:3000/api/healthz && exit 0; sleep 2; done
+          exit 1
+      - name: Backup
+        run: |
           docker compose exec -T postgres psql -U rightnow -d rightnow -c "create table ci_marker as select 42 as v"
           sh scripts/backup.sh
+      - name: Fresh volume
+        run: |
           docker compose down -v
-          docker compose up -d --build || { dump; exit 1; }
-          wait_health
-          sh scripts/restore.sh backups/*.dump || { dump; exit 1; }
-          wait_health
+          docker compose up -d --build
+          for i in $(seq 60); do curl -fsS http://localhost:3000/api/healthz && exit 0; sleep 2; done
+          exit 1
+      - name: Restore
+        run: |
+          ! docker compose exec -T postgres psql -U rightnow -d rightnow -tAc "select v from ci_marker"
+          sh scripts/restore.sh backups/*.dump
+      - name: Healthy after restore, data back
+        run: |
+          for i in $(seq 60); do curl -fsS http://localhost:3000/api/healthz && break; sleep 2; done
           docker compose exec -T postgres psql -U rightnow -d rightnow -tAc "select v from ci_marker" | grep -qx 42
           docker compose ps
-      - if: failure()
-        run: docker compose ps -a; docker compose logs --tail=100
+      - name: Diagnostics
+        if: failure()
+        run: |
+          docker compose ps -a
+          m=$( (docker compose logs --tail=40) 2>&1 | tail -c 12000 | tr -d ''); m=${m//%/%25}; m=${m//$'
+'/%0A}
+          echo "::error title=compose diagnostics::$m"
