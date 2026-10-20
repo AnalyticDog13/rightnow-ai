@@ -8,17 +8,20 @@ datasource db {
 }
 
 model Workspace {
-  id          String       @id @default(cuid())
-  name        String
-  slug        String       @unique
-  createdAt   DateTime     @default(now())
+  id            String                @id @default(cuid())
+  name          String
+  slug          String                @unique
+  createdAt     DateTime              @default(now())
   // better-auth organization fields (Workspace is the organization model)
-  logo        String?
-  metadata    String?
-  members     Member[]
-  invitations Invitation[]
-  auditLogs   AuditLog[]
-  apiKeys     ApiKey[]
+  logo          String?
+  metadata      String?
+  members       Member[]
+  invitations   Invitation[]
+  auditLogs     AuditLog[]
+  apiKeys       ApiKey[]
+  emailAccounts EmailAccount[]
+  oauthSessions OAuthSession[]
+  dailyUsage    WorkspaceDailyUsage[]
 }
 
 // better-auth tables. Roles are stored lowercase: owner | admin | member | viewer.
@@ -143,4 +146,152 @@ model WorkerBoot {
   hostname        String
   lastHeartbeatAt DateTime  @default(now())
   stoppedAt       DateTime?
+}
+
+enum AccountProvider {
+  GMAIL
+  MICROSOFT
+  SMTP
+}
+
+enum AccountStatus {
+  CONNECTED
+  ERROR
+  DISCONNECTED
+}
+
+enum AccountLifecycle {
+  ACTIVE
+  INACTIVE
+  REWARMING
+  PAUSED
+  NEEDS_ATTENTION
+}
+
+enum SyncState {
+  IDLE
+  SYNCING
+  FAILED
+}
+
+enum AutofixState {
+  NONE
+  IN_PROGRESS
+  FAILED
+  SUCCEEDED
+}
+
+enum CapTier {
+  GMAIL_WORKSPACE
+  GMAIL_CONSUMER
+  MS365
+  OUTLOOK_COM
+  SMTP
+}
+
+enum OAuthStatus {
+  PENDING
+  SUCCESS
+  ERROR
+  EXPIRED
+}
+
+enum CnameStatus {
+  UNVERIFIED
+  VERIFIED
+  FAILED
+}
+
+// Partial unique index (workspaceId, lower(email)) WHERE deletedAt IS NULL lives in the `accounts` migration (raw SQL).
+model EmailAccount {
+  id                     String              @id @default(cuid())
+  workspaceId            String
+  workspace              Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  provider               AccountProvider
+  email                  String // lowercased
+  fromName               String
+  firstName              String
+  lastName               String
+  replyTo                String?
+  signature              String?
+  tags                   String[]
+  credentialsEnc         String? // AES-256-GCM JSON; null after disconnect; never returned by any API
+  // Bumped by every credential replacement (disconnect, soft delete, reconnect): an in-flight refresh then writes nothing (R2-I1).
+  credentialGen          Int                 @default(0)
+  status                 AccountStatus       @default(CONNECTED)
+  lifecycle              AccountLifecycle    @default(ACTIVE)
+  pausedUntil            DateTime?
+  capTier                CapTier
+  providerCap            Int
+  dailyLimit             Int                 @default(30)
+  minGapSec              Int                 @default(0)
+  randomGapSec           Int                 @default(0)
+  timezone               String              @default("UTC")
+  slowRamp               Boolean             @default(false)
+  rampStartVolume        Int                 @default(2)
+  rampIncrementPerDay    Int                 @default(2)
+  rampStartedAt          DateTime?
+  historyImportDays      Int                 @default(30)
+  nextSendAt             DateTime            @default(now())
+  lastSentAt             DateTime?
+  lastCampaignActivityAt DateTime?
+  lastError              Json?
+  lastErrorAt            DateTime?
+  errorCount24h          Int                 @default(0)
+  autofixState           AutofixState        @default(NONE)
+  autofixAt              DateTime?
+  refreshLeaseId         String?
+  refreshLeaseUntil      DateTime?
+  syncState              SyncState           @default(IDLE)
+  syncCursor             Json?
+  lastSyncCompletedAt    DateTime?
+  healthScore            Int?
+  trackingDomain         String?
+  trackingDomainStatus   CnameStatus         @default(UNVERIFIED)
+  appendToSent           Boolean             @default(true)
+  createdAt              DateTime            @default(now())
+  deletedAt              DateTime?
+  dailyUsage             AccountDailyUsage[]
+
+  @@index([workspaceId])
+}
+
+model OAuthSession {
+  id                 String          @id @default(cuid())
+  workspaceId        String
+  workspace          Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdByUserId    String
+  provider           AccountProvider
+  stateHash          String          @unique
+  codeVerifierEnc    String
+  reconnectAccountId String?
+  status             OAuthStatus     @default(PENDING)
+  errorCode          String?
+  accountId          String?
+  expiresAt          DateTime
+  consumedAt         DateTime?
+  createdAt          DateTime        @default(now())
+
+  @@index([workspaceId])
+  @@index([createdAt])
+}
+
+model AccountDailyUsage {
+  accountId String
+  account   EmailAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  day       DateTime     @db.Date
+  sent      Int          @default(0)
+  reserved  Int          @default(0)
+
+  @@id([accountId, day])
+}
+
+model WorkspaceDailyUsage {
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  day         DateTime  @db.Date
+  sent        Int       @default(0)
+  reserved    Int       @default(0)
+
+  @@id([workspaceId, day])
 }
