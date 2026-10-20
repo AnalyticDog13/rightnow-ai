@@ -191,19 +191,20 @@
    "id": "P2-T04",
    "phase": 2,
    "title": "Account service/API/UI: CRUD, soft delete, pause/resume, limits (clamped), gaps, signature, replyTo, tags, bulk actions, diagnostics, mark-as-fixed, account→campaigns view, AuthError → NEEDS_ATTENTION",
-   "status": "in_progress",
+   "status": "done",
    "deps": [
     "P2-T03"
    ],
    "model": "sonnet",
-   "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-2.md; tests listed there pass; from P2-T02b: Cancel invalidates server OAuthSession; no stale poll loop after re-click; OAuth scope check branches per provider"
+   "commit": "5a10063..cbb3bc4",
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-2.md; tests listed there pass; from P2-T02b: Cancel invalidates server OAuthSession; no stale poll loop after re-click; OAuth scope check branches per provider",
+   "review": "3 fix rounds (autofix race, :write scope, clamp warnings, diagnostics severity/audit/pause, numeric input); clean"
   },
   {
    "id": "P2-T05",
    "phase": 2,
    "title": "Microsoft Graph connect + provider (draft+send, delta Inbox+SentItems, internetMessageId search), `docs/ops/MICROSOFT_SETUP.md`. (Pulled forward from spec Phase 7 so rotation and sync are provider-agnostic from the start.)",
-   "status": "todo",
+   "status": "in_progress",
    "deps": [
     "P2-T04"
    ],

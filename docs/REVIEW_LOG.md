@@ -100,3 +100,6 @@ Security pass on state/PKCE/redirects/secrets/polling. Fixed: provider-mismatch 
 
 ## 2026-10-20 · P2-T03 Gmail provider · task reviewer (sonnet) · 2 fix rounds → **Approved**
 findSent searches all mail incl. trash (overrode brief: no-duplicate-sends), labelAdded tracked (spam→inbox replies), 403 mapping narrowed so quota/policy 403s never disconnect mailboxes.
+
+## 2026-10-20 · P2-T04 account service/API/UI · task reviewer (sonnet) · 3 fix rounds → **Approved**
+Autofix conditional write, explicit :write scope, bulk clamp warnings, diagnostics in tx + audit, most-severe check wins, thrown AuthError/scope_missing → NEEDS_ATTENTION unless user-paused, shared numeric validator.
