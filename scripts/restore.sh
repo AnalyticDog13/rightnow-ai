@@ -5,5 +5,7 @@ set -e
 f="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
 . "$(dirname "$0")/_mode.sh"
 docker compose stop web worker
-docker compose exec -T postgres pg_restore -U rightnow -d rightnow --clean --if-exists --no-owner < "$f"
+# recreate the database: pg_restore --clean cannot drop pg-boss partitioned tables
+docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U rightnow -d postgres -c "DROP DATABASE rightnow WITH (FORCE)" -c "CREATE DATABASE rightnow"
+docker compose exec -T postgres pg_restore -U rightnow -d rightnow --no-owner < "$f"
 docker compose $P up -d web worker
