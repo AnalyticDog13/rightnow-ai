@@ -1,3 +1,6 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTestDb } from "@rightnow/db/test-db";
 import { createFirstOwner } from "../lib/setup";
@@ -15,6 +18,7 @@ let list: typeof import("../app/api/v1/accounts/route");
 let one: typeof import("../app/api/v1/accounts/[id]/route");
 let pause: typeof import("../app/api/v1/accounts/[id]/pause/route");
 let bulk: typeof import("../app/api/v1/accounts/bulk/route");
+let testConn: typeof import("../app/api/v1/accounts/test-connection/route");
 
 const setRole = (role: string) =>
   db.prisma.member.updateMany({ where: { workspaceId }, data: { role } });
@@ -51,6 +55,8 @@ beforeAll(async () => {
   db = await createTestDb();
   Object.assign(process.env, {
     MODE: "local",
+    MAIL_PROVIDER_FAKE: "1",
+    FAKE_MAIL_DIR: mkdtempSync(join(tmpdir(), "rn-web-")),
     DATABASE_URL: db.url,
     APP_URL: ORIGIN,
     ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64"),
@@ -63,6 +69,7 @@ beforeAll(async () => {
   one = await import("../app/api/v1/accounts/[id]/route");
   pause = await import("../app/api/v1/accounts/[id]/pause/route");
   bulk = await import("../app/api/v1/accounts/bulk/route");
+  testConn = await import("../app/api/v1/accounts/test-connection/route");
   ({ workspaceId } = await createFirstOwner(
     db.prisma,
     { name: "O", email: "owner@x.io", password: PASSWORD, workspaceName: "Acme", token: TOKEN },
@@ -144,5 +151,67 @@ describe("accounts routes", () => {
         { id: foreignId, ok: false, error: "not_found" },
       ],
     });
+  });
+});
+
+describe("SMTP connect routes", () => {
+  const srv = (host: string) => ({
+    host,
+    port: 993,
+    secure: true,
+    username: "ann@acme.io",
+    password: "hunter2-secret",
+  });
+  const body = (host = "imap.acme.io", email = "ann@acme.io") => ({
+    email,
+    firstName: "Ann",
+    lastName: "Lee",
+    imap: srv(host),
+    smtp: srv(host),
+  });
+  const create = (b: unknown, headers?: Record<string, string>) =>
+    list.POST(req("POST", "/api/v1/accounts", b, headers));
+  const check = (b: unknown) => testConn.POST(req("POST", "/api/v1/accounts/test-connection", b));
+
+  it("a MEMBER or VIEWER cannot create or test (403); an ADMIN can", async () => {
+    for (const role of ["viewer", "member"]) {
+      await setRole(role);
+      expect((await create(body())).status).toBe(403);
+      expect((await check(body())).status).toBe(403);
+    }
+    await setRole("admin");
+    expect((await check(body())).status).toBe(200);
+    const res = await create(body());
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).not.toContain("hunter2");
+    expect(JSON.parse(text).account).toMatchObject({ provider: "SMTP", email: "ann@acme.io" });
+    await setRole("owner");
+  });
+
+  it("test-connection reports failed checks without saving; a failing create answers 422 with the checks", async () => {
+    const before = await db.prisma.emailAccount.count({ where: { workspaceId } });
+    const t = await check(body("fail.acme.io", "other@acme.io"));
+    const tj = (await t.json()) as { ok: boolean; checks: { ok: boolean }[] };
+    expect(tj.ok).toBe(false);
+    const c = await create(body("fail.acme.io", "other@acme.io"));
+    expect(c.status).toBe(422);
+    expect(((await c.json()) as { checks: unknown[] }).checks.length).toBeGreaterThan(0);
+    expect(await db.prisma.emailAccount.count({ where: { workspaceId } })).toBe(before);
+  });
+
+  it("a duplicate answers 409 account_exists; an API key without accounts:create cannot connect", async () => {
+    const dup = await create(body());
+    expect(dup.status).toBe(409);
+    expect(((await dup.json()) as { error: string }).error).toBe("account_exists");
+    expect(
+      (await create(body("imap.acme.io", "k@acme.io"), { authorization: `Bearer ${readKey}` }))
+        .status,
+    ).toBe(403);
+  });
+
+  it("rejects unknown properties and bad ports", async () => {
+    expect((await create({ ...body(), credentialsEnc: "x" })).status).toBe(400);
+    expect((await create({ ...body(), imap: { ...srv("a.io"), port: 70000 } })).status).toBe(400);
   });
 });

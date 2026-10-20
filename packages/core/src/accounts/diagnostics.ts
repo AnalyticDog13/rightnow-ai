@@ -18,7 +18,7 @@ const CONNECTION_CHECKS = new Set(["token", "scopes", "imap_login", "smtp_auth"]
 export const connectionOk = (d: Diagnostics) =>
   d.checks.every((c) => c.ok || !CONNECTION_CHECKS.has(c.name));
 
-const clip = (d: Diagnostics): Diagnostics => ({
+export const clip = (d: Diagnostics): Diagnostics => ({
   ...d,
   checks: d.checks.map((c) => (c.response ? { ...c, response: c.response.slice(0, 200) } : c)),
 });

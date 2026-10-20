@@ -8,7 +8,7 @@ import {
 import { type Clock, systemClock } from "../clock";
 import { decrypt, encrypt } from "../crypto";
 
-type MailServer = {
+export type MailServer = {
   host: string;
   port: number;
   secure: boolean;
@@ -50,6 +50,23 @@ export async function setCredentials(
     },
   });
   return r.count === 1;
+}
+
+/** Decrypted on every use, so a reconnect with new credentials reaches running providers. */
+export function smtpCredentials(
+  prisma: PrismaClient,
+  accountId: string,
+): () => Promise<{ imap: MailServer; smtp: MailServer }> {
+  return async () => {
+    const a = await prisma.emailAccount.findFirst({
+      where: { id: accountId, deletedAt: null },
+      select: { credentialsEnc: true },
+    });
+    if (!a?.credentialsEnc) throw new Error(`account ${accountId} has no credentials`);
+    const s = decryptCredentials(a.credentialsEnc);
+    if (s.kind !== "smtp") throw new Error(`account ${accountId} has no SMTP credentials`);
+    return { imap: s.imap, smtp: s.smtp };
+  };
 }
 
 function oauthCreds(enc: string | null | undefined, accountId: string): OAuthCreds {

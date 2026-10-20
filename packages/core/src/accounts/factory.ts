@@ -4,6 +4,7 @@ import {
   GmailProvider,
   GoogleOAuth,
   GraphProvider,
+  ImapSmtpProvider,
   MicrosoftOAuth,
   getFakeProvider,
   type MailProvider,
@@ -12,7 +13,7 @@ import {
 } from "@rightnow/providers";
 import { type Clock } from "../clock";
 import { getEnv } from "../env";
-import { accountCredentialStore } from "./credentials";
+import { accountCredentialStore, smtpCredentials } from "./credentials";
 
 /** D7: default provider cap per tier; the max `dailyLimit` is half of it (calendar-day accounting vs rolling windows). */
 export const TIER_CAP: Record<CapTier, number> = {
@@ -37,6 +38,12 @@ export function tierFor(provider: ProviderKind, email: string): CapTier {
   return "SMTP";
 }
 
+/** Every IMAP/SMTP connect, in web and worker, re-checks the host against this (SSRF guard). */
+export const hostPolicy = () => {
+  const env = getEnv();
+  return { mode: env.MODE, allowPrivate: env.ALLOW_PRIVATE_MAIL_HOSTS === "1" };
+};
+
 /** null = not configured. MAIL_PROVIDER_FAKE wins over the configured check (the env refuses it in vps mode). */
 export function getOAuthClient(
   provider: "google" | "microsoft",
@@ -60,9 +67,13 @@ export function getOAuthClient(
   return null;
 }
 
-/** The SMTP branch arrives in P2-T06. */
 export function createProvider(
-  account: { id: string; provider: "GMAIL" | "MICROSOFT" | "SMTP"; email: string },
+  account: {
+    id: string;
+    provider: "GMAIL" | "MICROSOFT" | "SMTP";
+    email: string;
+    appendToSent?: boolean;
+  },
   deps: { prisma: PrismaClient; fetch?: typeof fetch; clock?: Clock },
 ): MailProvider {
   const kind = account.provider;
@@ -89,5 +100,10 @@ export function createProvider(
       clock: deps.clock,
     });
   }
-  throw new Error(`provider ${kind} is not implemented yet`);
+  return new ImapSmtpProvider({
+    address: account.email,
+    credentials: smtpCredentials(deps.prisma, account.id),
+    appendToSent: account.appendToSent,
+    ...hostPolicy(),
+  });
 }

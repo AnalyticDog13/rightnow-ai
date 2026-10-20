@@ -16,3 +16,4 @@ export * from "./accounts/health";
 export * from "./accounts/service";
 export * from "./accounts/status";
 export * from "./accounts/tracking-domain";
+export * from "./accounts/smtp-connect";

@@ -1,0 +1,152 @@
+import { Prisma, type PrismaClient } from "@rightnow/db/client";
+import {
+  FakeProvider,
+  ImapSmtpProvider,
+  defaultAppendToSent,
+  type Diagnostics,
+  type MailProvider,
+} from "@rightnow/providers";
+import { z } from "zod";
+import { audit } from "../audit";
+import type { Clock } from "../clock";
+import { getEnv } from "../env";
+import { applyLimits, TIER_MIN_GAP } from "./caps";
+import { setCredentials } from "./credentials";
+import { clip } from "./diagnostics";
+import { hostPolicy, maxDailyLimit, TIER_CAP } from "./factory";
+import { AccountError, getAccount } from "./service";
+
+const server = z.strictObject({
+  host: z
+    .string()
+    .trim()
+    .min(1)
+    .max(253)
+    .regex(/^[A-Za-z0-9.:[\]-]+$/, "not a host name"),
+  port: z.number().int().min(1).max(65535),
+  secure: z.boolean(),
+  username: z.string().min(1).max(320),
+  password: z.string().min(1).max(1024), // never trimmed: spaces can be part of an app password
+});
+export const smtpConnectInput = z.strictObject({
+  email: z
+    .email()
+    .max(320)
+    .transform((e) => e.toLowerCase()),
+  firstName: z.string().trim().min(1).max(100),
+  lastName: z.string().trim().max(100),
+  imap: server,
+  smtp: server,
+  providerCap: z.number().int().min(1).max(1_000_000).optional(),
+});
+export type SmtpConnectInput = z.infer<typeof smtpConnectInput>;
+
+export type SmtpDeps = {
+  /** Tests inject a provider; the default builds the real one, or the Fake under MAIL_PROVIDER_FAKE. */
+  providerFor?: (i: SmtpConnectInput) => MailProvider;
+};
+
+function providerFor(i: SmtpConnectInput, deps: SmtpDeps): MailProvider {
+  if (deps.providerFor) return deps.providerFor(i);
+  const creds = { imap: i.imap, smtp: i.smtp };
+  if (getEnv().MAIL_PROVIDER_FAKE) {
+    const host = [i.imap.host, i.smtp.host].find((h) => h.startsWith("fail.")) ?? i.smtp.host;
+    return new FakeProvider(i.email, { kind: "SMTP", host });
+  }
+  return new ImapSmtpProvider({
+    address: i.email,
+    credentials: async () => creds,
+    appendToSent: defaultAppendToSent(i.smtp.host),
+    ...hostPolicy(),
+  });
+}
+
+/** The same checks the saved account will pass later, run on unsaved credentials. Nothing is stored. */
+export async function testSmtpConnection(deps: SmtpDeps, raw: unknown): Promise<Diagnostics> {
+  const i = smtpConnectInput.parse(raw);
+  try {
+    return clip(await providerFor(i, deps).diagnostics());
+  } catch (e) {
+    return {
+      ok: false,
+      checks: [
+        { name: "api", ok: false, code: (e as Error).name, message: "the checks could not run" },
+      ],
+    };
+  }
+}
+
+const isUniqueViolation = (e: unknown) => /P2002|23505/.test(JSON.stringify(e) + String(e));
+
+/** PS-ACC-04. Runs the checks first (failure: 422 with them, nothing saved), then creates or revives the row and stores the encrypted credentials. */
+export async function connectSmtpAccount(
+  prisma: PrismaClient,
+  clock: Clock,
+  deps: SmtpDeps,
+  workspaceId: string,
+  actorId: string | undefined,
+  raw: unknown,
+) {
+  const i = smtpConnectInput.parse(raw);
+  const d = await testSmtpConnection(deps, i);
+  if (!d.ok) throw new AccountError(422, "connection checks failed", d);
+
+  const tier = "SMTP" as const;
+  const { values, warnings } = applyLimits(
+    tier,
+    { providerCap: TIER_CAP[tier], dailyLimit: 30, minGapSec: 0 },
+    { providerCap: i.providerCap },
+  );
+  const fresh = {
+    provider: "SMTP" as const,
+    capTier: tier,
+    providerCap: values.providerCap,
+    dailyLimit: Math.min(30, maxDailyLimit(values.providerCap)),
+    minGapSec: TIER_MIN_GAP[tier],
+    appendToSent: defaultAppendToSent(i.smtp.host),
+    fromName: `${i.firstName} ${i.lastName}`.trim(),
+    firstName: i.firstName,
+    lastName: i.lastName,
+  };
+  const id = await prisma
+    .$transaction(async (tx) => {
+      const where = { workspaceId, email: i.email };
+      if (await tx.emailAccount.findFirst({ where: { ...where, deletedAt: null } }))
+        throw new AccountError(409, "account_exists");
+      const dead = await tx.emailAccount.findFirst({
+        where: { ...where, deletedAt: { not: null } },
+        orderBy: { createdAt: "desc" },
+      });
+      let row: { id: string };
+      if (dead) {
+        // Conditional on still being deleted: a concurrent connect that revived it first wins.
+        const won = await tx.emailAccount.updateMany({
+          where: { id: dead.id, workspaceId, deletedAt: { not: null } },
+          data: { ...fresh, deletedAt: null, lifecycle: "ACTIVE" },
+        });
+        if (!won.count) throw new AccountError(409, "account_exists");
+        row = dead;
+      } else
+        row = await tx.emailAccount.create({ data: { workspaceId, email: i.email, ...fresh } });
+      // Credentials are written only through setCredentials.
+      const stored = await setCredentials(
+        tx,
+        workspaceId,
+        row.id,
+        { kind: "smtp", imap: i.imap, smtp: i.smtp },
+        { status: "CONNECTED", lastError: Prisma.DbNull, errorCount24h: 0 },
+      );
+      if (!stored) throw new AccountError(404, "Not found");
+      await audit(tx, { workspaceId, actorId }, "account.connect", row.id, {
+        provider: "SMTP",
+        email: i.email,
+      });
+      return row.id;
+    })
+    .catch((e: unknown) => {
+      if (!(e instanceof AccountError) && isUniqueViolation(e))
+        throw new AccountError(409, "account_exists");
+      throw e;
+    });
+  return { account: (await getAccount(prisma, workspaceId, id, { clock }))!, warnings };
+}
