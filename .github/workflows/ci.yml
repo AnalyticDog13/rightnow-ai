@@ -29,8 +29,10 @@ jobs:
           sed -i "s|^BETTER_AUTH_SECRET=.*|BETTER_AUTH_SECRET=$(openssl rand -base64 32)|" .env
           sed -i "s|^SETUP_TOKEN=.*|SETUP_TOKEN=ci-setup-token-0123456789|" .env
       - name: Up, backup, restore into a fresh volume
+        shell: bash
         run: |
-          set -e
+          set -eE
+          trap 'echo "::error title=failed at line $LINENO::$BASH_COMMAND"' ERR
           dump() { m=$( (docker compose ps -a; docker compose logs --tail=40) 2>&1 | tail -c 12000 | tr -d '\r'); m=${m//%/%25}; m=${m//$'\n'/%0A}; echo "::error title=compose diagnostics::$m"; }
           wait_health() {
             for i in $(seq 60); do
