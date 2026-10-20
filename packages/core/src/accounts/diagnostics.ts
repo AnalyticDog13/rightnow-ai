@@ -1,5 +1,5 @@
 import { Prisma, type PrismaClient } from "@rightnow/db/client";
-import type { Diagnostics } from "@rightnow/providers";
+import { AuthError, type Diagnostics } from "@rightnow/providers";
 import { audit } from "../audit";
 import { systemClock } from "../clock";
 import { AccountError, live, mutate, providerOf, type Opts } from "./service";
@@ -11,8 +11,8 @@ export const AUTH_CODES = new Set([
   "scope_revoked",
   "bad_credentials",
 ]);
-/** Checks that prove the connection itself works; mark-as-fixed requires them to pass. */
-const CONNECTION_CHECKS = new Set(["token", "imap_login", "smtp_auth"]);
+/** Checks that prove the account can work (login and scopes); mark-as-fixed requires them to pass. */
+const CONNECTION_CHECKS = new Set(["token", "scopes", "imap_login", "smtp_auth"]);
 
 export const connectionOk = (d: Diagnostics) =>
   d.checks.every((c) => c.ok || !CONNECTION_CHECKS.has(c.name));
@@ -35,14 +35,25 @@ export async function runDiagnostics(
   try {
     d = clip(await providerOf(prisma, o)(a).diagnostics());
   } catch (e) {
+    // A thrown AuthError is a failed token; any other throw is transient and must not look like a broken grant.
     d = {
       ok: false,
       checks: [
-        { name: "api", ok: false, code: (e as Error).name, message: "diagnostics could not run" },
+        e instanceof AuthError
+          ? { name: "token", ok: false, code: e.reason, message: e.message }
+          : {
+              name: "api",
+              ok: false,
+              code: (e as Error).name,
+              message: "diagnostics could not run",
+            },
       ],
     };
   }
-  const bad = d.checks.find((c) => !c.ok);
+  // The most severe failure wins, whatever order the provider emitted them in.
+  const rank = (c: Diagnostics["checks"][number]) =>
+    CONNECTION_CHECKS.has(c.name) ? (AUTH_CODES.has(c.code ?? "") ? 0 : 1) : 2;
+  const bad = d.checks.filter((c) => !c.ok).sort((x, y) => rank(x) - rank(y))[0];
   if (bad) {
     const code = bad.code ?? bad.name;
     // Only a failing connection check marks the account ERROR; anything else (scopes, api, a thrown

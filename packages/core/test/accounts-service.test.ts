@@ -517,3 +517,48 @@ describe("review fixes", () => {
     ).toBe(1);
   });
 });
+
+describe("diagnostics severity", () => {
+  const checks = (...c: Diagnostics["checks"]) => ({
+    providerFor: () =>
+      ({ diagnostics: async () => ({ ok: false, checks: c }) }) as unknown as MailProvider,
+  });
+  const status = async (id: string) =>
+    (await db.prisma.emailAccount.findUnique({ where: { id } }))!;
+
+  test("a thrown AuthError is a failed token: ERROR and NEEDS_ATTENTION", async () => {
+    const a = await mk();
+    const providerFor = () =>
+      ({
+        diagnostics: async () => {
+          throw new AuthError("invalid_grant");
+        },
+      }) as unknown as MailProvider;
+    await runDiagnostics(db.prisma, ws, a.id, { ...o, providerFor });
+    expect(await status(a.id)).toMatchObject({ status: "ERROR", lifecycle: "NEEDS_ATTENTION" });
+  });
+
+  test("scope_missing is not healthy", async () => {
+    const a = await mk();
+    await runDiagnostics(db.prisma, ws, a.id, {
+      ...o,
+      ...checks({ name: "scopes", ok: false, code: "scope_missing" }),
+    });
+    expect((await status(a.id)).status).toBe("ERROR");
+  });
+
+  test("a connection failure wins over an earlier non-connection failure", async () => {
+    const a = await mk();
+    await runDiagnostics(db.prisma, ws, a.id, {
+      ...o,
+      ...checks(
+        { name: "sent_folder", ok: false, code: "no_sent" },
+        { name: "smtp_auth", ok: false, code: "bad_credentials" },
+      ),
+    });
+    expect(await status(a.id)).toMatchObject({
+      status: "ERROR",
+      lastError: { code: "bad_credentials" },
+    });
+  });
+});

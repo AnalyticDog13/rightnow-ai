@@ -63,7 +63,10 @@ export function BulkBar({
 
   function apply() {
     const kind = SETTINGS[setting].kind;
-    if ((kind === "number" || kind === "minutes") && !Number.isFinite(parseFloat(value))) {
+    if (
+      (kind === "number" || kind === "minutes") &&
+      !(value.trim() !== "" && Number.isFinite(Number(value)))
+    ) {
       setProblem("Enter a number first.");
       return;
     }

@@ -83,7 +83,10 @@ export function AccountDrawer({
     for (const f of FIELDS) {
       const v = form[f.k as keyof Form] as string;
       if (v === init[f.k as keyof Form]) continue;
-      if ((f.kind === "number" || f.kind === "minutes") && !Number.isFinite(parseFloat(v)))
+      if (
+        (f.kind === "number" || f.kind === "minutes") &&
+        !(v.trim() !== "" && Number.isFinite(Number(v)))
+      )
         return setError(`${f.label}: enter a number.`);
       patch[f.k] =
         f.kind === "nullable"
