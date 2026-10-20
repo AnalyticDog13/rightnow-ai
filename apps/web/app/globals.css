@@ -1,0 +1,45 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --background: oklch(0.985 0.003 250);
+  --foreground: oklch(0.2 0.02 260);
+  --card: oklch(1 0 0);
+  --muted: oklch(0.955 0.006 250);
+  --muted-foreground: oklch(0.44 0.02 260);
+  --border: oklch(0.9 0.008 250);
+  --primary: oklch(0.45 0.16 265);
+  --primary-foreground: oklch(0.99 0 0);
+  --destructive: oklch(0.5 0.2 27);
+}
+.dark {
+  --background: oklch(0.17 0.015 260);
+  --foreground: oklch(0.95 0.005 250);
+  --card: oklch(0.21 0.017 260);
+  --muted: oklch(0.26 0.018 260);
+  --muted-foreground: oklch(0.74 0.02 255);
+  --border: oklch(0.32 0.02 260);
+  --primary: oklch(0.72 0.14 265);
+  --primary-foreground: oklch(0.17 0.015 260);
+  --destructive: oklch(0.72 0.17 25);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-destructive: var(--destructive);
+  --font-sans: ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
