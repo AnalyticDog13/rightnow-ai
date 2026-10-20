@@ -47,7 +47,13 @@ export const updateLeadInput = z
 const PUBLIC = [
   ...["id", "email", "interestStatus", "verificationStatus", "espType", "esg", "enrichmentStatus"],
   ...["emailsSent", "opens", "clicks", "replies", "lastContactedAt", "lastOpenAt", "lastReplyAt"],
-  ...["lastClickAt", "lastInterestChangeAt", "lastTouchAt", "lastSenderAccountId", "lastEngagement"],
+  ...[
+    "lastClickAt",
+    "lastInterestChangeAt",
+    "lastTouchAt",
+    "lastSenderAccountId",
+    "lastEngagement",
+  ],
   ...["mergedIntoId", "createdAt", "updatedAt", "deletedAt", "importJobId", ...Object.keys(fields)],
 ];
 export type ApiLead = Omit<Lead, "workspaceId" | "plValue"> & { plValue: number | null };
@@ -75,9 +81,9 @@ async function assertMembers(db: Tx, ws: string, ids: string[]) {
 
 /** 409 while a send for any of these leads is in flight or of unknown outcome. Locks those rows. No-op until the send tables exist. */
 async function assertNoSendInFlight(tx: Tx, leadIds: string[]) {
-  const [{ t }] = await tx.$queryRaw<
-    { t: string | null }[]
-  >`SELECT to_regclass('"ScheduledMessage"')::text AS t`;
+  const t = (
+    await tx.$queryRaw<{ t: string | null }[]>`SELECT to_regclass('"ScheduledMessage"')::text AS t`
+  )[0]?.t;
   if (!t) return;
   const rows = await tx.$queryRaw<{ status: string }[]>`
     SELECT m."status"::text AS status FROM "ScheduledMessage" m
@@ -374,7 +380,9 @@ export const bulkInput = z.strictObject({
   action: z.enum([
     ...["assign_round_robin", "set_owner", "set_interest", "add_tags", "remove_tags", "delete"],
   ] as const),
-  value: z.union([z.string(), z.number(), z.array(z.string().min(1)).max(100), z.null()]).optional(),
+  value: z
+    .union([z.string(), z.number(), z.array(z.string().min(1)).max(100), z.null()])
+    .optional(),
 });
 
 export async function bulkLeads(

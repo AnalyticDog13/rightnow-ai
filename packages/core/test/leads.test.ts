@@ -296,9 +296,11 @@ describe("gdpr delete", () => {
   });
 
   test("409 send_in_progress while a send is in flight", async () => {
-    const [{ t }] = await db.prisma.$queryRaw<
-      { t: string | null }[]
-    >`SELECT to_regclass('"ScheduledMessage"')::text AS t`;
+    const t = (
+      await db.prisma.$queryRaw<
+        { t: string | null }[]
+      >`SELECT to_regclass('"ScheduledMessage"')::text AS t`
+    )[0]?.t;
     if (t) return; // real send tables exist (T09+); their own tests cover this
     const run = (sql: string) => db.prisma.$executeRawUnsafe(sql);
     await run(`CREATE TABLE "CampaignLead" (id text, "leadId" text)`);
@@ -323,9 +325,9 @@ describe("labels", () => {
       createLabel(db.prisma, ws, null, { name: "Hot", color: "#00ff00" }),
     ).rejects.toMatchObject({ status: 409 });
     const l = await mk({ labels: ["Hot"] });
-    await expect(
-      updateLabel(db.prisma, other, lab.id, { color: "#00ff00" }),
-    ).rejects.toMatchObject({ status: 404 });
+    await expect(updateLabel(db.prisma, other, lab.id, { color: "#00ff00" })).rejects.toMatchObject(
+      { status: 404 },
+    );
     await updateLabel(db.prisma, ws, lab.id, { name: "Warm" });
     expect((await getLead(db.prisma, ws, l.id)).labels).toEqual(["Warm"]);
     expect((await listLabels(db.prisma, other)).length).toBe(0);
