@@ -138,13 +138,14 @@
    "id": "P2-T01",
    "phase": 2,
    "title": "Provider interface, MIME build/parse, Fake provider, contract test suite (incl. \"Message-ID preserved and findable in Sent\", threading headers, List-Unsubscribe headers, UTF-8). `send()` returns `{ rfcMessageId, providerMessageId?, providerThreadId? }`; errors `RateLimitedError`, `AuthError`, `Perma",
-   "status": "todo",
+   "status": "in_progress",
    "deps": [
     "P1-T07"
    ],
    "model": "sonnet",
-   "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-2.md; tests listed there pass; preliminary cleanup from phase-1 gate: M1 CSRF APP_URL via getWebEnv, M2 minPasswordLength 12, M3 drop requireWorkspace kind param, M4 remove unused web devDeps embedded-postgres/pg"
+   "commit": "64d94ee..c83a824",
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-2.md; tests listed there pass; preliminary cleanup from phase-1 gate: M1 CSRF APP_URL via getWebEnv, M2 minPasswordLength 12, M3 drop requireWorkspace kind param, M4 remove unused web devDeps embedded-postgres/pg",
+   "review": "PENDING: implemented + CI green; independent task review not yet run"
   },
   {
    "id": "P2-T02a",
