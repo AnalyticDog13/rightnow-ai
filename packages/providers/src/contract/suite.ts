@@ -234,15 +234,11 @@ export function runProviderContract(h: ProviderHarness): void {
 
     when("locate")("locate", async () => {
       const { provider: p, scenario } = await setup();
-      const cursor = await p.currentCursor();
-      await scenario.receiveInbound({ from: fromX, subject: "in", text: "t" });
-      await scenario.receiveSpam();
+      const inbound = await scenario.receiveInbound({ from: fromX, subject: "in", text: "t" });
+      const spam = await scenario.receiveSpam();
       const sent: SendResult = await p.send(mime(p));
-      const c = await p.listChangesSince(cursor);
-      if (c.expired) throw new Error("expired");
-      const inbound = c.messages.find((m) => m.folder === "INBOX")!;
-      expect((await p.locate(inbound.rfcMessageId!))?.folder).toBe("INBOX");
-      expect((await p.locate("<spam@rn.test>"))?.folder).toBe("SPAM");
+      expect((await p.locate(inbound.rfcMessageId))?.folder).toBe("INBOX");
+      expect((await p.locate(spam.rfcMessageId))?.folder).toBe("SPAM");
       expect((await p.locate(sent.rfcMessageId))?.folder).toBe("SENT");
       expect(await p.locate("<unknown@rn.test>")).toBeNull();
     });
@@ -257,7 +253,7 @@ export function runProviderContract(h: ProviderHarness): void {
     });
 
     it("listMessages pages and resumes", { timeout: 120_000 }, async () => {
-      const { provider: p, scenario } = await setup();
+      const { provider: p, scenario, reopen } = await setup();
       await scenario.seedInbound(1203);
       const since = new Date(0);
       const ids = new Set<string>();
@@ -273,11 +269,17 @@ export function runProviderContract(h: ProviderHarness): void {
       } while (token);
       expect(pages).toBe(13);
       expect(ids.size).toBe(1203);
-      // resume from the token alone: no state is kept between calls
+      // a fresh instance resumes from the token alone
+      const fresh = await reopen();
       let resumed = 0;
       token = page5;
       do {
-        const r = await p.listMessages({ since, folder: "INBOX", pageToken: token, limit: 100 });
+        const r = await fresh.listMessages({
+          since,
+          folder: "INBOX",
+          pageToken: token,
+          limit: 100,
+        });
         resumed += r.messages.length;
         token = r.nextPageToken;
       } while (token);

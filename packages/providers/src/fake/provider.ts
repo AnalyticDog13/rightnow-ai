@@ -33,7 +33,6 @@ import {
 } from "./store";
 
 const ADDRESS = /^[a-z0-9._%+-]+@[a-z0-9.-]+$/;
-export const FAKE_SPAM_MESSAGE_ID = "<spam@rn.test>";
 
 /**
  * File-backed mailbox shared by every process using the same FAKE_MAIL_DIR (D14).
@@ -180,7 +179,7 @@ export class FakeProvider implements MailProvider {
     subject: string;
     text: string;
     inReplyTo?: string;
-  }): Promise<void> {
+  }): Promise<{ rfcMessageId: string }> {
     const messageId = newMessageId("fake.test");
     const raw = await buildMime({
       from: m.from,
@@ -195,6 +194,7 @@ export class FakeProvider implements MailProvider {
       this.file,
       (box) => void this.add(box, "INBOX", raw, messageId, this.threadOf(box, m.inReplyTo)),
     );
+    return { rfcMessageId: messageId };
   }
 
   async seedInbound(n: number): Promise<void> {
@@ -218,19 +218,20 @@ export class FakeProvider implements MailProvider {
     );
   }
 
-  /** Delivers a message whose Message-ID is FAKE_SPAM_MESSAGE_ID (contract convention for `locate`). */
-  async receiveSpam(): Promise<void> {
+  async receiveSpam(): Promise<{ rfcMessageId: string }> {
+    const messageId = newMessageId("fake.test");
     const raw = await buildMime({
       from: { email: "spammer@fake.test" },
       to: [{ email: this.address }],
       subject: "spam",
       text: "spam",
-      messageId: FAKE_SPAM_MESSAGE_ID,
+      messageId,
     });
-    await updateMailbox(this.file, (box) => void this.add(box, "SPAM", raw, FAKE_SPAM_MESSAGE_ID));
+    await updateMailbox(this.file, (box) => void this.add(box, "SPAM", raw, messageId));
+    return { rfcMessageId: messageId };
   }
 
-  async saveDraft(): Promise<void> {
+  async saveDraft(): Promise<{ rfcMessageId: string }> {
     const messageId = newMessageId("fake.test");
     const raw = await buildMime({
       from: { email: this.address },
@@ -240,6 +241,7 @@ export class FakeProvider implements MailProvider {
       messageId,
     });
     await updateMailbox(this.file, (box) => void this.add(box, "DRAFT", raw, messageId));
+    return { rfcMessageId: messageId };
   }
 
   /** A message sent from the mailbox by some other client (PS-SYNC-04). */

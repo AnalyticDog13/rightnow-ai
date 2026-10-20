@@ -18,6 +18,15 @@ describe("assertPublicHost", () => {
     "::",
     "::ffff:10.0.0.5",
     "::ffff:a00:5",
+    "0:0:0:0:0:ffff:a00:5",
+    "0000:0000:0000:0000:0000:ffff:0a00:0005",
+    "0:0:0:0:0:ffff:10.0.0.5",
+    "::10.0.0.5",
+    "::ffff:7f00:1",
+    "::ffff:169.254.169.254",
+    "64:ff9b::a00:5",
+    "0:0:0:0:0:0:0:1",
+    "fe80::1",
   ])("vps rejects literal %s", async (ip) => {
     await expect(assertPublicHost(ip, { ...vps, resolve: dns({}) })).rejects.toThrow();
   });

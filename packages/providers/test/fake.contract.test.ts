@@ -36,6 +36,7 @@ runProviderContract({
         expireCursors: () => f.expireCursors(),
         sentRaw: () => f.sentRaw(),
       },
+      reopen: async () => new FakeProvider("me@rn.test", { dir }),
       close: async () => rmSync(dir, { recursive: true, force: true }),
     };
   },

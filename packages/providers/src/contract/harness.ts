@@ -18,11 +18,11 @@ export type Scenario = {
     subject: string;
     text: string;
     inReplyTo?: string;
-  }): Promise<void>;
+  }): Promise<{ rfcMessageId: string }>;
   seedInbound(n: number): Promise<void>;
-  /** Must deliver a message whose Message-ID is `<spam@rn.test>` (the suite's `locate` case looks it up). */
-  receiveSpam(): Promise<void>;
-  saveDraft(): Promise<void>;
+  /** Delivers a message to the spam folder and returns its Message-ID. */
+  receiveSpam(): Promise<{ rfcMessageId: string }>;
+  saveDraft(): Promise<{ rfcMessageId: string }>;
   sendExternal(m: { subject: string; messageId: string }): Promise<void>;
   deleteMessage(providerMessageId: string): Promise<void>;
   /** The next send (or, for auth_revoked, the next diagnostics) fails this way; rate_limit carries Retry-After 7. */
@@ -36,5 +36,11 @@ export type ProviderHarness = {
   name: string;
   supports: Set<FailKind | "removed" | "locate" | "expire">;
   /** Called once per test: a fresh, empty mailbox. */
-  setup(): Promise<{ provider: MailProvider; scenario: Scenario; close(): Promise<void> }>;
+  setup(): Promise<{
+    provider: MailProvider;
+    scenario: Scenario;
+    /** A fresh provider instance over the same backing mailbox (carries no in-memory state). */
+    reopen(): Promise<MailProvider>;
+    close(): Promise<void>;
+  }>;
 };
