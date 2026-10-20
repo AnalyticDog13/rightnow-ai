@@ -31,8 +31,7 @@ jobs:
       - name: Up, backup, restore into a fresh volume
         run: |
           set -e
-          dump() { m=$( (docker compose ps -a; docker compose logs --tail=40) 2>&1 | tail -c 12000 | sed ':a;N;$!ba;s/%/%25/g;s///g;s/
-/%0A/g'); echo "::error title=compose diagnostics::$m"; }
+          dump() { docker compose ps -a; docker compose logs --tail=80; }
           wait_health() {
             for i in $(seq 60); do
               curl -fsS http://localhost:3000/api/healthz && return 0
