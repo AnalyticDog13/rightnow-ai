@@ -12,3 +12,12 @@ export { createFixtureFetch, type Call, type Route } from "./contract/fixture-fe
 export { GmailProvider } from "./gmail/provider";
 export { MicrosoftOAuth, MS_SCOPES, MS_REQUIRED_SCOPES, normalizeScopes } from "./graph/oauth";
 export { GraphProvider } from "./graph/provider";
+export {
+  ImapSmtpProvider,
+  imapOptions,
+  smtpOptions,
+  type ImapSmtpCreds,
+  type MailServer,
+} from "./imap-smtp/provider";
+export { MS_SMTP_DISABLED_HINT, msSmtpHint, defaultAppendToSent } from "./imap-smtp/hints";
+export { mapImapError, mapSmtpError } from "./imap-smtp/map-error";
