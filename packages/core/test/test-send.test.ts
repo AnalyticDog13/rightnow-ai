@@ -181,8 +181,8 @@ describe("liveVerify", () => {
   test("findSent fails when the provider rewrote our Message-ID", async () => {
     const p = new FakeProvider(`lv${++n}@acme.io`);
     const find = p.findSent.bind(p);
-    p.findSent = async (id, hint) => {
-      const m = await find(id, hint);
+    p.findSent = async (id: string) => {
+      const m = await find(id);
       return m && { ...m, rfcMessageId: "<rewritten@provider.test>" };
     };
     const r = await liveVerify(p, "me@dest.example", clock);

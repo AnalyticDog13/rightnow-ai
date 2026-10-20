@@ -109,10 +109,17 @@ function Fields({
   );
 }
 
-export function ConnectSmtp() {
+/** `reconnect` re-enters the credentials of an existing account (same id, email fixed) instead of adding one. */
+export function ConnectSmtp({
+  reconnect,
+  onDone,
+}: {
+  reconnect?: { id: string; email: string };
+  onDone?: () => void;
+} = {}) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
-  const [email, setEmail] = useState("");
+  const [open, setOpen] = useState(!!reconnect);
+  const [email, setEmail] = useState(reconnect?.email ?? "");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [imap, setImap] = useState(blank("993", true));
@@ -133,10 +140,12 @@ export function ConnectSmtp() {
 
   function build() {
     const e: Record<string, string> = {};
-    if (!email.trim()) e.email = "Email is required";
+    if (reconnect) {
+      /* the mailbox is fixed */
+    } else if (!email.trim()) e.email = "Email is required";
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()))
       e.email = "Enter a valid email address";
-    if (!firstName.trim()) e.firstName = "First name is required";
+    if (!reconnect && !firstName.trim()) e.firstName = "First name is required";
     const side = (id: "imap" | "smtp", s: Server) => {
       if (!s.host.trim()) e[`${id}.host`] = "Host is required";
       else if (!/^[A-Za-z0-9.:[\]-]+$/.test(s.host.trim()))
@@ -157,6 +166,7 @@ export function ConnectSmtp() {
       username: s.username.trim() || email.trim(),
       password: s.password,
     });
+    if (reconnect) return { imap: server(imap), smtp: server(smtp) };
     return {
       email: email.trim(),
       firstName: firstName.trim(),
@@ -172,7 +182,11 @@ export function ConnectSmtp() {
     if (!body) return;
     setBusy(true);
     const r = await call(
-      kind === "test" ? "/api/v1/accounts/test-connection" : "/api/v1/accounts",
+      kind === "test"
+        ? "/api/v1/accounts/test-connection"
+        : reconnect
+          ? `/api/v1/accounts/${reconnect.id}/credentials`
+          : "/api/v1/accounts",
       "POST",
       body,
     );
@@ -192,6 +206,7 @@ export function ConnectSmtp() {
       setSmtp(blank("587", false));
       setEmail("");
       router.refresh();
+      onDone?.();
     } else {
       setTested(false);
       setMsg(
@@ -211,8 +226,10 @@ export function ConnectSmtp() {
     );
   return (
     <Card className="flex flex-col gap-4">
-      <h2 className="text-lg font-semibold">Connect with SMTP/IMAP</h2>
-      <div className="grid gap-3 sm:grid-cols-3">
+      <h2 className="text-lg font-semibold">
+        {reconnect ? "Update SMTP/IMAP credentials" : "Connect with SMTP/IMAP"}
+      </h2>
+      <div className={reconnect ? "hidden" : "grid gap-3 sm:grid-cols-3"}>
         <div className="flex flex-col gap-1">
           <Label htmlFor="smtp-email">Email</Label>
           <Input
@@ -265,13 +282,28 @@ export function ConnectSmtp() {
         {msg}
       </p>
       <div className="flex flex-wrap gap-2">
-        <Button variant="outline" disabled={busy} onClick={() => run("test")}>
-          {busy ? "Working..." : "Test connection"}
-        </Button>
-        <Button disabled={busy || !tested} onClick={() => run("save")}>
-          Save
-        </Button>
-        <Button variant="ghost" onClick={() => setOpen(false)}>
+        {reconnect ? (
+          // the server runs the checks and saves only if they pass
+          <Button disabled={busy} onClick={() => run("save")}>
+            {busy ? "Working..." : "Test and save"}
+          </Button>
+        ) : (
+          <>
+            <Button variant="outline" disabled={busy} onClick={() => run("test")}>
+              {busy ? "Working..." : "Test connection"}
+            </Button>
+            <Button disabled={busy || !tested} onClick={() => run("save")}>
+              Save
+            </Button>
+          </>
+        )}
+        <Button
+          variant="ghost"
+          onClick={() => {
+            setOpen(false);
+            onDone?.();
+          }}
+        >
           Cancel
         </Button>
       </div>

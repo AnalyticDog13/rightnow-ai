@@ -81,3 +81,36 @@ test("Save is enabled only after Test connection passes; an edit disables it aga
   expect(await page.content()).not.toContain(PASSWORD);
   await expect(page.getByRole("row").filter({ hasText: "sam@smtp-e2e.test" })).toHaveCount(1);
 });
+
+test("Reconnect updates the credentials of the same SMTP account", async ({ page }) => {
+  await fill(page, { email: "re@smtp-e2e.test", host: "mail.smtp-e2e.test" });
+  await page.getByRole("button", { name: "Test connection" }).click();
+  await page.getByRole("button", { name: "Save" }).click();
+  const row = page.getByRole("row").filter({ hasText: "re@smtp-e2e.test" });
+  await expect(row).toHaveCount(1);
+  await row.getByRole("button", { name: "Reconnect re@smtp-e2e.test" }).click();
+  const drawer = page.getByRole("dialog");
+  await drawer.getByRole("button", { name: "Reconnect with new credentials" }).click();
+  await expect(drawer.getByLabel("Email", { exact: true })).toBeHidden(); // the mailbox is fixed
+  const submit = async (host: string) => {
+    await drawer.getByLabel("IMAP host").fill(host);
+    await drawer.getByLabel("IMAP password").fill(PASSWORD);
+    await drawer.getByLabel("SMTP host").fill(host);
+    await drawer.getByLabel("SMTP password").fill(PASSWORD);
+    await drawer.getByRole("button", { name: "Test and save" }).click();
+  };
+  await submit("fail.smtp-e2e.test");
+  await expect(drawer.getByRole("list", { name: "Connection checks" })).toContainText("failed");
+  const saved = page.waitForResponse(
+    (r) => /\/api\/v1\/accounts\/[^/]+\/credentials$/.test(r.url()) && r.ok(),
+  );
+  await submit("mail3.smtp-e2e.test");
+  expect((await saved).status()).toBe(200);
+  await expect(
+    drawer.getByRole("button", { name: "Reconnect with new credentials" }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.reload();
+  await expect(page.getByRole("row").filter({ hasText: "re@smtp-e2e.test" })).toHaveCount(1);
+  expect(await page.content()).not.toContain(PASSWORD);
+});

@@ -134,3 +134,63 @@ export async function connectSmtpAccount(
     });
   return { account: (await getAccount(prisma, workspaceId, id, { clock }))!, warnings };
 }
+
+export const smtpReconnectInput = z.strictObject({ imap: server, smtp: server });
+
+/**
+ * PS-ACC-08 for SMTP/IMAP: new credentials for the SAME account (id, history and limits kept). Same checks as
+ * connect (SSRF and TLS rules included) run first, 422 and nothing saved when they fail. The mailbox cannot change.
+ */
+export async function reconnectSmtpAccount(
+  prisma: PrismaClient,
+  clock: Clock,
+  deps: SmtpDeps,
+  workspaceId: string,
+  actorId: string | undefined,
+  accountId: string,
+  raw: unknown,
+) {
+  const c = smtpReconnectInput.parse(raw);
+  const a = await prisma.emailAccount.findFirst({
+    where: { id: accountId, workspaceId, deletedAt: null },
+  });
+  if (!a) throw new AccountError(404, "Not found");
+  if (a.provider !== "SMTP") throw new AccountError(409, "not an SMTP/IMAP account");
+  const d = await testSmtpConnection(deps, {
+    ...c,
+    email: a.email,
+    firstName: a.firstName || "-",
+    lastName: a.lastName,
+  });
+  if (!d.ok) throw new AccountError(422, "connection checks failed", d);
+  await prisma.$transaction(async (tx) => {
+    // Re-read inside the transaction: the lifecycle rule must see the current row.
+    const cur = await tx.emailAccount.findFirst({
+      where: { id: accountId, workspaceId, deletedAt: null, provider: "SMTP" },
+    });
+    if (!cur) throw new AccountError(404, "Not found");
+    // As the OAuth reconnect: a user pause stays, everything the failure or Disconnect caused is lifted.
+    const resume =
+      cur.lifecycle === "NEEDS_ATTENTION" ||
+      (cur.lifecycle === "PAUSED" && cur.status === "DISCONNECTED");
+    const stored = await setCredentials(
+      tx,
+      workspaceId,
+      accountId,
+      { kind: "smtp", imap: c.imap, smtp: c.smtp },
+      {
+        status: "CONNECTED",
+        lastError: Prisma.DbNull,
+        errorCount24h: 0,
+        appendToSent: defaultAppendToSent(c.smtp.host),
+        ...(resume && { lifecycle: "ACTIVE" as const }),
+      },
+    );
+    if (!stored) throw new AccountError(404, "Not found");
+    await audit(tx, { workspaceId, actorId }, "account.reconnect", accountId, {
+      provider: "SMTP",
+      email: a.email,
+    });
+  });
+  return { account: (await getAccount(prisma, workspaceId, accountId, { clock }))! };
+}

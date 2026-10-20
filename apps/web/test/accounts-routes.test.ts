@@ -210,6 +210,35 @@ describe("SMTP connect routes", () => {
     ).toBe(403);
   });
 
+  it("credentials route: ADMIN only, same id, 422 on failing checks, 409 for an OAuth account, audited", async () => {
+    const cred = await import("../app/api/v1/accounts/[id]/credentials/route");
+    const id = (
+      await db.prisma.emailAccount.findFirstOrThrow({
+        where: { workspaceId, email: "ann@acme.io" },
+      })
+    ).id;
+    const post = (aid: string, host: string) =>
+      cred.POST(
+        req("POST", `/api/v1/accounts/${aid}/credentials`, { imap: srv(host), smtp: srv(host) }),
+        p(aid),
+      );
+    await setRole("member");
+    expect((await post(id, "imap.acme.io")).status).toBe(403);
+    await setRole("admin");
+    expect((await post(id, "fail.acme.io")).status).toBe(422);
+    const ok = await post(id, "imap2.acme.io");
+    expect(ok.status).toBe(200);
+    expect(((await ok.json()) as { account: { id: string } }).account.id).toBe(id);
+    expect((await post(accountId, "imap.acme.io")).status).toBe(409); // a Gmail account
+    expect((await post(foreignId, "imap.acme.io")).status).toBe(404);
+    expect(
+      await db.prisma.auditLog.count({
+        where: { workspaceId, action: "account.reconnect", target: id },
+      }),
+    ).toBe(1);
+    await setRole("owner");
+  });
+
   it("rejects unknown properties and bad ports", async () => {
     expect((await create({ ...body(), credentialsEnc: "x" })).status).toBe(400);
     expect((await create({ ...body(), imap: { ...srv("a.io"), port: 70000 } })).status).toBe(400);

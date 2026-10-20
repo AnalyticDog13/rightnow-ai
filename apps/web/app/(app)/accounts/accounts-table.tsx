@@ -199,7 +199,7 @@ export function AccountsTable({
                       >
                         Limits
                       </Button>
-                      {isAdmin && a.provider !== "SMTP" && (
+                      {isAdmin && (
                         <Button
                           variant="outline"
                           className={small}

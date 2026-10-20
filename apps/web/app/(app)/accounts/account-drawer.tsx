@@ -7,6 +7,7 @@ import { Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
 import { call, errorText } from "./api-client";
 import { ConnectMenu, type Provider } from "./connect-menu";
+import { ConnectSmtp } from "./connect-smtp";
 import { isNumeric } from "./numeric";
 
 type Kind = "text" | "number" | "minutes" | "nullable";
@@ -73,6 +74,7 @@ export function AccountDrawer({
   const [testTo, setTestTo] = useState("");
   const [testOk, setTestOk] = useState(false);
   const [sending, setSending] = useState(false);
+  const [editCreds, setEditCreds] = useState(false);
   const [testMsg, setTestMsg] = useState("");
   const [checks, setChecks] = useState<{ name: string; ok: boolean; code?: string }[]>([]);
 
@@ -153,8 +155,7 @@ export function AccountDrawer({
     const r = await call(`/api/v1/accounts/${account.id}/test-send`, "POST", {
       to: testTo,
       confirmAuthorized: testOk,
-    });
-    setSending(false);
+    }).finally(() => setSending(false));
     setTestMsg(r.ok ? "Test email sent." : errorText(r));
     if (r.ok) onChanged();
   }
@@ -288,6 +289,21 @@ export function AccountDrawer({
               </div>
             </form>
           )}
+          {isAdmin &&
+            account.provider === "SMTP" &&
+            (editCreds ? (
+              <ConnectSmtp
+                reconnect={{ id: account.id, email: account.email }}
+                onDone={() => {
+                  setEditCreds(false);
+                  onChanged();
+                }}
+              />
+            ) : (
+              <Button variant="outline" onClick={() => setEditCreds(true)}>
+                Reconnect with new credentials
+              </Button>
+            ))}
           {isAdmin && account.provider !== "SMTP" && (
             <ConnectMenu
               configured={configured}

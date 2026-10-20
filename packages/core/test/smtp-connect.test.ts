@@ -7,7 +7,11 @@ import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { decryptCredentials, encryptCredentials } from "../src/accounts/credentials";
 import { createProvider } from "../src/accounts/factory";
 import { AccountError } from "../src/accounts/service";
-import { connectSmtpAccount, testSmtpConnection } from "../src/accounts/smtp-connect";
+import {
+  connectSmtpAccount,
+  reconnectSmtpAccount,
+  testSmtpConnection,
+} from "../src/accounts/smtp-connect";
 import { systemClock } from "../src/clock";
 import { resetEnvCache } from "../src/env";
 import { seedAccount, testEnv } from "./accounts-fixture";
@@ -183,6 +187,126 @@ describe("connectSmtpAccount", () => {
     await expect(connect(input({ email: "nope" }))).rejects.toThrow();
     await expect(connect(input({ imap: { ...server("a b/c"), port: 993 } }))).rejects.toThrow();
     await expect(connect({ ...input(), extra: 1 })).rejects.toThrow();
+  });
+});
+
+describe("reconnectSmtpAccount", () => {
+  const creds = (host: string, password = "new-secret") => ({
+    imap: { ...server(host), password },
+    smtp: { ...server(host), port: 465, password },
+  });
+  const reconnect = (id: string, raw: unknown, actor = "u2") =>
+    reconnectSmtpAccount(db.prisma, systemClock, {}, ws, actor, id, raw);
+  const broken = async (email: string, data: object = {}) => {
+    const { account } = await connect(input({ email }));
+    await db.prisma.emailAccount.update({
+      where: { id: account.id },
+      data: {
+        status: "ERROR",
+        lifecycle: "NEEDS_ATTENTION",
+        errorCount24h: 3,
+        lastError: { kind: "CONNECTION", code: "bad_credentials", message: "m" },
+        tags: ["keep"],
+        dailyLimit: 12,
+        syncCursor: { kind: "imap", uidValidity: 1, uid: 5 },
+        ...data,
+      },
+    });
+    return account.id;
+  };
+  const row = (id: string) => db.prisma.emailAccount.findUniqueOrThrow({ where: { id } });
+
+  test("same id and history, new credentials, health cleared, resumed, audited", async () => {
+    const id = await broken("re1@example.test");
+    const before = await row(id);
+    const r = await reconnect(id, creds("imap.new.test"));
+    expect(r.account.id).toBe(id);
+    const a = await row(id);
+    expect(a).toMatchObject({
+      status: "CONNECTED",
+      lifecycle: "ACTIVE",
+      lastError: null,
+      errorCount24h: 0,
+      tags: ["keep"],
+      dailyLimit: 12,
+      syncCursor: { kind: "imap", uidValidity: 1, uid: 5 },
+    });
+    expect(a.credentialGen).toBe(before.credentialGen + 1);
+    expect(decryptCredentials(a.credentialsEnc!)).toMatchObject({
+      kind: "smtp",
+      imap: { host: "imap.new.test", password: "new-secret" },
+    });
+    expect(
+      await db.prisma.auditLog.findFirst({
+        where: { workspaceId: ws, action: "account.reconnect", target: id, actorId: "u2" },
+      }),
+    ).not.toBeNull();
+    expect(
+      JSON.stringify(await db.prisma.auditLog.findMany({ where: { target: id } })),
+    ).not.toContain("new-secret");
+  });
+
+  test("a user pause stays; a disconnected account resumes", async () => {
+    const p = await broken("re2@example.test", { lifecycle: "PAUSED", status: "CONNECTED" });
+    await reconnect(p, creds("imap.new.test"));
+    expect((await row(p)).lifecycle).toBe("PAUSED");
+    const d = await broken("re3@example.test", {
+      lifecycle: "PAUSED",
+      status: "DISCONNECTED",
+      credentialsEnc: null,
+    });
+    await reconnect(d, creds("imap.new.test"));
+    expect(await row(d)).toMatchObject({ lifecycle: "ACTIVE", status: "CONNECTED" });
+  });
+
+  test("failing checks answer 422 and change nothing", async () => {
+    const id = await broken("re4@example.test");
+    const before = await row(id);
+    const e = await reconnect(id, creds("fail.example.test")).catch((x) => x);
+    expect(e).toMatchObject({ status: 422 });
+    expect(await row(id)).toEqual(before);
+  });
+
+  test("an OAuth account, another workspace or a deleted account is refused", async () => {
+    const g = await db.prisma.emailAccount.create({
+      data: {
+        workspaceId: ws,
+        provider: "GMAIL",
+        email: "g-re@example.test",
+        fromName: "G",
+        firstName: "G",
+        lastName: "G",
+        capTier: "GMAIL_WORKSPACE",
+        providerCap: 1500,
+      },
+    });
+    expect(await reconnect(g.id, creds("imap.new.test")).catch((x) => x)).toMatchObject({
+      status: 409,
+    });
+    const id = await broken("re5@example.test");
+    const other = await db.prisma.workspace.create({ data: { name: "O", slug: "w-smtp-o" } });
+    expect(
+      await reconnectSmtpAccount(
+        db.prisma,
+        systemClock,
+        {},
+        other.id,
+        "u",
+        id,
+        creds("x.test"),
+      ).catch((x) => x),
+    ).toMatchObject({ status: 404 });
+    await db.prisma.emailAccount.update({ where: { id }, data: { deletedAt: new Date() } });
+    expect(await reconnect(id, creds("imap.new.test")).catch((x) => x)).toMatchObject({
+      status: 404,
+    });
+  });
+
+  test("the email cannot be changed and extra keys are rejected", async () => {
+    const id = await broken("re6@example.test");
+    await expect(
+      reconnect(id, { ...creds("imap.new.test"), email: "x@example.test" }),
+    ).rejects.toThrow();
   });
 });
 
