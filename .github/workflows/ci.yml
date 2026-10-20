@@ -48,7 +48,7 @@ jobs:
         run: |
           echo junk > backups/bad.dump
           if sh scripts/restore.sh backups/bad.dump; then echo "bad dump accepted"; exit 1; fi
-          docker compose exec -T postgres psql -U rightnow -d rightnow -tAc "select count(*) from _prisma_migrations" | grep -qx 3
+          docker compose exec -T postgres psql -U rightnow -d rightnow -tAc "select count(*) from _prisma_migrations" | grep -qx "$(ls -d packages/db/prisma/migrations/*/ | wc -l)"
           curl -fsS http://localhost:3000/api/healthz
       - name: Restore
         run: |
@@ -64,6 +64,10 @@ jobs:
           for i in $(seq 60); do curl -fsS http://localhost:3000/api/healthz && ok=1 && break; sleep 2; done
           test -n "$ok"
           docker compose exec -T postgres psql -U rightnow -d rightnow -tAc "select v from ci_marker" | grep -qx 42
+          # the worker's heartbeat reaches the restored database, so readiness turns green
+          ok=
+          for i in $(seq 40); do curl -fsS http://localhost:3000/api/readyz && ok=1 && break; sleep 3; done
+          test -n "$ok"
           for svc in web worker; do
             ok=
             for i in $(seq 40); do
