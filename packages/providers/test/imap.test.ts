@@ -186,7 +186,7 @@ describe("send and Sent copy", () => {
     expect(r.rfcMessageId).toBe("<s1@rn.test>");
     expect(s.received).toHaveLength(1);
     expect(warn).toHaveBeenCalled();
-    expect(JSON.stringify(warn.mock.calls)).not.toMatch(/bpb/);
+    expect(JSON.stringify(warn.mock.calls)).not.toMatch(/\bp\b/);
   });
 
   it.each([
