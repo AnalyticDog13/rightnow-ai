@@ -178,19 +178,20 @@
    "id": "P2-T03",
    "phase": 2,
    "title": "Gmail provider (send raw + threadId, history.list, 404→expired, query listing, rfc822msgid search, token refresh persistence, error mapping). Contract suite on recorded fixtures via injected fetch",
-   "status": "in_progress",
+   "status": "done",
    "deps": [
     "P2-T02b"
    ],
    "model": "sonnet",
-   "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-2.md; tests listed there pass"
+   "commit": "326f7fd..49a0de1",
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-2.md; tests listed there pass",
+   "review": "2 fix rounds (findSent incl. trash, labelAdded, 403 mapping); clean"
   },
   {
    "id": "P2-T04",
    "phase": 2,
    "title": "Account service/API/UI: CRUD, soft delete, pause/resume, limits (clamped), gaps, signature, replyTo, tags, bulk actions, diagnostics, mark-as-fixed, account→campaigns view, AuthError → NEEDS_ATTENTION",
-   "status": "todo",
+   "status": "in_progress",
    "deps": [
     "P2-T03"
    ],
@@ -232,7 +233,7 @@
    ],
    "model": "sonnet",
    "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-2.md; tests listed there pass; live-verify Google connect popup flow (COOP) from P2-T02b"
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-2.md; tests listed there pass; live-verify Google connect popup flow (COOP) from P2-T02b; live-verify Gmail API shapes listed in P2-T03 report (history, queries, minimal labelIds, error envelopes, Message-ID kept, Bcc in sent copy)"
   },
   {
    "id": "P3-T01",
@@ -393,7 +394,7 @@
   {
    "id": "P4-T01",
    "phase": 4,
-   "title": "Threading + ingest (dedupe on rfcMessageId, synthetic id when missing; UIDVALIDITY resync no duplicates; list queries never select attachment `data`)",
+   "title": "Threading + ingest (dedupe on rfcMessageId, synthetic id when missing; UIDVALIDITY resync no duplicates; list queries never select attachment `data`); Gmail can re-report a message after labelAdded: dedupe + update folder (from P2-T03)",
    "status": "todo",
    "deps": [
     "P3-T13"
@@ -441,7 +442,7 @@
   {
    "id": "P4-T05",
    "phase": 4,
-   "title": "Sync job (incremental + full + historical import + outside-app sends), sets `lastSyncCompletedAt`",
+   "title": "Sync job (incremental + full + historical import + outside-app sends), sets `lastSyncCompletedAt`; cap + escalate persistent transient read errors (from P2-T03)",
    "status": "todo",
    "deps": [
     "P4-T04"

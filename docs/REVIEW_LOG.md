@@ -97,3 +97,6 @@ Plan defect fixed (lease overrun returned stale token → retry lease). Round 1:
 
 ## 2026-10-20 · P2-T02b Google OAuth connect · task + security reviewer (opus) · fixes → **Approved**
 Security pass on state/PKCE/redirects/secrets/polling. Fixed: provider-mismatch reconnect, popup-closed polling, concurrent revive race, Playwright catch-all, provider_unavailable outage code.
+
+## 2026-10-20 · P2-T03 Gmail provider · task reviewer (sonnet) · 2 fix rounds → **Approved**
+findSent searches all mail incl. trash (overrode brief: no-duplicate-sends), labelAdded tracked (spam→inbox replies), 403 mapping narrowed so quota/policy 403s never disconnect mailboxes.
