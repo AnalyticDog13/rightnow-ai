@@ -84,56 +84,63 @@ export function accountCredentialStore(
     get,
     async refresh(stale, doRefresh) {
       const deadline = clock.now().getTime() + MAX_WAIT_MS;
-      let lease: { leaseId: string; gen: number };
       for (;;) {
-        type Step = OAuthCreds | { leaseId: string; gen: number } | null; // null = wait
-        const step = await prisma.$transaction(async (tx): Promise<Step> => {
-          await tx.$queryRaw`SELECT 1 FROM "EmailAccount" WHERE "id" = ${accountId} FOR UPDATE`;
-          const a = await tx.emailAccount.findFirst({ where: live });
-          const current = oauthCreds(a?.credentialsEnc, accountId);
-          if (current.accessToken !== stale.accessToken) return current;
-          const now = clock.now();
-          if (a!.refreshLeaseId && a!.refreshLeaseUntil && a!.refreshLeaseUntil > now) return null;
-          const leaseId = randomUUID();
-          await tx.emailAccount.update({
-            where: { id: accountId },
-            data: {
-              refreshLeaseId: leaseId,
-              refreshLeaseUntil: new Date(now.getTime() + LEASE_MS),
-            },
+        let lease: { leaseId: string; gen: number };
+        for (;;) {
+          type Step = OAuthCreds | { leaseId: string; gen: number } | null; // null = wait
+          const step = await prisma.$transaction(async (tx): Promise<Step> => {
+            await tx.$queryRaw`SELECT 1 FROM "EmailAccount" WHERE "id" = ${accountId} FOR UPDATE`;
+            const a = await tx.emailAccount.findFirst({ where: live });
+            const current = oauthCreds(a?.credentialsEnc, accountId);
+            if (current.accessToken !== stale.accessToken) return current;
+            const now = clock.now();
+            if (a!.refreshLeaseId && a!.refreshLeaseUntil && a!.refreshLeaseUntil > now)
+              return null;
+            const leaseId = randomUUID();
+            await tx.emailAccount.update({
+              where: { id: accountId },
+              data: {
+                refreshLeaseId: leaseId,
+                refreshLeaseUntil: new Date(now.getTime() + LEASE_MS),
+              },
+            });
+            return { leaseId, gen: a!.credentialGen };
           });
-          return { leaseId, gen: a!.credentialGen };
-        });
-        if (step && "accessToken" in step) return step;
-        if (step) {
-          lease = step;
-          break;
+          if (step && "accessToken" in step) return step;
+          if (step) {
+            lease = step;
+            break;
+          }
+          if (clock.now().getTime() >= deadline)
+            throw new TransientBeforeSendError("token refresh lease still held by another process");
+          await sleep(POLL_MS);
         }
-        if (clock.now().getTime() >= deadline)
-          throw new TransientBeforeSendError("token refresh lease still held by another process");
-        await sleep(POLL_MS);
-      }
 
-      // Conditional on lease and generation: after expiry, disconnect or reconnect this matches nothing.
-      const mine = { ...live, refreshLeaseId: lease.leaseId, credentialGen: lease.gen };
-      let next: OAuthCreds;
-      try {
-        next = await doRefresh(stale);
-      } catch (e) {
-        await prisma.emailAccount
-          .updateMany({ where: mine, data: { refreshLeaseId: null, refreshLeaseUntil: null } })
-          .catch(() => {}); // the lease expires on its own; keep the provider's error
-        throw e;
+        // Conditional on lease and generation: after expiry, disconnect or reconnect this matches nothing.
+        const mine = { ...live, refreshLeaseId: lease.leaseId, credentialGen: lease.gen };
+        let next: OAuthCreds;
+        try {
+          next = await doRefresh(stale);
+        } catch (e) {
+          await prisma.emailAccount
+            .updateMany({ where: mine, data: { refreshLeaseId: null, refreshLeaseUntil: null } })
+            .catch(() => {}); // the lease expires on its own; keep the provider's error
+          throw e;
+        }
+        const r = await prisma.emailAccount.updateMany({
+          where: mine,
+          data: {
+            credentialsEnc: encryptCredentials({ kind: "oauth", ...next }),
+            refreshLeaseId: null,
+            refreshLeaseUntil: null,
+          },
+        });
+        if (r.count === 1) return next;
+        // Lost the lease (expired and taken, or credentials replaced). Return new creds, never the stale
+        // ones: if the stored token is still `stale`, the new holder is pending, so wait for it (D13 note).
+        const current = await get();
+        if (current.accessToken !== stale.accessToken) return current;
       }
-      const r = await prisma.emailAccount.updateMany({
-        where: mine,
-        data: {
-          credentialsEnc: encryptCredentials({ kind: "oauth", ...next }),
-          refreshLeaseId: null,
-          refreshLeaseUntil: null,
-        },
-      });
-      return r.count === 1 ? next : get();
     },
   };
 }

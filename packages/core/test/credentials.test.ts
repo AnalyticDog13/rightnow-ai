@@ -140,6 +140,26 @@ test("a worker that dies holding the lease blocks only until the lease expires",
   expect((await stored(a.id)).creds).toEqual({ kind: "oauth", ...fresh });
 });
 
+test("a token call that outlives its lease waits for the new holder instead of returning stale creds", async () => {
+  const a = await seed();
+  const d = deps();
+  const gA = gate<OAuthCreds>();
+  const gB = gate<OAuthCreds>();
+  let calls = 0;
+  const lateFresh: OAuthCreds = { ...fresh, accessToken: "at-late", refreshToken: "rt-late" };
+  const rA = accountCredentialStore(worker, a.id, d).refresh(stale, () => (calls++, gA.p));
+  await until(() => calls === 1);
+  d.clock.advance(21_000); // our lease expires while the token call is still running
+  const rB = accountCredentialStore(db.prisma, a.id, d).refresh(stale, () => (calls++, gB.p));
+  await until(() => calls === 2);
+  gA.open(lateFresh); // our conditional update matches nothing; B is still pending
+  await until(() => d.sleeps.n > 0);
+  gB.open(fresh);
+  expect(await Promise.all([rA, rB])).toEqual([fresh, fresh]);
+  expect(calls).toBe(2);
+  expect((await stored(a.id)).creds).toEqual({ kind: "oauth", ...fresh });
+});
+
 test("a caller whose stale token is no longer current gets the stored creds without refreshing", async () => {
   const a = await seed();
   const store = accountCredentialStore(db.prisma, a.id, deps());

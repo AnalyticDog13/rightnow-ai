@@ -59,6 +59,7 @@ Not `gmail.readonly`. Spam rescue and mark-read (PS-WARM-08) need modify; adding
 
 ## 2026-10-19 · D13 · Token refresh by DB lease, not a lock held over HTTP
 Refresh claims a lease on the account row (`refreshLeaseId/Until`, 20 s) in a short transaction, calls the token endpoint (15 s timeout) with no transaction open, then commits the new credentials if it still holds the lease. Avoids holding a pooled connection during HTTP and losing a rotated Microsoft refresh token when a transaction aborts. A refresh response without a refresh token keeps the stored one; token-server 5xx is transient, never an auth failure.
+Note (P2-T02a, deviates from the brief): when the conditional write matches nothing and the stored token is still the stale one, refresh goes back to the lease/wait step (same 25 s bound) instead of returning stale creds.
 
 ## 2026-10-19 · D14 · Fake provider state is file-backed
 `FAKE_MAIL_DIR` JSON files (atomic writes under a lock file), so the web server, worker and Playwright share one fake mailbox. Enabled only with `MAIL_PROVIDER_FAKE=1`, refused when `MODE=vps`.
