@@ -72,6 +72,7 @@ export function AccountDrawer({
   const [error, setError] = useState("");
   const [testTo, setTestTo] = useState("");
   const [testOk, setTestOk] = useState(false);
+  const [sending, setSending] = useState(false);
   const [testMsg, setTestMsg] = useState("");
   const [checks, setChecks] = useState<{ name: string; ok: boolean; code?: string }[]>([]);
 
@@ -147,11 +148,13 @@ export function AccountDrawer({
 
   async function sendTest(e: React.FormEvent) {
     e.preventDefault();
+    setSending(true);
     setTestMsg("Sending...");
     const r = await call(`/api/v1/accounts/${account.id}/test-send`, "POST", {
       to: testTo,
       confirmAuthorized: testOk,
     });
+    setSending(false);
     setTestMsg(r.ok ? "Test email sent." : errorText(r));
     if (r.ok) onChanged();
   }
@@ -272,7 +275,11 @@ export function AccountDrawer({
                 I am authorized to send from this account
               </label>
               <div className="flex items-center gap-3">
-                <Button type="submit" variant="outline" disabled={!testOk || !testTo.trim()}>
+                <Button
+                  type="submit"
+                  variant="outline"
+                  disabled={!testOk || !testTo.trim() || sending}
+                >
                   Send test email
                 </Button>
                 <p aria-live="polite" className="text-sm">

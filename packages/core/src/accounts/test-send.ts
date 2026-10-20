@@ -36,33 +36,35 @@ export async function sendTestEmail(
   if (!a.credentialsEnc) throw new AccountError(409, "reconnect first");
 
   const now = clock.now();
-  const recent = await prisma.auditLog.findMany({
-    where: {
-      workspaceId: p.workspaceId,
-      action: "account.test_send",
-      target: a.id,
-      createdAt: { gt: new Date(now.getTime() - WINDOW_MS) },
-    },
-    orderBy: { createdAt: "asc" },
-    take: LIMIT,
-  });
-  if (recent.length >= LIMIT)
-    throw new AccountError(429, "rate_limited", {
-      retryAfterSec: Math.max(
-        1,
-        Math.ceil((recent[0]!.createdAt.getTime() + WINDOW_MS - now.getTime()) / 1000),
-      ),
+  // One transaction per account holding an advisory lock: concurrent requests cannot all read "4 so far".
+  // The audit row is written before the send, so an unknown outcome still counts.
+  await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"test-send:" + a.id}))`;
+    const recent = await tx.auditLog.findMany({
+      where: {
+        workspaceId: p.workspaceId,
+        action: "account.test_send",
+        target: a.id,
+        createdAt: { gt: new Date(now.getTime() - WINDOW_MS) },
+      },
+      orderBy: { createdAt: "asc" },
+      take: LIMIT,
     });
-  // Written before the send so an unknown outcome still counts toward the limit.
-  await audit(
-    prisma,
-    { workspaceId: p.workspaceId, actorId: p.actorId, at: now },
-    "account.test_send",
-    a.id,
-    {
-      toDomain: to.data.split("@").pop()!.toLowerCase(),
-    },
-  );
+    if (recent.length >= LIMIT)
+      throw new AccountError(429, "rate_limited", {
+        retryAfterSec: Math.max(
+          1,
+          Math.ceil((recent[0]!.createdAt.getTime() + WINDOW_MS - now.getTime()) / 1000),
+        ),
+      });
+    await audit(
+      tx,
+      { workspaceId: p.workspaceId, actorId: p.actorId, at: now },
+      "account.test_send",
+      a.id,
+      { toDomain: to.data.split("@").pop()!.toLowerCase() },
+    );
+  });
 
   const rfcMessageId = newMessageId(a.email.split("@").pop()!);
   const body =
@@ -79,7 +81,8 @@ export async function sendTestEmail(
     });
     return { rfcMessageId: r.rfcMessageId, providerMessageId: r.providerMessageId };
   } catch (e) {
-    await recordProviderError(prisma, clock, a.id, e);
+    // Only an account-level failure counts against health; a rejected recipient says nothing about the account.
+    if (e instanceof AuthError) await recordProviderError(prisma, clock, a.id, e);
     if (e instanceof AuthError) throw new AccountError(409, "needs_attention", { code: e.reason });
     if (e instanceof RateLimitedError)
       throw new AccountError(429, "rate_limited", { retryAfterSec: e.retryAfterSec });

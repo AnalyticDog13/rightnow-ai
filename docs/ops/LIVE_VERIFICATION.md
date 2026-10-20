@@ -14,7 +14,7 @@ Record every result in the table at the bottom of this file (date, provider, ste
 | Microsoft | Entra app with `Mail.Send` and `Mail.ReadWrite`, client ID and secret in `.env` (`docs/ops/MICROSOFT_SETUP.md`). A Microsoft 365 or Outlook.com mailbox, connected in the app. |
 | SMTP/IMAP | A real host with TLS (993/465) and, if available, one with STARTTLS (143/587). Connect it in the app (Connect with SMTP/IMAP). |
 
-All: `MAIL_PROVIDER_FAKE` must be unset. Find the account id via `GET /api/v1/accounts`.
+All: `MAIL_PROVIDER_FAKE` must be unset (the script exits 2 with a message if it is set, so the Fake can never print PASS). Export the variables in the shell: the script does not read `.env`. Send `--to` a **different** mailbox than the account's own: sending to yourself adds an INBOX copy and can make `locate` and `changes` report a false FAIL. Find the account id via `GET /api/v1/accounts`.
 
 ## 1. Scripted run
 
@@ -54,8 +54,10 @@ Exit code 0 means everything passed. `changes` waits up to 60 s for the sent cop
 | G6 | API explorer: `users.history.list` with the `startHistoryId` from the cursor step, `historyTypes` messageAdded and labelAdded. | Entries carry `messagesAdded[].message.labelIds`, `labelsAdded[]`, `messagesDeleted`; the response has a top-level `historyId`; an expired startHistoryId answers 404. | History fixtures in `packages/providers/test/gmail-fake.ts` and `gmail.test.ts`. |
 | G7 | `users.messages.list` with `q=rfc822msgid:<id>` and `includeSpamTrash=true`. Move the test message to Trash first, then repeat with `q=in:anywhere rfc822msgid:<id>`. | The trashed copy is still found; `in:anywhere` includes spam and trash. | `findSent` / `locate` queries in `packages/providers/src/gmail/`. |
 | G8 | `users.messages.get?format=minimal` for a message. | The response contains `labelIds`. | The provider relies on it in `locate`; if absent, switch to `format=metadata`. |
-| G9 | Make Google answer 403/429 (hit a quota, or call the API with a revoked grant) and read the body. | `error.errors[0].reason` such as `rateLimitExceeded`, `userRateLimitExceeded`, `dailyLimitExceeded`; `Retry-After` on 429. | Error mapping and fixtures in `packages/providers/src/gmail/` and `gmail.test.ts`. |
+| G9 | (Optional, hard to provoke) Make Google answer 403/429 (hit a quota, or call the API with a revoked grant) and read the body. | `error.errors[0].reason` such as `rateLimitExceeded`, `userRateLimitExceeded`, `dailyLimitExceeded`; `Retry-After` on 429. | Error mapping and fixtures in `packages/providers/src/gmail/` and `gmail.test.ts`. |
 | G10 | Revoke the app at myaccount.google.com/permissions. In the app: Account > Run diagnostics, then Send test email. | Account shows "Needs attention"; test-send answers 409 `needs_attention`. | `recordProviderError` in `packages/core/src/accounts/health.ts`, Gmail `invalid_grant` mapping. |
+| G12 | API explorer: `users.messages.list` with `q=after:<epoch seconds> in:inbox` combined with `labelIds=INBOX`, and once with `labelIds=SENT`. | Only messages after the date and carrying the label are returned (the two filters AND together). Record the result here. | The listMessages query building in `packages/providers/src/gmail/provider.ts` and its fixture routes in `gmail.test.ts`. |
+| G13 | Same call with `maxResults=2` over a mailbox with at least 5 messages; follow `nextPageToken` until it is absent. | Newest first; `nextPageToken` is an opaque string that resumes exactly after the last item (no gaps or repeats across pages). | Ordering/paging assumptions in `gmail-fake.ts` and the `listMessages pages and resumes` fixture. |
 | G11 | (Docs check) A consent screen left in "Testing". | Refresh tokens die after 7 days with `invalid_grant`. Keep "In production". | `docs/ops/GOOGLE_SETUP.md`. |
 
 ## 3. Microsoft
@@ -72,6 +74,12 @@ Exit code 0 means everything passed. `changes` waits up to 60 s for the sent cop
 | M8 | Revoke at myapps.microsoft.com, then Run diagnostics and Send test email. | Account "Needs attention"; test-send answers 409 `needs_attention`. | Auth mapping. |
 | M9 | Connect from a tenant that requires admin consent. | Connect ends with `admin_consent_required` (AADSTS65001 / 90094). | `graph/oauth.ts`. |
 
+| M10 | `POST /me/messages` with a base64 text/plain MIME body (what send does), including a Bcc recipient; read the response and then `GET /me/messages/<id>?$select=bccRecipients,conversationId,internetMessageId`. | The response contains `id` and `conversationId`; `bccRecipients` is kept on the draft; the draft's `internetMessageId` is our `Message-ID`. | Draft response fixtures in `graph.test.ts` / `graph-fake.ts`. |
+| M11 | Delta call with `Prefer: odata.maxpagesize=2` over at least 5 changed items. | Pages hold at most 2 items and end with `@odata.deltaLink`; intermediate pages carry `@odata.nextLink`. | Paging fixtures and the `hasMore` cursor handling in `graph/provider.ts`. |
+| M12 | Delta with `$filter=receivedDateTime ge <date>` and `$select=id`. | Accepted (no 400) and returns only ids at or after the date. If Graph rejects the combination, record the error. | The first-sync delta URL in `graph/provider.ts` and its fixtures. |
+| M13 | `GET /me/messages/<id>/$value`, then 6 of them in parallel. | The body is raw MIME (parses with `parseRaw`); at about 4 concurrent requests Graph answers 429 `ApplicationThrottled`/`MailboxConcurrency`, which must map to a rate limit, not a failure. | The concurrency cap and 429 mapping in `graph/http.ts`. |
+| M14 | Inspect the token response at connect (add a temporary log of the JSON keys only, never the tokens) or check with the OAuth playground. | The response includes `scope` (a space-separated list, possibly with the `https://graph.microsoft.com/` prefix) and, on refresh, a new `refresh_token`. | `normalizeScopes` and refresh handling in `graph/oauth.ts`, and `graph.test.ts` token fixtures. |
+
 ## 4. SMTP/IMAP
 
 | # | Step | Expected | If it differs |
@@ -80,7 +88,7 @@ Exit code 0 means everything passed. `changes` waits up to 60 s for the sent cop
 | S2 | Connect with STARTTLS (143/587). | Connects. A host that does not offer STARTTLS is refused (no plaintext AUTH). | TLS options in `packages/providers/src/imap-smtp/`. |
 | S3 | After the run, look in the Sent folder. | Exactly one copy: with "Save sent mail in the Sent folder" on we APPEND it, with it off the server files it. | `defaultAppendToSent` in `imap-smtp/hints.ts`. |
 | S4 | Note `UIDVALIDITY` of INBOX and Sent (IMAP `SELECT`, or the account's sync cursor). If the host lets you recreate a folder, do so and sync. | A changed UIDVALIDITY expires the cursor (full resync), never a silent skip. | Expiry logic in the IMAP provider. |
-| S5 | Ambiguous send on generic SMTP: drop the connection after DATA is written. | The send ends HELD and no APPEND happened, so the Sent search finds nothing. Never resent automatically. | Nothing to correct; confirms the design. |
+| S5 | (Optional, needs a TCP proxy you control) Ambiguous send on generic SMTP: drop the connection after DATA is written. | The send ends HELD and no APPEND happened, so the Sent search finds nothing. Never resent automatically. | Nothing to correct; confirms the design. |
 
 ## 5. Test-send and cross-cutting checks
 

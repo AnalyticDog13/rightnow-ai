@@ -14,8 +14,16 @@ export async function run<T>(fn: () => Promise<T>): Promise<T | Response> {
     return await fn();
   } catch (e) {
     if (!(e instanceof AccountError)) throw e;
-    if (e.body && typeof e.body === "object")
-      return Response.json({ error: e.message, ...e.body }, { status: e.status });
+    if (e.body && typeof e.body === "object") {
+      const sec = (e.body as { retryAfterSec?: unknown }).retryAfterSec;
+      return Response.json(
+        { error: e.message, ...e.body },
+        {
+          status: e.status,
+          ...(typeof sec === "number" && { headers: { "Retry-After": String(sec) } }),
+        },
+      );
+    }
     throw new HttpError(e.status, e.message);
   }
 }

@@ -251,3 +251,43 @@ describe("test-send and the fake mailbox route", () => {
     }
   });
 });
+
+describe("test-send rate limit over HTTP", () => {
+  it("the 6th send is 429 with a Retry-After header and retryAfterSec", async () => {
+    const { encryptCredentials } = await import("@rightnow/core");
+    const ts = await import("../app/api/v1/accounts/[id]/test-send/route");
+    const a = await db.prisma.emailAccount.create({
+      data: {
+        workspaceId,
+        provider: "GMAIL",
+        email: "limit@acme.io",
+        fromName: "F",
+        firstName: "F",
+        lastName: "L",
+        capTier: "GMAIL_WORKSPACE",
+        providerCap: 1500,
+        credentialsEnc: encryptCredentials({
+          kind: "oauth",
+          accessToken: "a",
+          refreshToken: "r",
+          expiresAt: 1,
+          scope: "s",
+        }),
+      },
+    });
+    const send = () =>
+      ts.POST(
+        req("POST", `/api/v1/accounts/${a.id}/test-send`, {
+          to: "me@dest.example",
+          confirmAuthorized: true,
+        }),
+        p(a.id),
+      );
+    for (let i = 0; i < 5; i++) expect((await send()).status).toBe(200);
+    const res = await send();
+    expect(res.status).toBe(429);
+    const sec = ((await res.json()) as { retryAfterSec: number }).retryAfterSec;
+    expect(sec).toBeGreaterThan(0);
+    expect(res.headers.get("retry-after")).toBe(String(sec));
+  });
+});

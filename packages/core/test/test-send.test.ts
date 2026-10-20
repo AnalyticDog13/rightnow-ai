@@ -1,9 +1,11 @@
+import { spawnSync } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createTestDb } from "@rightnow/db/test-db";
 import {
   FakeProvider,
+  PermanentSendError,
   RateLimitedError,
   getFakeProvider,
   type MailProvider,
@@ -181,5 +183,68 @@ describe("liveVerify", () => {
     const r = await liveVerify(p, "me@dest.example", clock);
     expect(r.find((s) => s.step === "send")!.ok).toBe(false);
     expect(r.map((s) => s.step)).toEqual(["diagnostics", "send"]);
+  });
+});
+
+describe("concurrency and the live script", () => {
+  test("10 parallel sends: exactly 5 go out, 5 are 429", async () => {
+    const a = await mk();
+    clock.advance(60 * 60_000);
+    const r = await Promise.allSettled(Array.from({ length: 10 }, () => send(a.id)));
+    expect(r.filter((x) => x.status === "fulfilled")).toHaveLength(5);
+    expect(
+      r.filter((x) => x.status === "rejected" && (x.reason as { status: number }).status === 429),
+    ).toHaveLength(5);
+    expect(
+      (await getFakeProvider(a.email).listMessages({ since: new Date(0), folder: "SENT" }))
+        .messages,
+    ).toHaveLength(5);
+  });
+
+  test("a recipient-level rejection does not touch account health", async () => {
+    const a = await mk();
+    const providerFor = (): MailProvider =>
+      ({
+        address: a.email,
+        send: async () => {
+          throw new PermanentSendError("smtp_550");
+        },
+      }) as unknown as MailProvider;
+    await expect(
+      sendTestEmail(
+        db.prisma,
+        clock,
+        { providerFor },
+        {
+          workspaceId: ws,
+          actorId: "u1",
+          accountId: a.id,
+          to: "x@d.example",
+          confirmAuthorized: true,
+        },
+      ),
+    ).rejects.toMatchObject({ status: 422 });
+    expect(await db.prisma.emailAccount.findUnique({ where: { id: a.id } })).toMatchObject({
+      errorCount24h: 0,
+      lastError: null,
+    });
+  });
+
+  test("scripts/live-verify.ts refuses to run against the Fake", () => {
+    const r = spawnSync(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        join(__dirname, "../../../scripts/live-verify.ts"),
+        "--account",
+        "x",
+        "--to",
+        "a@b.co",
+      ],
+      { env: { ...process.env, MAIL_PROVIDER_FAKE: "1" }, encoding: "utf8" },
+    );
+    expect(r.status).toBe(2);
+    expect(r.stderr).toContain("MAIL_PROVIDER_FAKE");
   });
 });
