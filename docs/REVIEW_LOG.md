@@ -91,3 +91,6 @@ C1 + 12 Important resolved. 3 new Important (lease cleared on disconnect/reconne
 
 ## 2026-10-20 · P2-T01 provider interface/MIME/Fake/contract · task reviewer (sonnet) · fixes → **Approved**
 Pre-review interface fixes (receiver ids, reopen, IPv6 byte parsing); round 1: ::1 loopback, MIME CRLF + reserved headers + Bcc-leak check, zero-assertion guard, SSRF ranges, Fake clearFailures, env empty flags, Retry-After decimals.
+
+## 2026-10-20 · P2-T02a credential store/refresh lease/key rotation · task reviewer (opus) · fixes → **Approved**
+Plan defect fixed (lease overrun returned stale token → retry lease). Round 1: reconnect-during-failed-refresh race, toApiAccount allowlist, no writes to soft-deleted accounts.

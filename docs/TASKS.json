@@ -151,19 +151,20 @@
    "id": "P2-T02a",
    "phase": 2,
    "title": "Schema + credential store with refresh lease + key rotation (ENCRYPTED_COLUMNS, I7)",
-   "status": "in_progress",
+   "status": "done",
    "deps": [
     "P2-T01"
    ],
    "model": "opus",
-   "commit": null,
-   "acceptance": "See docs/plans/phase-2.md P2-T02a"
+   "commit": "933a3e6..9099187",
+   "acceptance": "See docs/plans/phase-2.md P2-T02a",
+   "review": "opus review; lease stale-token fix + 1 fix round (reconnect race, allowlist, soft-delete); clean"
   },
   {
    "id": "P2-T02b",
    "phase": 2,
    "title": "Google OAuth connect (state+PKCE, session polling, reconnect) + opus review of oauth.ts",
-   "status": "todo",
+   "status": "in_progress",
    "deps": [
     "P2-T02a",
     "P2-T01"
