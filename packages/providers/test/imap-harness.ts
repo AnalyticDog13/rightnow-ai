@@ -18,6 +18,70 @@ export type ServerOpts = {
   onSmtpData?: () => void;
 };
 
+/** Mailbox-side scenario steps, shared by the in-process servers and the real GreenMail run. */
+export function mailboxScenario(
+  admin: <T>(fn: (c: ImapFlow) => Promise<T>) => Promise<T>,
+  sentName: string,
+): Omit<Scenario, "failNext" | "sentRaw"> {
+  const inbound = async (subject: string, text: string, inReplyTo?: string) => {
+    const messageId = newMessageId("x.test");
+    const raw = await buildMime({
+      from: { email: "x@rn.test" },
+      to: [{ email: ADDRESS }],
+      subject,
+      text,
+      messageId,
+      inReplyTo,
+    });
+    return { raw, messageId };
+  };
+  return {
+    async receiveInbound(m) {
+      const { raw, messageId } = await inbound(m.subject, m.text, m.inReplyTo);
+      await admin((c) => c.append("INBOX", raw));
+      return { rfcMessageId: messageId };
+    },
+    async seedInbound(n) {
+      await admin(async (c) => {
+        for (let i = 0; i < n; i++) {
+          const { raw } = await inbound(`seed ${i}`, "t");
+          await c.append("INBOX", raw);
+        }
+      });
+    },
+    async receiveSpam() {
+      const { raw, messageId } = await inbound("spam", "buy");
+      await admin((c) => c.append("Junk", raw));
+      return { rfcMessageId: messageId };
+    },
+    async saveDraft() {
+      const { raw, messageId } = await inbound("draft", "wip");
+      await admin((c) => c.append("Drafts", raw, ["\\Draft"]));
+      return { rfcMessageId: messageId };
+    },
+    async sendExternal(m) {
+      const raw = await buildMime({
+        from: { email: ADDRESS },
+        to: [{ email: "someone@rn.test" }],
+        subject: m.subject,
+        text: "from my phone",
+        messageId: m.messageId,
+      });
+      await admin((c) => c.append(sentName, raw, ["\\Seen"]));
+    },
+    async deleteMessage() {
+      throw new Error("IMAP does not report deletions");
+    },
+    async expireCursors() {
+      // INBOX cannot be deleted; a recreated Sent gets a higher UIDVALIDITY
+      await admin(async (c) => {
+        await c.mailboxDelete(sentName);
+        await c.mailboxCreate(sentName);
+      });
+    },
+  };
+}
+
 /** In-process hoodiecrow IMAP and smtp-server on random loopback ports, CONDSTORE off by default (the worst case). */
 export async function startServers(o: ServerOpts = {}) {
   const sent = o.sent ?? { name: "Sent", specialUse: true };
@@ -136,68 +200,14 @@ export async function startServers(o: ServerOpts = {}) {
       ...extra,
     });
 
-  const inbound = async (subject: string, text: string, inReplyTo?: string) => {
-    const messageId = newMessageId("x.test");
-    const raw = await buildMime({
-      from: { email: "x@rn.test" },
-      to: [{ email: ADDRESS }],
-      subject,
-      text,
-      messageId,
-      inReplyTo,
-    });
-    return { raw, messageId };
-  };
   const scenario: Scenario = {
-    async receiveInbound(m) {
-      const { raw, messageId } = await inbound(m.subject, m.text, m.inReplyTo);
-      await admin((c) => c.append("INBOX", raw));
-      return { rfcMessageId: messageId };
-    },
-    async seedInbound(n) {
-      await admin(async (c) => {
-        for (let i = 0; i < n; i++) {
-          const { raw } = await inbound(`seed ${i}`, "t");
-          await c.append("INBOX", raw);
-        }
-      });
-    },
-    async receiveSpam() {
-      const { raw, messageId } = await inbound("spam", "buy");
-      await admin((c) => c.append("Junk", raw));
-      return { rfcMessageId: messageId };
-    },
-    async saveDraft() {
-      const { raw, messageId } = await inbound("draft", "wip");
-      await admin((c) => c.append("Drafts", raw, ["\\Draft"]));
-      return { rfcMessageId: messageId };
-    },
-    async sendExternal(m) {
-      const raw = await buildMime({
-        from: { email: ADDRESS },
-        to: [{ email: "someone@rn.test" }],
-        subject: m.subject,
-        text: "from my phone",
-        messageId: m.messageId,
-      });
-      await admin((c) => c.append(sent.name, raw, ["\\Seen"]));
-    },
-    async deleteMessage() {
-      throw new Error("IMAP does not report deletions");
-    },
+    ...mailboxScenario(admin, sent.name),
     failNext(k) {
       if (k === "auth_revoked") {
         revoked = true;
         imap.users.u!.password = "revoked-elsewhere";
       } else if (k === "connect_refused") smtp.close();
       else fail = k;
-    },
-    async expireCursors() {
-      // INBOX cannot be deleted; a recreated Sent gets a higher UIDVALIDITY
-      await admin(async (c) => {
-        await c.mailboxDelete(sent.name);
-        await c.mailboxCreate(sent.name);
-      });
     },
     async sentRaw() {
       return [...received];

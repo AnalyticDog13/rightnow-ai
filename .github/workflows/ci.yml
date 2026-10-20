@@ -17,6 +17,47 @@ jobs:
       - run: npm test
       - run: npx playwright install --with-deps chromium
       - run: npm run e2e
+  imap-real:
+    # The provider contract against a real IMAP/SMTP server (GreenMail, no CONDSTORE). Required for the phase gate.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      greenmail:
+        image: greenmail/standalone:2.1.14
+        ports:
+          - 3025:3025
+          - 3143:3143
+        env:
+          GREENMAIL_OPTS: >-
+            -Dgreenmail.setup.test.smtp -Dgreenmail.setup.test.imap
+            -Dgreenmail.hostname=0.0.0.0
+            -Dgreenmail.users=me:secret@rn.test,to:secret@rn.test,hidden:secret@rn.test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Wait for GreenMail
+        run: |
+          for i in $(seq 60); do
+            (echo > /dev/tcp/127.0.0.1/3143) 2>/dev/null && (echo > /dev/tcp/127.0.0.1/3025) 2>/dev/null && exit 0
+            sleep 2
+          done
+          echo "::error::GreenMail did not open its ports"; exit 1
+      - name: Provider contract against GreenMail
+        # 127.0.0.1 in local mode: plain ports are allowed only for a loopback host when MODE=local
+        env:
+          MODE: local
+          IMAP_TEST_URL: imap://me:secret@127.0.0.1:3143?smtp=3025&address=me@rn.test
+        run: npx vitest run packages/providers/test/imap.real.test.ts
+      - name: Diagnostics
+        if: failure()
+        run: |
+          docker ps -a
+          docker logs "$(docker ps -aq --filter ancestor=greenmail/standalone:2.1.14 | head -1)" 2>&1 | tail -60 | head -c 6000 | tr "
+" "|" | sed "s/^/::error title=greenmail logs::/"
   compose-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 25
