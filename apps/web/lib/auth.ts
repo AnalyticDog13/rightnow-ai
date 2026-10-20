@@ -21,6 +21,7 @@ export const auth = betterAuth({
   },
   plugins: [
     organization({
+      allowUserToCreateOrganization: false, // workspaces are created only by /api/setup
       // Workspace = better-auth organization.
       schema: {
         organization: { modelName: "workspace" },
