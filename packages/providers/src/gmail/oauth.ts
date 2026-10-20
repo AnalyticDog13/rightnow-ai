@@ -71,7 +71,11 @@ export class GoogleOAuth implements OAuthClient {
     // an expired or wrong client secret is the operator's problem, not a mailbox's
     if (code === "invalid_client" || code === "unauthorized_client")
       throw new TransientBeforeSendError("Google app credentials invalid");
-    throw new AuthError(code === "invalid_grant" ? "invalid_grant" : "unauthorized");
+    if (code === "invalid_grant") throw new AuthError("invalid_grant");
+    // an unrecognized 4xx must not disconnect a healthy mailbox, but a failed first sign-in is a plain failure
+    if (params.grant_type === "refresh_token")
+      throw new TransientBeforeSendError(`token endpoint ${res.status}`);
+    throw new AuthError("unauthorized");
   }
 
   private creds(t: TokenResponse, refreshToken: string, scope: string): OAuthCreds {

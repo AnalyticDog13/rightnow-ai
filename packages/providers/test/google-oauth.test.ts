@@ -44,3 +44,18 @@ test("revoke tolerates an already-invalid token, not a 500", async () => {
   await g.revoke(creds);
   await expect(g.revoke(creds)).rejects.toBeInstanceOf(TransientBeforeSendError);
 });
+
+test("an unrecognized 4xx is transient on refresh and a plain failure on exchange", async () => {
+  const { g } = client(
+    reply(400, { error: "invalid_request" }),
+    reply(403, {}),
+    reply(400, { error: "invalid_client" }),
+    reply(400, { error: "invalid_scope" }),
+  );
+  await expect(g.refresh(creds)).rejects.toBeInstanceOf(TransientBeforeSendError);
+  await expect(g.refresh(creds)).rejects.toBeInstanceOf(TransientBeforeSendError);
+  await expect(g.refresh(creds)).rejects.toBeInstanceOf(TransientBeforeSendError);
+  await expect(
+    g.exchange({ code: "c", codeVerifier: "v", redirectUri: "http://x/cb" }),
+  ).rejects.toEqual(new AuthError("unauthorized"));
+});

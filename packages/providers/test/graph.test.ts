@@ -680,6 +680,18 @@ describe("diagnostics", () => {
     expect(d.checks.find((c) => c.name === "api")).toMatchObject({ ok: false });
   });
 
+  test("an unreadable credential store is not scope_missing", async () => {
+    const store = {
+      ...memoryStore({ scope: SCOPE }),
+      get: async () => Promise.reject(new Error("db down")),
+    };
+    const d = await make(createFakeGraph().fetch, store as never).diagnostics();
+    expect(d.ok).toBe(false);
+    expect(d.checks).toEqual([
+      expect.objectContaining({ name: "token", code: "credentials_unavailable" }),
+    ]);
+  });
+
   test("missing Mail.ReadWrite is reported; normalized URL scopes pass", async () => {
     const mk = (scope: string) => make(createFakeGraph().fetch, memoryStore({ scope }));
     const bad = await mk("Mail.Send User.Read").diagnostics();

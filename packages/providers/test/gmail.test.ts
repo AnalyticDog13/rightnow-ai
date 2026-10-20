@@ -500,6 +500,16 @@ describe("diagnostics and revoke", () => {
     });
   });
 
+  test("an unreadable credential store is not scope_missing", async () => {
+    const { p, store } = setup([profile()]);
+    store.get = async () => Promise.reject(new Error("db down"));
+    const d = await p.diagnostics();
+    expect(d.ok).toBe(false);
+    expect(d.checks).toEqual([
+      expect.objectContaining({ name: "token", code: "credentials_unavailable" }),
+    ]);
+  });
+
   test("revoke posts the revoke endpoint; 400 invalid_token resolves", async () => {
     const { p, fetch } = setup([
       {

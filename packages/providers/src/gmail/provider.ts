@@ -202,10 +202,23 @@ export class GmailProvider implements MailProvider {
   }
 
   async diagnostics(): Promise<Diagnostics> {
-    const granted = await this.store.get().then(
-      (c) => c.scope.split(" "),
-      () => [] as string[],
-    );
+    let granted: string[];
+    try {
+      granted = (await this.store.get()).scope.split(" ");
+    } catch {
+      // a DB or decrypt fault is not a scope problem: never ask the user to reconnect for it
+      return {
+        ok: false,
+        checks: [
+          {
+            name: "token",
+            ok: false,
+            code: "credentials_unavailable",
+            message: "stored credentials could not be read",
+          },
+        ],
+      };
+    }
     const missing = GOOGLE_SCOPES.filter((s) => !granted.includes(s));
     const checks: Diagnostics["checks"] = [{ name: "token", ok: true }];
     const scopes: Diagnostics["checks"][number] = missing.length
