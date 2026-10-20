@@ -1,23 +1,23 @@
 # Handoff
 
-**Phase:** 2 — Email provider connections (branch `phase-2-providers`, created from `main` after the Phase 1 merge)
-**Current task:** Phase 2 gate — whole-branch review (opus) + ponytail audit, then merge phase-2-providers → main.
-**Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 (approved). Phase 1 step plan: `docs/plans/phase-1.md` (complete).
-**Tests:** 54 vitest + 3 Playwright green; CI `check` + `compose-smoke` green on main.
+**Phase:** 3 — Campaign automation (branch `phase-3-campaigns`, from `main` after the Phase 2 merge)
+**Current task:** write `docs/plans/phase-3.md` (step plan with per-task PS-IDs), get it independently reviewed, then P3-T01
+**Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 (approved). Done step plans: `docs/plans/phase-1.md`, `docs/plans/phase-2.md`.
+**Tests:** 522 vitest + 16 Playwright (prod build) green; CI `check`, `compose-smoke`, `imap-real` green.
 
 ## Next exact action
-Write the Phase 2 step plan from IMPLEMENTATION_PLAN Phase 2 + PRODUCT_SPEC ACC items + PROVIDER_COMPLIANCE, dispatch an
-independent plan reviewer, then execute P2-T01 (carrying the M1–M4 cleanup listed in its TASKS.json acceptance).
+Write the Phase 3 step plan from IMPLEMENTATION_PLAN Phase 3 (send pipeline section is binding) + PRODUCT_SPEC
+LEAD/CAMP/SEQ/SEND items + TASKS.json acceptance carry-forwards, dispatch an independent (opus) plan reviewer, then execute.
+P3-T01..P3-T10 and P3-T12/T13 can proceed; **P3-T11 (sender + recovery) is gated** — see below.
 
-## Interfaces available from Phase 1
-`route()` (apps/web/lib/api.ts: auth/role/scope/params, CSRF), `startWorker`/`JobDef` with `{prisma, clock}` deps,
-`createPrisma(url,max)`, `createTestDb`/`expectIsolated` (`@rightnow/db/test-db`), `getEnv` + schema extend,
-`encrypt/decrypt` + `ENCRYPTED_COLUMNS`, `audit(tx,…)`, `Clock`.
+## Interfaces available (Phases 1–2)
+Phase 1: `route()` (auth/role/scope/params, CSRF), `startWorker`/`JobDef` `{prisma, clock}`, `createPrisma`,
+`createTestDb`/`expectIsolated`, `getEnv`, `encrypt/decrypt`/`ENCRYPTED_COLUMNS`, `audit(tx,…)`, `Clock`.
+Phase 2: `MailProvider` (frozen; `packages/providers/src/types.ts`) + contract suite, `createProvider(account,{prisma,…})`,
+`accountCredentialStore`/`setCredentials`, `openAccount`, account service (limits/caps clamp, diagnostics, health),
+OAuth sessions (Google, Microsoft), IMAP/SMTP connect/reconnect, `sendTestEmail`, `liveVerify`. Rules: see CLAUDE.md.
 
 ## External dependencies (need the user)
-- Docker Desktop not installed on dev machine (Compose verified only in CI; `.ps1` scripts syntax-checked, never run).
-- Google Cloud OAuth client, Microsoft Entra app, SMTP/IMAP test mailbox credentials — needed only for live
-  verification (P2-T07 / LIVE_VERIFICATION.md); provider code is tested with fakes/fixtures until then.
-- **Message-ID checks gate P3-T11 (not the Phase 2 merge):** Gmail must preserve our `Message-ID`; Graph must preserve it for MIME
-  drafts, or the hint-by-id fallback must be confirmed. They need the user's credentials: run `docs/ops/LIVE_VERIFICATION.md`
-  steps G4, M2 and M3 and record the result there before P3-T11 starts.
+- **Gates P3-T11:** run `docs/ops/LIVE_VERIFICATION.md` with real credentials — Google OAuth client, Microsoft Entra app,
+  IMAP/SMTP test mailbox. Message-ID preservation (Gmail G4, Graph M2/M3) must pass before the sender is built.
+- Docker Desktop not installed on the dev machine (Compose verified only in CI; `.ps1` scripts syntax-checked, never run).

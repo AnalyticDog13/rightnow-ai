@@ -362,7 +362,7 @@
   {
    "id": "P3-T11",
    "phase": 3,
-   "title": "Sender + recovery + HELD view API (error classification, lease/claimToken, UNCERTAIN → SENT/HELD); persist ProviderError.providerMessageId on ScheduledMessage for findSent hint (from P2-T05)",
+   "title": "Sender + recovery + HELD view API (error classification, lease/claimToken, UNCERTAIN → SENT/HELD); persist ProviderError.providerMessageId on ScheduledMessage for findSent hint (from P2-T05); phase-2 gate I-8 (PermanentSendError must distinguish recipient vs account failures)",
    "status": "todo",
    "deps": [
     "P3-T10"
@@ -446,7 +446,7 @@
   {
    "id": "P4-T05",
    "phase": 4,
-   "title": "Sync job (incremental + full + historical import + outside-app sends), sets `lastSyncCompletedAt`; cap + escalate persistent transient read errors (from P2-T03); Graph delta \"changed\" for moves to Deleted Items (from P2-T05)",
+   "title": "Sync job (incremental + full + historical import + outside-app sends), sets `lastSyncCompletedAt`; cap + escalate persistent transient read errors (from P2-T03); Graph delta \"changed\" for moves to Deleted Items (from P2-T05); phase-2 gate I-7 (unify stale page-token signalling) + I-9 (~20 MB page cap for Gmail/Graph)",
    "status": "todo",
    "deps": [
     "P4-T04"

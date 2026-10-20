@@ -29,6 +29,23 @@ Details: `docs/RESUME_INSTRUCTIONS.md`.
 - Secrets only in env vars; OAuth tokens and SMTP passwords encrypted at rest (AES-256-GCM).
 - Every query is scoped by `workspaceId` (multi-tenant ready, single owner today).
 - No fabricated engagement, no limit circumvention, honest sender identity, unsubscribe always honored.
+- `packages/providers` has no DB or Next dependency; `packages/core` owns everything that touches Prisma
+  (`accounts/*`, `oauth.ts`, `rotate.ts`). Every `MailProvider` runs `runProviderContract` (`@rightnow/providers/contract`).
+- Mail credentials: `EmailAccount.credentialsEnc` is written ONLY through `setCredentials()` (clears the refresh lease,
+  bumps `credentialGen`); connects create/revive rows ONLY through `openAccount()`. Never update `credentialsEnc` directly.
+- Error taxonomy (`packages/providers/src/errors.ts`): `AuthError` only for genuine auth failures (`invalid_grant`,
+  `interaction_required`, a 401 that survives one refresh, explicit scope reasons, SMTP 530/534/535, IMAP auth failure
+  that is not throttling). Unknown 4xx/403 on reads, token-endpoint 5xx, `invalid_client` → `TransientBeforeSendError`.
+  Anything that may have reached the provider on send → `AmbiguousSendError`, never retried. Errors never carry
+  response bodies or tokens. An `AuthError` sets NEEDS_ATTENTION unless the user paused the account.
+- Outbound mail hosts: every IMAP/SMTP connect calls `assertPublicHost` and connects to the checked IP with
+  `servername`; never `rejectUnauthorized: false`. Graph cursors/page tokens go through `assertGraphUrl`; every Graph
+  call sends `Prefer: IdType="ImmutableId"`.
+- Worker jobs may scan across workspaces, but every write is conditional on the state they read
+  (`updateMany … WHERE <old state>`). Advisory locks use `pg_advisory_xact_lock(<ns>, hashtext(id))`;
+  namespaces: 726001 first-owner setup, 726002 test-send (register new ones here). No network call inside a DB transaction.
+- API keys act as MEMBER: ADMIN-only routes (connect, disconnect, delete, test-send) are session-only.
+- Next.js: a URL segment starting with `_` needs a folder named `%5F…` (e.g. `app/api/v1/%5Ffake`).
 
 ## Tooling: Superpowers + Ponytail (both installed as Claude Code plugins, user scope)
 
@@ -60,7 +77,11 @@ Develop:
 Verify (every task; no Docker or Postgres needed, tests start embedded Postgres 18):
 - `npm test`: all Vitest projects. One project: `npx vitest run --project @rightnow/web`; one file: `npx vitest run apps/web/test/api.test.ts`
 - `npm run lint` · `npm run typecheck` (`tsc --noEmit` per workspace)
-- `npm run e2e`: Playwright (boots embedded Postgres + `next dev` on :3100). First time: `npx playwright install chromium`
+- `npm run e2e`: Playwright (boots embedded Postgres + `next dev` on :3100). First time: `npx playwright install chromium`.
+  On the Windows dev machine `next dev` e2e has a pre-existing overlay failure: use `E2E_PROD=1` (needs a prior `next build`; delete `apps/web/.next` afterwards)
+- Real IMAP/SMTP contract (CI job `imap-real`, Linux, GreenMail): `MODE=local IMAP_TEST_URL='imap://me:secret@127.0.0.1:3143?smtp=3025&address=me@rn.test' npx vitest run packages/providers/test/imap.real.test.ts`
+- Fake mailboxes for dev/e2e: `MAIL_PROVIDER_FAKE=1` (refused when `MODE=vps`), state in `FAKE_MAIL_DIR`; inspect via `GET /api/v1/_fake/mailbox/<address>`
+- Live check with real credentials (gates P3-T11): `npx tsx scripts/live-verify.ts --account <id> --to <other address>` (refuses the Fake; see docs/ops/LIVE_VERIFICATION.md)
 
 Docker (not installed on the primary dev machine; verified by CI job `compose-smoke`):
 - `scripts/start.sh|.ps1` (`docker compose up -d --build`; adds `--profile vps` when `.env` has `MODE=vps`)
@@ -83,4 +104,5 @@ CI status (`gh` is not installed): `curl -s "https://api.github.com/repos/Analyt
 
 `docs/PRODUCT_SPEC.md` (requirements + Instantly parity checklist) · `docs/IMPLEMENTATION_PLAN.md` (approved plan) ·
 `docs/plans/` (per-phase step plans) · `docs/TASKS.json` · `docs/PROGRESS.md` · `docs/HANDOFF.md` ·
-`docs/DECISIONS.md` · `docs/REVIEW_LOG.md` · `docs/RESUME_INSTRUCTIONS.md`
+`docs/DECISIONS.md` · `docs/REVIEW_LOG.md` · `docs/RESUME_INSTRUCTIONS.md` ·
+`docs/ops/` (LOCAL, VPS, GOOGLE_SETUP, MICROSOFT_SETUP, KEY_ROTATION, LIVE_VERIFICATION)

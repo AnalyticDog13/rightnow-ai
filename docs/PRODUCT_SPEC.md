@@ -53,38 +53,38 @@ Areas: UI, ACC, WARM, CAMP, SEQ, SEND, LEAD, INBOX, TRACK, CRM, ANALYTICS, AUTO,
 ## 3. Connected Email Accounts (master §3)
 
 ### 3.1 Connection flows
-- [ ] PS-ACC-01: "Connect with Google" OAuth 2.0 (authorization code, offline access) and Gmail API send/read — Instantly offers Google and Microsoft OAuth init endpoints returning an auth URL (S8).
-- [ ] PS-ACC-02: OAuth session object: `sessionId`, `authUrl`, 10-minute expiry; client polls status every ~5 s: `pending|success|error|expired`; result consumed on first read; error codes include `account_exists`, `server_error`, `expired` — Instantly OAuth connection flow (S8).
-- [ ] PS-ACC-03: Microsoft 365/Outlook via Microsoft OAuth + Graph (send, delta read) — Instantly provider code 3 (S4, S8).
-- [ ] PS-ACC-04: Custom IMAP/SMTP connection: email, first/last name, IMAP host/port/username/password, SMTP host/port/username/password, test-connection before save — Instantly provider code 1 requires all twelve fields (S4).
-- [ ] PS-ACC-05: Provider enum in RightNow: custom_imap, google, microsoft (AWS/AirMail/DFY from Instantly are out of scope, see section 19) — Instantly codes 1,2,3,4,8,11 (S4).
-- [ ] PS-ACC-06: Google Workspace and free Gmail both supported; document Google Cloud Console project setup, OAuth consent screen, least-privilege scopes, and verification steps — master §3.
-- [ ] PS-ACC-07: Refresh tokens and IMAP/SMTP passwords stored encrypted at rest (AES-256-GCM, key from secret store); never returned by the API — Instantly responses omit IMAP/SMTP credentials (S4).
-- [ ] PS-ACC-08: Reconnect flow keeps account id, settings, history, campaign assignments (no delete+reconnect) — Instantly docs tell users to delete and reconnect after token errors (S18); RightNow deliberately does better (master reactivation §2).
-- [ ] PS-ACC-09: Revocation: user can disconnect (revoke token at provider, stop jobs, keep history) — master §3.
-- [ ] PS-ACC-10: Multiple independent mailboxes per workspace; duplicate email blocked with `account_exists` — S8.
+- [x] PS-ACC-01: "Connect with Google" OAuth 2.0 (authorization code, offline access) and Gmail API send/read — Instantly offers Google and Microsoft OAuth init endpoints returning an auth URL (S8).
+- [x] PS-ACC-02: OAuth session object: `sessionId`, `authUrl`, 10-minute expiry; client polls status every ~5 s: `pending|success|error|expired`; result consumed on first read; error codes include `account_exists`, `server_error`, `expired` — Instantly OAuth connection flow (S8).
+- [x] PS-ACC-03: Microsoft 365/Outlook via Microsoft OAuth + Graph (send, delta read) — Instantly provider code 3 (S4, S8).
+- [x] PS-ACC-04: Custom IMAP/SMTP connection: email, first/last name, IMAP host/port/username/password, SMTP host/port/username/password, test-connection before save — Instantly provider code 1 requires all twelve fields (S4).
+- [x] PS-ACC-05: Provider enum in RightNow: custom_imap, google, microsoft (AWS/AirMail/DFY from Instantly are out of scope, see section 19) — Instantly codes 1,2,3,4,8,11 (S4).
+- [x] PS-ACC-06: Google Workspace and free Gmail both supported; document Google Cloud Console project setup, OAuth consent screen, least-privilege scopes, and verification steps — master §3.
+- [x] PS-ACC-07: Refresh tokens and IMAP/SMTP passwords stored encrypted at rest (AES-256-GCM, key from secret store); never returned by the API — Instantly responses omit IMAP/SMTP credentials (S4).
+- [x] PS-ACC-08: Reconnect flow keeps account id, settings, history, campaign assignments (no delete+reconnect) — Instantly docs tell users to delete and reconnect after token errors (S18); RightNow deliberately does better (master reactivation §2).
+- [x] PS-ACC-09: Revocation: user can disconnect (revoke token at provider, stop jobs, keep history) — master §3.
+- [x] PS-ACC-10: Multiple independent mailboxes per workspace; duplicate email blocked with `account_exists` — S8.
 - [ ] PS-ACC-11: Bulk account management: multi-select pause/resume, set daily limit, set sending gap, set signature, apply tags, enable/disable warm-up, delete — Instantly exposes pause-multiple and enable/disable warm-up for many accounts (S23 Account).
 
 ### 3.2 Per-account settings
-- [ ] PS-ACC-12: Per-account `dailyLimit` (campaign emails/day) — Instantly guidance 30 campaign emails/account/day, 10 warm-up/day; plain-number field, nullable (S25, S4, S18).
-- [ ] PS-ACC-13: Per-account `sendingGap` in minutes, integer 0–1440 — Instantly `sending_gap` range 0–1440 (S4). Campaign-level min gap default 9 min + random 5 min is separate (PS-CAMP-12).
-- [ ] PS-ACC-14: Account status enum: Active, Paused, Temporarily paused (auto-resumes), Connection Error, Soft Bounce Error, Sending Error; plus RightNow adds Re-Warming, Inactive, Needs Attention as derived display states — Instantly status 1,2,3,-1,-2,-3 (S4).
-- [ ] PS-ACC-15: Status message object with provider code, command, response, message for diagnostics (shown in UI) — Instantly `status_message` {code, command, response, e_message, responseCode} (S4).
+- [x] PS-ACC-12: Per-account `dailyLimit` (campaign emails/day) — Instantly guidance 30 campaign emails/account/day, 10 warm-up/day; plain-number field, nullable (S25, S4, S18).
+- [x] PS-ACC-13: Per-account `sendingGap` in minutes, integer 0–1440 — Instantly `sending_gap` range 0–1440 (S4). Campaign-level min gap default 9 min + random 5 min is separate (PS-CAMP-12).
+- [x] PS-ACC-14: Account status enum: Active, Paused, Temporarily paused (auto-resumes), Connection Error, Soft Bounce Error, Sending Error; plus RightNow adds Re-Warming, Inactive, Needs Attention as derived display states — Instantly status 1,2,3,-1,-2,-3 (S4).
+- [x] PS-ACC-15: Status message object with provider code, command, response, message for diagnostics (shown in UI) — Instantly `status_message` {code, command, response, e_message, responseCode} (S4).
 - [ ] PS-ACC-16: "Enable slow ramp" per-account toggle: new accounts start low and gain a fixed amount per day until the daily limit — Instantly: starts at 2 emails and adds 2/day (S25); an Instantly blog says warm-up +1/day and campaign slow ramp +2/day, sources disagree (S24). Use +2/day default, configurable.
-- [ ] PS-ACC-17: Signature (rich text/HTML) per account, appended to sends — Instantly `signature` field (S4).
-- [ ] PS-ACC-18: `replyTo` address per account — Instantly `reply_to` (S4).
-- [ ] PS-ACC-19: Custom tracking domain per account with CNAME verification and status; `skipCnameCheck` escape hatch for admins only — Instantly `tracking_domain_name/status`, `skip_cname_check` (S4); open-tracking guide recommends it per account (S17).
-- [ ] PS-ACC-20: First/last name per account used by `{{sendingAccountFirstName}}`/`{{sendingAccountLastName}}` variables (see PS-SEQ-12) — Instantly account has first_name/last_name (S4).
+- [x] PS-ACC-17: Signature (rich text/HTML) per account, appended to sends — Instantly `signature` field (S4).
+- [x] PS-ACC-18: `replyTo` address per account — Instantly `reply_to` (S4).
+- [x] PS-ACC-19: Custom tracking domain per account with CNAME verification and status; `skipCnameCheck` escape hatch for admins only — Instantly `tracking_domain_name/status`, `skip_cname_check` (S4); open-tracking guide recommends it per account (S17).
+- [x] PS-ACC-20: First/last name per account used by `{{sendingAccountFirstName}}`/`{{sendingAccountLastName}}` variables (see PS-SEQ-12) — Instantly account has first_name/last_name (S4).
 - [ ] PS-ACC-21: Tags per account; campaigns may restrict sending to accounts with given tags — S3 `email_tag_list`.
 - [ ] PS-ACC-22: Account-to-campaign mapping view: given an account, list campaigns using it — Instantly "Get campaigns associated with an email" (S23).
-- [ ] PS-ACC-23: Per-account daily activity and remaining limit shown in the accounts table (sent today / limit / remaining) — master §3; Instantly has daily account analytics (S23).
+- [x] PS-ACC-23: Per-account daily activity and remaining limit shown in the accounts table (sent today / limit / remaining) — master §3; Instantly has daily account analytics (S23).
 - [ ] PS-ACC-24: "Test account vitals" / connectivity diagnostics: IMAP login, SMTP auth, token validity, MX/SPF/DKIM/DMARC presence, custom-domain CNAME — Instantly "Test domain setup" checks MX, SPF, DKIM, DMARC (S18, S23).
-- [ ] PS-ACC-25: "Mark as fixed" action clears an error status after the user remediates and a re-test passes — Instantly has "Mark an account as fixed" endpoint (S23).
-- [ ] PS-ACC-26: Autofix state for transient errors (in progress / failed / succeeded) — Instantly `autofix_failed` tri-state (S4).
+- [x] PS-ACC-25: "Mark as fixed" action clears an error status after the user remediates and a re-test passes — Instantly has "Mark an account as fixed" endpoint (S23).
+- [x] PS-ACC-26: Autofix state for transient errors (in progress / failed / succeeded) — Instantly `autofix_failed` tri-state (S4).
 - [ ] PS-ACC-27: Pause/resume single and multiple accounts; paused accounts excluded from rotation immediately, queued jobs rescheduled — S23.
-- [ ] PS-ACC-28: Delete account preserves historical emails/events for analytics (soft delete) — undocumented in Instantly; RightNow decision.
-- [ ] PS-ACC-29: Microsoft SMTP-disabled remediation hint shown on connection error — Instantly help: enable SMTP, remove account, wait ~1 hour, reconnect (S18).
-- [ ] PS-ACC-30: Provider-specific real limits shown as warnings (Gmail/Workspace/Microsoft); user limit cannot exceed a configurable hard ceiling — master §5.
+- [x] PS-ACC-28: Delete account preserves historical emails/events for analytics (soft delete) — undocumented in Instantly; RightNow decision.
+- [x] PS-ACC-29: Microsoft SMTP-disabled remediation hint shown on connection error — Instantly help: enable SMTP, remove account, wait ~1 hour, reconnect (S18).
+- [x] PS-ACC-30: Provider-specific real limits shown as warnings (Gmail/Workspace/Microsoft); user limit cannot exceed a configurable hard ceiling — master §5.
 
 ### 3.3 Inbox synchronization
 See section 17 (SYNC) for requirements; account-level items:
@@ -184,7 +184,7 @@ See section 17 (SYNC) for requirements; account-level items:
 - [ ] PS-SEND-15: Sent message is appended to the account's Sent folder (SMTP/IMAP) or visible via provider API so threading and sync see it — master §3.
 - [ ] PS-SEND-16: Never send when startup reconciliation incomplete (see SYNC) — Local-First.
 - [ ] PS-SEND-17: Failure monitoring: per-account/per-campaign failure counters, dead-letter view in UI, alerting hook — master §5.
-- [ ] PS-SEND-18: Send test email to arbitrary address from a chosen account (counts against nothing, flagged as test) — S23.
+- [x] PS-SEND-18: Send test email to arbitrary address from a chosen account (counts against nothing, flagged as test) — S23.
 
 ---
 

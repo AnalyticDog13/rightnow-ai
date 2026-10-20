@@ -4,8 +4,8 @@
 |---|---|
 | 0 Initialization & planning | done (plan approved round 3) |
 | 1 Foundation | done (merged to main) |
-| 2 Email provider connections | in progress |
-| 3 Campaign automation | todo |
+| 2 Email provider connections | done (merged to main) |
+| 3 Campaign automation | in progress |
 | 4 Incoming mail & tracking | todo |
 | 5 Deliverability & re-warm-up | todo |
 | 6 CRM & analytics | todo |
@@ -17,3 +17,4 @@
   CLAUDE.md and docs scaffold created.
 - 2026-10-19: Research (PRODUCT_SPEC 306 items, STACK, PROVIDER_COMPLIANCE) done; plan approved after 3 independent review rounds; 62 tasks in TASKS.json.
 - 2026-10-19: Phase 1 complete: monorepo, DB + embedded-postgres harness, crypto/env/clock, web shell + better-auth workspaces, worker, Docker/Compose/backup-restore, API keys/audit/readyz. 7 tasks, each independently reviewed; phase gate (opus) fixes applied. 14 parity items ticked.
+- 2026-10-21: Phase 2 complete: provider interface + contract suite, credential store with refresh lease, Google + Microsoft OAuth, Gmail/Graph/IMAP-SMTP providers, account service/API/UI incl. reconnect, test-send, live-verification guide. 8 tasks, each independently reviewed (several opus); gate fixes applied. Parity: 39/316 ticked. Live provider checks pending user credentials (gate P3-T11).

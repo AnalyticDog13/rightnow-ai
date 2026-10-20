@@ -112,3 +112,58 @@ SSRF/TLS/credential handling verified. Fixed: IMAP throttle/outage at LOGIN not 
 
 ## 2026-10-21 · P2-T07 test-send + live verification · task reviewer (sonnet) · 1 fix round → **Approved**
 Atomic per-account rate limit (advisory xact lock, send outside tx), live-verify refuses Fake, LIVE_VERIFICATION complete, Retry-After header, recipient errors excluded from health.
+
+## 2026-10-21 · Phase 2 gate · whole-branch review (opus) + ponytail audit · Fix first → **Approved**
+0 Critical, 10 Important, 17 Minor. Fixed: user pause wins over auth failure, Google token 4xx parity with Microsoft, credential-read failure non-auth, live-verify Compose mode + real Message-ID comparison, SMTP/IMAP reconnect (PS-ACC-08). Deferred: I-7/I-9 → P4-T05, I-8 → P3-T11. CLAUDE.md updated with phase-2 rules.
+
+### Phase 2 rulings (from the SDD ledger)
+- | T04 ↔ T02b/T05/T06 | account service (reconnect keeps id) | T04 depends on T02b; T05/T06 call the same service. Ruling: T04 runs before T05/T06 (order in TASKS.json) — cost if wrong: none. |
+- P2-T01: Ruling: receiveSpam returns {rfcMessageId} (no magic id); harness gains reopen() for true fresh-instance resume; assertPublicHost normalizes mapped IPv6 by bytes — interface cheapest to fix now — cost if wrong: minor churn
+- P2-T01: Ruling: accept contract suite exported from @rightnow/providers/contract (keeps vitest out of runtime) and per-process failNext
+- P2-T01: Ruling: raised minors — contract suite zero-assertion pass, SSRF ranges + DNS error wrap, Fake auth_revoked sticky, env empty-string flag, Retry-After decimals — each bites a later task or security — cost if wrong: small churn
+- P2-T01: fix round 1 done 0016267 (CI green). Ruling: List-Unsubscribe* stay settable via headers (brief makes headers their only channel; CRLF guard still applies) — cost if wrong: caller could set a bad unsubscribe header, which P3-T08 owns anyway. Scoped re-review dispatched
+- P2-T02a: Ruling: plan defect in D13 step 3 — returning stale creds after lease overrun can flag account AuthError; retry lease acquisition instead — spec "never silently disconnect" outranks plan text — cost if wrong: slightly longer waits under contention
+- P2-T02a: Ruling: accept rotate null-skip fix; credential writes must go through setCredentials (carry to P2-T02b/T04/T05/T06); missing-creds throws plain Error; lease-wait timeout → TransientBeforeSendError
+- P2-T02a: Ruling: raise M-3 (toApiAccount allowlist) and M-4 (setCredentials skips soft-deleted) — secret-leak/resurrection class — cost if wrong: minor churn
+- P2-T02b: Ruling: single opus review = task review + planned opus security review of oauth.ts — avoids two passes — cost if wrong: none
+- P2-T02b: Ruling: raised minors — concurrent revive race (integrity), Playwright testMatch silently skipping specs, Google 5xx → retryable — cost if wrong: minor churn
+- P2-T02b: fix round 1 done e883ec4 (CI green). Ruling: ratify new OAuth error code provider_unavailable — user-facing distinction outage vs failed sign-in — cost if wrong: one enum value. Ruling: revive loser returns account_exists without retry (retry would find the live row) — accepted.
+- P2-T03: Ruling: createProvider takes prisma as required dep (avoid import-time DB connection) — deviation from brief's optional deps — cost if wrong: one signature tweak
+- P2-T03: Ruling: override brief — findSent searches all mail incl. spam/trash, confirms SENT label/From — spec no-duplicate-sends outranks plan text — cost if wrong: slightly broader search
+- P2-T03: Ruling: raise minor labelsAdded tracking (reply moved SPAM→INBOX otherwise never synced → follow-up to replier) — cost if wrong: extra history types
+- P2-T04: fix round 1 done 259994b (CI green). Ruling: user PAUSE wins over auth-failure NEEDS_ATTENTION in diagnostics (error kept in lastError) — brief silent — cost if wrong: paused account's auth issue less prominent until resumed
+- P2-T05: Ruling: raised minors — invalid_client on refresh is app-config not mailbox AuthError (would flag every mailbox); guest #EXT# UPN never stored as email; minGapSec PATCH test — cost if wrong: small churn
+- P2-T06: Ruling: raised minors — EAUTH non-535 not AuthError; smtpCredentials workspace filter (tenant isolation); DNS rebind at send → transient not permanent; security tests must prove claims — cost if wrong: small churn
+- P2-T06: fix round 1 done ..05faa53 (CI green 3 jobs). Ruling: OAuth revive takes display names from fresh connect — reflects current mailbox — cost if wrong: user-edited name overwritten on revive. Scoped re-review dispatched
+- P2-T07: Ruling: raised minor — recipient-level failures must not bump account errorCount24h/health — cost if wrong: small churn
+- P2-T07: Ruling: test-send failures (outage/rate-limit/ambiguous) don't count toward account health — health driven by real sends + diagnostics — cost if wrong: an outage seen only via test-send isn't reflected in health
+- PHASE 2 GATE Ruling: I-6 SMTP/IMAP reconnect built now in the fix wave (PS-ACC-08 requires reconnection) — cost if wrong: small scope addition before merge
+- PHASE 2 GATE Ruling: I-7, I-9 → P4-T05; I-8 → P3-T11; I-5 bookkeeping + CLAUDE.md additions by controller
+
+### Phase 2 deferred minors
+- P2-T01: minor (deferred): store.ts stale-lock reap racy/untested; limit<=0 & garbage page tokens unvalidated; contract gaps (since case, mid-paging arrival, cursor to reopened instance); FakeOAuthClient loginHint unencoded; Fake timestamps not clock-injected; prettier noise env.ts; weak e2e 11-char assertion
+- P2-T01: minor (deferred): Fake lock EPERM retry surfaces genuine permission errors after ~50 s
+- P2-T02a: minor (deferred): per-process clock skew for lease (benign); rotate script backs up before stopping web/worker; rerun w/o printed key misleading; .ps1 unclear error when ENCRYPTION_KEY missing; schema tests no RED evidence
+- P2-T02b: minor (deferred): fragile isUniqueViolation regex; GOOGLE_SETUP mentions row reconnect action before it exists (P2-T04 adds); revive sets lifecycle ACTIVE (not in brief)
+- P2-T03: minor (deferred): ~20 MB page bound not enforced; diagnostics misleading scope_missing on store failure; index.ts export placement; locate ignores duplicate hits; empty page with hasMore:true possible
+- P2-T03: minor (deferred): no test for labelsAdded TRASH skip
+- P2-T04: minor (deferred): autofix IN_PROGRESS can stick after crash; applyLimits reads cur outside tx; aria-selected on tr invalid; e2e order-dependent; better-auth sign-in rate limit 5/min constrains e2e
+- P2-T05: minor (deferred): non-send 4xx → PermanentSendError naming; e2e worker-retry re-sign-in; delta "changed" ignored (move to Deleted Items may not reach removed) → P4-T05 note
+- P2-T06: minor (deferred): test-connection no rate limit + returns banner (ADMIN-only) → P7-T07; SSL vs STARTTLS mismatch reported as cert problem
+- P2-T07: minor (deferred): live-verify 60 s wall limit/no per-call timeouts; locate/changes SENT check on self-send; S5/G9 impractical on real host; fake route not workspace-scoped (ADMIN-only, flag-gated)
+- P2-T07: minor (deferred): setSending(false) not in finally (button can stick on thrown call)
+
+### Phase 2 carry-forwards
+- P2-T01: carry-forward to P2-T06: assertPublicHost must block IPv4-compatible ::a.b.c.d (non-::/::1) via embedded-v4 check
+- P2-T02a: carry-forward (binding) to P2-T02b/T03/T04/T05/T06 briefs: disconnect, soft delete, reconnect ONLY via setCredentials
+- P2-T02a: carry-forward to P2-T02b/T04: connect/reconnect routes must check setCredentials boolean and return an error on false
+- P2-T02b: carry-forward to P2-T04/T05: OAuth scope check must branch per provider
+- P2-T02b: carry-forward to P2-T07: live verify popup flow with real Google (COOP)
+- P2-T02b: carry-forward to P2-T04: Cancel should invalidate server OAuthSession (now UI-only); re-click Connect after Cancel can leave a stale poll loop running
+- P2-T03: carry-forward to P2-T07: live-verify Gmail history shape, in:anywhere/in:sent queries, format=minimal labelIds, error envelopes, Message-ID preservation, Bcc in stored sent copy
+- P2-T03: carry-forward to P4-T01: Gmail may re-report the same providerMessageId after labelAdded — ingest must dedupe (rfcMessageId/providerMessageId) and update folder
+- P2-T03: carry-forward to P4-T05/P5-T02: persistent TransientBeforeSendError on reads (e.g. policy 403) must be attempt-capped and escalated to account health, never retried forever
+- P2-T04: carry-forward to P2-T05: Microsoft account create must apply MS365/OUTLOOK_COM minGapSec floor (3 s)
+- P2-T05: carry-forward to P2-T07: live-verify Graph shapes (Message-ID + draft id survive into Sent Items, @removed reasons, 403 codes) per P2-T05 report
+- P2-T05: carry-forward to P3-T11: sender persists ProviderError.providerMessageId onto ScheduledMessage.providerMessageId (findSent hint for Graph)
+- P2-T05: carry-forward to P4-T05: Graph delta "changed" ignored — move to Deleted Items may not reach removed
