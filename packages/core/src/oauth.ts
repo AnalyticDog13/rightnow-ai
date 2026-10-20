@@ -1,11 +1,13 @@
 import { createHash, randomBytes } from "node:crypto";
 import { Prisma, type PrismaClient } from "@rightnow/db/client";
 import {
+  AdminConsentRequiredError,
   GOOGLE_SCOPES,
   getFakeProvider,
   RateLimitedError,
   TransientBeforeSendError,
 } from "@rightnow/providers";
+import { TIER_MIN_GAP } from "./accounts/caps";
 import { setCredentials } from "./accounts/credentials";
 import { getOAuthClient, maxDailyLimit, TIER_CAP, tierFor } from "./accounts/factory";
 import { audit } from "./audit";
@@ -117,7 +119,14 @@ export async function completeOAuth(
   prisma: PrismaClient,
   clock: Clock,
   deps: Deps,
-  p: { workspaceId: string; userId: string; state?: string; code?: string; error?: string },
+  p: {
+    workspaceId: string;
+    userId: string;
+    state?: string;
+    code?: string;
+    error?: string;
+    errorDescription?: string;
+  },
 ): Promise<{ sessionId: string; accountId?: string; errorCode?: OAuthErrorCode }> {
   if (!p.state) return { sessionId: "", errorCode: "state_invalid" };
   const now = clock.now();
@@ -156,7 +165,12 @@ export async function completeOAuth(
     return { sessionId: s.id, errorCode: code };
   };
   try {
-    if (p.error) return await fail(p.error === "access_denied" ? "access_denied" : "server_error");
+    if (p.error) {
+      // Entra reports "needs admin approval" as an error with an AADSTS code in the description (never stored)
+      if (/AADSTS(65001|90094)/.test(p.errorDescription ?? ""))
+        return await fail("admin_consent_required");
+      return await fail(p.error === "access_denied" ? "access_denied" : "server_error");
+    }
     if (!p.code) return await fail("exchange_failed");
     const provider: Provider = s.provider === "GMAIL" ? "google" : "microsoft";
     const client = getOAuthClient(provider, deps);
@@ -167,7 +181,10 @@ export async function completeOAuth(
         codeVerifier: decrypt(s.codeVerifierEnc),
         redirectUri: redirectUri(provider),
       })
-      .catch((e: unknown) => (isOutage(e) ? "outage" : null)); // errors can hold response text; the session records only a code
+      .catch((e: unknown) =>
+        e instanceof AdminConsentRequiredError ? "consent" : isOutage(e) ? "outage" : null,
+      ); // errors can hold response text; the session records only a code
+    if (x === "consent") return await fail("admin_consent_required");
     if (x === "outage") return await fail("provider_unavailable");
     if (!x) return await fail("exchange_failed");
     if (!x.creds.refreshToken) return await fail("no_refresh_token");
@@ -216,6 +233,7 @@ export async function completeOAuth(
                 capTier,
                 providerCap,
                 dailyLimit: Math.min(dead.dailyLimit, maxDailyLimit(providerCap)),
+                minGapSec: Math.max(dead.minGapSec, TIER_MIN_GAP[capTier]),
                 deletedAt: null,
                 lifecycle: "ACTIVE",
               },
@@ -235,6 +253,7 @@ export async function completeOAuth(
                   capTier,
                   providerCap,
                   dailyLimit: Math.min(30, maxDailyLimit(providerCap)),
+                  minGapSec: TIER_MIN_GAP[capTier],
                 },
               });
           id = row.id;

@@ -3,6 +3,8 @@ import {
   FakeOAuthClient,
   GmailProvider,
   GoogleOAuth,
+  GraphProvider,
+  MicrosoftOAuth,
   getFakeProvider,
   type MailProvider,
   type OAuthClient,
@@ -48,10 +50,17 @@ export function getOAuthClient(
       clientSecret: env.GOOGLE_CLIENT_SECRET,
       fetch: deps.fetch,
     });
-  return null; // microsoft arrives in P2-T04
+  if (provider === "microsoft" && env.MS_CLIENT_ID && env.MS_CLIENT_SECRET)
+    return new MicrosoftOAuth({
+      clientId: env.MS_CLIENT_ID,
+      clientSecret: env.MS_CLIENT_SECRET,
+      tenant: env.MS_TENANT,
+      fetch: deps.fetch,
+    });
+  return null;
 }
 
-/** Microsoft and SMTP branches arrive in P2-T05 / P2-T06. */
+/** The SMTP branch arrives in P2-T06. */
 export function createProvider(
   account: { id: string; provider: "GMAIL" | "MICROSOFT" | "SMTP"; email: string },
   deps: { prisma: PrismaClient; fetch?: typeof fetch; clock?: Clock },
@@ -62,6 +71,17 @@ export function createProvider(
     const oauth = getOAuthClient("google", deps);
     if (!oauth) throw new Error("google oauth is not configured");
     return new GmailProvider({
+      address: account.email,
+      store: accountCredentialStore(deps.prisma, account.id, { clock: deps.clock }),
+      oauth,
+      fetch: deps.fetch,
+      clock: deps.clock,
+    });
+  }
+  if (kind === "MICROSOFT") {
+    const oauth = getOAuthClient("microsoft", deps);
+    if (!oauth) throw new Error("microsoft oauth is not configured");
+    return new GraphProvider({
       address: account.email,
       store: accountCredentialStore(deps.prisma, account.id, { clock: deps.clock }),
       oauth,

@@ -9,6 +9,7 @@ const query = z.object({
   state: z.string().max(200).optional(),
   code: z.string().max(2000).optional(),
   error: z.string().max(200).optional(),
+  error_description: z.string().max(2000).optional(),
 });
 
 // Static page: nothing from the request is reflected. The main window polls /oauth/sessions/:id for the result.
@@ -25,7 +26,12 @@ export const GET = route(
   async ({ workspaceId, userId, query, params }) => {
     if (params.provider !== "google" && params.provider !== "microsoft")
       throw new HttpError(404, "Unknown provider");
-    await completeOAuth(prisma, systemClock, {}, { workspaceId, userId: userId!, ...query });
+    await completeOAuth(
+      prisma,
+      systemClock,
+      {},
+      { workspaceId, userId: userId!, ...query, errorDescription: query.error_description },
+    );
     return new Response(PAGE, {
       headers: {
         "content-type": "text/html; charset=utf-8",

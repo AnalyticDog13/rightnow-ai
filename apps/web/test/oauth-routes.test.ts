@@ -70,6 +70,34 @@ describe("oauth routes", () => {
     expect(await res.json()).toEqual({ error: "not_configured" });
   });
 
+  it("microsoft start: 412 until configured, then an authUrl on the MS_TENANT authority with the four scopes", async () => {
+    const { resetEnvCache } = await import("@rightnow/core");
+    const postMs = () =>
+      start.POST(
+        new Request(`${ORIGIN}/api/v1/oauth/microsoft/start`, {
+          method: "POST",
+          headers: { cookie, origin: ORIGIN, "content-type": "application/json" },
+          body: "{}",
+        }),
+        params({ provider: "microsoft" }),
+      );
+    expect((await postMs()).status).toBe(412);
+    Object.assign(process.env, { MS_CLIENT_ID: "mc", MS_CLIENT_SECRET: "ms" });
+    for (const tenant of [undefined, "organizations"]) {
+      if (tenant) process.env.MS_TENANT = tenant;
+      resetEnvCache();
+      const res = await postMs();
+      expect(res.status).toBe(200);
+      const u = new URL(((await res.json()) as { authUrl: string }).authUrl);
+      expect(u.origin + u.pathname).toBe(
+        `https://login.microsoftonline.com/${tenant ?? "common"}/oauth2/v2.0/authorize`,
+      );
+      expect(u.searchParams.get("scope")).toBe("offline_access User.Read Mail.Send Mail.ReadWrite");
+    }
+    for (const k of ["MS_CLIENT_ID", "MS_CLIENT_SECRET", "MS_TENANT"]) delete process.env[k];
+    resetEnvCache();
+  });
+
   it("blocks a cross-origin POST", async () => {
     expect((await post({ origin: "https://evil.example" })).status).toBe(403);
   });
