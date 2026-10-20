@@ -10,3 +10,5 @@ export { getFakeProvider } from "./fake/registry";
 export { createFixtureFetch, type Call, type Route } from "./contract/fixture-fetch";
 // runProviderContract imports vitest, so it lives at "@rightnow/providers/contract".
 export { GmailProvider } from "./gmail/provider";
+export { MicrosoftOAuth, MS_SCOPES, MS_REQUIRED_SCOPES, normalizeScopes } from "./graph/oauth";
+export { GraphProvider } from "./graph/provider";

@@ -1,0 +1,56 @@
+{
+  "note": "Graph v1.0 error envelope: { error: { code, message } }. `send` marks the POST /me/messages/{id}/send call; other cases hit the draft-creation call.",
+  "cases": [
+    {
+      "status": 429,
+      "code": "TooManyRequests",
+      "retryAfter": "120",
+      "expect": "RateLimitedError",
+      "sec": 120
+    },
+    { "status": 429, "code": "TooManyRequests", "expect": "RateLimitedError", "sec": 60 },
+    {
+      "status": 403,
+      "code": "ApplicationThrottled",
+      "retryAfter": "45",
+      "expect": "RateLimitedError",
+      "sec": 45
+    },
+    { "status": 403, "code": "ErrorQuotaExceeded", "expect": "RateLimitedError", "sec": 60 },
+    { "status": 403, "code": "MailboxNotEnabledForRESTAPI", "expect": "TransientBeforeSendError" },
+    { "status": 403, "code": "ErrorAccessDenied", "expect": "TransientBeforeSendError" },
+    { "status": 403, "code": "SomethingNew", "expect": "TransientBeforeSendError" },
+    {
+      "status": 503,
+      "code": "ServiceNotAvailable",
+      "retryAfter": "30",
+      "expect": "RateLimitedError",
+      "sec": 30
+    },
+    { "status": 504, "code": "GatewayTimeout", "expect": "TransientBeforeSendError" },
+    { "status": 500, "code": "InternalServerError", "expect": "TransientBeforeSendError" },
+    { "status": 400, "code": "ErrorInvalidIdMalformed", "expect": "PermanentSendError" },
+    {
+      "status": 403,
+      "code": "MailboxNotEnabledForRESTAPI",
+      "send": true,
+      "expect": "PermanentSendError"
+    },
+    { "status": 502, "code": "BadGateway", "send": true, "expect": "AmbiguousSendError" },
+    {
+      "status": 503,
+      "code": "ServiceNotAvailable",
+      "retryAfter": "30",
+      "send": true,
+      "expect": "AmbiguousSendError"
+    },
+    {
+      "status": 429,
+      "code": "TooManyRequests",
+      "retryAfter": "120",
+      "send": true,
+      "expect": "RateLimitedError",
+      "sec": 120
+    }
+  ]
+}

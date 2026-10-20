@@ -52,3 +52,10 @@ export class AmbiguousSendError extends ProviderError {
     super(`send outcome unknown${detail ? `: ${detail}` : ""}`, opts);
   }
 }
+
+/** Microsoft sign-in needs a tenant admin to approve the app (AADSTS65001, AADSTS90094). Only the connect flow sees it. */
+export class AdminConsentRequiredError extends ProviderError {
+  constructor(opts?: { cause?: unknown }) {
+    super("admin consent required", opts);
+  }
+}

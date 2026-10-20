@@ -1,4 +1,5 @@
 import { AuthError, PermanentSendError, ProviderError } from "../errors";
+import { mapLimit } from "../map-limit";
 import { buildMime, parseRaw } from "../mime";
 import type {
   Changes,
@@ -29,20 +30,6 @@ type GHistory = {
 };
 const CONCURRENCY = 8;
 const present = (m: RemoteMessage | null): m is RemoteMessage => m !== null;
-
-async function mapLimit<T, R>(items: T[], n: number, fn: (x: T) => Promise<R>): Promise<R[]> {
-  const out = new Array<R>(items.length);
-  let i = 0;
-  await Promise.all(
-    Array.from({ length: Math.min(n, items.length) }, async () => {
-      while (i < items.length) {
-        const k = i++;
-        out[k] = await fn(items[k]!);
-      }
-    }),
-  );
-  return out;
-}
 
 export class GmailProvider implements MailProvider {
   readonly kind = "GMAIL" as const;

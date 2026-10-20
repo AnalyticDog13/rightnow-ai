@@ -1,0 +1,13 @@
+{
+  "note": "Shapes from the Graph v1.0 message delta docs: @odata.nextLink while pages remain, @odata.deltaLink on the last; deleted items carry @removed.",
+  "pages": [
+    {
+      "value": [{ "id": "AAMkA1" }, { "id": "AAMkA2", "@removed": { "reason": "deleted" } }],
+      "@odata.nextLink": "https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages/delta?$skiptoken=p2"
+    },
+    {
+      "value": [{ "id": "AAMkA3", "@removed": { "reason": "changed" } }],
+      "@odata.deltaLink": "https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages/delta?$deltatoken=d1"
+    }
+  ]
+}
