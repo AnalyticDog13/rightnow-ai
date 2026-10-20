@@ -66,3 +66,32 @@ Note (P2-T02a, deviates from the brief): when the conditional write matches noth
 
 ## 2026-10-19 · D15 · User-supplied mail hosts are SSRF-guarded and TLS-only
 In `MODE=vps`, IMAP/SMTP hosts resolving to loopback, private, link-local, CGNAT or ULA ranges are refused unless `ALLOW_PRIVATE_MAIL_HOSTS=1`; checked on every connect in web and worker; connect to the checked IP with SNI; AUTH only after TLS, plaintext only to loopback in local mode. The helper is reused by P7-T02 webhooks.
+
+## 2026-10-20 · D16 · No campaign sending before P4 sync exists
+Nothing in Phase 3 writes `lastSyncCompletedAt`, so the claim's freshness gate keeps real campaigns from sending until P4-T05 ships. The explainer reports `sync_pending`. There is no stub: one that marked accounts fresh without reading their inboxes would send follow-ups to people who already replied. Tests set freshness with a test-only `markFresh` helper.
+
+## 2026-10-20 · D17 · Real-provider campaign sending gated on a recorded live check
+How the gate works:
+- `ProviderVerification` (one install-level row per provider) is written only by `scripts/live-verify.ts`, when every step passes and `findSent` returns our exact Message-ID. A failing run deletes the row.
+- The claim SQL only selects accounts whose provider is in `sendableProviders()`. That returns every provider with `MAIL_PROVIDER_FAKE=1` (which `MODE=vps` refuses), and otherwise only the verified ones. There is no override.
+
+Limits:
+- One verified host or tenant enables that whole provider kind, including relays that may rewrite Message-ID.
+- Duplicates stay impossible, because an unfound ambiguous send ends HELD.
+- P4 reply matching must therefore fall back to the lead address plus the thread.
+
+## 2026-10-20 · D18 · Permanent send errors carry a scope (phase-2 gate I-8)
+`PermanentSendError` gets an additive `scope: "recipient" | "account" | "unknown"`, default `unknown`. It is decided by the enhanced status code and the reply text. Policy, blocklist and spam rejections are never `recipient`, even on RCPT TO.
+
+How each scope is handled:
+- **Recipient:** FAILED, the lead STOPPED BOUNCED, and a HARD_BOUNCE suppression.
+- **Account:** release, the row back to SCHEDULED, and the account PAUSED via `recordProviderError`; the lead is untouched.
+- **Unknown:** FAILED, the lead PAUSED SEND_FAILED, and the account PAUSED after 3 in a row (`consecutivePermanentErrors`, reset on SENT and on resume).
+
+The `MailProvider` interface is unchanged.
+
+## 2026-10-20 · D19 · Spec items overridden by Global Constraints
+These are not built, or are forced, because a Global Constraint outranks the spec item:
+- PS-SEQ-10 "ignore account limits" is not built: it would exceed per-account allowances.
+- PS-CAMP-25's List-Unsubscribe toggle accepts only `true`: every campaign email must carry the header.
+- PS-CAMP-04 "Account Suspended" is shown as ACCOUNTS_UNHEALTHY, whose producer is P5-T02.
