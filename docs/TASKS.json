@@ -99,19 +99,20 @@
    "id": "P1-T05",
    "phase": 1,
    "title": "Worker skeleton (pg-boss, WorkerBoot heartbeat, `/healthz`)",
-   "status": "in_progress",
+   "status": "done",
    "deps": [
     "P1-T04"
    ],
    "model": "sonnet",
-   "commit": null,
-   "acceptance": "demo job runs; clean stop."
+   "commit": "205f93f..a9b621c",
+   "acceptance": "demo job runs; clean stop.",
+   "review": "1 fix round (teardown, startup cleanup, clock); clean"
   },
   {
    "id": "P1-T06",
    "phase": 1,
    "title": "Docker, Compose, Caddy profile, scripts, ops docs, CI compose smoke incl. backup/restore",
-   "status": "todo",
+   "status": "in_progress",
    "deps": [
     "P1-T05"
    ],

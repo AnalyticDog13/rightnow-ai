@@ -1,7 +1,7 @@
 # Handoff
 
 **Phase:** 1 — Foundation (branch `phase-1-foundation`)
-**Current task:** P1-T05 worker skeleton (P1-T04 done 1c16d66)
+**Current task:** P1-T06 Docker, Compose, scripts, ops docs, CI compose smoke (P1-T05 done a9b621c)
 **Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 — APPROVED (REVIEW_LOG round 3). Phase step plan: `docs/plans/phase-1.md`.
 **Tests:** smoke test green; CI green on phase-1-foundation
 
