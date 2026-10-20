@@ -112,19 +112,20 @@
    "id": "P1-T06",
    "phase": 1,
    "title": "Docker, Compose, Caddy profile, scripts, ops docs, CI compose smoke incl. backup/restore",
-   "status": "in_progress",
+   "status": "done",
    "deps": [
     "P1-T05"
    ],
    "model": "sonnet",
-   "commit": null,
-   "acceptance": "CI job green."
+   "commit": "1af207b..835b97f",
+   "acceptance": "CI job green.",
+   "review": "1 fix round (restore safety, non-root, ps1 fail-fast, CI asserts); clean"
   },
   {
    "id": "P1-T07",
    "phase": 1,
    "title": "Scoped API keys + audit log + `/api/healthz` + `/api/readyz` (DB ok, worker heartbeat, sync-gate summary); Origin check for state-changing routes (from P1-T04 review)",
-   "status": "todo",
+   "status": "in_progress",
    "deps": [
     "P1-T06"
    ],

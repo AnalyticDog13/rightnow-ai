@@ -39,3 +39,6 @@ next build verified. Fixed: org self-creation (allowUserToCreateOrganization=fal
 
 ## 2026-10-19 · P1-T05 worker skeleton · task reviewer (sonnet) · Needs fixes → **Approved**
 Fixed: idempotent teardown, startup partial-failure cleanup, injected clock + heartbeat/503/startup-failure tests.
+
+## 2026-10-19 · P1-T06 Docker/compose/scripts · task reviewer (sonnet) · Spec ❌ → fixed → **Approved**
+Critical restore.ps1 data-loss path fixed; dump validation + safety backup; 0600 backups; non-root image; explicit migrate; CI asserts can fail. .ps1 scripts syntax-checked only (never executed: no Docker on Windows).
