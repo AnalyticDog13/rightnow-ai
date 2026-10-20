@@ -109,3 +109,6 @@ Draft id carried on all post-draft errors, cleanup only when definitely unsent (
 
 ## 2026-10-20 · P2-T06 IMAP/SMTP provider + connect · task reviewer (opus) · 1 fix round → **Approved**
 SSRF/TLS/credential handling verified. Fixed: IMAP throttle/outage at LOGIN not AuthError, listMessages paging + SINCE tz loss, shared openAccount (clears provider state), EAUTH codes, workspace-scoped creds, DNS rebind transient, byte-level STARTTLS + password-scrub tests.
+
+## 2026-10-21 · P2-T07 test-send + live verification · task reviewer (sonnet) · 1 fix round → **Approved**
+Atomic per-account rate limit (advisory xact lock, send outside tx), live-verify refuses Fake, LIVE_VERIFICATION complete, Retry-After header, recipient errors excluded from health.

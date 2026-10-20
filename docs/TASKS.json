@@ -230,13 +230,14 @@
    "id": "P2-T07",
    "phase": 2,
    "title": "Test-send + `docs/ops/LIVE_VERIFICATION.md`",
-   "status": "in_progress",
+   "status": "done",
    "deps": [
     "P2-T06"
    ],
    "model": "sonnet",
-   "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-2.md; tests listed there pass; live-verify Google connect popup flow (COOP) from P2-T02b; live-verify Gmail API shapes listed in P2-T03 report (history, queries, minimal labelIds, error envelopes, Message-ID kept, Bcc in sent copy); live-verify Graph shapes listed in P2-T05 report"
+   "commit": "abcc19a..bb4a7ea",
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-2.md; tests listed there pass; live-verify Google connect popup flow (COOP) from P2-T02b; live-verify Gmail API shapes listed in P2-T03 report (history, queries, minimal labelIds, error envelopes, Message-ID kept, Bcc in sent copy); live-verify Graph shapes listed in P2-T05 report",
+   "review": "1 fix round (atomic rate limit, live-verify refuses Fake, guide completeness, Retry-After, recipient errors not health); clean. LIVE CHECKS NOT RUN — need user credentials; Message-ID checks gate P3-T11"
   },
   {
    "id": "P3-T01",
