@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { getSessionInfo } from "../../../lib/workspace";
 import { AccountsTable } from "./accounts-table";
 import { ConnectMenu } from "./connect-menu";
+import { ConnectSmtp } from "./connect-smtp";
 
 export const metadata: Metadata = { title: "Email Accounts" };
 export const dynamic = "force-dynamic";
@@ -25,6 +26,7 @@ export default async function Page() {
     <div className="flex flex-col gap-6">
       <h1 className="text-2xl font-semibold tracking-tight">Email Accounts</h1>
       {isAdmin && <ConnectMenu configured={configured} />}
+      {isAdmin && <ConnectSmtp />}
       <AccountsTable
         accounts={accounts}
         canEdit={info.role !== "VIEWER"}
