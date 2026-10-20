@@ -1,4 +1,7 @@
 import { execFileSync, spawn } from "node:child_process";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import dbSetup from "@rightnow/db/global-setup";
@@ -17,6 +20,8 @@ export default async function setup() {
     ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64"),
     BETTER_AUTH_SECRET: "e2e-better-auth-secret-0123456789abcdef",
     SETUP_TOKEN,
+    MAIL_PROVIDER_FAKE: "1",
+    FAKE_MAIL_DIR: mkdtempSync(join(tmpdir(), "rn-e2e-mail-")),
   };
   const next = createRequire(import.meta.url).resolve("next/dist/bin/next");
   const server = spawn(process.execPath, [next, "dev", "-p", String(E2E_PORT)], {

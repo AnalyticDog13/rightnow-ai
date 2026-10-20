@@ -7,3 +7,5 @@ export * from "./audit";
 export * from "./rotate";
 export * from "./accounts/credentials";
 export * from "./accounts/serialize";
+export * from "./accounts/factory";
+export * from "./oauth";
