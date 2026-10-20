@@ -1,4 +1,10 @@
-import { AuthError, PermanentSendError, ProviderError, TransientBeforeSendError } from "../errors";
+import {
+  AmbiguousSendError,
+  AuthError,
+  PermanentSendError,
+  ProviderError,
+  TransientBeforeSendError,
+} from "../errors";
 import { mapLimit } from "../map-limit";
 import { buildMime, parseRaw } from "../mime";
 import type {
@@ -76,8 +82,11 @@ export class GraphProvider implements MailProvider {
         signal: opts.signal,
       });
     } catch (e) {
-      // rejected, so nothing was sent: do not leave the orphan draft behind
-      if (e instanceof PermanentSendError) await this.deleteDraft(d.id).catch(() => {});
+      if (e instanceof ProviderError) e.providerMessageId = d.id;
+      // definitely not sent (rejected, 429, 401, connect refused): do not leave the orphan draft behind.
+      // Ambiguous keeps the draft: it may already be in Sent Items, and the caller resolves it by this id.
+      if (e instanceof ProviderError && !(e instanceof AmbiguousSendError))
+        await this.deleteDraft(d.id).catch(() => {});
       throw e;
     }
     return {

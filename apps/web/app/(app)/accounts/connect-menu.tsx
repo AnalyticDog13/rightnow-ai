@@ -24,6 +24,7 @@ const MESSAGES: Record<string, string> = {
     "Something went wrong connecting the account. If you were reconnecting, it may have been deleted.",
 };
 const KEY = "oauth-session";
+const PKEY = "oauth-provider"; // which provider a full-page flow was started for
 
 type Poll = { status: "pending" | "success" | "error" | "expired"; errorCode?: string };
 
@@ -38,7 +39,7 @@ export function ConnectMenu({
   const router = useRouter();
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
-  const [active, setActive] = useState<Provider>("google");
+  const [active, setActive] = useState<Provider>(reconnect?.provider ?? "google");
 
   // Every attempt gets a number; a loop whose number is no longer current exits without touching state.
   const attempt = useRef(0);
@@ -93,6 +94,8 @@ export function ConnectMenu({
     // Returned from the full-page flow: pick up its result.
     const id = sessionStorage.getItem(KEY);
     if (id) {
+      const p = sessionStorage.getItem(PKEY);
+      if (p === "google" || p === "microsoft") setActive(p);
       sessionId.current = id;
       void poll(id, ++attempt.current);
     }
@@ -138,6 +141,7 @@ export function ConnectMenu({
       w.location.href = j.authUrl;
       void poll(j.sessionId, mine);
     } else {
+      sessionStorage.setItem(PKEY, provider);
       sessionStorage.setItem(KEY, j.sessionId); // popup blocked: full-page redirect (the callback page sees this key), finished on return
       location.href = j.authUrl;
     }

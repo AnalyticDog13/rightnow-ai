@@ -97,7 +97,9 @@ export class MicrosoftOAuth implements OAuthClient {
       throw refresh ? new AuthError("scope_revoked") : new AdminConsentRequiredError();
     if (b.error === "invalid_grant" || b.error === "interaction_required")
       throw new AuthError("invalid_grant");
-    if (b.error === "invalid_client") throw new AuthError("bad_credentials");
+    // an expired client secret is the operator's problem, not a mailbox's: AuthError would flag every mailbox
+    if (b.error === "invalid_client" || b.error === "unauthorized_client")
+      throw new TransientBeforeSendError("Microsoft app credentials invalid");
     // an unrecognized 4xx must not disconnect a healthy mailbox, but a failed first sign-in is a plain failure
     if (refresh) throw new TransientBeforeSendError(`token endpoint ${res.status}`);
     throw new AuthError("unauthorized");
@@ -135,7 +137,10 @@ export class MicrosoftOAuth implements OAuthClient {
           displayName?: string;
         })
       : {};
-    const email = me.mail || me.userPrincipalName;
+    // a guest's UPN (name_host#EXT#@tenant) is not a mailbox address
+    const upn = me.userPrincipalName?.includes("#EXT#") ? undefined : me.userPrincipalName;
+    const email = me.mail || upn;
+    if (!email && me.userPrincipalName) throw new AuthError("unauthorized");
     if (!email) throw new TransientBeforeSendError(`graph /me ${res.status}`);
     return {
       creds,

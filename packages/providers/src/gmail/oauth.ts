@@ -68,13 +68,10 @@ export class GoogleOAuth implements OAuthClient {
     const code = ((await res.json().catch(() => ({}))) as { error?: string }).error;
     if (res.status >= 500 || code === "temporarily_unavailable")
       throw new TransientBeforeSendError(`token endpoint ${res.status}`);
-    throw new AuthError(
-      code === "invalid_grant"
-        ? "invalid_grant"
-        : code === "invalid_client"
-          ? "bad_credentials"
-          : "unauthorized",
-    );
+    // an expired or wrong client secret is the operator's problem, not a mailbox's
+    if (code === "invalid_client" || code === "unauthorized_client")
+      throw new TransientBeforeSendError("Google app credentials invalid");
+    throw new AuthError(code === "invalid_grant" ? "invalid_grant" : "unauthorized");
   }
 
   private creds(t: TokenResponse, refreshToken: string, scope: string): OAuthCreds {

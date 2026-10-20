@@ -416,6 +416,15 @@ describe("tokens", () => {
     expect(await store.get()).toMatchObject({ accessToken: "at-0", expiresAt: 0 });
   });
 
+  test("invalid_client / unauthorized_client is a transient app-config failure, not an AuthError", async () => {
+    for (const error of ["invalid_client", "unauthorized_client"]) {
+      const { p } = setup([tokenRoute(json(401, { error }))], { expiresAt: 0 });
+      const e = await p.currentCursor().catch((x) => x);
+      expect(e).toBeInstanceOf(TransientBeforeSendError);
+      expect(e.message).toContain("Google app credentials invalid");
+    }
+  });
+
   test("invalid_grant is AuthError", async () => {
     const { p } = setup([tokenRoute(json(400, { error: "invalid_grant" }))], { expiresAt: 0 });
     expect(await p.currentCursor().catch((e) => e)).toEqual(new AuthError("invalid_grant"));

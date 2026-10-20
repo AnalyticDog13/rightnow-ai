@@ -1,6 +1,8 @@
 /** Error objects never carry response bodies (they contain tokens): build messages from status/codes only. */
 export class ProviderError extends Error {
   declare cause?: unknown;
+  /** Set by a provider that created a remote draft before failing (Graph send), so recovery can find or delete it. */
+  providerMessageId?: string;
   constructor(message: string, opts?: { cause?: unknown }) {
     super(message, opts);
     this.name = new.target.name;

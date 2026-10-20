@@ -112,6 +112,31 @@ describe("send", () => {
     });
   });
 
+  test("send 429: the error carries the draft id, no orphan remains, and a retry sends exactly one message", async () => {
+    const { g, p } = fake();
+    g.failWith("rate_limit_send");
+    const e = await p.send(mime).catch((x) => x);
+    expect(e).toBeInstanceOf(RateLimitedError);
+    expect(e.providerMessageId).toBeTruthy();
+    expect(g.msgs.size).toBe(0);
+    const r = await p.send(mime);
+    expect(g.msgs.size).toBe(1);
+    expect([...g.msgs.values()].filter((m) => !m.isDraft)).toHaveLength(1);
+    expect((await p.findSent("<c1@rn.test>"))?.providerMessageId).toBe(r.providerMessageId);
+  });
+
+  test("ambiguous send 5xx: the error carries the draft id and findSent with it finds the sent item even if Graph rewrote the Message-ID", async () => {
+    const { g, p } = fake();
+    g.rewriteIds();
+    g.failWith("api_5xx");
+    const e = await p.send(mime).catch((x) => x);
+    expect(e).toBeInstanceOf(AmbiguousSendError);
+    expect(e.providerMessageId).toBeTruthy();
+    expect(await p.findSent("<c1@rn.test>")).toBeNull();
+    const m = await p.findSent("<c1@rn.test>", { providerMessageId: e.providerMessageId });
+    expect(m?.providerMessageId).toBe(e.providerMessageId);
+  });
+
   test("send 5xx -> AmbiguousSendError; the draft is not deleted", async () => {
     const { g, p } = fake();
     g.failWith("api_5xx");
@@ -498,10 +523,11 @@ describe("tokens", () => {
       name: "AuthError",
       reason: "invalid_grant",
     });
-    expect(await run(400, { error: "invalid_client" })).toMatchObject({
-      name: "AuthError",
-      reason: "bad_credentials",
-    });
+    for (const error of ["invalid_client", "unauthorized_client"]) {
+      const e = await run(400, { error });
+      expect(e).toBeInstanceOf(TransientBeforeSendError); // an app-secret problem must not flag mailboxes
+      expect(e.message).toContain("Microsoft app credentials invalid");
+    }
     expect(
       await run(400, { error: "invalid_grant", error_description: "AADSTS65001: consent" }),
     ).toMatchObject({ name: "AuthError", reason: "scope_revoked" });
@@ -590,6 +616,16 @@ describe("tokens", () => {
     });
     const b = await oauth(mk({ mail: null, userPrincipalName: "Bob@Live.com" })).exchange(p);
     expect(b.email).toBe("bob@live.com");
+    const guest = { userPrincipalName: "bob_live.com#EXT#@corp.onmicrosoft.com" };
+    // a guest's mail wins; with no mail the connect fails rather than storing the #EXT# name
+    expect((await oauth(mk({ ...guest, mail: "bob@live.com" })).exchange(p)).email).toBe(
+      "bob@live.com",
+    );
+    expect(
+      await oauth(mk({ ...guest, mail: null }))
+        .exchange(p)
+        .catch((e) => e),
+    ).toBeInstanceOf(AuthError);
   });
 
   test("authUrl uses the tenant authority, PKCE and the four scopes; the token endpoint follows the tenant", async () => {
@@ -629,6 +665,21 @@ describe("tokens", () => {
 });
 
 describe("diagnostics", () => {
+  test("an invalid client secret is an api failure, not an auth failure", async () => {
+    const f = createFixtureFetch([
+      {
+        method: "POST",
+        url: TOKEN_URL,
+        respond: async () => json(400, { error: "invalid_client" }),
+      },
+    ]);
+    const p = make(f, memoryStore({ scope: SCOPE, expiresAt: 0 }));
+    const d = await p.diagnostics();
+    expect(d.ok).toBe(false);
+    expect(d.checks.find((c) => c.name === "token")?.ok).toBe(true);
+    expect(d.checks.find((c) => c.name === "api")).toMatchObject({ ok: false });
+  });
+
   test("missing Mail.ReadWrite is reported; normalized URL scopes pass", async () => {
     const mk = (scope: string) => make(createFakeGraph().fetch, memoryStore({ scope }));
     const bad = await mk("Mail.Send User.Read").diagnostics();

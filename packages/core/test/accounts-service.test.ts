@@ -120,6 +120,10 @@ describe("limits", () => {
     const r = await updateAccount(db.prisma, ws, m.id, { minGapSec: 0 }, o);
     expect(r.account.minGapSec).toBe(3);
     expect(r.warnings).toEqual([{ field: "minGapSec", clampedTo: 3, reason: "provider_min_gap" }]);
+    const o2 = await mk({}, "OUTLOOK_COM");
+    const r2 = await updateAccount(db.prisma, ws, o2.id, { minGapSec: 1 }, o);
+    expect(r2.account.minGapSec).toBe(3);
+    expect(r2.warnings).toEqual([{ field: "minGapSec", clampedTo: 3, reason: "provider_min_gap" }]);
   });
 
   test("unknown properties are rejected", async () => {
