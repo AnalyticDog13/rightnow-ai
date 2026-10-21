@@ -36,24 +36,26 @@ const b64 = (b: Buffer | string) => Buffer.from(b).toString("base64url");
 const mac = (body: string, key: Buffer) => createHmac("sha256", key).update(body).digest();
 
 /** One HKDF-SHA256 subkey per encryption key (current first, then the old one while old links must still verify). */
-export function unsubscribeKeys(env: {
-  ENCRYPTION_KEY: string;
-  OLD_ENCRYPTION_KEY?: string;
-}): Buffer[] {
+export function hkdfKeys(
+  env: { ENCRYPTION_KEY: string; OLD_ENCRYPTION_KEY?: string },
+  info: string,
+): Buffer[] {
   return [env.ENCRYPTION_KEY, env.OLD_ENCRYPTION_KEY]
     .filter((k): k is string => !!k)
-    .map((k) =>
-      Buffer.from(hkdfSync("sha256", Buffer.from(k, "base64"), "", "rightnow-unsubscribe-v1", 32)),
-    );
+    .map((k) => Buffer.from(hkdfSync("sha256", Buffer.from(k, "base64"), "", info, 32)));
 }
 
-export function signUnsubscribe(p: UnsubPayload, key: Buffer): string {
-  const body = b64(JSON.stringify({ w: p.w, l: p.l, c: p.c }));
+export const unsubscribeKeys = (env: { ENCRYPTION_KEY: string; OLD_ENCRYPTION_KEY?: string }) =>
+  hkdfKeys(env, "rightnow-unsubscribe-v1");
+
+/** `<base64url json>.<base64url hmac>`: the token format of unsubscribe and tracking links. */
+export function signJson(payload: object, key: Buffer): string {
+  const body = b64(JSON.stringify(payload));
   return `${body}.${b64(mac(body, key))}`;
 }
 
 /** null for anything that is not a token we signed with one of `keys`. Every key is tried with a constant-time compare. */
-export function verifyUnsubscribe(token: string, keys: Buffer[]): UnsubPayload | null {
+export function verifyJson(token: string, keys: Buffer[]): Record<string, unknown> | null {
   const [body, sig, extra] = token.split(".");
   if (!body || !sig || extra !== undefined) return null;
   const given = Buffer.from(sig, "base64url");
@@ -64,16 +66,21 @@ export function verifyUnsubscribe(token: string, keys: Buffer[]): UnsubPayload |
   }
   if (!ok) return null;
   try {
-    const p = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as Record<
-      string,
-      unknown
-    >;
-    return typeof p.w === "string" && typeof p.l === "string" && typeof p.c === "string"
-      ? { w: p.w, l: p.l, c: p.c }
-      : null;
+    const p: unknown = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
+    return p && typeof p === "object" && !Array.isArray(p) ? (p as Record<string, unknown>) : null;
   } catch {
     return null;
   }
+}
+
+export const signUnsubscribe = (p: UnsubPayload, key: Buffer): string =>
+  signJson({ w: p.w, l: p.l, c: p.c }, key);
+
+export function verifyUnsubscribe(token: string, keys: Buffer[]): UnsubPayload | null {
+  const p = verifyJson(token, keys);
+  return p && typeof p.w === "string" && typeof p.l === "string" && typeof p.c === "string"
+    ? { w: p.w, l: p.l, c: p.c }
+    : null;
 }
 
 // The address lands inside a header value: reject anything that is not a plain address (CR/LF, <, >).

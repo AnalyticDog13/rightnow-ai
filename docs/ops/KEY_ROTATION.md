@@ -29,4 +29,6 @@ Then set `ENCRYPTION_KEY` to the new key, back it up, and start web and worker.
 
 Unsubscribe links in sent emails are signed with a key derived from `ENCRYPTION_KEY` (HKDF), and emails stay in inboxes for years. `rotate-key` does not touch them, so after rotating, set `OLD_ENCRYPTION_KEY=<previous key>` in `.env` next to the new `ENCRYPTION_KEY`. New links use the new key; links signed with the old one still verify. Without it, old links show "This unsubscribe link is invalid", which is a compliance problem (CAN-SPAM requires an opt-out to work for at least 30 days after sending). Keep it until you no longer care about links in mail older than that, then remove it.
 
+Open and click tracking links are signed the same way (a separate HKDF subkey), so keep `OLD_ENCRYPTION_KEY` for at least 90 days or old tracking and unsubscribe links return 400.
+
 Only one previous key is honored. Rotating twice invalidates links signed with the key before the previous one, so keep `OLD_ENCRYPTION_KEY` as the key you just replaced and do not rotate again until old mail no longer matters.

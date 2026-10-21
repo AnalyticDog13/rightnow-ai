@@ -3,6 +3,7 @@ import {
   dispatchTick,
   getEnv,
   sendableProviders,
+  trackingKeys,
   unsubscribeKeys,
   type Clock,
   type Env,
@@ -33,7 +34,7 @@ export async function campaignDispatch(
     signal,
     bootId,
     providerFor,
-    env: { appUrl: env.APP_URL, unsubscribeKeys: unsubscribeKeys(env) },
+    env: { appUrl: env.APP_URL, unsubscribeKeys: unsubscribeKeys(env), trackingKeys: trackingKeys(env) },
     stalenessSec: env.SYNC_MAX_STALENESS_SEC,
     sendableProviders: await sendableProviders(prisma, env),
   });

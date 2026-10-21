@@ -4,7 +4,15 @@ import { hashValue } from "./suppression";
 export type TimelineEntry = {
   at: Date;
   kind:
-    "imported" | "enrolled" | "sent" | "status_changed" | "merged" | "unsubscribed" | "suppressed";
+    | "imported"
+    | "enrolled"
+    | "sent"
+    | "status_changed"
+    | "merged"
+    | "unsubscribed"
+    | "suppressed"
+    | "opened"
+    | "clicked";
   detail: Record<string, unknown>;
 };
 
@@ -16,7 +24,7 @@ export async function leadTimeline(
 ): Promise<TimelineEntry[]> {
   const lead = await prisma.lead.findFirst({ where: { id: leadId, workspaceId: ws } });
   if (!lead) return [];
-  const [job, enrolled, sent, audits, sup] = await Promise.all([
+  const [job, enrolled, sent, audits, sup, engaged] = await Promise.all([
     lead.importJobId
       ? prisma.importJob.findFirst({ where: { id: lead.importJobId, workspaceId: ws } })
       : null,
@@ -38,8 +46,20 @@ export async function leadTimeline(
     prisma.suppression.findMany({
       where: { workspaceId: ws, kind: "EMAIL", valueHash: hashValue(lead.email) },
     }),
+    prisma.event.findMany({
+      where: { workspaceId: ws, leadId, type: { in: ["OPEN", "CLICK"] } },
+    }),
   ]);
   const out: TimelineEntry[] = [];
+  for (const e of engaged) {
+    const meta = (e.meta ?? {}) as Record<string, unknown>;
+    if (meta.machine || meta.scanner) continue; // not a person
+    out.push({
+      at: e.occurredAt,
+      kind: e.type === "OPEN" ? "opened" : "clicked",
+      detail: { campaignId: e.campaignId, ...(e.type === "CLICK" && { url: meta.url ?? null }) },
+    });
+  }
   if (job) out.push({ at: job.createdAt, kind: "imported", detail: { fileName: job.fileName } });
   for (const e of enrolled)
     out.push({

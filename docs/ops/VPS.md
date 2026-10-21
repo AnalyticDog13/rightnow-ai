@@ -37,6 +37,10 @@ Then `scripts/start.sh`, open `https://app.example.com/sign-up` and create the o
 
 Copy `backups/` off the server (rsync, object storage); a backup on the same disk does not survive losing the VPS. **Store `ENCRYPTION_KEY` with them, in a password manager or other separate secure place.** Without the key, restored mailbox credentials are unreadable. Test a restore occasionally: `scripts/restore.sh backups/<file>.dump`.
 
+## 3b. Tracking domain (optional)
+
+Open and click links use `APP_URL` by default. To send them from your own domain per mailbox, create a `CNAME` record (e.g. `track.example.com`) pointing at `DOMAIN`, set it on the mailbox and run the check in the app. Once it is `VERIFIED`, Caddy requests a certificate for that host on first use (it asks `/api/tracking-domain/check` first, so unknown hostnames get none) and serves only `/t/*` and `/u/*` there. Until it verifies, links keep using `APP_URL`; with a non-https `APP_URL` and no verified domain nothing is tracked.
+
 ## 4. Updating
 
 ```

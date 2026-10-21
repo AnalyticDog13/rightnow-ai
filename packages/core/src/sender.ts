@@ -18,7 +18,8 @@ import { isSuppressed, suppress } from "./leads/suppression";
 import { advanceLead } from "./planner";
 import { commitUsage, creditSent, releaseUsage, type UsageRef } from "./quota";
 import { isInWindow, nextWindowStart, type Window } from "./schedule";
-import { listUnsubscribeHeaders, type RenderEnv } from "./unsubscribe";
+import { listUnsubscribeHeaders, unsubscribeUrl, type RenderEnv } from "./unsubscribe";
+import { trackingBase, withTracking } from "./mail/tracking";
 import { OPEN_STATES } from "./campaigns/lead-status";
 import { recordEvent } from "./mail/events";
 import { recordOutboundMessage } from "./mail/ingest";
@@ -29,7 +30,8 @@ export type SendOutcome =
   "SENT" | "RETRY" | "UNCERTAIN" | "FAILED" | "AUTH" | "STALE" | "RELEASED" | "CANCELLED" | "LOST";
 export type SenderDeps = {
   providerFor: (a: EmailAccount) => MailProvider;
-  env: RenderEnv;
+  /** `trackingKeys` (HKDF of ENCRYPTION_KEY): without them nothing is tracked. */
+  env: RenderEnv & { trackingKeys?: Buffer[] };
   /** Backoff jitter (tests pin it). */
   random?: () => number;
 };
@@ -245,6 +247,32 @@ async function precheck(
   const refs = earlier.flatMap((x) => (x.rfcMessageId ? [x.rfcMessageId] : []));
   let mime: OutboundMime;
   try {
+    const unsub = { w: m.workspaceId, l: lead.id, c: camp.id };
+    // tracking is added per send, the stored body stays untracked (D28); text-only rows have no html to track
+    const base = trackingBase(a, deps.env.appUrl);
+    const first = step.order === 1 && !step.subsequenceId;
+    const opens = camp.trackOpens && !w.disableOpenTracking;
+    const clicks = camp.trackClicks;
+    const hasHtml = m.renderedBody !== m.renderedText;
+    const track =
+      hasHtml &&
+      base &&
+      deps.env.trackingKeys?.[0] &&
+      !camp.textOnly &&
+      !(first && camp.firstEmailTextOnly) &&
+      (opens || clicks);
+    const html = !hasHtml
+      ? undefined
+      : track
+        ? withTracking(m.renderedBody, {
+            base,
+            scheduledMessageId: m.id,
+            opens,
+            clicks,
+            key: deps.env.trackingKeys![0]!,
+            skipUrls: [unsubscribeUrl(deps.env, unsub, a.email)],
+          })
+        : m.renderedBody;
     mime = {
       from: { email: a.email, name: a.fromName },
       to: [{ email: lead.email }],
@@ -253,17 +281,13 @@ async function precheck(
       ...(a.replyTo ? { replyTo: { email: a.replyTo } } : {}),
       subject: m.renderedSubject,
       // text-only rows store the text as the body (planner `stored`)
-      ...(m.renderedBody === m.renderedText ? {} : { html: m.renderedBody }),
+      ...(html === undefined ? {} : { html }),
       text: m.renderedText,
       messageId: c.rfcMessageId,
       ...(refs.length ? { inReplyTo: refs.at(-1), references: refs } : {}),
       ...(cl.threadRef ? { threadId: cl.threadRef } : {}),
       // rebuilt from current state on every send, never stored
-      headers: listUnsubscribeHeaders(
-        deps.env,
-        { w: m.workspaceId, l: lead.id, c: camp.id },
-        a.email,
-      ),
+      headers: listUnsubscribeHeaders(deps.env, unsub, a.email),
     };
     await buildMime(mime); // I11: a CR/LF in any header fails here, before any provider call
   } catch {

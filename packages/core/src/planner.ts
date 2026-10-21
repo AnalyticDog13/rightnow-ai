@@ -804,14 +804,25 @@ async function advance(
     data: { state: "COMPLETED", completedAt: now, nextDueAt: null, accountId },
   });
   if (step.subsequenceId) return; // completed_no_reply follows the main sequence only
+  await enterActivitySubsequence(tx, now, id, step.campaignId, "completed_no_reply");
+}
+
+/** Enters the campaign's first active ACTIVITY subsequence for `activity`, if any. */
+export async function enterActivitySubsequence(
+  tx: Tx,
+  now: Date,
+  campaignLeadId: string,
+  campaignId: string,
+  activity: "completed_no_reply" | "opened" | "clicked",
+): Promise<void> {
   const subs = await tx.subsequence.findMany({
-    where: { campaignId: step.campaignId, active: true, activatedAt: { lte: now } },
+    where: { campaignId, active: true, activatedAt: { lte: now } },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
   });
   const hit = subs.find((s) =>
-    isTrigger(s.trigger, (t) => t.kind === "ACTIVITY" && t.activity === "completed_no_reply"),
+    isTrigger(s.trigger, (t) => t.kind === "ACTIVITY" && t.activity === activity),
   );
-  if (hit) await enterSubsequence(tx, { now: () => now }, id, hit.id);
+  if (hit) await enterSubsequence(tx, { now: () => now }, campaignLeadId, hit.id);
 }
 
 /**
