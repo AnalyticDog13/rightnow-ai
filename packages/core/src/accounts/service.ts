@@ -20,7 +20,7 @@ import { type CnameResolver, verifyCname } from "./tracking-domain";
 /** Service failure with an HTTP-ish status; the web layer maps it to a response. */
 export class AccountError extends Error {
   constructor(
-    readonly status: 400 | 403 | 404 | 409 | 422 | 429 | 502,
+    readonly status: 400 | 403 | 404 | 409 | 413 | 422 | 429 | 502,
     message: string,
     readonly body?: unknown,
   ) {
