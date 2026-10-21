@@ -149,6 +149,9 @@ export async function updateLead(
   return prisma.$transaction(async (tx) => {
     await liveLead(tx, ws, id);
     if (p.ownerId) await assertMembers(tx, ws, [p.ownerId]);
+    // Lock order: Suppression before Lead (same in gdprDeleteLead and bulk set_interest).
+    if (p.interestStatus !== undefined)
+      await applyInterestChange(tx, clock, ws, id, p.interestStatus);
     const lead = await tx.lead.update({
       where: { id },
       data: {
@@ -159,8 +162,6 @@ export async function updateLead(
         ...(p.interestStatus !== undefined && { lastInterestChangeAt: clock.now() }),
       },
     });
-    if (p.interestStatus !== undefined)
-      await applyInterestChange(tx, clock, ws, id, p.interestStatus);
     await audit(tx, { workspaceId: ws, actorId, at: clock.now() }, "lead.update", id, {
       fields: Object.keys(p),
     });
@@ -293,6 +294,7 @@ export async function gdprDeleteLead(
     }
     const ids = set.map((l) => l.id);
     await assertNoSendInFlight(tx, ids);
+    // Lock order: Suppression writes before the Lead delete (as in updateLead).
     const hashes = uniq(set.map((l) => hashValue(l.email)));
     await tx.suppression.createMany({
       data: hashes.map((valueHash) => ({
@@ -339,9 +341,11 @@ export async function mergeLeads(
     .parse(input);
   if (keepId === mergeId) throw new LeadError(400, "same_lead");
   return prisma.$transaction(async (tx) => {
+    await assertNoSendInFlight(tx, [keepId, mergeId]); // I4: ScheduledMessage before Lead
+    // Lock both rows in id order, then re-check they are live: concurrent A<-B and B<-A cannot both win.
+    await tx.$queryRaw`SELECT id FROM "Lead" WHERE "workspaceId" = ${ws} AND id = ANY(${[keepId, mergeId]}) ORDER BY id FOR UPDATE`;
     const keep = await liveLead(tx, ws, keepId);
     const from = await liveLead(tx, ws, mergeId);
-    await assertNoSendInFlight(tx, [keepId, mergeId]);
     const data: Prisma.LeadUpdateInput = {
       customFields: { ...(from.customFields as object), ...(keep.customFields as object) },
       tags: uniq([...keep.tags, ...from.tags]),
@@ -394,47 +398,59 @@ export async function bulkLeads(
 ) {
   const { ids, action, value } = bulkInput.parse(input);
   const strs = () => z.array(text(50)).min(1).parse(value);
-  return prisma.$transaction(async (tx) => {
-    const base = { workspaceId: ws, deletedAt: null, id: { in: ids } };
-    const leads = await tx.lead.findMany({
-      where: base,
-      select: { id: true },
-      orderBy: { id: "asc" },
-    });
-    const found = leads.map((l) => l.id);
-    if (action === "assign_round_robin") {
-      const users = uniq(z.array(text(100)).min(1).parse(value));
-      await assertMembers(tx, ws, users);
-      for (const [i, id] of found.entries())
-        await tx.lead.update({ where: { id }, data: { ownerId: users[i % users.length] } });
-    } else if (action === "set_owner") {
-      const owner = z
-        .string()
-        .min(1)
-        .nullable()
-        .parse(value ?? null);
-      if (owner) await assertMembers(tx, ws, [owner]);
-      await tx.lead.updateMany({ where: base, data: { ownerId: owner } });
-    } else if (action === "set_interest") {
-      const v = interest.nullable().parse(value ?? null);
-      await tx.lead.updateMany({
+  return prisma.$transaction(
+    async (tx) => {
+      const base = { workspaceId: ws, deletedAt: null, id: { in: ids } };
+      const leads = await tx.lead.findMany({
         where: base,
-        data: { interestStatus: v, lastInterestChangeAt: clock.now() },
+        select: { id: true },
+        orderBy: { id: "asc" },
       });
-      for (const id of found) await applyInterestChange(tx, clock, ws, id, v);
-    } else if (action === "add_tags") {
-      await tx.$executeRaw`UPDATE "Lead" SET "tags" = ARRAY(SELECT DISTINCT unnest("tags" || ${strs()}::text[])) WHERE "workspaceId" = ${ws} AND "id" = ANY(${found})`;
-    } else if (action === "remove_tags") {
-      await tx.$executeRaw`UPDATE "Lead" SET "tags" = ARRAY(SELECT t FROM unnest("tags") t WHERE t <> ALL(${strs()}::text[])) WHERE "workspaceId" = ${ws} AND "id" = ANY(${found})`;
-    } else {
-      await tx.lead.updateMany({ where: base, data: { deletedAt: clock.now() } });
-    }
-    await audit(tx, { workspaceId: ws, actorId, at: clock.now() }, "lead.bulk", undefined, {
-      action,
-      count: found.length,
-    });
-    return { affected: found.length };
-  });
+      const found = leads.map((l) => l.id);
+      if (action === "assign_round_robin") {
+        const users = uniq(z.array(text(100)).min(1).parse(value));
+        await assertMembers(tx, ws, users);
+        const owners = found.map((_, i) => users[i % users.length]!);
+        await tx.$executeRaw`UPDATE "Lead" l SET "ownerId" = v.o, "updatedAt" = now() FROM unnest(${found}::text[], ${owners}::text[]) AS v(id, o) WHERE l.id = v.id AND l."workspaceId" = ${ws}`;
+      } else if (action === "set_owner") {
+        const owner = z
+          .string()
+          .min(1)
+          .nullable()
+          .parse(value ?? null);
+        if (owner) await assertMembers(tx, ws, [owner]);
+        await tx.lead.updateMany({ where: base, data: { ownerId: owner } });
+      } else if (action === "set_interest") {
+        const v = interest.nullable().parse(value ?? null);
+        if (v === -1) {
+          const rows = await tx.lead.findMany({ where: base, select: { email: true } });
+          await suppress(
+            tx,
+            ws,
+            rows.map((r) => ({ kind: "EMAIL", value: r.email })),
+            "NOT_INTERESTED",
+            "status",
+          );
+        }
+        await tx.lead.updateMany({
+          where: base,
+          data: { interestStatus: v, lastInterestChangeAt: clock.now() },
+        });
+      } else if (action === "add_tags") {
+        await tx.$executeRaw`UPDATE "Lead" SET "updatedAt" = now(), "tags" = ARRAY(SELECT DISTINCT unnest("tags" || ${strs()}::text[])) WHERE "workspaceId" = ${ws} AND "id" = ANY(${found})`;
+      } else if (action === "remove_tags") {
+        await tx.$executeRaw`UPDATE "Lead" SET "updatedAt" = now(), "tags" = ARRAY(SELECT t FROM unnest("tags") t WHERE t <> ALL(${strs()}::text[])) WHERE "workspaceId" = ${ws} AND "id" = ANY(${found})`;
+      } else {
+        await tx.lead.updateMany({ where: base, data: { deletedAt: clock.now() } });
+      }
+      await audit(tx, { workspaceId: ws, actorId, at: clock.now() }, "lead.bulk", undefined, {
+        action,
+        count: found.length,
+      });
+      return { affected: found.length };
+    },
+    { timeout: 30_000 },
+  ); // set-based statements; same budget as the planner's per-campaign transaction
 }
 
 // Lead labels (PS-LEAD-06): a lead's `labels` array holds label names.

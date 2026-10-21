@@ -301,20 +301,149 @@ describe("gdpr delete", () => {
         { t: string | null }[]
       >`SELECT to_regclass('"ScheduledMessage"')::text AS t`
     )[0]?.t;
-    if (t) return; // real send tables exist (T09+); their own tests cover this
+    // Never skip silently: once T09 adds the real tables this must be rewritten with real rows.
+    if (t) throw new Error("T09: replace this temp-table test with real ScheduledMessage rows");
     const run = (sql: string) => db.prisma.$executeRawUnsafe(sql);
     await run(`CREATE TABLE "CampaignLead" (id text, "leadId" text)`);
-    await run(`CREATE TABLE "ScheduledMessage" ("campaignLeadId" text, status text)`);
-    const l = await mk({ email: "busy@acme.test" });
-    await run(`INSERT INTO "CampaignLead" VALUES ('cl1', '${l.id}')`);
-    await run(`INSERT INTO "ScheduledMessage" VALUES ('cl1', 'SENDING')`);
-    await expect(gdprDeleteLead(db.prisma, clock, ws, l.id)).rejects.toMatchObject({
-      status: 409,
-      message: "send_in_progress",
+    try {
+      await run(`CREATE TABLE "ScheduledMessage" ("campaignLeadId" text, status text)`);
+      const l = await mk({ email: "busy@acme.test" });
+      await run(`INSERT INTO "CampaignLead" VALUES ('cl1', '${l.id}')`);
+      await run(`INSERT INTO "ScheduledMessage" VALUES ('cl1', 'SENDING')`);
+      await expect(gdprDeleteLead(db.prisma, clock, ws, l.id)).rejects.toMatchObject({
+        status: 409,
+        message: "send_in_progress",
+      });
+      expect(await db.prisma.lead.count({ where: { id: l.id } })).toBe(1);
+    } finally {
+      await run(`DROP TABLE IF EXISTS "ScheduledMessage"`);
+      await run(`DROP TABLE IF EXISTS "CampaignLead"`);
+    }
+  });
+});
+
+describe("tenant isolation and concurrency", () => {
+  async function user(w: string) {
+    const id = `iu${++n}`;
+    await db.prisma.user.create({ data: { id, name: id, email: `${id}@x.io` } });
+    await db.prisma.member.create({
+      data: { id: `m${id}`, workspaceId: w, userId: id, role: "member" },
     });
-    expect(await db.prisma.lead.count({ where: { id: l.id } })).toBe(1);
-    await run(`DROP TABLE "ScheduledMessage"`);
-    await run(`DROP TABLE "CampaignLead"`);
+    return id;
+  }
+  const foreignLead = (email: string, data: object = {}) =>
+    db.prisma.lead.create({ data: { workspaceId: other, email, ...data } });
+
+  test("bulk actions with foreign ids touch nothing, raw-SQL paths included", async () => {
+    const f = await foreignLead(`f${++n}@acme.test`, { tags: ["keep"] });
+    const mine = await user(ws);
+    const ids = [f.id];
+    for (const [action, value] of [
+      ["set_owner", mine],
+      ["assign_round_robin", [mine]],
+      ["set_interest", -1],
+      ["add_tags", ["x"]],
+      ["remove_tags", ["keep"]],
+      ["delete", null],
+    ] as const) {
+      const r = await bulkLeads(db.prisma, clock, ws, { ids, action, value });
+      expect(r.affected, action).toBe(0);
+    }
+    const after = await db.prisma.lead.findUniqueOrThrow({ where: { id: f.id } });
+    expect(after).toMatchObject({
+      ownerId: null,
+      interestStatus: null,
+      tags: ["keep"],
+      deletedAt: null,
+    });
+    expect(await isSuppressed(db.prisma, ws, f.email)).toBe(false);
+    expect(await isSuppressed(db.prisma, other, f.email)).toBe(false);
+  });
+
+  test("a member of another workspace cannot be an owner", async () => {
+    const alien = await user(other);
+    const l = await mk();
+    await expect(mk({ ownerId: alien })).rejects.toMatchObject({ status: 400 });
+    await expect(updateLead(db.prisma, clock, ws, l.id, { ownerId: alien })).rejects.toMatchObject({
+      status: 400,
+    });
+    for (const [action, value] of [
+      ["set_owner", alien],
+      ["assign_round_robin", [alien]],
+    ] as const)
+      await expect(
+        bulkLeads(db.prisma, clock, ws, { ids: [l.id], action, value }),
+      ).rejects.toMatchObject({ status: 400, message: "unknown_owner" });
+  });
+
+  test("merge with a foreign mergeId is 404 and changes nothing", async () => {
+    const keep = await mk();
+    const f = await foreignLead(`f${++n}@acme.test`);
+    await expect(
+      mergeLeads(db.prisma, clock, ws, { keepId: keep.id, mergeId: f.id }),
+    ).rejects.toMatchObject({ status: 404 });
+    expect(
+      await db.prisma.lead.count({ where: { id: { in: [keep.id, f.id] }, deletedAt: null } }),
+    ).toBe(2);
+  });
+
+  test("gdpr leaves a foreign lead with the same email untouched", async () => {
+    const email = `same${++n}@acme.test`;
+    const mine = await mk({ email });
+    const f = await foreignLead(email);
+    await gdprDeleteLead(db.prisma, clock, ws, mine.id);
+    expect(await db.prisma.lead.count({ where: { id: f.id } })).toBe(1);
+    expect(await isSuppressed(db.prisma, other, email)).toBe(false);
+    expect(await isSuppressed(db.prisma, ws, email)).toBe(true);
+  });
+
+  test("a foreign listId returns nothing", async () => {
+    const f = await foreignLead(`f${++n}@acme.test`);
+    const list = await db.prisma.leadList.create({ data: { workspaceId: other, name: "FL" } });
+    await db.prisma.leadListMember.create({ data: { listId: list.id, leadId: f.id } });
+    await mk();
+    expect((await listLeads(db.prisma, ws, { listId: list.id })).leads).toEqual([]);
+    expect((await listLeads(db.prisma, other, { listId: list.id })).leads.length).toBe(1);
+    await expect(getLead(db.prisma, ws, f.id)).rejects.toMatchObject({ status: 404 });
+  });
+
+  test("concurrent merges A<-B and B<-A: exactly one wins, one lead stays live", async () => {
+    const a = await mk();
+    const b = await mk();
+    const r = await Promise.allSettled([
+      mergeLeads(db.prisma, clock, ws, { keepId: a.id, mergeId: b.id }),
+      mergeLeads(db.prisma, clock, ws, { keepId: b.id, mergeId: a.id }),
+    ]);
+    expect(r.filter((x) => x.status === "fulfilled").length).toBe(1);
+    expect(
+      await db.prisma.lead.count({ where: { id: { in: [a.id, b.id] }, deletedAt: null } }),
+    ).toBe(1);
+  });
+
+  test("1000-lead bulk operations finish inside the transaction timeout", async () => {
+    const w = (await db.prisma.workspace.create({ data: { name: "B", slug: "w-bulk1000" } })).id;
+    const owners = [await user(w), await user(w)];
+    await db.prisma.lead.createMany({
+      data: Array.from({ length: 1000 }, (_, i) => ({ workspaceId: w, email: `b${i}@acme.test` })),
+    });
+    const ids = (
+      await db.prisma.lead.findMany({ where: { workspaceId: w }, select: { id: true } })
+    ).map((l) => l.id);
+    const t0 = Date.now();
+    for (const [action, value] of [
+      ["assign_round_robin", owners],
+      ["set_interest", -1],
+      ["add_tags", ["t"]],
+      ["remove_tags", ["t"]],
+      ["delete", null],
+    ] as const)
+      expect((await bulkLeads(db.prisma, clock, w, { ids, action, value })).affected, action).toBe(
+        1000,
+      );
+    expect(Date.now() - t0).toBeLessThan(30_000);
+    expect(
+      await db.prisma.suppression.count({ where: { workspaceId: w, reason: "NOT_INTERESTED" } }),
+    ).toBe(1000);
   });
 });
 

@@ -156,4 +156,26 @@ describe("leads routes", () => {
     };
     expect(j.labels.map((l) => l.name)).toEqual(["Hot"]);
   });
+
+  it("DELETE, bulk and gdpr-delete respect workspace and auth type", async () => {
+    expect(
+      (await one.DELETE(req("DELETE", `/api/v1/leads/${foreignId}`), p(foreignId))).status,
+    ).toBe(404);
+    const b = await bulk.POST(
+      req("POST", "/api/v1/leads/bulk", { ids: [foreignId], action: "add_tags", value: ["x"] }),
+    );
+    expect(((await b.json()) as { affected: number }).affected).toBe(0);
+    const { createApiKey } = await import("@rightnow/core");
+    const all = (await createApiKey(db.prisma, workspaceId, "all", ["all:all"])).token;
+    const h = { authorization: `Bearer ${all}` };
+    const mine = await db.prisma.lead.create({ data: { workspaceId, email: "key@acme.io" } });
+    const r = await gdpr.POST(
+      req("POST", `/api/v1/leads/${mine.id}/gdpr-delete`, undefined, h),
+      p(mine.id),
+    );
+    expect(r.status).toBe(401); // session-only: API keys are not accepted
+    expect(await db.prisma.lead.count({ where: { id: mine.id } })).toBe(1);
+    const del = await one.DELETE(req("DELETE", `/api/v1/leads/${mine.id}`), p(mine.id));
+    expect(del.status).toBe(200);
+  });
 });
