@@ -1,0 +1,218 @@
+{
+  "bounce-gmail-5.1.1.eml": {
+    "kind": "BOUNCE",
+    "bounceType": "HARD",
+    "reason": "550 5.1.1 The email account that you tried to reach does not exist.",
+    "status": "5.1.1",
+    "recipient": "nobody@example.org",
+    "originalMessageId": "<orig-1@rn.test>"
+  },
+  "bounce-m365-5.1.10.eml": {
+    "kind": "BOUNCE",
+    "bounceType": "HARD",
+    "reason": "550 5.1.10 RESOLVER.ADR.RecipientNotFound; Recipient not found by SMTP address lookup",
+    "status": "5.1.10",
+    "recipient": "gone@contoso.com",
+    "originalMessageId": "<orig-1@rn.test>"
+  },
+  "bounce-exchange-5.2.1.eml": {
+    "kind": "BOUNCE",
+    "bounceType": "HARD",
+    "reason": "550 5.2.1 Mailbox cannot accept messages",
+    "status": "5.2.1",
+    "recipient": "closed@corp.example",
+    "originalMessageId": "<orig-1@rn.test>"
+  },
+  "bounce-postfix-4.2.2.eml": {
+    "kind": "BOUNCE",
+    "bounceType": "SOFT",
+    "reason": "452 4.2.2 Mailbox full",
+    "status": "4.2.2",
+    "recipient": "full@example.net",
+    "originalMessageId": "<orig-1@rn.test>"
+  },
+  "bounce-yahoo-5.2.2.eml": {
+    "kind": "BOUNCE",
+    "bounceType": "SOFT",
+    "reason": "552 5.2.2 Over quota",
+    "status": "5.2.2",
+    "recipient": "over@yahoo.com",
+    "originalMessageId": "<orig-1@rn.test>"
+  },
+  "bounce-policy-5.7.1.eml": {
+    "kind": "BOUNCE",
+    "bounceType": "UNKNOWN",
+    "reason": "550 5.7.1 Message rejected due to local policy",
+    "status": "5.7.1",
+    "recipient": "boss@example.com",
+    "originalMessageId": "<orig-1@rn.test>"
+  },
+  "bounce-5.4.1-address-rejected.eml": {
+    "kind": "BOUNCE",
+    "bounceType": "HARD",
+    "reason": "550 5.4.1 Recipient address rejected: Access denied",
+    "status": "5.4.1",
+    "recipient": "x@corp2.example",
+    "originalMessageId": "<orig-1@rn.test>"
+  },
+  "bounce-5.5.0-policy-wins.eml": {
+    "kind": "BOUNCE",
+    "bounceType": "UNKNOWN",
+    "reason": "550 5.5.0 user unknown but sender blocked by reputation",
+    "status": "5.5.0",
+    "recipient": "y@example.org",
+    "originalMessageId": "<orig-1@rn.test>"
+  },
+  "bounce-plain-550-user-unknown.eml": {
+    "kind": "BOUNCE",
+    "bounceType": "HARD",
+    "status": "5.0.0",
+    "recipient": "ghost@old.example",
+    "originalMessageId": null,
+    "reason": "This message was created automatically by mail delivery software. A message that you sent could not be delivered to one or more of its recipients: ghost@old.example SMTP error from remote mail server: 550 user unknown"
+  },
+  "bounce-postmaster-text-4.4.1.eml": {
+    "kind": "BOUNCE",
+    "bounceType": "SOFT",
+    "status": "4.4.1",
+    "recipient": "slow@relay.example",
+    "originalMessageId": null,
+    "reason": "Delivery to slow@relay.example is delayed: 4.4.1 connection timed out."
+  },
+  "ooo-en-until-iso.eml": {
+    "kind": "AUTO_REPLY",
+    "category": "OUT_OF_OFFICE",
+    "oooUntil": "2026-07-10T00:00:00.000Z"
+  },
+  "ooo-en-yearless-next-year.eml": {
+    "_now": "2026-12-20T12:00:00Z",
+    "kind": "AUTO_REPLY",
+    "category": "OUT_OF_OFFICE",
+    "oooUntil": "2027-01-03T00:00:00.000Z"
+  },
+  "ooo-en-past-date.eml": {
+    "kind": "AUTO_REPLY",
+    "category": "OUT_OF_OFFICE",
+    "oooUntil": null
+  },
+  "ooo-ambiguous-slash.eml": {
+    "kind": "AUTO_REPLY",
+    "category": "OUT_OF_OFFICE",
+    "oooUntil": null
+  },
+  "ooo-us-slash-unambiguous.eml": {
+    "kind": "AUTO_REPLY",
+    "category": "OUT_OF_OFFICE",
+    "oooUntil": "2026-06-25T00:00:00.000Z"
+  },
+  "ooo-en-month-first.eml": {
+    "kind": "AUTO_REPLY",
+    "category": "OUT_OF_OFFICE",
+    "oooUntil": "2026-07-14T00:00:00.000Z"
+  },
+  "ooo-en-no-date.eml": {
+    "kind": "AUTO_REPLY",
+    "category": "OUT_OF_OFFICE",
+    "oooUntil": null
+  },
+  "ooo-de-dotted-date.eml": {
+    "kind": "AUTO_REPLY",
+    "category": "OUT_OF_OFFICE",
+    "oooUntil": "2027-01-12T00:00:00.000Z"
+  },
+  "ooo-fr-month-name.eml": {
+    "kind": "AUTO_REPLY",
+    "category": "OUT_OF_OFFICE",
+    "oooUntil": "2027-01-12T00:00:00.000Z"
+  },
+  "ooo-es-no-date.eml": {
+    "kind": "AUTO_REPLY",
+    "category": "OUT_OF_OFFICE",
+    "oooUntil": null
+  },
+  "ooo-subject-only-no-headers.eml": {
+    "kind": "AUTO_REPLY",
+    "category": "OUT_OF_OFFICE",
+    "oooUntil": null
+  },
+  "auto-ticket-confirmation.eml": {
+    "kind": "AUTO_REPLY",
+    "category": "AUTOMATED",
+    "oooUntil": null
+  },
+  "auto-precedence-bulk.eml": {
+    "kind": "AUTO_REPLY",
+    "category": "AUTOMATED",
+    "oooUntil": null
+  },
+  "auto-x-auto-response-suppress.eml": {
+    "kind": "AUTO_REPLY",
+    "category": "AUTOMATED",
+    "oooUntil": null
+  },
+  "auto-submitted-no-is-human.eml": {
+    "kind": "REPLY",
+    "category": "INTERESTED",
+    "source": "RULE"
+  },
+  "unsub-subject-word.eml": {
+    "kind": "UNSUBSCRIBE"
+  },
+  "unsub-reply-remove-me.eml": {
+    "kind": "UNSUBSCRIBE"
+  },
+  "unsub-word-only-in-quote.eml": {
+    "kind": "REPLY",
+    "category": "UNCERTAIN",
+    "source": "RULE"
+  },
+  "reply-not-interested.eml": {
+    "kind": "REPLY",
+    "category": "NOT_INTERESTED",
+    "source": "RULE"
+  },
+  "reply-no-thanks.eml": {
+    "kind": "REPLY",
+    "category": "NOT_INTERESTED",
+    "source": "RULE"
+  },
+  "reply-meeting.eml": {
+    "kind": "REPLY",
+    "category": "MEETING_REQUESTED",
+    "source": "RULE"
+  },
+  "reply-interested.eml": {
+    "kind": "REPLY",
+    "category": "INTERESTED",
+    "source": "RULE"
+  },
+  "reply-wrong-person.eml": {
+    "kind": "REPLY",
+    "category": "WRONG_PERSON",
+    "source": "RULE"
+  },
+  "reply-plain-question.eml": {
+    "kind": "REPLY",
+    "category": "UNCERTAIN",
+    "source": "RULE"
+  },
+  "reply-we-are-set-up-for-tuesday.eml": {
+    "kind": "REPLY",
+    "category": "UNCERTAIN",
+    "source": "RULE"
+  },
+  "reply-no-thanks-needed-send-pricing.eml": {
+    "kind": "REPLY",
+    "category": "INTERESTED",
+    "source": "RULE"
+  },
+  "reply-not-interested-but-pricing.eml": {
+    "kind": "REPLY",
+    "category": "UNCERTAIN",
+    "source": "RULE"
+  },
+  "outbound-sent-copy.eml": {
+    "_direction": "OUT",
+    "kind": "OUTBOUND"
+  }
+}

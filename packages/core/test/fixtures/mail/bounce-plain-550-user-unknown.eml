@@ -1,0 +1,13 @@
+From: MAILER-DAEMON@old.example
+To: sender@rn.test
+Subject: Mail delivery failed: returning message to sender
+Date: Mon, 15 Jun 2026 10:00:00 +0000
+Message-ID: <dsn-plain@old.example>
+Content-Type: text/plain; charset=utf-8
+
+This message was created automatically by mail delivery software.
+
+A message that you sent could not be delivered to one or more of its recipients:
+
+  ghost@old.example
+    SMTP error from remote mail server: 550 user unknown

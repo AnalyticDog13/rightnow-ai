@@ -1,0 +1,32 @@
+From: MAILER-DAEMON@mx.example.org
+To: sender@rn.test
+Subject: Delivery Status Notification (Failure)
+Date: Mon, 15 Jun 2026 10:00:00 +0000
+Message-ID: <dsn-bounce-5.5.0-policy-wins@mx.test>
+MIME-Version: 1.0
+Content-Type: multipart/report; report-type=delivery-status; boundary="B1"
+
+--B1
+Content-Type: text/plain; charset=utf-8
+
+x
+
+--B1
+Content-Type: message/delivery-status
+
+Reporting-MTA: dns; mx.test
+
+Final-Recipient: rfc822; y@example.org
+Action: failed
+Status: 5.5.0
+Diagnostic-Code: smtp; 550 5.5.0 user unknown but sender blocked by reputation
+
+--B1
+Content-Type: text/rfc822-headers
+
+From: sender@rn.test
+To: y@example.org
+Subject: Quick question
+Message-ID: <orig-1@rn.test>
+
+--B1--

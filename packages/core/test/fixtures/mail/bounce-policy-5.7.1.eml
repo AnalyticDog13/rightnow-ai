@@ -1,0 +1,32 @@
+From: MAILER-DAEMON@mx.example.com
+To: sender@rn.test
+Subject: Delivery Status Notification (Failure)
+Date: Mon, 15 Jun 2026 10:00:00 +0000
+Message-ID: <dsn-bounce-policy-5.7.1@mx.test>
+MIME-Version: 1.0
+Content-Type: multipart/report; report-type=delivery-status; boundary="B1"
+
+--B1
+Content-Type: text/plain; charset=utf-8
+
+Message blocked.
+
+--B1
+Content-Type: message/delivery-status
+
+Reporting-MTA: dns; mx.test
+
+Final-Recipient: rfc822; boss@example.com
+Action: failed
+Status: 5.7.1
+Diagnostic-Code: smtp; 550 5.7.1 Message rejected due to local policy
+
+--B1
+Content-Type: text/rfc822-headers
+
+From: sender@rn.test
+To: boss@example.com
+Subject: Quick question
+Message-ID: <orig-1@rn.test>
+
+--B1--

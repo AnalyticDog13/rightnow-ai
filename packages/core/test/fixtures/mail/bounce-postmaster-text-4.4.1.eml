@@ -1,0 +1,8 @@
+From: postmaster@relay.example
+To: sender@rn.test
+Subject: Delivery Status Notification (Delay)
+Date: Mon, 15 Jun 2026 10:00:00 +0000
+Message-ID: <dsn-delay@relay.example>
+Content-Type: text/plain
+
+Delivery to slow@relay.example is delayed: 4.4.1 connection timed out.

@@ -1,0 +1,32 @@
+From: postmaster@corp2.example
+To: sender@rn.test
+Subject: Undeliverable: Hello
+Date: Mon, 15 Jun 2026 10:00:00 +0000
+Message-ID: <dsn-bounce-5.4.1-address-rejected@mx.test>
+MIME-Version: 1.0
+Content-Type: multipart/report; report-type=delivery-status; boundary="B1"
+
+--B1
+Content-Type: text/plain; charset=utf-8
+
+Recipient address rejected.
+
+--B1
+Content-Type: message/delivery-status
+
+Reporting-MTA: dns; mx.test
+
+Final-Recipient: rfc822; x@corp2.example
+Action: failed
+Status: 5.4.1
+Diagnostic-Code: smtp; 550 5.4.1 Recipient address rejected: Access denied
+
+--B1
+Content-Type: text/rfc822-headers
+
+From: sender@rn.test
+To: x@corp2.example
+Subject: Quick question
+Message-ID: <orig-1@rn.test>
+
+--B1--
