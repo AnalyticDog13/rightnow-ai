@@ -23,18 +23,36 @@ export async function suppress(
   return r.count;
 }
 
-/** True when the address, or its domain, is on the workspace blocklist. */
-export async function isSuppressed(tx: Tx, ws: string, email: string): Promise<boolean> {
-  const e = email.trim().toLowerCase();
-  const domain = e.slice(e.lastIndexOf("@") + 1);
-  return !!(await tx.suppression.findFirst({
+/** The lowercased addresses among `emails` that are blocked, by address or by domain (batch form for import, enrollment and send checks). */
+export async function suppressedEmails(
+  tx: Pick<Tx, "suppression">,
+  ws: string,
+  emails: string[],
+): Promise<Set<string>> {
+  const list = emails.map((e) => e.trim().toLowerCase());
+  const domainOf = (e: string) => e.slice(e.lastIndexOf("@") + 1);
+  const rows = await tx.suppression.findMany({
     where: {
       workspaceId: ws,
       OR: [
-        { kind: "EMAIL", valueHash: hashValue(e) },
-        { kind: "DOMAIN", valueHash: hashValue(domain) },
+        { kind: "EMAIL", valueHash: { in: list.map(hashValue) } },
+        {
+          kind: "DOMAIN",
+          valueHash: { in: [...new Set(list.map((e) => hashValue(domainOf(e))))] },
+        },
       ],
     },
-    select: { id: true },
-  }));
+    select: { kind: true, valueHash: true },
+  });
+  const hit = new Set(rows.map((r) => `${r.kind}:${r.valueHash}`));
+  return new Set(
+    list.filter(
+      (e) => hit.has(`EMAIL:${hashValue(e)}`) || hit.has(`DOMAIN:${hashValue(domainOf(e))}`),
+    ),
+  );
+}
+
+/** True when the address, or its domain, is on the workspace blocklist. */
+export async function isSuppressed(tx: Pick<Tx, "suppression">, ws: string, email: string) {
+  return (await suppressedEmails(tx, ws, [email])).size > 0;
 }

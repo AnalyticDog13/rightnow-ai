@@ -189,11 +189,21 @@ export const leadQuery = z
     custom: z.strictObject({ key: z.string().min(1), contains: z.string().min(1) }).optional(),
     customKey: z.string().min(1).optional(), // flat form for query strings
     customContains: z.string().min(1).optional(),
+    ids: z
+      .union([
+        z.array(z.string().min(1)).max(1000),
+        z
+          .string()
+          .min(1)
+          .transform((s) => s.split(",").slice(0, 1000)),
+      ])
+      .optional(), // comma separated in a query string: "export selected"
     cursor: z.string().min(1).optional(),
     take: z.coerce.number().int().min(1).max(100).optional(),
   })
-  .transform(({ customKey, customContains, ...q }) => ({
+  .transform(({ customKey, customContains, ids, ...q }) => ({
     ...q,
+    ...(ids && { ids }),
     ...(customKey && customContains && { custom: { key: customKey, contains: customContains } }),
   }));
 export type LeadQuery = z.input<typeof leadQuery>;
@@ -222,27 +232,31 @@ export async function listLeads(prisma: Db, ws: string, query: LeadQuery) {
         mode: "insensitive",
       },
     });
+  const where: Prisma.LeadWhereInput = {
+    workspaceId: ws,
+    deletedAt: null,
+    ...(q.ids && { id: { in: q.ids } }),
+    ...(q.tag && { tags: { has: q.tag } }),
+    ...(q.label && { labels: { has: q.label } }),
+    ...(q.interestStatus !== undefined && { interestStatus: q.interestStatus }),
+    ...(q.verificationStatus && { verificationStatus: q.verificationStatus }),
+    ...(q.ownerId && { ownerId: q.ownerId }),
+    ...(q.listId && { listMembers: { some: { listId: q.listId, list: { workspaceId: ws } } } }),
+    ...((q.lastContactedFrom || q.lastContactedTo) && {
+      lastContactedAt: { gte: q.lastContactedFrom, lte: q.lastContactedTo },
+    }),
+    AND: and,
+  };
   const rows = await prisma.lead.findMany({
-    where: {
-      workspaceId: ws,
-      deletedAt: null,
-      ...(q.tag && { tags: { has: q.tag } }),
-      ...(q.label && { labels: { has: q.label } }),
-      ...(q.interestStatus !== undefined && { interestStatus: q.interestStatus }),
-      ...(q.verificationStatus && { verificationStatus: q.verificationStatus }),
-      ...(q.ownerId && { ownerId: q.ownerId }),
-      ...(q.listId && { listMembers: { some: { listId: q.listId, list: { workspaceId: ws } } } }),
-      ...((q.lastContactedFrom || q.lastContactedTo) && {
-        lastContactedAt: { gte: q.lastContactedFrom, lte: q.lastContactedTo },
-      }),
-      AND: and,
-    },
+    where,
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     take: take + 1,
     ...(q.cursor && { cursor: { id: q.cursor } }),
   });
   const next = rows.length > take ? rows.pop()! : null;
-  return { leads: rows.map(toApiLead), nextCursor: next?.id ?? null };
+  // `total` is a database count of the whole filter, taken on the first page only
+  const total = q.cursor ? undefined : await prisma.lead.count({ where });
+  return { leads: rows.map(toApiLead), nextCursor: next?.id ?? null, total };
 }
 
 export async function softDeleteLead(

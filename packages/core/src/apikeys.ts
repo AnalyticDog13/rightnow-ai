@@ -61,7 +61,7 @@ export function scopeAllows(scopes: string[], scope: string) {
 
 /** Scopes offered when creating a key (`<resource>:all` stays valid for verification but is not offered). */
 export const API_SCOPES = [
-  ...["leads", "campaigns", "accounts", "inbox", "analytics"].flatMap((r) => [
+  ...["leads", "blocklist", "campaigns", "accounts", "inbox", "analytics"].flatMap((r) => [
     `${r}:read`,
     `${r}:write`,
   ]),
