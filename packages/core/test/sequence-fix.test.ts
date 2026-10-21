@@ -260,3 +260,43 @@ describe("fix round 1", () => {
     expect(await fail(importCampaign(P(), ws, null, big))).toMatchObject({ status: 413 });
   });
 });
+
+describe("fix round 2: merge respects suppression and the conflict rule", () => {
+  test("kept lead suppressed: moved enrollments stop; kept lead live elsewhere: stop unless duplicateOk", async () => {
+    // suppressed keep (suppression added after both leads exist, so enrollment itself was allowed)
+    const a = await camp();
+    const [keep1, from1] = [await lead("keep@blocked-merge.test"), await lead()];
+    await enroll(a, { leadIds: [from1] });
+    await addBlocklist(P(), ws, null, ["keep@blocked-merge.test"]);
+    await mergeLeads(P(), clock, ws, { keepId: keep1, mergeId: from1 });
+    expect((await cls(a))[0]).toMatchObject({
+      leadId: from1,
+      state: "STOPPED",
+      stopReason: "SUPPRESSED",
+    });
+
+    // keep is live in campaign B; merging A's enrollment onto it would break the rule
+    const [ca, cb, cc] = [await camp(), await camp(), await camp()];
+    await P().campaign.updateMany({
+      where: { id: { in: [ca, cb, cc] } },
+      data: { status: "ACTIVE" },
+    });
+    const [keep2, from2, from3] = [await lead(), await lead(), await lead()];
+    await enroll(cb, { leadIds: [keep2] });
+    await enroll(ca, { leadIds: [from2] });
+    await enroll(cc, { leadIds: [from3] });
+    await mergeLeads(P(), clock, ws, { keepId: keep2, mergeId: from2 });
+    expect((await cls(ca))[0]).toMatchObject({
+      leadId: from2,
+      state: "STOPPED",
+      stopReason: "SKIPPED",
+    });
+    // an enrollment made with allowDuplicates is exempt and moves
+    const [keep3, from4] = [await lead(), await lead()];
+    await enroll(cb, { leadIds: [keep3] });
+    await enroll(ca, { leadIds: [from4], allowDuplicates: true });
+    await mergeLeads(P(), clock, ws, { keepId: keep3, mergeId: from4 });
+    const moved = (await cls(ca)).find((r) => r.leadId === keep3);
+    expect(moved).toMatchObject({ state: "QUEUED", duplicateOk: true });
+  });
+});

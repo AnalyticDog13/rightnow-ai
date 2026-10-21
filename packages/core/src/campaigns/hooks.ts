@@ -82,7 +82,7 @@ export async function stopOpenCampaignLeads(
   tx: Tx,
   ws: string,
   leadIds: string[],
-  stopReason: "SKIPPED" | "MANUAL" = "SKIPPED",
+  stopReason: "SKIPPED" | "MANUAL" | "SUPPRESSED" = "SKIPPED",
   at = new Date(),
 ) {
   if (!leadIds.length) return;
@@ -98,4 +98,27 @@ export async function stopOpenCampaignLeads(
     data: { state: "STOPPED", stopReason, nextDueAt: null, completedAt: at },
   });
   await editHooks.cancelOpenRows(tx, ids);
+}
+
+/** Campaign statuses that count as live for the cross-campaign conflict rule (system-paused ones included). */
+export const LIVE_STATUSES = ["ACTIVE", "PAUSED", "ACCOUNTS_UNHEALTHY", "BOUNCE_PROTECT"] as const;
+
+/** The conflict rule: which of these leads are open in a live campaign other than `exceptCampaignId`. */
+export async function openInOtherLive(
+  tx: Tx,
+  ws: string,
+  leadIds: string[],
+  exceptCampaignId: string,
+): Promise<Set<string>> {
+  const rows = await tx.campaignLead.findMany({
+    where: {
+      workspaceId: ws,
+      leadId: { in: leadIds },
+      campaignId: { not: exceptCampaignId },
+      state: { in: [...OPEN] },
+      campaign: { workspaceId: ws, deletedAt: null, status: { in: [...LIVE_STATUSES] } },
+    },
+    select: { leadId: true },
+  });
+  return new Set(rows.map((r) => r.leadId));
 }

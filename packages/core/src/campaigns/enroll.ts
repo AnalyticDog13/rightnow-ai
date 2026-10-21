@@ -3,7 +3,7 @@ import { audit } from "../audit";
 import type { Clock } from "../clock";
 import { leadQuery, leadWhere, type LeadQuery } from "../leads/service";
 import { suppressedEmails } from "../leads/suppression";
-import { editHooks } from "./hooks";
+import { editHooks, openInOtherLive } from "./hooks";
 import { CampaignError, liveCampaign } from "./service";
 
 type Db = PrismaClient;
@@ -17,8 +17,6 @@ export type EnrollSkips = {
   suppressed: number;
   deleted: number;
 };
-/** Campaign statuses that count as live for the cross-campaign conflict rule (system-paused ones included). */
-export const LIVE_STATUSES = ["ACTIVE", "PAUSED", "ACCOUNTS_UNHEALTHY", "BOUNCE_PROTECT"] as const;
 export const noSkips = (): EnrollSkips => ({
   in_other_active_campaign: 0,
   already_in_campaign: 0,
@@ -58,19 +56,15 @@ export async function enrollBatch(
     ),
     allowDuplicates
       ? []
-      : tx.campaignLead.findMany({
-          where: {
-            workspaceId: ws,
-            leadId: { in: leads.map((l) => l.id) },
-            campaignId: { not: campaignId },
-            state: { in: ["QUEUED", "ACTIVE", "PAUSED"] },
-            campaign: { workspaceId: ws, deletedAt: null, status: { in: [...LIVE_STATUSES] } },
-          },
-          select: { leadId: true },
-        }),
+      : openInOtherLive(
+          tx,
+          ws,
+          leads.map((l) => l.id),
+          campaignId,
+        ),
   ]);
   const inThis = new Set(there.map((r) => r.leadId));
-  const inOther = new Set(others.map((r) => r.leadId));
+  const inOther = others instanceof Set ? others : new Set<string>();
   const take: string[] = [];
   for (const l of leads) {
     if (inThis.has(l.id)) skipped.already_in_campaign++;

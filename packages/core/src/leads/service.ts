@@ -5,8 +5,8 @@ import { CAMPAIGN_LEAD_STATUSES, campaignLeadStatusWhere } from "../campaigns/le
 import { audit } from "../audit";
 import type { Clock } from "../clock";
 import { companyDomainOf } from "./domain";
-import { editHooks, stopOpenCampaignLeads } from "../campaigns/hooks";
-import { hashValue, suppress } from "./suppression";
+import { editHooks, openInOtherLive, stopOpenCampaignLeads } from "../campaigns/hooks";
+import { hashValue, suppress, suppressedEmails } from "./suppression";
 
 type Db = PrismaClient;
 type Tx = Prisma.TransactionClient;
@@ -412,7 +412,10 @@ export async function mergeLeads(
       skipDuplicates: true,
     });
     await tx.leadListMember.deleteMany({ where: { leadId: mergeId } });
-    // Enrollments follow the kept lead unless it is already in that campaign (then they stop). Rows are re-planned.
+    // Enrollments follow the kept lead unless it is blocklisted, already in that campaign, or the move would break the
+    // cross-campaign rule (same check and lock as enrollment; duplicateOk exempts). The rest stop. Rows are re-planned.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(726004, hashtext(${ws}))`;
+    const blocked = (await suppressedEmails(tx, ws, [keep.email])).size > 0;
     const there = new Set(
       (await tx.campaignLead.findMany({ where: { workspaceId: ws, leadId: keepId } })).map(
         (c) => c.campaignId,
@@ -421,12 +424,15 @@ export async function mergeLeads(
     const open = await tx.campaignLead.findMany({
       where: { workspaceId: ws, leadId: mergeId, state: { in: ["QUEUED", "ACTIVE", "PAUSED"] } },
     });
-    const moved = open.filter((c) => !there.has(c.campaignId)).map((c) => c.id);
-    if (moved.length) {
-      await tx.campaignLead.updateMany({ where: { id: { in: moved } }, data: { leadId: keepId } });
-      await editHooks.cancelOpenRows(tx, moved);
+    const moved: string[] = [];
+    for (const c of open) {
+      if (blocked || there.has(c.campaignId)) continue;
+      if (!c.duplicateOk && (await openInOtherLive(tx, ws, [keepId], c.campaignId)).size) continue;
+      await tx.campaignLead.update({ where: { id: c.id }, data: { leadId: keepId } });
+      moved.push(c.id);
     }
-    await stopOpenCampaignLeads(tx, ws, [mergeId], "SKIPPED", clock.now());
+    if (moved.length) await editHooks.cancelOpenRows(tx, moved);
+    await stopOpenCampaignLeads(tx, ws, [mergeId], blocked ? "SUPPRESSED" : "SKIPPED", clock.now());
     await tx.lead.update({
       where: { id: mergeId },
       data: { deletedAt: clock.now(), mergedIntoId: keepId },
