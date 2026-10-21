@@ -309,13 +309,14 @@
    "id": "P3-T06",
    "phase": 3,
    "title": "Sequences: steps (minute/hour/day delays), variants (≤26), subsequences with triggers and pre-delay; enrollment from lists/filters with cross-campaign conflict check",
-   "status": "in_progress",
+   "status": "done",
    "deps": [
     "P3-T05"
    ],
    "model": "sonnet",
-   "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-3.md; tests listed there pass; from P3-T02: import campaign dedupe (campaignId, skipIfInCampaign → exists_in_campaign, attach to campaign) replacing the 400 placeholder; from P3-T05: implement real contentIssues and wire into launch route"
+   "commit": "d7822fd..5fa4288",
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-3.md; tests listed there pass; from P3-T02: import campaign dedupe (campaignId, skipIfInCampaign → exists_in_campaign, attach to campaign) replacing the 400 placeholder; from P3-T05: implement real contentIssues and wire into launch route",
+   "review": "3 fix rounds (contract, active-campaign edit guards, merge/delete stop enrollments, conflict rule + launch re-check, merge move checks, lock order); clean"
   },
   {
    "id": "P3-T07",
@@ -348,7 +349,7 @@
    "id": "P3-T09",
    "phase": 3,
    "title": "Quota + dispatcher claim exactly as specified above",
-   "status": "todo",
+   "status": "in_progress",
    "deps": [
     "P3-T08"
    ],

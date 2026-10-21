@@ -197,3 +197,6 @@ DST spring-forward/fall-back, overnight windows, multi-timezone earliest, dayKey
 
 ## 2026-10-21 · P3-T08 unsubscribe/footer/physical address · task reviewer (sonnet, compliance lens) · 1 fix round → **Approved**
 HMAC tokens (constant-time, no enumeration), RFC 8058 one-click POST (no cookies, idempotent, enrollments UNSUBSCRIBED), GET never unsubscribes, footer always carries address, List-Unsubscribe(-Post) per mode, lock order + retry.
+
+## 2026-10-21 · P3-T06 sequences/enrollment/duplicate/export · task reviewer (sonnet) · 3 fix rounds → **Approved**
+Claim re-check contract for T09/T10b, active-campaign edit guards, merge/delete stop enrollments, conflict rule covers unhealthy states + launch re-check, merge move honors suppression/conflict, lock order 726004 before Lead rows.
