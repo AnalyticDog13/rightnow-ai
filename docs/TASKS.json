@@ -468,7 +468,7 @@
    "deps": [
     "P4-T02"
    ],
-   "model": "sonnet",
+   "model": "opus",
    "commit": null,
    "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-4.md; tests listed there pass"
   },
@@ -478,7 +478,7 @@
    "title": "Event store + open/click tracking (signed tokens, open-redirect protection, proxy/bot → isEstimated, custom tracking domain)",
    "status": "todo",
    "deps": [
-    "P4-T03"
+    "P4-T01"
    ],
    "model": "sonnet",
    "commit": null,
@@ -490,9 +490,10 @@
    "title": "Sync job (incremental + full + historical import + outside-app sends), sets `lastSyncCompletedAt`; cap + escalate persistent transient read errors (from P2-T03); Graph delta \"changed\" for moves to Deleted Items (from P2-T05); phase-2 gate I-7 (unify stale page-token signalling) + I-9 (~20 MB page cap for Gmail/Graph)",
    "status": "todo",
    "deps": [
+    "P4-T03",
     "P4-T04"
    ],
-   "model": "sonnet",
+   "model": "opus",
    "commit": null,
    "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-4.md; tests listed there pass; from Phase 3 gate: must land AFTER reply-stop (P4-T03) and mailto-unsubscribe processing — writing lastSyncCompletedAt is what enables real campaign sends (D16); decide whether the re-warm cap ships with it; BLOCKING before writing freshness (gate re-review N-1): a 4xx on the To address with the Cc accepted is retried up to 5 times, so Cc/Bcc can get several copies that are not counted in usage (provider.ts:205, sender.ts failed()) — fail that send without retry or record Cc/Bcc usage; (N-3) activate() must refuse or not reopen a COMPLETED campaign whose end date has passed"
   },
@@ -514,7 +515,7 @@
    "title": "Freshness gate + downtime simulation tests: cold boot and sleep-without-restart × 1/7/30 days with replies (incl. cross-mailbox company reply), bounces, unsubscribes; history expiry; `docs/ops/OFFLINE_RECOVERY.md` (non-reconstructable events)",
    "status": "todo",
    "deps": [
-    "P4-T06"
+    "P4-T05"
    ],
    "model": "opus",
    "commit": null,
@@ -526,7 +527,7 @@
    "title": "Unified inbox UI (sanitized HTML, attachments, compose, lead panel, views, macros)",
    "status": "todo",
    "deps": [
-    "P4-T07"
+    "P4-T06"
    ],
    "model": "sonnet",
    "commit": null,
