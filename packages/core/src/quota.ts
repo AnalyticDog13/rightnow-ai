@@ -43,7 +43,7 @@ export type UsageRef = {
 };
 
 // Always by the stored day keys, never "today": a send that completes after midnight is credited to its claim day.
-// Lock order I4: AccountDailyUsage -> CampaignDailyUsage -> WorkspaceDailyUsage.
+// Lock order D21: ScheduledMessage -> CampaignLead -> AccountDailyUsage -> CampaignDailyUsage -> WorkspaceDailyUsage.
 async function apply(tx: Tx, r: UsageRef, reserved: "keep" | "release", sent: boolean) {
   const u = r.reservedUnits;
   const res = reserved === "release" ? u : 0;

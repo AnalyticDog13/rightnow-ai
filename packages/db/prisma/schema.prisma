@@ -733,11 +733,14 @@ model ScheduledMessage {
   lastSearchAt      DateTime?
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @default(now()) @updatedAt
+  // partial ("dueAt", id) WHERE status = 'SCHEDULED' for the claim lives in the send_queue_indexes migration (raw SQL)
 
+  @@unique([campaignLeadId, stepId]) // one row per (lead, step) at the DB level, not only via idempotencyKey
   @@index([status, dueAt])
-  @@index([campaignLeadId])
   @@index([accountId, status])
   @@index([campaignId, status])
+  @@index([stepId])
+  @@index([variantId])
 }
 
 // Install-level: written only by scripts/live-verify.ts when every live step passes (D17).

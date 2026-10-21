@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { AccountProvider, Prisma, PrismaClient } from "@rightnow/db/client";
+import { Prisma, type AccountProvider, type PrismaClient } from "@rightnow/db/client";
 import { newMessageId } from "@rightnow/providers";
 import type { Clock } from "./clock";
 import { isSuppressed } from "./leads/suppression";
@@ -27,12 +27,19 @@ export type Claimed = UsageRef & {
 const NO_CAP = 2147483647;
 const CLAIM_ERROR_PUSH_MS = 3600_000;
 const MAX_CLAIM_ERRORS = 5;
+const LOCK_TIMEOUT_MS = 2_000;
+const BUSY_PUSH_MS = 60_000;
 const ALL: AccountProvider[] = ["GMAIL", "MICROSOFT", "SMTP"];
 
 /** Deadlock (40P01) or serialization failure (40001), however Prisma or the pg adapter surfaces it. */
 export const isRetryable = (e: unknown) => {
   const x = e as { code?: string; message?: string; meta?: { code?: string } } | null;
   return x?.code === "P2034" || /40P01|40001/.test(`${x?.code} ${x?.meta?.code} ${x?.message}`);
+};
+
+const isLockTimeout = (e: unknown) => {
+  const x = e as { code?: string; message?: string; meta?: { code?: string } } | null;
+  return /55P03|lock timeout/.test(`${x?.code} ${x?.meta?.code} ${x?.message}`);
 };
 
 /** Re-runs the WHOLE transaction `f` on a deadlock or serialization failure, at most `tries` times. */
@@ -60,48 +67,8 @@ export async function sendableProviders(
 
 const asDate = (ymd: string) => new Date(`${ymd}T00:00:00Z`);
 
-/**
- * Claims due rows one message per transaction until `limit` are SENDING or nothing is claimable. Rows pushed back
- * (window, quota, gap race), cancelled (suppression, stale) or isolated (claim error) do not count (M2); each of those
- * moves the row out of the due set, so the loop ends.
- *
- * Lock order in the claim transaction: ScheduledMessage (SKIP LOCKED) -> CampaignLead (FOR NO KEY UPDATE, the I1
- * re-checks) -> Lead/Suppression (reads only, unless the lead is stopped) -> AccountDailyUsage -> CampaignDailyUsage ->
- * WorkspaceDailyUsage -> EmailAccount. No network call happens here.
- */
-export async function claimDue(db: PrismaClient, clock: Clock, o: ClaimOpts): Promise<Claimed[]> {
-  const out: Claimed[] = [];
-  while (out.length < o.limit) {
-    const picked: { id?: string } = {};
-    let r: Claimed | "skip" | null;
-    try {
-      r = await withTxRetry(() => {
-        picked.id = undefined;
-        return claimOne(db, clock.now(), o, picked);
-      });
-    } catch (e) {
-      // I5: a row that breaks its claim is pushed back and counted; it never blocks the rows behind it
-      if (!picked.id || isRetryable(e)) throw e;
-      await isolate(db, clock.now(), picked.id, e);
-      continue;
-    }
-    if (r === null) break;
-    if (r !== "skip") out.push(r);
-  }
-  return out;
-}
-
-async function claimOne(
-  db: PrismaClient,
-  now: Date,
-  o: ClaimOpts,
-  picked: { id?: string },
-): Promise<Claimed | "skip" | null> {
-  const ts = now.toISOString(); // ::timestamp drops the Z: columns hold UTC wall time
-  return db.$transaction(
-    async (tx) => {
-      const [sel] = await tx.$queryRaw<{ id: string; campaignLeadId: string }[]>`
-        SELECT sm.id, sm."campaignLeadId"
+/** FROM + WHERE of a claimable row (the brief's claim SQL), shared by the SELECT and the re-check under the lock. */
+const eligible = (ts: string, o: ClaimOpts) => Prisma.sql`
         FROM "ScheduledMessage" sm
         JOIN "CampaignLead" cl ON cl.id = sm."campaignLeadId"
         JOIN "SequenceStep" st ON st.id = sm."stepId"
@@ -123,44 +90,97 @@ async function claimOne(
                 SELECT 1 FROM "CampaignAccount" ca2 JOIN "EmailAccount" a2 ON a2.id = ca2."accountId"
                 WHERE ca2."campaignId" = c.id AND a2."deletedAt" IS NULL
                   AND (a2.lifecycle = 'NEEDS_ATTENTION' OR a2."lastSyncCompletedAt" IS NULL
-                       OR a2."lastSyncCompletedAt" < ${ts}::timestamp - make_interval(secs => ${o.stalenessSec}::int))))
+                       OR a2."lastSyncCompletedAt" < ${ts}::timestamp - make_interval(secs => ${o.stalenessSec}::int))))`;
+
+/**
+ * Claims due rows one message per transaction until `limit` are SENDING or nothing is claimable. Rows pushed back
+ * (window, quota, gap race), cancelled (suppression, stale) or isolated (claim error) do not count (M2); each of those
+ * moves the row out of the due set, so the loop ends.
+ *
+ * Lock order (D21, the global send-state order): ScheduledMessage (SKIP LOCKED) -> CampaignLead (FOR NO KEY UPDATE, the
+ * I1 re-checks) -> AccountDailyUsage -> CampaignDailyUsage -> WorkspaceDailyUsage -> EmailAccount. Lead and Suppression
+ * are only read (a suppressed lead's CampaignLead, already locked, is stopped). No network call happens here.
+ */
+export async function claimDue(db: PrismaClient, clock: Clock, o: ClaimOpts): Promise<Claimed[]> {
+  const out: Claimed[] = [];
+  while (out.length < o.limit) {
+    const picked: { id?: string } = {};
+    let r: Claimed | "skip" | null;
+    try {
+      r = await withTxRetry(() => {
+        picked.id = undefined;
+        return claimOne(db, clock.now(), o, picked);
+      });
+    } catch (e) {
+      // Rows already in `out` are committed SENDING: never lose them, whatever happens next.
+      try {
+        if (!picked.id || isRetryable(e)) throw e;
+        // I5: a row that breaks its claim is pushed back; it never blocks the rows behind it
+        if (isLockTimeout(e)) await pushBusy(db, clock.now(), picked.id);
+        else await isolate(db, clock.now(), picked.id, e);
+        continue;
+      } catch (fatal) {
+        if (!out.length) throw fatal;
+        console.error("claimDue stopped early; returning the rows already claimed", fatal);
+        return out;
+      }
+    }
+    if (r === null) break;
+    if (r !== "skip") out.push(r);
+  }
+  return out;
+}
+
+async function claimOne(
+  db: PrismaClient,
+  now: Date,
+  o: ClaimOpts,
+  picked: { id?: string },
+): Promise<Claimed | "skip" | null> {
+  const ts = now.toISOString(); // ::timestamp drops the Z: columns hold UTC wall time
+  return db.$transaction(
+    async (tx) => {
+      // a long lock wait is contention, not a broken row: it fails fast with 55P03 and is pushed back uncounted
+      await tx.$executeRawUnsafe(`SET LOCAL lock_timeout = '${LOCK_TIMEOUT_MS}ms'`);
+      const [sel] = await tx.$queryRaw<{ id: string; campaignLeadId: string }[]>`
+        SELECT sm.id, sm."campaignLeadId" ${eligible(ts, o)}
         ORDER BY sm."dueAt", sm.id
         FOR UPDATE OF sm SKIP LOCKED LIMIT 1`;
       if (!sel) return null;
       picked.id = sel.id;
       // I1: the SELECT read an unlocked snapshot of the lead; re-check it under its row lock (waits for a concurrent edit)
       await tx.$queryRaw`SELECT 1 FROM "CampaignLead" WHERE id = ${sel.campaignLeadId} FOR NO KEY UPDATE`;
-      const m = await tx.scheduledMessage.findUniqueOrThrow({
-        where: { id: sel.id },
-        include: {
-          step: true,
-          variant: true,
-          campaignLead: { include: { lead: true } },
-          campaign: { include: { schedules: true } },
-          account: true,
-          workspace: true,
-        },
-      });
-      const { campaignLead: cl, campaign: c, account: a, workspace: w } = m;
+      // loaded one by one: a multi-relation include issues concurrent queries on the transaction's connection
+      const m = await tx.scheduledMessage.findUniqueOrThrow({ where: { id: sel.id } });
+      const step = await tx.sequenceStep.findUniqueOrThrow({ where: { id: m.stepId } });
+      const variant = m.variantId
+        ? await tx.stepVariant.findUnique({ where: { id: m.variantId } })
+        : null;
+      const cl = await tx.campaignLead.findUniqueOrThrow({ where: { id: m.campaignLeadId } });
+      const lead = await tx.lead.findUniqueOrThrow({ where: { id: cl.leadId } });
+      const c = await tx.campaign.findUniqueOrThrow({ where: { id: m.campaignId } });
+      const schedules = await tx.campaignSchedule.findMany({ where: { campaignId: c.id } });
+      const a = await tx.emailAccount.findUniqueOrThrow({ where: { id: m.accountId } });
+      const w = await tx.workspace.findUniqueOrThrow({ where: { id: m.workspaceId } });
       const mine = { id: m.id, status: "SCHEDULED" as const };
       const set = (data: Prisma.ScheduledMessageUpdateManyMutationInput) =>
         tx.scheduledMessage.updateMany({ where: mine, data });
 
-      const step1 = m.step.subsequenceId === null && m.step.order === 1;
+      const step1 = step.subsequenceId === null && step.order === 1;
       if (
         !(cl.state === "ACTIVE" || (cl.state === "QUEUED" && step1)) ||
         cl.currentStepId !== m.stepId ||
-        m.step.deletedAt ||
-        !m.variant?.active
+        step.deletedAt ||
+        !variant?.active
       ) {
         // uncertainAt stays NULL, so the planner may re-plan the lead's current step
         await set({ status: "CANCELLED", error: "stale" });
         return "skip";
       }
       if (
-        cl.lead.deletedAt ||
-        cl.lead.verificationStatus === "INVALID" ||
-        (await isSuppressed(tx, m.workspaceId, cl.lead.email))
+        lead.deletedAt ||
+        lead.verificationStatus === "INVALID" ||
+        (await isSuppressed(tx, m.workspaceId, lead.email))
       ) {
         await set({ status: "CANCELLED", error: "suppressed" });
         await tx.campaignLead.updateMany({
@@ -169,7 +189,13 @@ async function claimOne(
         });
         return "skip";
       }
-      const windows: Window[] = c.schedules.map((s) => ({
+      // The SELECT's campaign/account/workspace checks came from its snapshot; a pause, stale sync or unassignment that
+      // committed while we waited for the CampaignLead lock must still win. Such a row stays SCHEDULED, untouched.
+      const [still] = await tx.$queryRaw<
+        unknown[]
+      >`SELECT 1 ${eligible(ts, o)} AND sm.id = ${m.id}`;
+      if (!still) return "skip";
+      const windows: Window[] = schedules.map((s) => ({
         timezone: s.timezone,
         days: s.days,
         from: s.from,
@@ -339,4 +365,12 @@ async function isolate(db: PrismaClient, now: Date, id: string, e: unknown) {
       });
     }),
   );
+}
+
+/** Lock contention: retry the row a little later without counting a claim error. */
+async function pushBusy(db: PrismaClient, now: Date, id: string) {
+  await db.scheduledMessage.updateMany({
+    where: { id, status: "SCHEDULED" },
+    data: { dueAt: new Date(now.getTime() + BUSY_PUSH_MS) },
+  });
 }

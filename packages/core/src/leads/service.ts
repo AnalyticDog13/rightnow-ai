@@ -82,10 +82,10 @@ async function assertMembers(db: Tx, ws: string, ids: string[]) {
 }
 
 /** 409 while a send for any of these leads is in flight or of unknown outcome. Locks those rows (I4: ScheduledMessage first). */
-async function assertNoSendInFlight(tx: Tx, leadIds: string[]) {
+async function assertNoSendInFlight(tx: Tx, ws: string, leadIds: string[]) {
   const rows = await tx.$queryRaw<{ status: string }[]>`
     SELECT m."status"::text AS status FROM "ScheduledMessage" m
-    WHERE m."campaignLeadId" IN (SELECT id FROM "CampaignLead" WHERE "leadId" = ANY(${leadIds}))
+    WHERE m."campaignLeadId" IN (SELECT id FROM "CampaignLead" WHERE "workspaceId" = ${ws} AND "leadId" = ANY(${leadIds}))
     FOR UPDATE OF m`;
   if (rows.some((r) => r.status === "SENDING" || r.status === "UNCERTAIN"))
     throw new LeadError(409, "send_in_progress");
@@ -323,7 +323,7 @@ export async function gdprDeleteLead(
       set = [...set, ...more];
     }
     const ids = set.map((l) => l.id);
-    await assertNoSendInFlight(tx, ids);
+    await assertNoSendInFlight(tx, ws, ids);
     // Lock order: Suppression writes before the Lead delete (as in updateLead).
     const hashes = uniq(set.map((l) => hashValue(l.email)));
     await tx.suppression.createMany({
@@ -384,7 +384,7 @@ export async function mergeLeads(
     // Lock order: enrollment lock 726004 first (as enrollBatch does), then Lead rows. Enrollment's CampaignLead
     // insert key-share-locks Lead, so the reverse order would deadlock against a concurrent enroll.
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(726004, hashtext(${ws}))`;
-    await assertNoSendInFlight(tx, [keepId, mergeId]); // I4: ScheduledMessage before Lead
+    await assertNoSendInFlight(tx, ws, [keepId, mergeId]); // I4: ScheduledMessage before Lead
     // Lock both rows in id order, then re-check they are live: concurrent A<-B and B<-A cannot both win.
     await tx.$queryRaw`SELECT id FROM "Lead" WHERE "workspaceId" = ${ws} AND id = ANY(${[keepId, mergeId]}) ORDER BY id FOR UPDATE`;
     const keep = await liveLead(tx, ws, keepId);

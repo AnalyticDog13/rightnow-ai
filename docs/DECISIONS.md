@@ -101,3 +101,6 @@ These are not built, or are forced, because a Global Constraint outranks the spe
 - `UNSUBSCRIBE` is removable one at a time by an ADMIN, and only with `resubscribeAttestation` (a non-empty reason plus `recipientConsent: true`). The audit row holds the hash and the attestation.
 - `HARD_BOUNCE` is removable one at a time by an ADMIN with `confirm`. `NOT_INTERESTED` and `MANUAL` need ADMIN only.
 - Bulk delete and "clear" touch `MANUAL` entries only, and audit a capped list of hashes plus the true count.
+
+## 2026-10-21 · D21 · Send-state lock order (amends phase-3 I4)
+Every transaction that touches send state locks `ScheduledMessage` → `CampaignLead` → `AccountDailyUsage` → `CampaignDailyUsage` → `WorkspaceDailyUsage` → `EmailAccount` → `Lead`/`Suppression`. The original I4 put `CampaignLead` after `EmailAccount`. The claim must re-check the CampaignLead under its lock before it reserves, and the planner locks CampaignLead before it writes `CampaignDailyUsage.newLeads`. Any transaction taking usage rows before CampaignLead would therefore deadlock against the planner, so the claim, the sender and the planner must all use this one order. The planner keeps its exception for new or revivable `ScheduledMessage` rows only, because no claim can hold those.

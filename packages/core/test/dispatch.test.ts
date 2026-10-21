@@ -678,6 +678,151 @@ describe("claimDue: gates", () => {
       stopReason: "SEND_FAILED",
     });
   });
+
+  test("a pause that commits while the claim waits on the CampaignLead lock wins (no SENDING, no reservation)", async () => {
+    const s = await seedCampaign(P(), { at: T, rows: 1 });
+    const id = s.rows[0]!.id;
+    const cl = s.leads[0]!.cl.id;
+    const touch = (tx: Prisma.TransactionClient) =>
+      tx.campaignLead.update({ where: { id: cl }, data: { nextDueAt: T } });
+    const paused = await claimWhileLocked(async (tx) => {
+      await touch(tx);
+      await tx.campaign.update({ where: { id: s.campaign.id }, data: { status: "PAUSED" } });
+    }, 1);
+    expect(paused).toEqual([]);
+    expect(await row(id)).toMatchObject({ status: "SCHEDULED", dueAt: T, claimErrors: 0 });
+    await P().campaign.update({ where: { id: s.campaign.id }, data: { status: "ACTIVE" } });
+    const acctPaused = await claimWhileLocked(async (tx) => {
+      await touch(tx);
+      await tx.emailAccount.update({
+        where: { id: s.rows[0]!.accountId },
+        data: { lifecycle: "PAUSED" },
+      });
+    }, 1);
+    expect(acctPaused).toEqual([]);
+    expect(await row(id)).toMatchObject({ status: "SCHEDULED", dueAt: T });
+    expect(await P().accountDailyUsage.count()).toBe(0);
+    await P().emailAccount.update({
+      where: { id: s.rows[0]!.accountId },
+      data: { lifecycle: "ACTIVE" },
+    });
+    expect(await claimDue(P(), fixedClock(T), opts())).toHaveLength(1);
+  });
+
+  test("campaign cap interleaving: two claims queue on the campaign usage row, exactly one wins", async () => {
+    const s = await seedCampaign(P(), { at: T, rows: 2, campaign: { dailyLimit: 5 } });
+    const key = { campaignId: s.campaign.id, day: day("2026-10-20") };
+    await P().campaignDailyUsage.create({ data: { ...key, sent: 4 } });
+    const got = await claimWhileLocked(
+      (tx) =>
+        tx.$queryRaw`SELECT 1 FROM "CampaignDailyUsage" WHERE "campaignId" = ${s.campaign.id} FOR UPDATE`,
+      2,
+      2,
+    );
+    expect(got).toHaveLength(1);
+    const u = await P().campaignDailyUsage.findUniqueOrThrow({ where: { campaignId_day: key } });
+    expect([u.sent, u.reserved]).toEqual([4, 1]);
+    expect(
+      (await P().accountDailyUsage.aggregate({ _sum: { reserved: true } }))._sum.reserved,
+    ).toBe(1);
+  });
+
+  test("workspace cap interleaving: two claims queue on the workspace usage row, exactly one wins", async () => {
+    const s = await seedCampaign(P(), { at: T, rows: 2, workspace: { dailyCap: 5 } });
+    const key = { workspaceId: s.ws, day: day("2026-10-20") };
+    await P().workspaceDailyUsage.create({ data: { ...key, sent: 4 } });
+    const got = await claimWhileLocked(
+      (tx) =>
+        tx.$queryRaw`SELECT 1 FROM "WorkspaceDailyUsage" WHERE "workspaceId" = ${s.ws} FOR UPDATE`,
+      2,
+      2,
+    );
+    expect(got).toHaveLength(1);
+    const u = await P().workspaceDailyUsage.findUniqueOrThrow({ where: { workspaceId_day: key } });
+    expect([u.sent, u.reserved]).toEqual([4, 1]);
+    const camp = await P().campaignDailyUsage.aggregate({ _sum: { reserved: true } });
+    expect(camp._sum.reserved).toBe(1);
+  });
+
+  test("a lock wait past lock_timeout is contention: pushed back a minute, not a claim error", async () => {
+    const s = await seedCampaign(P(), { at: T, rows: 1 });
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    let locked!: () => void;
+    const held = new Promise<void>((r) => (locked = r));
+    const holder = client().$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT 1 FROM "CampaignLead" WHERE id = ${s.leads[0]!.cl.id} FOR UPDATE`;
+        locked();
+        await gate;
+      },
+      { timeout: 60_000 },
+    );
+    await held;
+    expect(await claimDue(client(), fixedClock(T), opts())).toEqual([]);
+    release();
+    await holder;
+    expect(await row(s.rows[0]!.id)).toMatchObject({
+      status: "SCHEDULED",
+      claimErrors: 0,
+      dueAt: new Date(T.getTime() + 60_000),
+    });
+  });
+
+  test("never loses a committed claim: a bad row mid-batch is isolated, a late fatal error returns what was claimed", async () => {
+    const good = await seedCampaign(P(), { at: T, rows: 2 });
+    const bad = await seedCampaign(P(), { at: T, rows: 1 });
+    await P().scheduledMessage.update({
+      where: { id: good.rows[0]!.id },
+      data: { dueAt: new Date(T.getTime() - 120_000) },
+    });
+    await P().scheduledMessage.update({
+      where: { id: bad.rows[0]!.id },
+      data: { dueAt: new Date(T.getTime() - 60_000) },
+    });
+    await P()
+      .$executeRaw`UPDATE "CampaignSchedule" SET days = 0 WHERE "campaignId" = ${bad.campaign.id}`;
+    const got = await claimDue(P(), fixedClock(T), opts());
+    expect(got.map((c) => c.id)).toEqual([good.rows[0]!.id, good.rows[1]!.id]);
+    expect(await row(bad.rows[0]!.id)).toMatchObject({ status: "SCHEDULED", claimErrors: 1 });
+
+    const more = await seedCampaign(P(), { at: T, rows: 3 });
+    const orig = P().$transaction.bind(P());
+    const tx = vi
+      .spyOn(P(), "$transaction")
+      .mockImplementationOnce(orig as never)
+      .mockImplementationOnce(() => Promise.reject(new Error("pool timeout")));
+    const kept = await claimDue(P(), fixedClock(T), opts());
+    tx.mockRestore();
+    expect(kept.map((c) => c.id)).toEqual([more.rows[0]!.id]);
+    expect(await row(more.rows[0]!.id)).toMatchObject({
+      status: "SENDING",
+      claimToken: kept[0]!.claimToken,
+    });
+    await expect(
+      (async () => {
+        vi.spyOn(P(), "$transaction").mockRejectedValueOnce(new Error("pool timeout"));
+        return claimDue(P(), fixedClock(T), opts());
+      })(),
+    ).rejects.toThrow("pool timeout"); // nothing claimed yet: the error surfaces
+    vi.restoreAllMocks();
+  });
+
+  test("one row per (campaignLeadId, stepId) is enforced by the database", async () => {
+    const s = await seedCampaign(P(), { at: T, rows: 1 });
+    const r = s.rows[0]!;
+    await expect(
+      planRow(P(), {
+        workspaceId: s.ws,
+        campaignId: s.campaign.id,
+        campaignLeadId: r.campaignLeadId,
+        stepId: r.stepId,
+        accountId: r.accountId,
+        dueAt: T,
+        idempotencyKey: "different-key",
+      }),
+    ).rejects.toMatchObject({ code: "P2002" });
+  });
 });
 
 describe("quota helpers", () => {

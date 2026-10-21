@@ -10,7 +10,7 @@ type Tx = Prisma.TransactionClient;
  * A row skipped because a claim holds it is NOT cancelled by these hooks, so the CLAIM must protect itself:
  *
  * CLAIM-SIDE RE-CHECKS (T09, binding). Inside the claim transaction, after locking the ScheduledMessage row and then
- * the CampaignLead row (I4 order), verify ALL of the following, else CANCEL the row (uncertainAt NULL) and move on:
+ * the CampaignLead row (D21 order), verify ALL of the following, else CANCEL the row (uncertainAt NULL) and move on:
  *   - cl.state = 'ACTIVE' (QUEUED only for a step-1 row of the main sequence; PAUSED, STOPPED, COMPLETED reject);
  *   - sm.stepId = cl.currentStepId (a lead moved to a subsequence, or advanced, rejects every old-flow row);
  *   - Lead.deletedAt IS NULL (merged and deleted leads are never mailed);
