@@ -1,17 +1,19 @@
 import { execFileSync, spawn } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import dbSetup from "@rightnow/db/global-setup";
 import { E2E_PORT, SETUP_TOKEN } from "./env";
+import { STATE } from "./session";
 
 const webDir = fileURLToPath(new URL("..", import.meta.url));
 
 // Boots the shared embedded-postgres harness (migrated template DB), then `next dev` against it
 // (`E2E_PROD=1` runs `next start` instead; build first. Local `next dev` fails on some machines).
 export default async function setup() {
+  rmSync(STATE, { force: true });
   let base = "";
   const stopDb = await dbSetup({ provide: (_k: string, v: string) => (base = v) } as never);
   const env = {

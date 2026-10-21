@@ -1,28 +1,11 @@
-import { existsSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { expect, test } from "@playwright/test";
+import { ensureSession, STATE } from "./session";
 
-// Runs after auth.spec. Reuses the session saved by accounts-google.spec (sign-in allows 5 attempts a minute). MAIL_PROVIDER_FAKE=1 (global-setup): the send happens in the web server, the
+// Runs after auth.spec. Shares the owner session from session.ts. MAIL_PROVIDER_FAKE=1 (global-setup): the send happens in the web server, the
 // assertion reads the mailbox file back through /_fake/mailbox, the same path a worker process would use.
-const STATE = join(tmpdir(), "rightnow-e2e-ada.json");
 const EMAIL = "testsend@example.test";
 test.use({ storageState: STATE });
-test.beforeAll(async ({ browser }, info) => {
-  if (existsSync(STATE)) return;
-  const ctx = await browser.newContext({
-    baseURL: info.project.use.baseURL,
-    storageState: undefined,
-  });
-  const page = await ctx.newPage();
-  await page.goto("/sign-in");
-  await page.getByLabel("Email").fill("ada@example.com");
-  await page.getByLabel("Password").fill("correct horse battery");
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
-  await ctx.storageState({ path: STATE });
-  await ctx.close();
-});
+test.beforeAll(async ({ playwright, baseURL }) => ensureSession(playwright, baseURL!));
 
 test("send is disabled until authorized; success toast; the mailbox holds a marked message", async ({
   page,

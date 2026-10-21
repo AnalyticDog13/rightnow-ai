@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { createPrisma } from "@rightnow/db/create";
+import { ensureSession, STATE } from "./session";
 
 // Runs after auth.spec (project dependency). Accounts are seeded straight into the e2e database.
 const ANN = "ann@acme-e2e.io";
@@ -33,27 +34,11 @@ test.beforeAll(async () => {
   await prisma.$disconnect();
 });
 
-// Sign-in is rate limited (5 per minute), so sign in once over the API and reuse the cookies.
-let cookies: Awaited<
-  ReturnType<import("@playwright/test").APIRequestContext["storageState"]>
->["cookies"] = [];
-test.beforeAll(async ({ playwright, baseURL }) => {
-  const api = await playwright.request.newContext({ baseURL });
-  for (let i = 0; i < 8; i++) {
-    const r = await api.post("/api/auth/sign-in/email", {
-      data: { email: "ada@example.com", password: "correct horse battery" },
-      headers: { origin: baseURL! },
-    });
-    if (r.ok()) break;
-    await new Promise((r) => setTimeout(r, 10_000));
-  }
-  cookies = (await api.storageState()).cookies;
-  expect(cookies.length).toBeGreaterThan(0);
-  await api.dispose();
-});
+// Sign-in is rate limited, see session.ts.
+test.use({ storageState: STATE });
+test.beforeAll(async ({ playwright, baseURL }) => ensureSession(playwright, baseURL!));
 
 test.beforeEach(async ({ page }) => {
-  await page.context().addCookies(cookies);
   await page.goto("/accounts");
 });
 

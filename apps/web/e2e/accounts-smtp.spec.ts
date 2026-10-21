@@ -1,24 +1,9 @@
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
+import { ensureSession, STATE } from "./session";
 
 // Runs after auth.spec (project dependency). MAIL_PROVIDER_FAKE=1, see global-setup: hosts named fail.* fail the checks.
-const STATE = join(tmpdir(), "rightnow-e2e-ada-smtp.json");
 test.use({ storageState: STATE });
-test.beforeAll(async ({ browser }, info) => {
-  const ctx = await browser.newContext({
-    baseURL: info.project.use.baseURL,
-    storageState: undefined,
-  });
-  const page = await ctx.newPage();
-  await page.goto("/sign-in");
-  await page.getByLabel("Email").fill("ada@example.com");
-  await page.getByLabel("Password").fill("correct horse battery");
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
-  await ctx.storageState({ path: STATE });
-  await ctx.close();
-});
+test.beforeAll(async ({ playwright, baseURL }) => ensureSession(playwright, baseURL!));
 test.beforeEach(async ({ page }) => {
   await page.goto("/accounts");
   await page.getByRole("button", { name: "Connect with SMTP/IMAP" }).click();

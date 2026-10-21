@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { hashValue, runImport, systemClock } from "@rightnow/core";
 import { createPrisma } from "@rightnow/db/create";
+import { ensureSession, STATE } from "./session";
 
 // E2E #3. Runs after auth.spec (project dependency). No worker runs in e2e, so the spec plays its part:
 // it runs the PENDING import job itself while the wizard polls.
@@ -13,23 +14,8 @@ const CSV =
   "carl@e2e-import.io;Carl;Beta\r\n" +
   "dee@e2e-import.io;Dee;Beta\r\n";
 
-let cookies: Awaited<
-  ReturnType<import("@playwright/test").APIRequestContext["storageState"]>
->["cookies"] = [];
-test.beforeAll(async ({ playwright, baseURL }) => {
-  const api = await playwright.request.newContext({ baseURL });
-  for (let i = 0; i < 8; i++) {
-    const r = await api.post("/api/auth/sign-in/email", {
-      data: { email: "ada@example.com", password: "correct horse battery" },
-      headers: { origin: baseURL! },
-    });
-    if (r.ok()) break;
-    await new Promise((r) => setTimeout(r, 10_000)); // sign-in is rate limited
-  }
-  cookies = (await api.storageState()).cookies;
-  expect(cookies.length).toBeGreaterThan(0);
-  await api.dispose();
-});
+test.use({ storageState: STATE });
+test.beforeAll(async ({ playwright, baseURL }) => ensureSession(playwright, baseURL!));
 
 async function runPendingImport() {
   const prisma = createPrisma(process.env.E2E_DATABASE_URL!, 2);
@@ -47,7 +33,6 @@ async function runPendingImport() {
 }
 
 test("import wizard: map, authorize, run, result counts, table, keyboard", async ({ page }) => {
-  await page.context().addCookies(cookies);
   await page.goto("/leads");
   await page.getByRole("button", { name: "Import CSV" }).click();
   const wizard = page.getByRole("dialog", { name: "Import leads" });
@@ -109,7 +94,6 @@ test("bounced view removes a suppression; blocklist page shows honest counts", a
     },
   });
   await prisma.$disconnect();
-  await page.context().addCookies(cookies);
 
   // a bulk action's result stays visible after the table refetches
   await page.goto("/leads");
