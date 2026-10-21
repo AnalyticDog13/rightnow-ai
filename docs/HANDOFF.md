@@ -1,13 +1,16 @@
 # Handoff
 
 **Phase:** 3 — Campaign automation (branch `phase-3-campaigns`, from `main` after the Phase 2 merge)
-**Current task:** Phase 3 gate (all 15 tasks done; P3-T13 8576e78).
+**Current task:** Phase 3 gate: review + audit done, fix wave committed (see REVIEW_LOG); next is fast-forwarding `main`.
 **Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 (approved). Done step plans: `docs/plans/phase-1.md`, `docs/plans/phase-2.md`.
 **Tests:** 522 vitest + 16 Playwright (prod build) green; CI `check`, `compose-smoke`, `imap-real` green.
 
 ## Next exact action
-Run the Phase 3 gate (opus whole-branch review + ponytail-audit). SDD ledger: `.superpowers/sdd/phase-3/progress.md`.
-Gate follow-ups: lead-import queue needs `heartbeatSeconds: 10` (keep 3 h expiry); existing dev DBs keep old pg-boss queue settings (heartbeat added in P3-T11b applies to new queues only).
+Phase 3 gate fixes are in (I-1..I-4, M-1..M-5, M-7..M-9, audit A1/A2/A6/A8/A9/A11; D25). Once CI is green on
+`phase-3-campaigns`, fast-forward `main`. Carry into Phase 4 planning: P4-T05 (freshness writer) must land after
+reply-stop (P4-T03) and mailto-unsubscribe processing (gate review "ordering constraint"); M-6 (claim re-check of
+ESP rules / tags) deferred to P5. Existing dev DBs keep old pg-boss queue settings (recreate the pg-boss schema to
+pick up the new heartbeats).
 
 ## Interfaces available (Phases 1–2)
 Phase 1: `route()` (auth/role/scope/params, CSRF), `startWorker`/`JobDef` `{prisma, clock}`, `createPrisma`,
