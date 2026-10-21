@@ -1,7 +1,7 @@
 # Handoff
 
 **Phase:** 3 — Campaign automation (branch `phase-3-campaigns`, from `main` after the Phase 2 merge)
-**Current task:** P3-T10a rotation + explainer + status route (P3-T09 done 9459504; lock order D21).
+**Current task:** P3-T10b planner (opus). P3-T10a done 39e7de7.
 **Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 (approved). Done step plans: `docs/plans/phase-1.md`, `docs/plans/phase-2.md`.
 **Tests:** 522 vitest + 16 Playwright (prod build) green; CI `check`, `compose-smoke`, `imap-real` green.
 

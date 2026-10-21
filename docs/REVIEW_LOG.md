@@ -203,3 +203,6 @@ Claim re-check contract for T09/T10b, active-campaign edit guards, merge/delete 
 
 ## 2026-10-21 · P3-T09 quota + dispatcher claim · task reviewer (opus, adversarial) · 1 fix round → **Approved**
 No double-send, over-quota, outside-window or unretried-deadlock path. Fixed: claimed rows kept on late error, lock order documented as D21 (SM→CL→usage→EA), post-lock eligibility re-check, claim indexes, DB unique (campaignLeadId,stepId), deterministic campaign/workspace cap tests, lock-wait treated as busy.
+
+## 2026-10-21 · P3-T10a rotation/explainer/status · task reviewer (sonnet) · 1 fix round → **Approved**
+Shared accountOk + companyGateOk + remainingToday predicates across claim, pickAccount and explainer; constant-query rotation; blocking flag; pickAccount null = not now.

@@ -362,25 +362,26 @@
    "id": "P3-T10a",
    "phase": 3,
    "title": "Rotation (pickAccount), why-not-sending explainer, status route",
-   "status": "in_progress",
+   "status": "done",
    "deps": [
     "P3-T09"
    ],
    "model": "sonnet",
-   "commit": null,
-   "acceptance": "See docs/plans/phase-3.md P3-T10a"
+   "commit": "52d5acf..39e7de7",
+   "acceptance": "See docs/plans/phase-3.md P3-T10a",
+   "review": "1 fix round (company-stop gate in explainer + pickAccount, constant-query rotation, blocking flag, shared remainingToday); clean"
   },
   {
    "id": "P3-T10b",
    "phase": 3,
    "title": "Planner + re-planning (revive rules, subsequence entry, lock order, deadlock retry)",
-   "status": "todo",
+   "status": "in_progress",
    "deps": [
     "P3-T10a"
    ],
    "model": "opus",
    "commit": null,
-   "acceptance": "See docs/plans/phase-3.md P3-T10b; from P3-T04: subjects rendered ONLY via renderSubject() (header safety), test it; pass all campaign custom-field keys (null if absent) to render; from P3-T06: editHooks re-render stale rendered text; from P3-T06: account routing for QUEUED lead entering subsequence; subsequence re-entry vs idempotency key; from P3-T08: use withComplianceFooter + listUnsubscribeHeaders, import RenderEnv from unsubscribe.ts; from P3-T08: preview handles footer/header validation errors gracefully"
+   "acceptance": "See docs/plans/phase-3.md P3-T10b; from P3-T04: subjects rendered ONLY via renderSubject() (header safety), test it; pass all campaign custom-field keys (null if absent) to render; from P3-T06: editHooks re-render stale rendered text; from P3-T06: account routing for QUEUED lead entering subsequence; subsequence re-entry vs idempotency key; from P3-T08: use withComplianceFooter + listUnsubscribeHeaders, import RenderEnv from unsubscribe.ts; from P3-T08: preview handles footer/header validation errors gracefully; from P3-T10a: pickAccount null = not now (no row, retry next tick)"
   },
   {
    "id": "P3-T11a",
