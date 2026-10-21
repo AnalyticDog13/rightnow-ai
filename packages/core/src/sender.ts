@@ -470,7 +470,7 @@ export async function acceptTx(
   const data = {
     status: "SENT" as const,
     sentAt: now,
-    claimToken: c.claimToken,
+    claimToken: c.claimToken || null, // "": a recovered or HELD row without a token
     providerMessageId: res.providerMessageId ?? null,
     providerThreadId: res.providerThreadId ?? null,
     error: null,

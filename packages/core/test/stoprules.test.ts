@@ -12,7 +12,8 @@ import { companyDomainOf } from "../src/leads/domain";
 import { classify, type Classification } from "../src/mail/classify";
 import { ingestMessage } from "../src/mail/ingest";
 import { applyInbound } from "../src/mail/stoprules";
-import { sendClaimed } from "../src/sender";
+import { releaseUsage } from "../src/quota";
+import { refOf, sendClaimed } from "../src/sender";
 import { unsubscribeKeys } from "../src/unsubscribe";
 import { planRow, seedCampaign } from "./campaign-fixture";
 
@@ -234,6 +235,36 @@ describe("replies", () => {
     );
     expect(await cl(e.cl.id)).toMatchObject({ state: "STOPPED", stopReason: "REPLIED" });
     expect((await row(e.step2.id)).status).toBe("CANCELLED");
+    expect((await lead(e.lead.id)).replies).toBe(1);
+  });
+
+  test("a PAUSED enrolment stops on reply and is never re-activated by a keyword subsequence", async () => {
+    const s = await setup();
+    await subsequence(s, { kind: "REPLY_KEYWORD", phrases: ["pricing"] });
+    const e = await enrol(s, "ann@acme.test");
+    await P().campaignLead.update({ where: { id: e.cl.id }, data: { state: "PAUSED" } });
+    await receive(
+      s.accounts[0]!,
+      msg({ from: { email: e.lead.email }, inReplyTo: e.rfc, text: "pricing?" }),
+      REPLY(),
+    );
+    expect(await cl(e.cl.id)).toMatchObject({
+      state: "STOPPED",
+      stopReason: "REPLIED",
+      subsequenceId: null,
+    });
+  });
+
+  test("a blank keyword phrase matches nothing", async () => {
+    const s = await setup({ stopOnReply: false });
+    await subsequence(s, { kind: "REPLY_KEYWORD", phrases: ["  "] });
+    const e = await enrol(s, "ann@acme.test");
+    await receive(
+      s.accounts[0]!,
+      msg({ from: { email: e.lead.email }, inReplyTo: e.rfc, text: "Not now, thanks." }),
+      REPLY(),
+    );
+    expect(await cl(e.cl.id)).toMatchObject({ state: "ACTIVE", subsequenceId: null });
   });
 
   test("a PAUSED enrolment stops on reply too", async () => {
@@ -635,10 +666,12 @@ describe("against the send claim", () => {
     expect(await fake(A).sentRaw()).toHaveLength(0);
   });
 
-  test("M17: a reply to an UNCERTAIN send settles it SENT", async () => {
+  test("M17: a reply to an UNCERTAIN send settles it SENT and stops every stopOnReply campaign", async () => {
     const s = await setup();
     const A = s.accounts[0]!;
     const e = await enrol(s, "maybe@race.test", { due: at(-60_000) });
+    const s2 = await setup({}, s.ws);
+    const other = await enrol(s2, "", { leadId: e.lead.id });
     const [c] = await claimDue(P(), clock, claimOpts);
     fake(A).failNext("api_5xx");
     expect(await sendClaimed(P(), clock, deps, c!)).toBe("UNCERTAIN");
@@ -649,6 +682,31 @@ describe("against the send claim", () => {
       REPLY(),
     );
     expect(await row(e.step2.id)).toMatchObject({ status: "SENT" });
+    expect(await reserved(A.id)).toEqual([[1, 0]]);
+    expect(await cl(e.cl.id)).toMatchObject({ state: "STOPPED", stopReason: "REPLIED" });
+    expect(await cl(other.cl.id)).toMatchObject({ state: "STOPPED", stopReason: "REPLIED" });
+    expect((await row(other.step2.id)).status).toBe("CANCELLED");
+    expect((await lead(e.lead.id)).emailsSent).toBe(1);
+  });
+
+  test("M17: a reply to a HELD send (no claim token) settles it SENT", async () => {
+    const s = await setup();
+    const A = s.accounts[0]!;
+    const e = await enrol(s, "held@race.test", { due: at(-60_000) });
+    const [c] = await claimDue(P(), clock, claimOpts);
+    fake(A).failNext("api_5xx");
+    expect(await sendClaimed(P(), clock, deps, c!)).toBe("UNCERTAIN");
+    const r = await row(e.step2.id);
+    await P().$transaction(async (tx) => {
+      await releaseUsage(tx, refOf(r));
+      await tx.scheduledMessage.update({
+        where: { id: r.id },
+        data: { status: "HELD", claimToken: null },
+      });
+    });
+    expect(await reserved(A.id)).toEqual([[0, 0]]);
+    await receive(A, msg({ from: { email: e.lead.email }, inReplyTo: r.rfcMessageId }), REPLY());
+    expect(await row(r.id)).toMatchObject({ status: "SENT", claimToken: null });
     expect(await reserved(A.id)).toEqual([[1, 0]]);
     expect(await cl(e.cl.id)).toMatchObject({ state: "STOPPED", stopReason: "REPLIED" });
   });

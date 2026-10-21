@@ -28,6 +28,7 @@ const keywordHit = (t: Prisma.JsonValue, text: string) => {
     x.phrases.some(
       (p) =>
         typeof p === "string" &&
+        p.trim() !== "" && // a blank phrase would match any text
         new RegExp(`(?<![\\p{L}\\p{N}_])${esc(p.trim())}(?![\\p{L}\\p{N}_])`, "iu").test(text),
     )
   );
@@ -70,23 +71,32 @@ export async function applyInbound(
   // I7: an answer to one of our sends always counts; an unthreaded one only for enrolments it postdates (D26)
   const dated: Prisma.CampaignLeadWhereInput = sm ? {} : { enrolledAt: { lte: m.sentAt } };
 
-  // M17: an answer proves an UNCERTAIN/HELD send went out, so a later Release cannot send it twice
-  if (sm?.rfcMessageId && (sm.status === "UNCERTAIN" || sm.status === "HELD"))
-    await acceptTx(
-      tx,
-      clock,
-      {
-        ...refOf(sm),
-        id: sm.id,
-        campaignLeadId: sm.campaignLeadId,
-        stepId: sm.stepId,
-        claimToken: sm.claimToken ?? "",
-        claimedAt: sm.claimedAt ?? now,
-        rfcMessageId: sm.rfcMessageId,
-      },
-      { rfcMessageId: sm.rfcMessageId },
-      sm.claimedAt && sm.claimedAt <= m.sentAt ? sm.claimedAt : m.sentAt,
-    );
+  // M17: an answer proves an UNCERTAIN/HELD send went out, so a later Release cannot send it twice. The row is locked
+  // now (D21: ScheduledMessage first) and settled after the stops, so every CampaignLead lock precedes usage/Lead.
+  const settle =
+    sm?.rfcMessageId && (sm.status === "UNCERTAIN" || sm.status === "HELD")
+      ? (
+          await tx.$queryRaw<{ id: string }[]>`
+            SELECT id FROM "ScheduledMessage" WHERE id = ${sm.id} AND status::text IN ('UNCERTAIN', 'HELD')
+            FOR UPDATE`
+        ).length > 0
+      : false;
+  // a lead the user PAUSED is stopped by a reply but never re-activated by a subsequence
+  const subCl =
+    c.kind === "REPLY" && fresh && lead && match.campaignLeadId
+      ? await tx.campaignLead.findFirst({
+          where: {
+            ...dated,
+            id: match.campaignLeadId,
+            workspaceId: ws,
+            leadId: lead.id,
+            OR: [
+              { state: { in: ["QUEUED", "ACTIVE"] } },
+              { state: "STOPPED", stopReason: "REPLIED" },
+            ],
+          },
+        })
+      : null;
 
   if (c.kind === "REPLY") {
     await stopOpenCampaignLeads(tx, ws, leadIds, "REPLIED", now, {
@@ -114,33 +124,39 @@ export async function applyInbound(
     c.kind === "REPLY" && fresh && lead && lead.interestStatus === null
       ? INTEREST_OF[c.category]
       : undefined;
-  if (c.kind === "REPLY" && fresh && lead && match.campaignLeadId) {
-    const cl = await tx.campaignLead.findFirst({
-      where: {
-        ...dated,
-        id: match.campaignLeadId,
-        workspaceId: ws,
-        leadId: lead.id,
-        OR: [{ state: { in: [...OPEN_STATES] } }, { state: "STOPPED", stopReason: "REPLIED" }],
-      },
+  if (subCl) {
+    const subs = await tx.subsequence.findMany({
+      where: { campaignId: subCl.campaignId, active: true, activatedAt: { lte: now } },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     });
-    if (cl) {
-      const subs = await tx.subsequence.findMany({
-        where: { campaignId: cl.campaignId, active: true, activatedAt: { lte: now } },
-        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-      });
-      const text = stripQuoted(m.text ?? "");
-      const sub =
-        subs.find((s) => keywordHit(s.trigger, text)) ??
-        (interest === undefined
-          ? undefined
-          : subs.find((s) => leadStatusTrigger(s.trigger, interest)));
-      if (sub) await enterSubsequence(tx, clock, cl.id, sub.id);
-    }
+    const text = stripQuoted(m.text ?? "");
+    const sub =
+      subs.find((s) => keywordHit(s.trigger, text)) ??
+      (interest === undefined
+        ? undefined
+        : subs.find((s) => leadStatusTrigger(s.trigger, interest)));
+    if (sub) await enterSubsequence(tx, clock, subCl.id, sub.id);
   }
 
   if (c.kind === "UNSUBSCRIBE") await optOutTx(tx, clock, ws, m.fromEmail, leadIds, "mailto");
   if (interest === -1 && lead) await applyInterestChange(tx, clock, ws, lead.id, -1); // suppresses only
+
+  if (settle && sm?.rfcMessageId)
+    await acceptTx(
+      tx,
+      clock,
+      {
+        ...refOf(sm),
+        id: sm.id,
+        campaignLeadId: sm.campaignLeadId,
+        stepId: sm.stepId,
+        claimToken: sm.claimToken ?? "", // acceptTx stores "" as null
+        claimedAt: sm.claimedAt ?? now,
+        rfcMessageId: sm.rfcMessageId,
+      },
+      { rfcMessageId: sm.rfcMessageId },
+      sm.claimedAt && sm.claimedAt <= m.sentAt ? sm.claimedAt : m.sentAt,
+    );
 
   if (fresh && lead) {
     const newer = !lead.lastReplyAt || m.sentAt > lead.lastReplyAt;
