@@ -1,12 +1,12 @@
 # Handoff
 
 **Phase:** 4 — Incoming mail & tracking (branch `phase-4-inbox`, from `main` after the Phase 3 merge)
-**Current task:** none started. Phase 3 merged to main (gate approved). Next: write `docs/plans/phase-4.md`.
+**Current task:** Phase 4 plan review. `docs/plans/phase-4.md` written (f1390b6); independent opus review → `docs/plans/phase-4-review.md`, then apply findings as Revision 2.
 **Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 (approved). Done step plans: `docs/plans/phase-1.md`, `phase-2.md`, `phase-3.md`.
 **Tests:** ~946 vitest + 19 Playwright (prod build) green; CI `check`, `compose-smoke`, `imap-real` green.
 
 ## Next exact action
-Phase 4: write the step plan `docs/plans/phase-4.md` from IMPLEMENTATION_PLAN Phase 4 + PRODUCT_SPEC inbox/tracking items + TASKS.json acceptance carry-forwards, get an independent (opus) plan review, then execute with subagent-driven-development (new ledger `.superpowers/sdd/phase-4/`).
+Phase 4: if `docs/plans/phase-4-review.md` is missing, re-run the independent opus plan review of `docs/plans/phase-4.md`; apply its Critical/Important findings to the plan (Revision 2 section), then execute with subagent-driven-development (new ledger `.superpowers/sdd/phase-4/`).
 Ordering constraint: P4-T05 (writes `lastSyncCompletedAt`, which enables real campaign sends per D16) lands only AFTER reply-stop (P4-T03), mailto-unsubscribe processing, and the N-1 Cc-retry fix (see TASKS.json P4-T05).
 Existing dev DBs keep old pg-boss queue settings (recreate the pg-boss schema to pick up the new heartbeats).
 Known env issue: Windows vitest worker crash (exit 3221226505) recurs in random files; vitest 5 already uses forks; rerun affected files alone.
