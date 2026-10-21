@@ -430,6 +430,7 @@ model LeadListMember {
   list   LeadList @relation(fields: [listId], references: [id], onDelete: Cascade)
   leadId String
   lead   Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
 
   @@id([listId, leadId])
   @@index([leadId])
@@ -467,6 +468,7 @@ model ImportJob {
   attached            Int          @default(0)
   skipped             Json         @default("{}")
   progress            Int          @default(0)
+  attempts            Int          @default(0) // stale resets; the job FAILS after 3
   error               String?
   createdAt           DateTime     @default(now())
   updatedAt           DateTime     @updatedAt

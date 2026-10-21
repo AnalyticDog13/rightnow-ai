@@ -107,6 +107,9 @@ export async function createImport(
   if (!LAWFUL_BASES.includes(p.lawfulBasis)) throw new LeadError(400, "invalid_lawful_basis");
   if (p.data.length > MAX_IMPORT_BYTES) throw new LeadError(413, "file_too_large");
   const options = importOptions.parse(p.options);
+  // Campaign does not exist yet (P3-T05/T06 carry campaign dedupe): reject rather than ignore silently
+  if (options.campaignId || options.skipIfInCampaign)
+    throw new LeadError(400, "campaign_dedupe_not_available");
   const mapping = mappingSchema.parse(p.mapping);
   const { headers, rows } = parseCsv(p.data);
   if (rows.length > MAX_IMPORT_ROWS) throw new LeadError(413, "too_many_rows");
@@ -178,7 +181,20 @@ function prepare(
 }
 
 type Opts = z.infer<typeof importOptions>;
-type Job = { id: string; workspaceId: string };
+type Job = { id: string; workspaceId: string; createdAt: Date };
+
+const retryable = (e: unknown) => {
+  const x = e as { code?: string; message?: string; meta?: { code?: string } };
+  return x.code === "P2034" || /40P01|40001/.test(`${x.meta?.code} ${x.message}`);
+};
+async function retryTx<T>(f: () => Promise<T>, tries = 3): Promise<T> {
+  for (let i = 1; ; i++)
+    try {
+      return await f();
+    } catch (e) {
+      if (i >= tries || !retryable(e)) throw e;
+    }
+}
 
 /** One batch in one short transaction. No network here. Returns exact counts. */
 async function insertBatch(prisma: Db, job: Job, opts: Opts, cands: Cand[]) {
@@ -210,18 +226,18 @@ async function insertBatch(prisma: Db, job: Job, opts: Opts, cands: Cand[]) {
         ).map((l) => [l.email, l]),
       );
       const inList = opts.listId
-        ? new Set(
+        ? new Map(
             (
               await tx.leadListMember.findMany({
                 where: {
                   listId: opts.listId,
                   leadId: { in: [...existing.values()].map((l) => l.id) },
                 },
-                select: { leadId: true },
+                select: { leadId: true, createdAt: true },
               })
-            ).map((m) => m.leadId),
+            ).map((m) => [m.leadId, m.createdAt] as const),
           )
-        : new Set<string>();
+        : new Map<string, Date>();
       const skip: Record<string, number> = {};
       const bump = (k: string) => void (skip[k] = (skip[k] ?? 0) + 1);
       const ours: string[] = []; // already imported by an earlier, interrupted run of this job
@@ -238,8 +254,10 @@ async function insertBatch(prisma: Db, job: Job, opts: Opts, cands: Cand[]) {
           if (!ex) fresh.push(c);
           else if (ex.importJobId === job.id) ours.push(ex.id);
           else if (opts.skipIfInWorkspace || !opts.listId) bump("exists_in_workspace");
-          else if (inList.has(ex.id)) bump("exists_in_list");
-          else attach.push(ex.id);
+          else if (!inList.has(ex.id)) attach.push(ex.id);
+          // added by an earlier, interrupted run of this job (or skipIfInList is off): count it as attached again
+          else if (!opts.skipIfInList || inList.get(ex.id)! >= job.createdAt) attach.push(ex.id);
+          else bump("exists_in_list");
         }
       }
       let newIds: string[] = [];
@@ -310,7 +328,9 @@ export async function runImport(
         if (typeof c === "string") skipped[c] = (skipped[c] ?? 0) + 1;
         else cands.push(c);
       }
-      const res = await insertBatch(prisma, job, opts, cands);
+      // sorted so overlapping writers lock rows in one order; a deadlock/serialization failure retries the batch
+      cands.sort((a, b) => (a.email < b.email ? -1 : 1));
+      const res = await retryTx(() => insertBatch(prisma, job, opts, cands));
       for (const [k, n] of Object.entries(res.skip)) skipped[k] = (skipped[k] ?? 0) + n;
       imported += res.imported;
       attached += res.attached;

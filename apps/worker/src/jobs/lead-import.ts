@@ -3,12 +3,27 @@ import type { PrismaClient } from "@rightnow/db/client";
 import type { JobDef } from "../boss";
 
 const STALE_MS = 30 * 60_000;
+const MAX_RESETS = 3;
 
 /** Runs the oldest PENDING import. A run silent for 30 min (the MX phase keeps updatedAt moving) goes back to PENDING. */
 export async function leadImport(prisma: PrismaClient, clock: Clock) {
+  const stale = {
+    status: "RUNNING" as const,
+    updatedAt: { lt: new Date(clock.now().getTime() - STALE_MS) },
+  };
+  // a job that keeps killing the worker must not loop forever: fail it on the last allowed reset, keeping the error
   await prisma.importJob.updateMany({
-    where: { status: "RUNNING", updatedAt: { lt: new Date(clock.now().getTime() - STALE_MS) } },
-    data: { status: "PENDING" },
+    where: { ...stale, attempts: { gte: MAX_RESETS - 1 } },
+    data: {
+      status: "FAILED",
+      error: "worker stopped repeatedly while running this import",
+      data: null,
+      finishedAt: clock.now(),
+    },
+  });
+  await prisma.importJob.updateMany({
+    where: stale,
+    data: { status: "PENDING", attempts: { increment: 1 } },
   });
   const next = await prisma.importJob.findFirst({
     where: { status: "PENDING" },

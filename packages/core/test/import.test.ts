@@ -1,7 +1,7 @@
 import { createTestDb } from "@rightnow/db/test-db";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { fixedClock } from "../src/clock";
-import { exportLeadsCsv } from "../src/leads/export";
+import { csvCell, exportLeadsCsv } from "../src/leads/export";
 import { createImport, previewImport, runImport } from "../src/leads/import";
 import { createLead } from "../src/leads/service";
 import { suppress } from "../src/leads/suppression";
@@ -145,6 +145,116 @@ describe("import (Review Focus #4)", () => {
     });
     await runImport(db.prisma, clock, { resolveMx: noMx }, importJobId);
     expect(await job(importJobId)).toMatchObject({ status: "DONE", imported: 3 });
+  });
+
+  test("campaign targets are rejected until campaigns exist", async () => {
+    const ws = await mkWs();
+    for (const options of [{ campaignId: "c1" }, { skipIfInCampaign: true }])
+      await expect(createImport(db.prisma, ws, null, { ...base, options })).rejects.toMatchObject({
+        status: 400,
+        message: "campaign_dedupe_not_available",
+      });
+  });
+
+  test("list dedupe: skipIfInList skips members, otherwise they count as attached; resume keeps the counts", async () => {
+    const ws = await mkWs();
+    const list = await db.prisma.leadList.create({ data: { workspaceId: ws, name: "L" } });
+    const ex = await db.prisma.lead.findFirstOrThrow({
+      where: { workspaceId: ws, email: "existing@x.test" },
+    });
+    await db.prisma.leadListMember.create({ data: { listId: list.id, leadId: ex.id } });
+    const run = async (skipIfInList: boolean) => {
+      const { importJobId } = await createImport(db.prisma, ws, null, {
+        ...base,
+        options: { skipIfInWorkspace: false, listId: list.id, skipIfInList },
+      });
+      await runImport(db.prisma, clock, { resolveMx: noMx }, importJobId);
+      return importJobId;
+    };
+    const skip = await job(await run(true));
+    expect(skip).toMatchObject({ imported: 3, attached: 0 });
+    expect(skip.skipped).toMatchObject({ exists_in_list: 1, duplicate_in_file: 1, blocklisted: 2 });
+    expect(skip.skipped).not.toHaveProperty("exists_in_workspace");
+
+    const ws2 = await mkWs();
+    const l2 = await db.prisma.leadList.create({ data: { workspaceId: ws2, name: "L" } });
+    const ex2 = await db.prisma.lead.findFirstOrThrow({
+      where: { workspaceId: ws2, email: "existing@x.test" },
+    });
+    await db.prisma.leadListMember.create({ data: { listId: l2.id, leadId: ex2.id } });
+    const mk2 = (skipIfInList: boolean) =>
+      createImport(db.prisma, ws2, null, {
+        ...base,
+        options: { skipIfInWorkspace: false, listId: l2.id, skipIfInList },
+      });
+    const { importJobId: off } = await mk2(false);
+    await runImport(db.prisma, clock, { resolveMx: noMx }, off);
+    expect(await job(off)).toMatchObject({ imported: 3, attached: 1 });
+    expect((await job(off)).skipped).not.toHaveProperty("exists_in_list");
+
+    // crash after attaching: the lead attached by this job is attached again on resume, not exists_in_list
+    const ws3 = await mkWs();
+    const l3 = await db.prisma.leadList.create({ data: { workspaceId: ws3, name: "L" } });
+    const { importJobId } = await createImport(db.prisma, ws3, null, {
+      ...base,
+      options: { skipIfInWorkspace: false, listId: l3.id, skipIfInList: true },
+    });
+    await runImport(db.prisma, clock, { resolveMx: noMx }, importJobId);
+    const first = await job(importJobId);
+    expect(first).toMatchObject({ imported: 3, attached: 1 });
+    await db.prisma.importJob.update({
+      where: { id: importJobId },
+      data: { status: "PENDING", data: new Uint8Array(FILE) },
+    });
+    await runImport(db.prisma, clock, { resolveMx: noMx }, importJobId);
+    const again = await job(importJobId);
+    expect(again).toMatchObject({
+      status: "DONE",
+      imported: 3,
+      attached: 1,
+      skipped: first.skipped,
+    });
+    expect(again.skipped).not.toHaveProperty("exists_in_list");
+  });
+
+  test("an unterminated quote is a clear error, not a silently truncated import", async () => {
+    const ws = await mkWs();
+    const data = Buffer.from('email,firstName\na@x.test,A\nb@x.test,"oops\nc@x.test,C\n');
+    await expect(
+      createImport(db.prisma, ws, null, { ...base, data, mapping: ["email", "firstName"] }),
+    ).rejects.toMatchObject({ status: 400, message: expect.stringContaining("csv_parse_error") });
+    await expect(previewImport(db.prisma, ws, data)).rejects.toMatchObject({ status: 400 });
+  });
+
+  test("a deadlocked batch is retried; a non-retryable error still fails the job", async () => {
+    const ws = await mkWs();
+    const { importJobId } = await createImport(db.prisma, ws, null, base);
+    const real = db.prisma.$transaction.bind(db.prisma);
+    let fails = 2;
+    const spy = vi.spyOn(db.prisma, "$transaction").mockImplementation(((...a: unknown[]) => {
+      if (fails-- > 0)
+        return Promise.reject(Object.assign(new Error("deadlock"), { code: "P2034" }));
+      return (real as (...x: unknown[]) => unknown)(...a);
+    }) as never);
+    await runImport(db.prisma, clock, { resolveMx: noMx }, importJobId);
+    spy.mockRestore();
+    expect(await job(importJobId)).toMatchObject({ status: "DONE", imported: 3 });
+
+    const { importJobId: bad } = await createImport(db.prisma, ws, null, base);
+    const spy2 = vi.spyOn(db.prisma, "$transaction").mockRejectedValue(new Error("boom"));
+    await runImport(db.prisma, clock, { resolveMx: noMx }, bad);
+    spy2.mockRestore();
+    expect(await job(bad)).toMatchObject({ status: "FAILED", error: "boom", data: null });
+  });
+
+  test("export keeps plain numbers, neutralizes formulas behind spaces or quotes", () => {
+    expect(csvCell("-5")).toBe("-5");
+    expect(csvCell("-1.5e3")).toBe("-1.5e3");
+    expect(csvCell(" =cmd")).toBe("' =cmd");
+    expect(csvCell('"=cmd')).toBe('"\'""=cmd"');
+    expect(csvCell("-hello")).toBe("'-hello");
+    expect(csvCell("\rx")).toBe('"\'\rx"');
+    expect(csvCell("plain")).toBe("plain");
   });
 
   test("validation: authorization 400, size and row limits 413, bad list and mapping 400", async () => {

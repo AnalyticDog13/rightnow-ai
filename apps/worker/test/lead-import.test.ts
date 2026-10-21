@@ -66,3 +66,33 @@ describe("lead-import job", () => {
     expect((await get(importJobId)).status).toBe("RUNNING");
   });
 });
+
+describe("lead-import crash loop", () => {
+  const stale = (id: string, attempts: number) =>
+    db.prisma.importJob
+      .update({ where: { id }, data: { status: "RUNNING", attempts } })
+      .then(
+        () =>
+          db.prisma
+            .$executeRaw`UPDATE "ImportJob" SET "updatedAt" = ${new Date(T0.getTime() - 31 * 60_000)} WHERE id = ${id}`,
+      );
+
+  test("each stale reset counts an attempt", async () => {
+    const { importJobId } = await mk("loop1@job.test");
+    await stale(importJobId, 1);
+    await leadImport(db.prisma, clock);
+    expect(await get(importJobId)).toMatchObject({ status: "DONE", attempts: 2 });
+  });
+
+  test("a job that went stale three times is FAILED with its error, data cleared, and not run again", async () => {
+    const { importJobId } = await mk("loop2@job.test");
+    await stale(importJobId, 2);
+    await leadImport(db.prisma, clock);
+    const j = await get(importJobId);
+    expect(j).toMatchObject({ status: "FAILED", data: null });
+    expect(j.error).toContain("repeatedly");
+    expect(
+      await db.prisma.lead.count({ where: { workspaceId: ws, email: "loop2@job.test" } }),
+    ).toBe(0);
+  });
+});

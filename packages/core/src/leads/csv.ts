@@ -1,4 +1,5 @@
 import Papa from "papaparse";
+import { LeadError } from "./service";
 
 export type LeadField =
   "email" | "firstName" | "lastName" | "companyName" | "jobTitle" | "website" | "phone";
@@ -26,6 +27,9 @@ export function parseCsv(
     skipEmptyLines: true,
     ...(preview && { preview: preview + 1 }), // + the header row
   });
+  // an unterminated quote swallows the rest of the file: refuse it rather than import a silent fragment
+  const bad = r.errors.find((e) => e.type === "Quotes");
+  if (bad) throw new LeadError(400, `csv_parse_error: ${bad.message} (row ${(bad.row ?? 0) + 1})`);
   const [headers = [], ...rows] = r.data;
   return { headers: headers.map((h) => h.trim()), rows, delimiter: r.meta.delimiter };
 }
