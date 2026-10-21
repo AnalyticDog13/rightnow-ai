@@ -89,12 +89,20 @@ describe("/u/[token]", () => {
 
   it("one-click POST suppresses, is idempotent, needs no cookie or origin", async () => {
     const body = "List-Unsubscribe=One-Click";
+    const camp = await db.prisma.campaign.create({ data: { workspaceId, name: "c" } });
+    const cl = await db.prisma.campaignLead.create({
+      data: { workspaceId, campaignId: camp.id, leadId, state: "ACTIVE" },
+    });
     const r = await page("POST", token, body);
     expect(r.status).toBe(200);
     expect(await r.text()).toContain("You have been unsubscribed.");
     expect((await sup()).map((s) => s.source)).toEqual(["one_click"]);
     expect((await page("POST", token, body)).status).toBe(200);
     expect(await sup()).toHaveLength(1);
+    expect(await db.prisma.campaignLead.findUniqueOrThrow({ where: { id: cl.id } })).toMatchObject({
+      state: "STOPPED",
+      stopReason: "UNSUBSCRIBED",
+    });
     expect(await (await page("GET", token)).text()).toContain("You are unsubscribed.");
   });
 
