@@ -269,19 +269,20 @@
    "id": "P3-T03",
    "phase": 3,
    "title": "Lead lists + blocklist/suppression UI and API (email + domain, import/export) + Leads UI",
-   "status": "in_progress",
+   "status": "done",
    "deps": [
     "P3-T02"
    ],
    "model": "sonnet",
-   "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-3.md; tests listed there pass"
+   "commit": "2c9cddf..304eb31",
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-3.md; tests listed there pass",
+   "review": "2 fix rounds (bulk messages, Bounced view, Remove all scope, D20 protections incl. GDPR reason upgrade, export cap, moveLeads); clean"
   },
   {
    "id": "P3-T04",
    "phase": 3,
    "title": "Template engine: variables, `{{var | fallback}}`, sender vars, `{{RANDOM | a | b}}` with nested vars, `{% if %}` blocks, validation; seeded determinism",
-   "status": "todo",
+   "status": "in_progress",
    "deps": [
     "P3-T03"
    ],

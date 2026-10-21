@@ -179,3 +179,6 @@ Merge row locks, full isolation tests, set-based bulk with 30 s timeout, Suppres
 
 ## 2026-10-21 · P3-T02 CSV import/export + ESP · task reviewer (sonnet) · 1 fix round → **Approved**
 List dedupe implemented, campaign dedupe 400 until P3-T06, parser errors surfaced, stale-job attempt cap, deadlock batch retry, export formula guard keeps numbers.
+
+## 2026-10-21 · P3-T03 lists/blocklist/Leads UI · task reviewer (sonnet) · 2 fix rounds → **Approved**
+D20 (GDPR_ERASURE/COMPLAINT non-removable on every path incl. GDPR reason upgrade; UNSUBSCRIBE removal needs attestation), MANUAL-only bulk clear, persistent bulk messages, Bounced view params, export never truncates.
