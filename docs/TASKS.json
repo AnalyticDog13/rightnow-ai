@@ -282,20 +282,21 @@
    "id": "P3-T04",
    "phase": 3,
    "title": "Template engine: variables, `{{var | fallback}}`, sender vars, `{{RANDOM | a | b}}` with nested vars, `{% if %}` blocks, validation; seeded determinism",
-   "status": "in_progress",
+   "status": "done",
    "deps": [
     "P3-T03"
    ],
    "model": "sonnet",
-   "commit": null,
+   "commit": "55bfd88..28f4ad5",
    "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-3.md; tests listed there pass",
-   "note": "parallel-safe with P3-T01..T03 (disjoint files) per phase-3 plan"
+   "note": "parallel-safe with P3-T01..T03 (disjoint files) per phase-3 plan",
+   "review": "1 fix round (fallback-brace validation, renderSubject/renderBody with independent seeds, tests, linear seq); clean"
   },
   {
    "id": "P3-T05",
    "phase": 3,
    "title": "Campaign service/API: CRUD, duplicate, archive, delete, JSON export/import, evergreen, all options listed in data model, schedules, account assignment, launch validation (accounts, steps, schedule, physical address, DNS gate hook, unsubscribe reachability) + \"why not sending\" explainer",
-   "status": "todo",
+   "status": "in_progress",
    "deps": [
     "P3-T04"
    ],
@@ -374,7 +375,7 @@
    ],
    "model": "opus",
    "commit": null,
-   "acceptance": "See docs/plans/phase-3.md P3-T10b"
+   "acceptance": "See docs/plans/phase-3.md P3-T10b; from P3-T04: subjects rendered ONLY via renderSubject() (header safety), test it; pass all campaign custom-field keys (null if absent) to render"
   },
   {
    "id": "P3-T11a",
