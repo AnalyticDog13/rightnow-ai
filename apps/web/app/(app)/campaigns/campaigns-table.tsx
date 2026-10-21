@@ -80,7 +80,7 @@ export function CampaignsTable({ rows, canEdit }: { rows: Row[]; canEdit: boolea
         <table aria-label="Campaigns" className="w-full text-left text-sm">
           <thead>
             <tr className="border-b border-border">
-              {["Campaign", "Status", "Progress", "Sent today", "Actions"].map((h) => (
+              {["Campaign", "Status", "Finished", "Sent today", "Actions"].map((h) => (
                 <th key={h} className="p-3 font-medium">
                   {h}
                 </th>

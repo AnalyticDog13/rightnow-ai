@@ -37,11 +37,14 @@ export function ScheduledView({ canEdit, isAdmin }: { canEdit: boolean; isAdmin:
   const [msg, setMsg] = useState("");
   const [release, setRelease] = useState<Row | null>(null);
 
+  const current = useRef(tab); // the tab being shown; a slower response for an earlier tab is dropped
+  current.current = tab;
   const load = useCallback(
     async (cursor?: string) => {
       const q = new URLSearchParams({ status: tab, take: "50" });
       if (cursor) q.set("cursor", cursor);
       const r = await call(`/api/v1/scheduled-messages?${q}`, "GET");
+      if (current.current !== tab) return;
       if (!r.ok) return setMsg(errorText(r));
       const got = (r.json.rows ?? []) as Row[];
       setRows((o) => (cursor ? [...o, ...got] : got));
@@ -53,6 +56,7 @@ export function ScheduledView({ canEdit, isAdmin }: { canEdit: boolean; isAdmin:
   useEffect(() => {
     setLoaded(false);
     setRows([]);
+    setMsg("");
     void load();
   }, [load]);
 

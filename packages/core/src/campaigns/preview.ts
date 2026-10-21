@@ -1,6 +1,6 @@
 import type { PrismaClient } from "@rightnow/db/client";
 import { z } from "zod";
-import { renderForLead } from "../planner";
+import { priorSubject, renderForLead, renderProblem } from "../planner";
 import { validateTemplate, type TemplateIssue } from "../template";
 import { unsubscribeUrl, type RenderEnv } from "../unsubscribe";
 import { campaignVariables } from "./sequence";
@@ -66,6 +66,10 @@ export async function previewMessage(
   });
   if (!account) throw new CampaignError(409, "Assign an account to preview");
 
+  const enrollment = await db.campaignLead.findFirst({
+    where: { campaignId: campaign.id, leadId: lead.id },
+    select: { id: true },
+  });
   const known = await campaignVariables(db, campaign.id);
   const issues: PreviewIssue[] = [
     ...validateTemplate(variant.subject, known).map((i) => ({ ...i, field: "subject" as const })),
@@ -90,6 +94,8 @@ export async function previewMessage(
       },
       env,
       customKeys: known,
+      // a blank follow-up subject replies in the lead's thread, exactly as the planner does
+      replyTo: variant.subject.trim() ? null : await priorSubject(db, enrollment?.id ?? ""),
     });
     if (p.testSafe) {
       const url = unsubscribeUrl(env, { w: ws, l: lead.id, c: campaign.id }, account.email);
@@ -108,7 +114,7 @@ export async function previewMessage(
     if (!issues.some((i) => i.field))
       issues.push({
         code: "render_failed",
-        message: e instanceof Error ? e.message : "Render failed",
+        message: renderProblem(e)?.message ?? "This email could not be rendered.",
       });
     return { subject: "", html: null, text: "", issues, accountId: account.id };
   }

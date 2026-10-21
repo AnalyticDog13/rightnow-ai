@@ -54,7 +54,7 @@ export function Tabs({
             role="tab"
             id={`tab-${t.id}`}
             aria-selected={t.id === value}
-            aria-controls={`panel-${t.id}`}
+            aria-controls={t.id === value ? `panel-${t.id}` : undefined}
             tabIndex={t.id === value ? 0 : -1}
             onClick={() => onChange(t.id)}
             className={cn(

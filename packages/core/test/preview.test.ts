@@ -69,6 +69,45 @@ describe("previewMessage", () => {
     expect(r.text).toContain("Body");
   });
 
+  test("a blank follow-up subject replies to the first sent email; with none it is a readable issue", async () => {
+    const { s, p } = await seed("", "<p>Body</p>");
+    const none = await previewMessage(db.prisma, s.ws, p, env);
+    expect(none.issues[0]!.message).toContain("no earlier email");
+    await db.prisma.scheduledMessage.create({
+      data: {
+        workspaceId: s.ws,
+        campaignId: s.campaign.id,
+        campaignLeadId: s.leads[0]!.cl.id,
+        stepId: s.steps[0]!.id,
+        variantId: p.variantId,
+        accountId: s.accounts[0]!.id,
+        dueAt: at,
+        status: "SENT",
+        sentAt: at,
+        idempotencyKey: "prior-1",
+        renderedSubject: "Original",
+        renderedBody: "x",
+        renderedText: "x",
+      },
+    });
+    expect((await previewMessage(db.prisma, s.ws, p, env)).subject).toBe("Re: Original");
+  });
+
+  test("an invalid account email is a readable issue, not a raw code", async () => {
+    const { s, p } = await seed("Hi", "<p>Body</p>");
+    await db.prisma.emailAccount.update({
+      where: { id: s.accounts[0]!.id },
+      data: { email: "bad<x>@send.test" },
+    });
+    await db.prisma.emailAccount.update({
+      where: { id: s.accounts[1]!.id },
+      data: { createdAt: new Date(2100, 0, 1) },
+    });
+    const r = await previewMessage(db.prisma, s.ws, p, env);
+    expect(r.issues.map((i) => i.message).join()).not.toContain("invalid_account_email");
+    expect(r.issues[0]!.message).toContain("not a plain email address");
+  });
+
   test("a foreign workspace gets 404", async () => {
     const { p } = await seed("Hi", "x");
     const other = await db.prisma.workspace.create({ data: { name: "O", slug: "o-pv" } });
