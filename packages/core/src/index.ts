@@ -28,4 +28,5 @@ export * from "./leads/export";
 export * from "./leads/esp";
 export * from "./leads/validate";
 export * from "./leads/lists";
+export * from "./template";
 export * from "./leads/blocklist";
