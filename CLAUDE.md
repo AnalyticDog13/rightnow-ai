@@ -43,7 +43,7 @@ Details: `docs/RESUME_INSTRUCTIONS.md`.
   call sends `Prefer: IdType="ImmutableId"`.
 - Worker jobs may scan across workspaces, but every write is conditional on the state they read
   (`updateMany … WHERE <old state>`). Advisory locks use `pg_advisory_xact_lock(<ns>, hashtext(id))`;
-  namespaces: 726001 first-owner setup, 726002 test-send (register new ones here). No network call inside a DB transaction.
+  namespaces: 726001 first-owner setup, 726002 test-send, 726003 campaign planner (per campaign id), 726004 enrollment (per workspace id) (register new ones here). No network call inside a DB transaction.
 - API keys act as MEMBER: ADMIN-only routes (connect, disconnect, delete, test-send) are session-only.
 - Next.js: a URL segment starting with `_` needs a folder named `%5F…` (e.g. `app/api/v1/%5Ffake`).
 

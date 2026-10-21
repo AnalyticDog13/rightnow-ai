@@ -8,25 +8,32 @@ datasource db {
 }
 
 model Workspace {
-  id            String                @id @default(cuid())
-  name          String
-  slug          String                @unique
-  createdAt     DateTime              @default(now())
+  id                   String                @id @default(cuid())
+  name                 String
+  slug                 String                @unique
+  createdAt            DateTime              @default(now())
   // better-auth organization fields (Workspace is the organization model)
-  logo          String?
-  metadata      String?
-  members       Member[]
-  invitations   Invitation[]
-  auditLogs     AuditLog[]
-  apiKeys       ApiKey[]
-  emailAccounts EmailAccount[]
-  oauthSessions OAuthSession[]
-  dailyUsage    WorkspaceDailyUsage[]
-  leads         Lead[]
-  leadLabels    LeadLabel[]
-  leadLists     LeadList[]
-  suppressions  Suppression[]
-  importJobs    ImportJob[]
+  logo                 String?
+  metadata             String?
+  members              Member[]
+  invitations          Invitation[]
+  auditLogs            AuditLog[]
+  apiKeys              ApiKey[]
+  emailAccounts        EmailAccount[]
+  oauthSessions        OAuthSession[]
+  dailyUsage           WorkspaceDailyUsage[]
+  leads                Lead[]
+  leadLabels           LeadLabel[]
+  leadLists            LeadList[]
+  suppressions         Suppression[]
+  importJobs           ImportJob[]
+  campaigns            Campaign[]
+  timezone             String                @default("UTC")
+  physicalAddress      String?
+  dailyCap             Int? // null = no workspace cap
+  perCompanyDailyLimit Int?
+  disableOpenTracking  Boolean               @default(false)
+  firstEmailTextOnly   Boolean               @default(false)
 }
 
 // better-auth tables. Roles are stored lowercase: owner | admin | member | viewer.
@@ -257,6 +264,7 @@ model EmailAccount {
   createdAt              DateTime            @default(now())
   deletedAt              DateTime?
   dailyUsage             AccountDailyUsage[]
+  campaigns              CampaignAccount[]
 
   @@index([workspaceId])
 }
@@ -426,10 +434,10 @@ model LeadList {
 }
 
 model LeadListMember {
-  listId String
-  list   LeadList @relation(fields: [listId], references: [id], onDelete: Cascade)
-  leadId String
-  lead   Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  listId    String
+  list      LeadList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  leadId    String
+  lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
 
   @@id([listId, leadId])
@@ -475,4 +483,80 @@ model ImportJob {
   finishedAt          DateTime?
 
   @@index([status, createdAt])
+}
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  COMPLETED
+  ARCHIVED
+  ACCOUNTS_UNHEALTHY
+  BOUNCE_PROTECT
+}
+
+model Campaign {
+  id                    String             @id @default(cuid())
+  workspaceId           String
+  workspace             Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name                  String
+  status                CampaignStatus     @default(DRAFT)
+  evergreen             Boolean            @default(false)
+  dailyLimit            Int?
+  maxNewLeadsPerDay     Int?
+  perCompanyDailyLimit  Int?
+  minGapSec             Int                @default(540)
+  randomGapSec          Int                @default(300)
+  stopOnReply           Boolean            @default(true)
+  stopOnAutoReply       Boolean            @default(false)
+  stopForCompanyOnReply Boolean            @default(false)
+  trackOpens            Boolean            @default(false)
+  trackClicks           Boolean            @default(false)
+  textOnly              Boolean            @default(false)
+  firstEmailTextOnly    Boolean            @default(false)
+  prioritizeNewLeads    Boolean            @default(false)
+  matchProvider         Boolean            @default(false)
+  espRoutingRules       Json               @default("[]")
+  accountTags           String[]
+  allowRisky            Boolean            @default(false)
+  bounceProtect         Boolean            @default(true)
+  unsubscribeHeader     Boolean            @default(true)
+  cc                    String[]
+  bcc                   String[]
+  startAt               DateTime?
+  endAt                 DateTime?
+  ownerId               String?
+  plValue               Decimal?
+  tags                  String[]
+  abAutoOptimize        Boolean            @default(false)
+  abWinnerMetric        String?
+  launchedAt            DateTime?
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+  deletedAt             DateTime?
+  schedules             CampaignSchedule[]
+  accounts              CampaignAccount[]
+
+  @@index([workspaceId, status])
+}
+
+model CampaignSchedule {
+  id         String   @id @default(cuid())
+  campaignId String
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  name       String
+  timezone   String
+  days       Int // Sun = bit 0
+  from       String // HH:mm
+  to         String // HH:mm or 24:00
+}
+
+model CampaignAccount {
+  campaignId String
+  campaign   Campaign     @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  accountId  String
+  account    EmailAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@id([campaignId, accountId])
+  @@index([accountId])
 }
