@@ -22,6 +22,13 @@ let archive: typeof import("../app/api/v1/campaigns/[id]/archive/route");
 let schedules: typeof import("../app/api/v1/campaigns/[id]/schedules/route");
 let accounts: typeof import("../app/api/v1/campaigns/[id]/accounts/route");
 let byAccount: typeof import("../app/api/v1/accounts/[id]/campaigns/route");
+let steps: typeof import("../app/api/v1/campaigns/[id]/steps/route");
+let variants: typeof import("../app/api/v1/campaigns/[id]/steps/[stepId]/variants/route");
+let enrollR: typeof import("../app/api/v1/campaigns/[id]/leads/route");
+let clR: typeof import("../app/api/v1/campaigns/[id]/leads/[clId]/route");
+let dup: typeof import("../app/api/v1/campaigns/[id]/duplicate/route");
+let exp: typeof import("../app/api/v1/campaigns/[id]/export/route");
+let imp: typeof import("../app/api/v1/campaigns/import/route");
 
 const req = (
   method: string,
@@ -76,6 +83,13 @@ beforeAll(async () => {
   schedules = await import("../app/api/v1/campaigns/[id]/schedules/route");
   accounts = await import("../app/api/v1/campaigns/[id]/accounts/route");
   byAccount = await import("../app/api/v1/accounts/[id]/campaigns/route");
+  steps = await import("../app/api/v1/campaigns/[id]/steps/route");
+  variants = await import("../app/api/v1/campaigns/[id]/steps/[stepId]/variants/route");
+  enrollR = await import("../app/api/v1/campaigns/[id]/leads/route");
+  clR = await import("../app/api/v1/campaigns/[id]/leads/[clId]/route");
+  dup = await import("../app/api/v1/campaigns/[id]/duplicate/route");
+  exp = await import("../app/api/v1/campaigns/[id]/export/route");
+  imp = await import("../app/api/v1/campaigns/import/route");
   ({ workspaceId } = await createFirstOwner(
     db.prisma,
     { name: "O", email: "owner@x.io", password: PASSWORD, workspaceName: "Acme", token: TOKEN },
@@ -161,6 +175,49 @@ describe("campaign routes", () => {
     expect(r.map((x) => x.status)).toEqual(Array(r.length).fill(404));
     const mine = (await json(await list.GET(req("GET", "/x")))).campaigns;
     expect(mine.map((x: any) => x.id)).not.toContain(f);
+  });
+
+  it("sequence, enrollment, lead actions, duplicate, export and import", async () => {
+    const c = await json(await list.POST(req("POST", "/x", { name: "Seq" })));
+    const st = await json(await steps.POST(req("POST", "/x", { delayValue: 4 }), p(c.id)));
+    expect(st).toMatchObject({ order: 1, delayValue: 0 });
+    const sp = { params: Promise.resolve({ id: c.id, stepId: st.id }) };
+    expect(
+      (await variants.POST(req("POST", "/x", { subject: "{{nope}}", body: "b" }), sp)).status,
+    ).toBe(400);
+    const v = await variants.POST(
+      req("POST", "/x", { subject: "Hi {{firstName}}", body: "b" }),
+      sp,
+    );
+    expect(await json(v)).toMatchObject({ label: "A" });
+    expect((await json(await steps.GET(req("GET", "/x"), p(c.id)))).steps[0].variants).toHaveLength(
+      1,
+    );
+
+    const lead = await db.prisma.lead.create({ data: { workspaceId, email: "api@acme.test" } });
+    const e = await json(await enrollR.POST(req("POST", "/x", { leadIds: [lead.id] }), p(c.id)));
+    expect(e).toMatchObject({ enrolled: 1 });
+    expect((await enrollR.POST(req("POST", "/x", {}), p(c.id))).status).toBe(400);
+    expect((await json(await enrollR.GET(req("GET", "/x?status=Active"), p(c.id)))).total).toBe(1);
+    const cl = await db.prisma.campaignLead.findFirstOrThrow({ where: { campaignId: c.id } });
+    const act = (action: string) =>
+      clR.POST(req("POST", "/x", { action }), {
+        params: Promise.resolve({ id: c.id, clId: cl.id }),
+      });
+    expect((await json(await act("pause"))).campaignLead.state).toBe("PAUSED");
+    expect((await json(await act("remove"))).campaignLead.stopReason).toBe("MANUAL");
+
+    const doc = await json(await exp.GET(req("GET", "/x"), p(c.id)));
+    expect(doc).toMatchObject({ version: 1, steps: [{ variants: [{ label: "A" }] }] });
+    const copy = await json(await dup.POST(req("POST", "/x"), p(c.id)));
+    expect(copy).toMatchObject({ name: "Seq (copy)", status: "DRAFT" });
+    const imported = await json(await imp.POST(req("POST", "/x", doc)));
+    expect(imported.status).toBe("DRAFT");
+    expect((await imp.POST(req("POST", "/x", { ...doc, version: 9 }))).status).toBe(400);
+    expect((await exp.GET(req("GET", "/x"), p(foreign.campaign))).status).toBe(404);
+    expect(
+      (await steps.POST(req("POST", "/x", { delayValue: 1 }), p(foreign.campaign))).status,
+    ).toBe(404);
   });
 
   it("roles and API-key scopes", async () => {
