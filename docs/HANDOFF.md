@@ -1,12 +1,13 @@
 # Handoff
 
 **Phase:** 3 — Campaign automation (branch `phase-3-campaigns`, from `main` after the Phase 2 merge)
-**Current task:** P3-T11b recovery + HELD API (opus). P3-T11a sender done 26c3ade (D23).
+**Current task:** P3-T12 builder UI (sonnet). P3-T11b recovery done 60d68da (D24).
 **Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 (approved). Done step plans: `docs/plans/phase-1.md`, `docs/plans/phase-2.md`.
 **Tests:** 522 vitest + 16 Playwright (prod build) green; CI `check`, `compose-smoke`, `imap-real` green.
 
 ## Next exact action
-Dispatch P3-T11b (opus) from `docs/plans/phase-3.md` + TASKS.json acceptance carry-forwards (lease floor, expired SENDING → UNCERTAIN, boot kick). Then P3-T12, P3-T13, then the Phase 3 gate (opus whole-branch review + ponytail-audit). SDD ledger: `.superpowers/sdd/phase-3/progress.md`.
+Finish P3-T12 (review loop), then P3-T13, then the Phase 3 gate (opus whole-branch review + ponytail-audit). SDD ledger: `.superpowers/sdd/phase-3/progress.md`.
+Gate follow-ups: lead-import queue needs `heartbeatSeconds: 10` (keep 3 h expiry); existing dev DBs keep old pg-boss queue settings (heartbeat added in P3-T11b applies to new queues only).
 
 ## Interfaces available (Phases 1–2)
 Phase 1: `route()` (auth/role/scope/params, CSRF), `startWorker`/`JobDef` `{prisma, clock}`, `createPrisma`,

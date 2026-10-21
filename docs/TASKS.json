@@ -401,19 +401,20 @@
    "id": "P3-T11b",
    "phase": 3,
    "title": "Recovery (UNCERTAIN→findSent→HELD) + HELD view API",
-   "status": "in_progress",
+   "status": "done",
    "deps": [
     "P3-T11a"
    ],
    "model": "opus",
-   "commit": null,
-   "acceptance": "See docs/plans/phase-3.md P3-T11b; from P3-T10b: enqueue planner once at worker start-up; from P3-T11a: SEND_LEASE_SEC floor ~300 s (SMTP Sent append + OAuth refresh are outside the 60 s send timeout); recoverExpired turns expired SENDING into UNCERTAIN, never SCHEDULED; worker boot enqueues plan, dispatch and recovery jobs once; resolveUncertain advances via advanceLead (already guarded against STOPPED leads)"
+   "commit": "60d68da",
+   "acceptance": "See docs/plans/phase-3.md P3-T11b; from P3-T10b: enqueue planner once at worker start-up; from P3-T11a: SEND_LEASE_SEC floor ~300 s (SMTP Sent append + OAuth refresh are outside the 60 s send timeout); recoverExpired turns expired SENDING into UNCERTAIN, never SCHEDULED; worker boot enqueues plan, dispatch and recovery jobs once; resolveUncertain advances via advanceLead (already guarded against STOPPED leads)",
+   "review": "opus task review approved (0C 0I 8M) + 1 minor-fix round, sonnet re-review approved"
   },
   {
    "id": "P3-T12",
    "phase": 3,
    "title": "Campaign builder UI (list with status/progress; tabs Leads/Sequences/Schedule/Options/Accounts; preview with real lead; Scheduled emails view incl. HELD actions)",
-   "status": "todo",
+   "status": "in_progress",
    "deps": [
     "P3-T11b"
    ],
