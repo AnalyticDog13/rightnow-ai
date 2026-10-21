@@ -15,6 +15,8 @@ export const envSchema = z.object({
   APP_URL: z.url(),
   DB_POOL_MAX: z.coerce.number().int().positive().default(10),
   SYNC_MAX_STALENESS_SEC: z.coerce.number().int().positive().default(300),
+  // Verifies unsubscribe links signed before a key rotation (see docs/ops/KEY_ROTATION.md)
+  OLD_ENCRYPTION_KEY: z.union([key32, z.literal("").transform(() => undefined)]).optional(),
   // Mail providers (all optional: an unconfigured provider answers 412 not_configured)
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),

@@ -31,6 +31,7 @@ export * from "./leads/lists";
 export * from "./template";
 export * from "./leads/blocklist";
 export * from "./unsubscribe";
+export * from "./settings";
 export * from "./schedule";
 export * from "./campaigns/schema";
 export * from "./campaigns/service";
