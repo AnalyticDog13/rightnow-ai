@@ -4,9 +4,11 @@ A self-hosted, open-source (MIT) alternative to Instantly.ai. Connect your own m
 re-warm them after a break), run multi-step cold-email campaigns, handle every reply in one inbox, and track
 deals in a built-in CRM. The same codebase runs on your laptop (Docker Compose) or on a Linux VPS.
 
-> **Status: early development.** Phase 1 of 8 (foundation) is in progress. Today you get the app shell,
-> owner sign-up, workspaces and the database layer. Sending is **not** usable yet. Live progress:
-> [docs/PROGRESS.md](docs/PROGRESS.md). Full plan: [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md).
+> **Status: early development.** Phases 1–3 of 8 are done: app shell and workspaces, mailbox connections
+> (Gmail, Microsoft 365, IMAP/SMTP), leads, and campaign automation (sequences, scheduling, quotas, safe sending
+> and recovery). Campaign sending stays **off** until inbox sync (Phase 4) exists and your provider passes
+> [live verification](docs/ops/LIVE_VERIFICATION.md). Live progress: [docs/PROGRESS.md](docs/PROGRESS.md).
+> Full plan: [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md).
 
 ## What it will do
 
