@@ -16,6 +16,7 @@ export function BulkBar({
   lists,
   members,
   fromListId,
+  filterQuery,
   isAdmin,
   onDone,
 }: {
@@ -26,8 +27,10 @@ export function BulkBar({
   members: Member[];
   /** the list filter currently applied, which enables "Move" */
   fromListId: string;
+  /** the current lead filters as a query string, used when the selection is too big to export by id */
+  filterQuery: string;
   isAdmin: boolean;
-  onDone: (message: string) => void;
+  onDone: (message: string, ok: boolean) => void;
 }) {
   const [owner, setOwner] = useState("");
   const [interest, setInterest] = useState("");
@@ -35,11 +38,19 @@ export function BulkBar({
   const [list, setList] = useState("");
   const [busy, setBusy] = useState(false);
 
-  async function run(label: string, url: string, body: unknown) {
+  async function run(
+    label: string,
+    url: string,
+    body: unknown,
+    detail?: (j: Record<string, unknown>) => string,
+  ) {
     setBusy(true);
     const r = await call(url, "POST", body);
     setBusy(false);
-    onDone(r.ok ? `${label}: done.` : `${label}: ${errorText(r)}`);
+    onDone(
+      r.ok ? `${label}: ${detail ? detail(r.json) : "done."}` : `${label}: ${errorText(r)}`,
+      r.ok,
+    );
   }
   const bulk = (label: string, action: string, value?: unknown) =>
     run(label, "/api/v1/leads/bulk", { ids, action, value });
@@ -48,6 +59,7 @@ export function BulkBar({
       .split(",")
       .map((t) => t.trim())
       .filter(Boolean);
+  const over = ids.length > 1000; // the API refuses more; never export a cut selection
   const target = lists.find((l) => l.id === list);
 
   return (
@@ -179,14 +191,22 @@ export function BulkBar({
               `Add ${emails.length} address(es) to the blocklist? They will never be emailed.`,
             )
           )
-            void run("Blocklist", "/api/v1/blocklist", { values: emails });
+            void run(
+              "Blocklist",
+              "/api/v1/blocklist",
+              { values: emails },
+              (j) => `added ${j.added}, already listed ${j.duplicates}, invalid ${j.invalid}.`,
+            );
         }}
       >
         Add to blocklist
       </Button>
       <Button asChild variant="outline">
-        <a href={`/api/v1/leads/export?ids=${ids.join(",")}`} download="leads.csv">
-          Export selected
+        <a
+          href={`/api/v1/leads/export?${over ? filterQuery : `ids=${ids.join(",")}`}`}
+          download="leads.csv"
+        >
+          {over ? "Export all matching the filter (selection is over 1,000)" : "Export selected"}
         </a>
       </Button>
       {isAdmin && (

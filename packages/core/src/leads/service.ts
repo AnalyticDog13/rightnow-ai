@@ -195,7 +195,8 @@ export const leadQuery = z
         z
           .string()
           .min(1)
-          .transform((s) => s.split(",").slice(0, 1000)),
+          .transform((s) => s.split(","))
+          .pipe(z.array(z.string().min(1)).max(1000)), // over the cap is an error, never a silent cut
       ])
       .optional(), // comma separated in a query string: "export selected"
     cursor: z.string().min(1).optional(),

@@ -20,8 +20,9 @@ export default async function Page() {
         </Link>
       </div>
       <p className="max-w-2xl text-sm text-muted-foreground">
-        Addresses and domains here are never emailed, in any campaign. Unsubscribes, bounces and
-        complaints are added automatically.
+        Domains match exactly (blocking evil.test does not block mail.evil.test). Addresses and
+        domains here are never emailed, in any campaign. Unsubscribes, bounces and complaints are
+        added automatically.
       </p>
       <BlocklistManager
         canEdit={info.role !== "VIEWER"}

@@ -13,11 +13,9 @@ type Actor = string | null | undefined;
 
 export const MAX_BLOCKLIST_VALUES = 1000;
 export const MAX_BLOCKLIST_CSV_BYTES = 5 * 1024 * 1024;
-/**
- * Records a bulk path never deletes: erasure tombstones, unsubscribes and complaints are legal records.
- * Removing one needs a single delete by id with `confirm` (ADMIN, audited by hash).
- */
-const PROTECTED: SuppressionReason[] = ["GDPR_ERASURE", "UNSUBSCRIBE", "COMPLAINT"];
+/** D20: erasure records and complaints can never be removed; the other system reasons only one at a time. Bulk paths touch MANUAL entries only. */
+const NEVER: SuppressionReason[] = ["GDPR_ERASURE", "COMPLAINT"];
+export type Attestation = { reason: string; recipientConsent: true };
 const DOMAIN = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
 
 /** A value containing `@` is an EMAIL, anything else a DOMAIN; null when it is neither. */
@@ -90,23 +88,32 @@ export async function listBlocklist(prisma: Db, ws: string, input: z.input<typeo
   };
 }
 
-/** ADMIN only (the route enforces it). Protected reasons need `confirm`. Audited with the hash, never the address. */
+/**
+ * ADMIN only (the route enforces it), D20. GDPR_ERASURE and COMPLAINT: 409 `suppression_protected`.
+ * UNSUBSCRIBE needs `resubscribeAttestation` (reason + the recipient's consent), recorded in the audit.
+ * HARD_BOUNCE needs `confirm`. Audited with the hash, never the address.
+ */
 export async function removeBlocklist(
   prisma: Db,
   ws: string,
   actorId: Actor,
   id: string,
-  opts: { confirm?: boolean } = {},
+  opts: { confirm?: boolean; resubscribeAttestation?: Attestation } = {},
 ) {
   await prisma.$transaction(async (tx) => {
     const s = await tx.suppression.findFirst({ where: { id, workspaceId: ws } });
     if (!s) throw new LeadError(404, "Not found");
-    if (PROTECTED.includes(s.reason) && !opts.confirm) throw new LeadError(400, "confirm_required");
+    if (NEVER.includes(s.reason)) throw new LeadError(409, "suppression_protected");
+    const att = opts.resubscribeAttestation;
+    if (s.reason === "UNSUBSCRIBE" && (!att?.reason.trim() || att.recipientConsent !== true))
+      throw new LeadError(400, "attestation_required");
+    if (s.reason === "HARD_BOUNCE" && !opts.confirm) throw new LeadError(400, "confirm_required");
     await tx.suppression.delete({ where: { id } });
     await audit(tx, { workspaceId: ws, actorId }, "blocklist.remove", id, {
       kind: s.kind,
       reason: s.reason,
       hash: s.valueHash,
+      ...(att && { attestation: att.reason.trim().slice(0, 500), recipientConsent: true }),
     });
   });
 }
@@ -119,15 +126,20 @@ async function removeMany(
 ) {
   return prisma.$transaction(async (tx) => {
     const base = { workspaceId: ws, ...where };
-    const kept = await tx.suppression.count({ where: { ...base, reason: { in: PROTECTED } } });
-    const { count: deleted } = await tx.suppression.deleteMany({
-      where: { ...base, reason: { notIn: PROTECTED } },
+    const gone = await tx.suppression.findMany({
+      where: { ...base, reason: "MANUAL" },
+      select: { id: true, valueHash: true },
+    });
+    const kept = await tx.suppression.count({ where: { ...base, reason: { not: "MANUAL" } } });
+    await tx.suppression.deleteMany({
+      where: { id: { in: gone.map((g) => g.id) }, workspaceId: ws },
     });
     await audit(tx, { workspaceId: ws, actorId }, "blocklist.remove", undefined, {
-      deleted,
+      deleted: gone.length,
       kept,
+      hashes: gone.slice(0, 1000).map((g) => g.valueHash), // capped; `deleted` is the true count
     });
-    return { deleted, kept };
+    return { deleted: gone.length, kept };
   });
 }
 

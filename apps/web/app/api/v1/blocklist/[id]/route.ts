@@ -6,16 +6,15 @@ import { route } from "../../../../../lib/api";
 
 export const dynamic = "force-dynamic";
 
-/** ADMIN only (API keys act as MEMBER, so they cannot). `?confirm=1` is needed for unsubscribes, complaints and erasure records. */
+const body = z.strictObject({
+  confirm: z.boolean().optional(), // HARD_BOUNCE
+  resubscribeAttestation: z // UNSUBSCRIBE: why, and that the recipient consented
+    .strictObject({ reason: z.string().trim().min(1).max(500), recipientConsent: z.literal(true) })
+    .optional(),
+});
+
+/** ADMIN only (API keys act as MEMBER, so they cannot). Rules per reason: see `removeBlocklist` (D20). Send `{}` for a plain entry. */
 export const DELETE = route(
-  {
-    auth: "session-or-apikey",
-    scope: "blocklist:delete",
-    role: "ADMIN",
-    query: z.object({ confirm: z.stringbool().optional() }),
-  },
-  (c) =>
-    run(() =>
-      removeBlocklist(prisma, c.workspaceId, c.userId, c.params.id!, { confirm: c.query.confirm }),
-    ),
+  { auth: "session-or-apikey", scope: "blocklist:delete", role: "ADMIN", body },
+  (c) => run(() => removeBlocklist(prisma, c.workspaceId, c.userId, c.params.id!, c.body)),
 );

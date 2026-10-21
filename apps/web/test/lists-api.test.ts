@@ -122,7 +122,7 @@ describe("list routes", () => {
       req("POST", `/api/v1/lead-lists/${a.id}/move`, { leadIds: [l1.id], toListId: b.id }),
       p(a.id),
     );
-    expect(await json(mv)).toEqual({ moved: 1 });
+    expect(await json(mv)).toEqual({ moved: 1, skipped: 0 });
     expect((await json(await stats.GET(req("GET", "/x"), p(a.id)))).NOT_VERIFIED).toBe(1);
     const all = await json(await lists.GET(req("GET", "/api/v1/lead-lists")));
     expect(all.lists.map((l: { name: string; count: number }) => [l.name, l.count])).toEqual([
@@ -183,7 +183,7 @@ describe("blocklist routes", () => {
     const k = { authorization: `Bearer ${key}` };
     await setRole("member");
     for (const r of [
-      await blOne.DELETE(req("DELETE", "/x"), p(id)),
+      await blOne.DELETE(req("DELETE", "/x", {}), p(id)),
       await blBulk.POST(req("POST", "/x", { ids: [id] })),
       await blClear.POST(req("POST", "/x", { confirm: "DELETE ALL" })),
     ])
@@ -191,7 +191,7 @@ describe("blocklist routes", () => {
     await setRole("admin");
     expect((await blOne.DELETE(req("DELETE", "/x", undefined, k), p(id))).status).toBe(403);
     expect((await blClear.POST(req("POST", "/x", { confirm: "no" }))).status).toBe(400);
-    expect((await blOne.DELETE(req("DELETE", "/x"), p(id))).status).toBe(200);
+    expect((await blOne.DELETE(req("DELETE", "/x", {}), p(id))).status).toBe(200);
     expect(await json(await blBulk.POST(req("POST", "/x", { ids: ["gone"] })))).toEqual({
       deleted: 0,
       kept: 0,
@@ -199,11 +199,25 @@ describe("blocklist routes", () => {
     await setRole("owner");
   });
 
-  it("a protected record needs ?confirm=1", async () => {
-    const s = await db.prisma.suppression.create({
-      data: { workspaceId, kind: "EMAIL", valueHash: "z".repeat(64), reason: "GDPR_ERASURE" },
-    });
-    expect((await blOne.DELETE(req("DELETE", "/x"), p(s.id))).status).toBe(400);
-    expect((await blOne.DELETE(req("DELETE", "/x?confirm=1"), p(s.id))).status).toBe(200);
+  it("D20 over the API: erasure 409, unsubscribe needs an attestation", async () => {
+    const mk = (reason: "GDPR_ERASURE" | "UNSUBSCRIBE", h: string) =>
+      db.prisma.suppression.create({
+        data: { workspaceId, kind: "EMAIL", valueHash: h.repeat(64), reason },
+      });
+    const g = await mk("GDPR_ERASURE", "z");
+    const u = await mk("UNSUBSCRIBE", "y");
+    expect((await blOne.DELETE(req("DELETE", "/x", { confirm: true }), p(g.id))).status).toBe(409);
+    expect((await blOne.DELETE(req("DELETE", "/x", {}), p(u.id))).status).toBe(400);
+    const bad = { resubscribeAttestation: { reason: "x", recipientConsent: false } };
+    expect((await blOne.DELETE(req("DELETE", "/x", bad), p(u.id))).status).toBe(400);
+    const ok = {
+      resubscribeAttestation: { reason: "asked to resubscribe", recipientConsent: true },
+    };
+    expect((await blOne.DELETE(req("DELETE", "/x", ok), p(u.id))).status).toBe(200);
+  });
+
+  it("export by ids refuses more than 1000 instead of cutting", async () => {
+    const ids = Array.from({ length: 1001 }, (_, i) => `i${i}`).join(",");
+    expect((await leadsExport.GET(req("GET", `/api/v1/leads/export?ids=${ids}`))).status).toBe(400);
   });
 });

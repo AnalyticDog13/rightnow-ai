@@ -111,7 +111,18 @@ test("bounced view removes a suppression; blocklist page shows honest counts", a
   await prisma.$disconnect();
   await page.context().addCookies(cookies);
 
+  // a bulk action's result stays visible after the table refetches
   await page.goto("/leads");
+  await page.getByLabel("Select ann@e2e-import.io").check();
+  await page.getByLabel("Tags (comma separated)").fill("vip");
+  await page.getByRole("button", { name: "Add tags" }).click();
+  const done = page.getByRole("status").filter({ hasText: "Add tags: done." });
+  await expect(done).toBeVisible();
+  await page.waitForTimeout(1000);
+  await expect(done).toBeVisible();
+
+  // a lead filter from the Lists page must not break the Bounced view
+  await page.goto("/leads?listId=some-list");
   await page.getByRole("button", { name: "Bounced", exact: true }).click();
   const bounced = page.getByRole("table", { name: "Bounced leads" });
   await expect(bounced.getByRole("row").filter({ hasText: "bob@e2e-import.io" })).toContainText(
@@ -121,6 +132,10 @@ test("bounced view removes a suppression; blocklist page shows honest counts", a
   page.once("dialog", (d) => d.accept());
   await page.getByRole("button", { name: "Remove bob@e2e-import.io from the blocklist" }).click();
   await expect(bounced.getByText("No bounced addresses.")).toBeVisible();
+  await page.waitForTimeout(1000);
+  await expect(
+    page.getByRole("status").filter({ hasText: "Removed bob@e2e-import.io from the blocklist." }),
+  ).toBeVisible();
 
   await page.goto("/blocklist");
   await page.getByLabel(/Add emails or domains/).fill("Bad@X.test spam.test nope");

@@ -140,15 +140,23 @@ export async function moveLeads(
   return prisma.$transaction(async (tx) => {
     await ownList(tx, ws, p.fromListId);
     await ownList(tx, ws, p.toListId);
+    const inSource = (
+      await tx.leadListMember.findMany({
+        where: { listId: p.fromListId, leadId: { in: ids.parse(p.leadIds) } },
+        select: { leadId: true },
+      })
+    ).map((m) => m.leadId);
     await tx.leadListMember.deleteMany({
-      where: { listId: p.fromListId, leadId: { in: ids.parse(p.leadIds) } },
+      where: { listId: p.fromListId, leadId: { in: inSource } },
     });
-    const moved = await add(tx, ws, p.toListId, p.leadIds);
+    const moved = inSource.length ? await add(tx, ws, p.toListId, inSource) : 0;
+    const skipped = p.leadIds.length - moved; // not in the source list, or not a live lead of this workspace
     await audit(tx, { workspaceId: ws, actorId }, "list.move", p.toListId, {
       from: p.fromListId,
       count: moved,
+      skipped,
     });
-    return { moved };
+    return { moved, skipped };
   });
 }
 

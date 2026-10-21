@@ -16,7 +16,6 @@ type Row = {
   source: string | null;
   createdAt: string;
 };
-const PROTECTED = ["GDPR_ERASURE", "UNSUBSCRIBE", "COMPLAINT"];
 const sel = "h-10 rounded-md border border-border bg-card px-3 text-sm";
 
 export function BlocklistManager({ canEdit, isAdmin }: { canEdit: boolean; isAdmin: boolean }) {
@@ -88,41 +87,41 @@ export function BlocklistManager({ canEdit, isAdmin }: { canEdit: boolean; isAdm
   }
 
   async function remove(r: Row) {
-    const protectedRow = PROTECTED.includes(r.reason);
-    const what = r.value ?? "this erased address";
-    if (
-      !confirm(
-        protectedRow
-          ? `${what} is a legal record (${REASON[r.reason]}). Remove it anyway? The address could be emailed again.`
-          : `Remove ${what}?`,
-      )
-    )
-      return;
-    const res = await call(
-      `/api/v1/blocklist/${r.id}${protectedRow ? "?confirm=1" : ""}`,
-      "DELETE",
-    );
+    const what = r.value ?? "this entry";
+    let body: Record<string, unknown> = {};
+    if (r.reason === "UNSUBSCRIBE") {
+      const reason = prompt(
+        `${what} unsubscribed. Remove it only if the recipient asked to be emailed again. Why is it safe to email them?`,
+      );
+      if (!reason?.trim()) return;
+      if (!confirm("Has the recipient clearly consented to be emailed again?")) return;
+      body = { resubscribeAttestation: { reason: reason.trim(), recipientConsent: true } };
+    } else if (r.reason === "HARD_BOUNCE") {
+      if (!confirm(`${what} bounced. Removing it risks more bounces. Remove anyway?`)) return;
+      body = { confirm: true };
+    } else if (!confirm(`Remove ${what}?`)) return;
+    const res = await call(`/api/v1/blocklist/${r.id}`, "DELETE", body);
     refresh(res.ok ? "Removed." : errorText(res));
   }
 
   async function bulkRemove() {
     if (
       !confirm(
-        `Remove ${selected.size} entries? Unsubscribes, complaints and erasure records are kept.`,
+        `Remove the manual entries among the ${selected.size} selected? Every other reason is kept.`,
       )
     )
       return;
     const r = await call("/api/v1/blocklist/bulk-delete", "POST", { ids: [...selected] });
-    refresh(r.ok ? `Removed ${r.json.deleted}. Kept ${r.json.kept} protected.` : errorText(r));
+    refresh(r.ok ? `Removed ${r.json.deleted}. Kept ${r.json.kept} (not manual).` : errorText(r));
   }
 
   async function clearAll() {
     const typed = prompt(
-      "Type DELETE ALL to remove every manual entry. Unsubscribes, complaints and erasure records are kept.",
+      "Type DELETE ALL to remove every manual entry. Bounces, unsubscribes, complaints, not-interested and erasure records are kept.",
     );
     if (typed === null) return;
     const r = await call("/api/v1/blocklist/clear", "POST", { confirm: typed });
-    refresh(r.ok ? `Removed ${r.json.deleted}. Kept ${r.json.kept} protected.` : errorText(r));
+    refresh(r.ok ? `Removed ${r.json.deleted}. Kept ${r.json.kept} (not manual).` : errorText(r));
   }
 
   const ids = rows.map((r) => r.id);
@@ -220,7 +219,7 @@ export function BlocklistManager({ canEdit, isAdmin }: { canEdit: boolean; isAdm
               <th className="w-10 p-3">
                 <input
                   type="checkbox"
-                  aria-label="Select all entries"
+                  aria-label={`Select all ${ids.length} loaded entries`}
                   checked={allOn}
                   disabled={!isAdmin || ids.length === 0}
                   onChange={() => setSelected(allOn ? new Set() : new Set(ids))}
@@ -251,7 +250,7 @@ export function BlocklistManager({ canEdit, isAdmin }: { canEdit: boolean; isAdm
                 <td className="p-3">{r.source}</td>
                 <td className="p-3">{r.createdAt.slice(0, 10)}</td>
                 <td className="p-3">
-                  {isAdmin && (
+                  {isAdmin && !["GDPR_ERASURE", "COMPLAINT"].includes(r.reason) && (
                     <Button
                       variant="outline"
                       className="h-8 px-2 text-xs"

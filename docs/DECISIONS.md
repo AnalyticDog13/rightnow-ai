@@ -95,3 +95,9 @@ These are not built, or are forced, because a Global Constraint outranks the spe
 - PS-SEQ-10 "ignore account limits" is not built: it would exceed per-account allowances.
 - PS-CAMP-25's List-Unsubscribe toggle accepts only `true`: every campaign email must carry the header.
 - PS-CAMP-04 "Account Suspended" is shown as ACCOUNTS_UNHEALTHY, whose producer is P5-T02.
+
+## 2026-10-20 · D20 · Removing suppressions (P3-T03)
+- `GDPR_ERASURE` and `COMPLAINT` suppressions are never removable, single or bulk, API or UI. An attempt returns 409 `suppression_protected`. An erasure row holds only a hash, so removing it could only let the erased person be re-imported.
+- `UNSUBSCRIBE` is removable one at a time by an ADMIN, and only with `resubscribeAttestation` (a non-empty reason plus `recipientConsent: true`). The audit row holds the hash and the attestation.
+- `HARD_BOUNCE` is removable one at a time by an ADMIN with `confirm`. `NOT_INTERESTED` and `MANUAL` need ADMIN only.
+- Bulk delete and "clear" touch `MANUAL` entries only, and audit a capped list of hashes plus the true count.

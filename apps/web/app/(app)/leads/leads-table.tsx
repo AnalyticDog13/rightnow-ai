@@ -54,12 +54,16 @@ export function LeadsTable({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [openId, setOpenId] = useState<string | null>(null);
   const [msg, setMsg] = useState("");
+  // result of the last action; a refetch must not wipe it
+  const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(null);
   const [tick, setTick] = useState(0);
   const set = (k: string, v: string) => setF((o) => ({ ...o, [k]: v }));
 
   const url = useCallback(
     (cursor?: string) => {
-      const p = new URLSearchParams(Object.entries(f).filter(([, v]) => v));
+      // the blocklist query is strict: send it only what it accepts
+      const keep = bounced ? ["q"] : Object.keys(f);
+      const p = new URLSearchParams(Object.entries(f).filter(([k, v]) => v && keep.includes(k)));
       if (bounced) {
         p.set("reason", "HARD_BOUNCE");
         p.set("kind", "EMAIL");
@@ -101,8 +105,8 @@ export function LeadsTable({
 
   async function removeSuppression(b: Bounced) {
     if (!confirm(`Remove ${b.value} from the blocklist? It can be emailed again.`)) return;
-    const r = await call(`/api/v1/blocklist/${b.id}`, "DELETE");
-    setMsg(r.ok ? "Removed from the blocklist." : errorText(r));
+    const r = await call(`/api/v1/blocklist/${b.id}`, "DELETE", { confirm: true });
+    setNotice({ text: r.ok ? `Removed ${b.value} from the blocklist.` : errorText(r), ok: r.ok });
     setTick((n) => n + 1);
   }
 
@@ -128,47 +132,51 @@ export function LeadsTable({
           value={f.q ?? ""}
           onChange={(e) => set("q", e.target.value)}
         />
-        <select
-          aria-label="Filter by verification"
-          className={sel}
-          value={f.verificationStatus ?? ""}
-          onChange={(e) => set("verificationStatus", e.target.value)}
-        >
-          <option value="">All verification</option>
-          {Object.entries(VERIFICATION)
-            .filter(([k]) => k !== "PENDING_JOB")
-            .map(([k, v]) => (
-              <option key={k} value={k}>
-                {v}
-              </option>
-            ))}
-        </select>
-        <select
-          aria-label="Filter by interest"
-          className={sel}
-          value={f.interestStatus ?? ""}
-          onChange={(e) => set("interestStatus", e.target.value)}
-        >
-          <option value="">All interest</option>
-          {Object.entries(INTEREST).map(([k, v]) => (
-            <option key={k} value={k}>
-              {v}
-            </option>
-          ))}
-        </select>
-        <select
-          aria-label="Filter by list"
-          className={sel}
-          value={f.listId ?? ""}
-          onChange={(e) => set("listId", e.target.value)}
-        >
-          <option value="">All lists</option>
-          {lists.map((l) => (
-            <option key={l.id} value={l.id}>
-              {l.name}
-            </option>
-          ))}
-        </select>
+        {!bounced && (
+          <>
+            <select
+              aria-label="Filter by verification"
+              className={sel}
+              value={f.verificationStatus ?? ""}
+              onChange={(e) => set("verificationStatus", e.target.value)}
+            >
+              <option value="">All verification</option>
+              {Object.entries(VERIFICATION)
+                .filter(([k]) => k !== "PENDING_JOB")
+                .map(([k, v]) => (
+                  <option key={k} value={k}>
+                    {v}
+                  </option>
+                ))}
+            </select>
+            <select
+              aria-label="Filter by interest"
+              className={sel}
+              value={f.interestStatus ?? ""}
+              onChange={(e) => set("interestStatus", e.target.value)}
+            >
+              <option value="">All interest</option>
+              {Object.entries(INTEREST).map(([k, v]) => (
+                <option key={k} value={k}>
+                  {v}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label="Filter by list"
+              className={sel}
+              value={f.listId ?? ""}
+              onChange={(e) => set("listId", e.target.value)}
+            >
+              <option value="">All lists</option>
+              {lists.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
         <Button
           variant={bounced ? "default" : "outline"}
           aria-pressed={bounced}
@@ -271,9 +279,10 @@ export function LeadsTable({
           lists={lists}
           members={members}
           fromListId={f.listId ?? ""}
+          filterQuery={new URLSearchParams(Object.entries(f).filter(([, v]) => v)).toString()}
           isAdmin={isAdmin}
-          onDone={(m) => {
-            setMsg(m);
+          onDone={(text, ok) => {
+            setNotice({ text, ok });
             setTick((n) => n + 1);
           }}
         />
@@ -282,6 +291,16 @@ export function LeadsTable({
         <p role="alert" className="text-sm text-destructive">
           {msg}
         </p>
+      )}
+      {notice && (
+        <div className="flex items-center gap-2 text-sm">
+          <p role={notice.ok ? "status" : "alert"} className={notice.ok ? "" : "text-destructive"}>
+            {notice.text}
+          </p>
+          <Button variant="ghost" className="h-8 px-2 text-xs" onClick={() => setNotice(null)}>
+            Dismiss message
+          </Button>
+        </div>
       )}
       <p role="status" className="text-sm text-muted-foreground">
         {loading
@@ -341,7 +360,7 @@ export function LeadsTable({
                 <th className="w-10 p-3">
                   <input
                     type="checkbox"
-                    aria-label="Select all leads"
+                    aria-label={`Select all ${ids.length} loaded leads`}
                     checked={allOn}
                     disabled={!canEdit || ids.length === 0}
                     onChange={() => setSelected(allOn ? new Set() : new Set(ids))}
@@ -359,7 +378,6 @@ export function LeadsTable({
                 <tr
                   key={l.id}
                   tabIndex={0}
-                  aria-selected={selected.has(l.id)}
                   className="cursor-pointer border-b border-border hover:bg-muted focus-visible:outline-2 focus-visible:outline-primary"
                   onClick={() => setOpenId(l.id)}
                   onKeyDown={(e) => {
