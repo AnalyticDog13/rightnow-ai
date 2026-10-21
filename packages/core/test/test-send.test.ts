@@ -13,7 +13,7 @@ import {
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { encryptCredentials } from "../src/accounts/credentials";
 import { sendTestEmail } from "../src/accounts/test-send";
-import { liveVerify } from "../src/accounts/live-verify";
+import { liveVerify, recordVerification } from "../src/accounts/live-verify";
 import { fixedClock } from "../src/clock";
 import { resetEnvCache } from "../src/env";
 import { testEnv } from "./accounts-fixture";
@@ -190,6 +190,23 @@ describe("liveVerify", () => {
       ok: false,
       detail: "Message-ID rewritten to <rewritten@provider.test>",
     });
+  });
+
+  test("recordVerification: an all-PASS run records the provider (D17), any FAIL removes it", async () => {
+    const a = await mk();
+    const p = new FakeProvider(`lv${++n}@acme.io`); // stands in for a real provider
+    const steps = await liveVerify(p, "me@dest.example", clock);
+    expect(await recordVerification(db.prisma, "GMAIL", a.id, steps)).toBe("recorded");
+    expect(
+      await db.prisma.providerVerification.findUnique({ where: { provider: "GMAIL" } }),
+    ).toMatchObject({
+      accountId: a.id,
+      report: JSON.parse(JSON.stringify(steps)), // undefined details are dropped in JSON
+    });
+    const failed = [...steps, { step: "changes", ok: false, detail: "timeout" }];
+    expect(await recordVerification(db.prisma, "GMAIL", a.id, failed)).toBe("removed");
+    expect(await db.prisma.providerVerification.count()).toBe(0);
+    expect(await recordVerification(db.prisma, "SMTP", a.id, failed)).toBe("removed"); // nothing to remove
   });
 
   test("a failing send stops the run", async () => {

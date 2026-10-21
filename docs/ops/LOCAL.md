@@ -33,6 +33,8 @@ Data lives in the Docker volume `pgdata`. `docker compose down -v` deletes it; t
 
 Containers freeze (they are not restarted). Nothing sends or syncs while asleep. On wake, sending resumes only for mailboxes whose last successful sync is recent (`SYNC_MAX_STALENESS_SEC`, default 300 s), so the app first catches up on replies and then sends. Scheduled sends missed during sleep go out late (inside their schedule window) or wait for the next window. Campaigns therefore only progress while the machine is awake; use a VPS ([VPS.md](VPS.md)) for always-on sending.
 
+A send that was in flight when the machine slept or the worker crashed is never resent automatically. After `SEND_LEASE_SEC` (default 600 s, minimum 300) the worker searches the mailbox's Sent folder for it. If the copy is found, it counts as sent. If it is not found twice, 15 minutes apart, the message is HELD until you release or cancel it (`GET /api/v1/scheduled-messages?status=HELD`).
+
 ## Limitation: tracking links need a public URL (PS-DEPLOY-13)
 
 With `APP_URL=http://localhost:3000`, open/click tracking links and one-click unsubscribe links point at your own machine, so recipients cannot reach them. Locally, emails carry mailto-only unsubscribe and click/open tracking is unavailable. For tracking, run in VPS mode or expose the app on a public HTTPS URL and set `APP_URL` to it.

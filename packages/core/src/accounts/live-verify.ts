@@ -1,3 +1,4 @@
+import type { AccountProvider, PrismaClient } from "@rightnow/db/client";
 import { newMessageId, type MailProvider, type SyncCursor } from "@rightnow/providers";
 import type { Clock } from "../clock";
 
@@ -94,4 +95,27 @@ export async function liveVerify(
     }
   });
   return out;
+}
+
+/**
+ * D17: the only writer of ProviderVerification. A run where every step passed records the provider as verified for
+ * campaign sending; any failure removes its row, so sending from that provider stops until a clean run.
+ */
+export async function recordVerification(
+  prisma: Pick<PrismaClient, "providerVerification">,
+  provider: AccountProvider,
+  accountId: string,
+  steps: VerifyStep[],
+): Promise<"recorded" | "removed"> {
+  if (steps.length && steps.every((s) => s.ok)) {
+    const data = { passedAt: new Date(), accountId, report: JSON.parse(JSON.stringify(steps)) };
+    await prisma.providerVerification.upsert({
+      where: { provider },
+      create: { provider, ...data },
+      update: data,
+    });
+    return "recorded";
+  }
+  await prisma.providerVerification.deleteMany({ where: { provider } });
+  return "removed";
 }

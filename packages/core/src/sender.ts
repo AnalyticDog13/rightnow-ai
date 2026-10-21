@@ -49,7 +49,7 @@ const OUTCOMES: SendOutcome[] = [
 
 const ymd = (d: Date | null) => d?.toISOString().slice(0, 10) ?? "";
 /** The reservation a row holds now, on its stored days (a re-claim stores new ones). */
-const refOf = (m: {
+export const refOf = (m: {
   accountId: string;
   campaignId: string;
   workspaceId: string;
@@ -390,16 +390,18 @@ async function failed(
 /**
  * The provider accepted `c`. Records SENT conditionally on our claim; when the row moved on meanwhile, applies the
  * late-accept table instead. Idempotent: a repeat finds the row SENT with our token and changes nothing. Never sends.
+ * `sentAt` (resolveUncertain: the date of the copy found in Sent) defaults to now.
  */
 export async function recordAccepted(
   db: PrismaClient,
   clock: Clock,
   c: Claimed,
   res: SendResult,
+  sentAt?: Date,
 ): Promise<SendOutcome> {
   return withTxRetry(() =>
     db.$transaction(async (tx) => {
-      const now = clock.now();
+      const now = sentAt ?? clock.now();
       const data = {
         status: "SENT" as const,
         sentAt: now,

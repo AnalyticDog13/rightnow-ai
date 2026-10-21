@@ -6,6 +6,7 @@ import {
   unsubscribeKeys,
   type Clock,
   type Env,
+  type SenderDeps,
 } from "@rightnow/core";
 import type { PrismaClient } from "@rightnow/db/client";
 import type { JobDef } from "../boss";
@@ -25,10 +26,11 @@ export async function campaignDispatch(
   clock: Clock,
   bootId: string,
   env: DispatchEnv = getEnv(),
+  providerFor: SenderDeps["providerFor"] = (a) => createProvider(a, { prisma, clock }),
 ) {
   return dispatchTick(prisma, clock, {
     bootId,
-    providerFor: (a) => createProvider(a, { prisma, clock }),
+    providerFor,
     env: { appUrl: env.APP_URL, unsubscribeKeys: unsubscribeKeys(env) },
     stalenessSec: env.SYNC_MAX_STALENESS_SEC,
     sendableProviders: await sendableProviders(prisma, env),
@@ -38,7 +40,9 @@ export async function campaignDispatch(
 export const campaignDispatchJob: JobDef = {
   name: "campaign-dispatch",
   cron: "* * * * *",
-  options: { policy: "stately", retryLimit: 0 },
+  boot: true,
+  // heartbeat: a killed worker's active job is failed within ~25 s, so the stately queue is not blocked for 15 min
+  options: { policy: "stately", retryLimit: 0, heartbeatSeconds: 10 },
   handler: async (_jobs, { prisma, clock, bootId }) => {
     await campaignDispatch(prisma, clock, bootId);
   },

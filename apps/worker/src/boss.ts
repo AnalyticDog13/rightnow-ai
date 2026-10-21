@@ -10,6 +10,8 @@ import { startHeartbeat } from "./jobs/heartbeat";
 export type JobDef = {
   name: string;
   cron?: string;
+  /** Also sent once right after registration, so a (re)started worker does not wait for the first cron tick. */
+  boot?: boolean;
   options?: Omit<Queue, "name">;
   handler: (jobs: Job[], deps: JobDeps) => Promise<void>;
 };
@@ -28,7 +30,11 @@ export async function startWorker(opts: {
   const clock = opts.clock ?? systemClock;
   const max = opts.poolMax ?? 5;
   const prisma = createPrisma(opts.databaseUrl, max);
-  const boss = new PgBoss({ connectionString: opts.databaseUrl, max });
+  const boss = new PgBoss({
+    connectionString: opts.databaseUrl,
+    max,
+    superviseIntervalSeconds: 15,
+  });
   boss.on("error", (e) => console.error("pg-boss error", e));
   let started = false;
   let bootId: string | undefined;
@@ -70,6 +76,7 @@ export async function startWorker(opts: {
       await boss.work<object>(j.name, (js) => j.handler(js, { prisma, clock, bootId: bootId! }));
       if (j.cron) await boss.schedule(j.name, j.cron, {});
     }
+    for (const j of opts.jobs ?? defaultJobs) if (j.boot) await boss.send(j.name, {});
 
     health = await startHealthServer(opts.healthPort ?? 8081, async () => {
       if (!started) return false;

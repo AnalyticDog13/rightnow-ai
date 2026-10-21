@@ -30,7 +30,9 @@ export async function campaignPlan(prisma: PrismaClient, clock: Clock, env: Plan
 export const campaignPlanJob: JobDef = {
   name: "campaign-plan",
   cron: "* * * * *",
-  options: { policy: "stately", retryLimit: 0 },
+  boot: true,
+  // heartbeat: a killed worker's active job is failed within ~25 s, so the stately queue is not blocked for 15 min
+  options: { policy: "stately", retryLimit: 0, heartbeatSeconds: 10 },
   handler: async (_jobs, { prisma, clock }) => {
     await campaignPlan(prisma, clock);
   },

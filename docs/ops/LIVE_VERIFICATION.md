@@ -37,7 +37,10 @@ PASS findSent (Message-ID kept)
 PASS locate (SENT)
 PASS cursor (gmail, graph or imap)
 PASS changes
+RECORDED GMAIL as verified for campaign sending
 ```
+
+A full PASS records the provider as verified; campaign sending for that provider stays off until then (D17). Any FAIL prints `REMOVED …` and deletes that provider's verification, so campaign sending from every account of that provider stops until a clean run.
 
 Exit code 0 means everything passed. `changes` waits up to 60 s for the sent copy to show up in the incremental sync. A failed `send` ends the run. Note every `FAIL` detail in the results table.
 `findSent` failing with `Message-ID rewritten to ...` is exactly what P3-T11 needs to know (the provider changed our id): record it. The `locate` and `changes` steps then fail too.

@@ -87,6 +87,9 @@ export class FakeProvider implements MailProvider {
       ),
     );
     if (fail === "api_5xx" || fail === "timeout_after_write") throw new AmbiguousSendError(fail);
+    // restart E2E: the sent copy exists, but the result arrives late (the worker can be killed meanwhile)
+    const hang = Number(process.env.FAKE_SEND_HANG_MS ?? 0);
+    if (hang > 0) await new Promise((r) => setTimeout(r, hang));
     return {
       rfcMessageId: mime.messageId,
       providerMessageId: entry.id,

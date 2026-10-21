@@ -18,7 +18,8 @@ if (!id || !to) {
   process.exit(2);
 }
 
-const { createProvider, liveVerify, systemClock } = await import("../packages/core/src/index");
+const { createProvider, liveVerify, recordVerification, systemClock } =
+  await import("../packages/core/src/index");
 const { prisma } = await import("../packages/db/src/index");
 try {
   const account = await prisma.emailAccount.findFirst({ where: { id, deletedAt: null } });
@@ -28,7 +29,14 @@ try {
   const steps = await liveVerify(provider, to, systemClock);
   for (const s of steps)
     console.log(`${s.ok ? "PASS" : "FAIL"} ${s.step}${s.detail ? ` (${s.detail})` : ""}`);
-  process.exitCode = steps.some((s) => !s.ok) ? 1 : 0;
+  // D17: a full PASS enables campaign sending for this provider; any FAIL disables it again
+  const rec = await recordVerification(prisma, account.provider, account.id, steps);
+  console.log(
+    rec === "recorded"
+      ? `RECORDED ${account.provider} as verified for campaign sending`
+      : `REMOVED ${account.provider} verification: campaign sending from ${account.provider} accounts stays off`,
+  );
+  process.exitCode = rec === "recorded" ? 0 : 1;
 } finally {
   await prisma.$disconnect();
 }
