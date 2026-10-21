@@ -98,6 +98,7 @@ CI status (`gh` is not installed): `curl -s "https://api.github.com/repos/Analyt
 3. Independent reviewer subagent (spec compliance + Ponytail quality). Fix important findings.
 4. Commit (conventional commits, `feat(scope): ...`) on the phase branch `phase-N-<name>`, push to `origin`, update `docs/TASKS.json`
    (status, commit), `docs/PROGRESS.md`, `docs/HANDOFF.md`, and `docs/REVIEW_LOG.md`.
+   Stage files by explicit path only (never a directory, `-A` or `.`): parallel agents share the working tree.
 5. At the phase gate fast-forward `main` to the phase branch. Never commit secrets, `.env`, or OAuth credentials. No force-push to `main`.
 
 ## Docs index
