@@ -67,6 +67,15 @@ export async function sendableProviders(
 
 const asDate = (ymd: string) => new Date(`${ymd}T00:00:00Z`);
 
+/** An account the claim may send from (alias `a`): live, ACTIVE/REWARMING, sendable provider (D17), fresh (D16). Shared with pickAccount and the explainer. */
+export const accountOk = (
+  ts: string,
+  o: Pick<ClaimOpts, "sendableProviders" | "stalenessSec">,
+) => Prisma.sql`
+          a."deletedAt" IS NULL AND a.lifecycle IN ('ACTIVE', 'REWARMING')
+          AND a.provider = ANY(${o.sendableProviders}::text[]::"AccountProvider"[])
+          AND a."lastSyncCompletedAt" >= ${ts}::timestamp - make_interval(secs => ${o.stalenessSec}::int)`;
+
 /** FROM + WHERE of a claimable row (the brief's claim SQL), shared by the SELECT and the re-check under the lock. */
 const eligible = (ts: string, o: ClaimOpts) => Prisma.sql`
         FROM "ScheduledMessage" sm
@@ -81,9 +90,7 @@ const eligible = (ts: string, o: ClaimOpts) => Prisma.sql`
           AND c.status = 'ACTIVE' AND c."deletedAt" IS NULL
           AND (c."startAt" IS NULL OR c."startAt" <= ${ts}::timestamp)
           AND (c."endAt" IS NULL OR c."endAt" > ${ts}::timestamp)
-          AND a."deletedAt" IS NULL AND a.lifecycle IN ('ACTIVE', 'REWARMING')
-          AND a.provider = ANY(${o.sendableProviders}::text[]::"AccountProvider"[])
-          AND a."lastSyncCompletedAt" >= ${ts}::timestamp - make_interval(secs => ${o.stalenessSec}::int)
+          AND ${accountOk(ts, o)}
           AND a."nextSendAt" <= ${ts}::timestamp AND coalesce(btrim(w."physicalAddress"), '') <> ''
           AND EXISTS (SELECT 1 FROM "CampaignAccount" ca WHERE ca."campaignId" = c.id AND ca."accountId" = a.id)
           AND (NOT c."stopForCompanyOnReply" OR NOT EXISTS (

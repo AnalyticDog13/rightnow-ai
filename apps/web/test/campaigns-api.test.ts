@@ -28,6 +28,7 @@ let enrollR: typeof import("../app/api/v1/campaigns/[id]/leads/route");
 let clR: typeof import("../app/api/v1/campaigns/[id]/leads/[clId]/route");
 let dup: typeof import("../app/api/v1/campaigns/[id]/duplicate/route");
 let exp: typeof import("../app/api/v1/campaigns/[id]/export/route");
+let status: typeof import("../app/api/v1/campaigns/[id]/status/route");
 let imp: typeof import("../app/api/v1/campaigns/import/route");
 
 const req = (
@@ -78,6 +79,7 @@ beforeAll(async () => {
   one = await import("../app/api/v1/campaigns/[id]/route");
   launch = await import("../app/api/v1/campaigns/[id]/launch/route");
   pause = await import("../app/api/v1/campaigns/[id]/pause/route");
+  status = await import("../app/api/v1/campaigns/[id]/status/route");
   resume = await import("../app/api/v1/campaigns/[id]/resume/route");
   archive = await import("../app/api/v1/campaigns/[id]/archive/route");
   schedules = await import("../app/api/v1/campaigns/[id]/schedules/route");
@@ -169,6 +171,7 @@ describe("campaign routes", () => {
       await pause.POST(req("POST", "/x"), p(f)),
       await resume.POST(req("POST", "/x", {}), p(f)),
       await archive.POST(req("POST", "/x"), p(f)),
+      await status.GET(req("GET", "/x"), p(f)),
       await accounts.PUT(req("PUT", "/x", { accountIds: [] }), p(f)),
       await schedules.PUT(req("PUT", "/x", office), p(f)),
     ];
@@ -233,6 +236,9 @@ describe("campaign routes", () => {
     const c = await db.prisma.campaign.create({ data: { workspaceId, name: "V" } });
     expect((await launch.POST(req("POST", "/x", {}), p(c.id))).status).toBe(403);
     expect((await list.GET(req("GET", "/x"))).status).toBe(200);
+    const sr = await status.GET(req("GET", "/x"), p(c.id)); // VIEWER may read the explainer
+    expect(sr.status).toBe(200);
+    expect(await json(sr)).toMatchObject({ sending: false, reasons: [{ code: "draft" }] });
     await setRole("owner");
   });
   it("launch reads sendable providers from ProviderVerification (D17), not the Fake stand-in", async () => {
