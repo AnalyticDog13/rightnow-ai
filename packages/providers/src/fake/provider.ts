@@ -208,6 +208,20 @@ export class FakeProvider implements MailProvider {
     return { rfcMessageId: messageId };
   }
 
+  /** Delivers a hand-built message (headers, attachments, a missing Message-ID) into INBOX or SENT. */
+  async receiveRaw(
+    raw: Buffer,
+    folder: "INBOX" | "SENT" = "INBOX",
+  ): Promise<{ rfcMessageId: string | null }> {
+    const p = await parseRaw(raw, { providerMessageId: "", folder });
+    await updateMailbox(
+      this.file,
+      (box) =>
+        void this.add(box, folder, raw, p.rfcMessageId ?? "", this.threadOf(box, p.inReplyTo ?? undefined)),
+    );
+    return { rfcMessageId: p.rfcMessageId };
+  }
+
   async seedInbound(n: number): Promise<void> {
     const raws = await Promise.all(
       Array.from({ length: n }, async (_, i) => {

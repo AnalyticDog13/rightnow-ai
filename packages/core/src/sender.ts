@@ -20,6 +20,8 @@ import { commitUsage, creditSent, releaseUsage, type UsageRef } from "./quota";
 import { isInWindow, nextWindowStart, type Window } from "./schedule";
 import { listUnsubscribeHeaders, type RenderEnv } from "./unsubscribe";
 import { OPEN_STATES } from "./campaigns/lead-status";
+import { recordEvent } from "./mail/events";
+import { recordOutboundMessage } from "./mail/ingest";
 
 type Tx = Prisma.TransactionClient;
 
@@ -77,6 +79,33 @@ const pauseLead = (tx: Tx, id: string) =>
     data: { state: "PAUSED", stopReason: "SEND_FAILED" },
   });
 
+/** ACCEPTED / SEND_FAILED event of a row (a leaf table: written last in the transaction). */
+async function sendEvent(
+  tx: Tx,
+  type: "ACCEPTED" | "SEND_FAILED",
+  c: Claimed,
+  at: Date,
+  meta: Prisma.InputJsonObject = {},
+) {
+  const m = await tx.scheduledMessage.findUniqueOrThrow({
+    where: { id: c.id },
+    select: { variantId: true, campaignLead: { select: { leadId: true } } },
+  });
+  await recordEvent(tx, {
+    workspaceId: c.workspaceId,
+    type,
+    occurredAt: at,
+    leadId: m.campaignLead.leadId,
+    campaignId: c.campaignId,
+    accountId: c.accountId,
+    stepId: c.stepId,
+    variantId: m.variantId,
+    scheduledMessageId: c.id,
+    meta,
+    dedupeKey: `${type === "ACCEPTED" ? "acc" : "fail"}:${c.id}`,
+  });
+}
+
 /**
  * Leaves SENDING for `data` in one short transaction, conditional on our claim (id + claimToken + SENDING). Lock order
  * (D21): the row, then the CampaignLead, then `lead` (CampaignLead/Lead/Suppression writes), then the usage release,
@@ -105,6 +134,8 @@ async function settle(
       }
       if (o.release) await releaseUsage(tx, c);
       await o.account?.(tx);
+      if (data.status === "FAILED")
+        await sendEvent(tx, "SEND_FAILED", c, new Date(), { error: String(data.error ?? "") });
       return true;
     }, TX),
   );
@@ -396,7 +427,7 @@ export async function recordAccepted(
   res: SendResult,
   sentAt?: Date,
 ): Promise<SendOutcome> {
-  return withTxRetry(() =>
+  const res2 = await withTxRetry(() =>
     db.$transaction(async (tx) => {
       const now = sentAt ?? clock.now();
       const data = {
@@ -444,6 +475,8 @@ export async function recordAccepted(
       return "SENT";
     }, TX),
   );
+  if (res2 === "SENT") await recordOutboundMessage(db, c.id); // after every accepted result; idempotent, never throws
+  return res2;
 }
 
 /** Side effects of a SENT row, in lock order after the row: CampaignLead, usage, EmailAccount, Lead, then advance. */
@@ -481,6 +514,7 @@ async function recordSent(
       },
     });
   await advanceLead(tx, clock, { campaignLeadId: c.campaignLeadId, stepId: c.stepId, sentAt: now });
+  await sendEvent(tx, "ACCEPTED", c, now);
 }
 
 /**

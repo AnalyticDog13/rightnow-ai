@@ -29,6 +29,7 @@ model Workspace {
   importJobs           ImportJob[]
   campaigns            Campaign[]
   scheduledMessages    ScheduledMessage[]
+  threads              Thread[]
   timezone             String                @default("UTC")
   physicalAddress      String?
   dailyCap             Int? // null = no workspace cap
@@ -268,6 +269,8 @@ model EmailAccount {
   dailyUsage                 AccountDailyUsage[]
   campaigns                  CampaignAccount[]
   scheduledMessages          ScheduledMessage[]
+  threads                    Thread[]
+  syncRuns                   SyncRun[]
 
   @@index([workspaceId])
 }
@@ -741,6 +744,7 @@ model ScheduledMessage {
   @@index([campaignId, status])
   @@index([stepId])
   @@index([variantId])
+  @@index([workspaceId, rfcMessageId])
 }
 
 // Install-level: written only by scripts/live-verify.ts when every live step passes (D17).
@@ -749,4 +753,174 @@ model ProviderVerification {
   passedAt  DateTime
   accountId String
   report    Json
+}
+
+enum MessageDirection {
+  IN
+  OUT
+}
+
+enum MessageKind {
+  REPLY
+  AUTO_REPLY
+  BOUNCE
+  UNSUBSCRIBE
+  OUTBOUND
+  OTHER
+}
+
+enum ReplyCategory {
+  INTERESTED
+  MEETING_REQUESTED
+  NOT_INTERESTED
+  WRONG_PERSON
+  NEUTRAL
+  OUT_OF_OFFICE
+  UNSUBSCRIBE
+  AUTOMATED
+  UNCERTAIN
+}
+
+enum BounceType {
+  HARD
+  SOFT
+  UNKNOWN
+}
+
+enum EventType {
+  ACCEPTED
+  SEND_FAILED
+  BOUNCE_HARD
+  BOUNCE_SOFT
+  BOUNCE_UNKNOWN
+  UNSUBSCRIBE
+  REPLY
+  AUTO_REPLY
+  OPEN
+  CLICK
+  INTEREST_CHANGED
+}
+
+enum SyncMode {
+  INCREMENTAL
+  FULL
+  HISTORICAL
+}
+
+// Threads are per mailbox. leadId/campaignId/campaignLeadId carry no FK: GDPR erasure deletes them explicitly.
+model Thread {
+  id               String        @id @default(cuid())
+  workspaceId      String
+  workspace        Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  accountId        String
+  account          EmailAccount  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  providerThreadId String?
+  subject          String
+  leadId           String?
+  campaignId       String?
+  campaignLeadId   String?
+  lastMessageAt    DateTime
+  lastInboundAt    DateTime?
+  lastInboundKind  MessageKind?
+  isRead           Boolean       @default(true)
+  category         ReplyCategory?
+  categorySource   String? // RULE | AI | USER
+  reminderAt       DateTime?
+  hasAttachment    Boolean       @default(false)
+  deletedAt        DateTime?
+  createdAt        DateTime      @default(now())
+  messages         Message[]
+
+  @@index([workspaceId, lastMessageAt])
+  @@index([accountId, providerThreadId])
+  @@index([workspaceId, leadId])
+  @@index([workspaceId, reminderAt])
+}
+
+model Message {
+  id                 String           @id @default(cuid())
+  workspaceId        String
+  accountId          String
+  threadId           String
+  thread             Thread           @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  providerMessageId  String?
+  rfcMessageId       String
+  synthetic          Boolean          @default(false)
+  inReplyTo          String?
+  references         String[]
+  direction          MessageDirection
+  folder             String // INBOX | SENT
+  fromEmail          String // lowercased
+  fromName           String?
+  to                 String[]
+  cc                 String[]
+  subject            String
+  text               String?
+  html               String?
+  sentAt             DateTime
+  kind               MessageKind
+  category           ReplyCategory?
+  bounceType         BounceType?
+  bounceRecipient    String?
+  oooUntil           DateTime?
+  scheduledMessageId String?
+  outsideApp         Boolean          @default(false)
+  leadId             String?
+  campaignId         String?
+  remoteDeletedAt    DateTime?
+  createdAt          DateTime         @default(now())
+  attachments        Attachment[]
+
+  @@unique([accountId, rfcMessageId])
+  @@index([accountId, providerMessageId])
+  @@index([threadId, sentAt])
+  @@index([workspaceId, rfcMessageId])
+  @@index([workspaceId, fromEmail])
+}
+
+// `data` is read only by the download route; every other read selects without it.
+model Attachment {
+  id          String  @id @default(cuid())
+  messageId   String
+  message     Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  filename    String
+  contentType String
+  size        Int
+  data        Bytes?
+  truncated   Boolean @default(false)
+}
+
+model Event {
+  id                 String    @id @default(cuid())
+  workspaceId        String
+  type               EventType
+  occurredAt         DateTime
+  leadId             String?
+  campaignId         String?
+  accountId          String?
+  stepId             String?
+  variantId          String?
+  scheduledMessageId String?
+  messageId          String?
+  isEstimated        Boolean   @default(false)
+  meta               Json      @default("{}")
+  dedupeKey          String    @unique
+  createdAt          DateTime  @default(now())
+
+  @@index([workspaceId, type, occurredAt])
+  @@index([campaignId, type])
+  @@index([leadId, occurredAt])
+}
+
+model SyncRun {
+  id         String       @id @default(cuid())
+  accountId  String
+  account    EmailAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  mode       SyncMode
+  startedAt  DateTime
+  finishedAt DateTime?
+  fetched    Int          @default(0)
+  error      String?
+
+  @@index([accountId, startedAt])
 }

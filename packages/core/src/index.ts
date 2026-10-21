@@ -51,3 +51,8 @@ export * from "./planner";
 export * from "./sender";
 export * from "./recovery";
 export * from "./scheduled";
+export * from "./mail/events";
+export * from "./mail/match";
+export * from "./mail/classify";
+export * from "./mail/ingest";
+export * from "./mail/inbox";

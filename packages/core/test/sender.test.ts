@@ -20,6 +20,7 @@ import { resumeAccount } from "../src/accounts/service";
 import { removeCampaignLead, resumeCampaignLead } from "../src/campaigns/enroll";
 import { claimDue, sendableProviders, type ClaimOpts, type Claimed } from "../src/dispatch";
 import { whyNotSending } from "../src/explain";
+import { recordOutboundMessage } from "../src/mail/ingest";
 import { planDue } from "../src/planner";
 import { releaseUsage } from "../src/quota";
 import {
@@ -139,6 +140,44 @@ describe("sendClaimed: accepted", () => {
     expect(m.headers["list-unsubscribe-post"]).toEqual(["List-Unsubscribe=One-Click"]);
     expect(m.text).toContain("1 Main St");
     expect(m.html).toContain("1 Main St");
+  });
+
+  test("accepted send writes an ACCEPTED event and an outbound Message; recording again changes nothing", async () => {
+    const clock = fixedClock(T);
+    const s = await seedCampaign(P(), { at: T, rows: 1, accounts: [{}] });
+    const c = await claim(clock);
+    expect(await sendClaimed(P(), clock, deps(), c)).toBe("SENT");
+    const events = await P().event.findMany({ where: { scheduledMessageId: c.id } });
+    expect(events).toMatchObject([
+      {
+        type: "ACCEPTED",
+        dedupeKey: `acc:${c.id}`,
+        leadId: s.leads[0]!.lead.id,
+        campaignId: s.campaign.id,
+        stepId: s.steps[0]!.id,
+        accountId: s.accounts[0]!.id,
+      },
+    ]);
+    const out = await P().message.findMany({ where: { scheduledMessageId: c.id } });
+    expect(out).toMatchObject([
+      { direction: "OUT", kind: "OUTBOUND", outsideApp: false, rfcMessageId: c.rfcMessageId },
+    ]);
+    await recordOutboundMessage(P(), c.id);
+    expect(await P().message.count()).toBe(1);
+    expect(await P().thread.count()).toBe(1);
+    expect(await P().event.count({ where: { scheduledMessageId: c.id } })).toBe(1);
+  });
+
+  test("a FAILED settle writes a SEND_FAILED event", async () => {
+    const clock = fixedClock(T);
+    const s = await seedCampaign(P(), { at: T, rows: 1, accounts: [{}] });
+    fake(s.accounts[0]!).failNext("permanent_rejected");
+    const c = await claim(clock);
+    expect(await sendClaimed(P(), clock, deps(), c)).toBe("FAILED");
+    expect(await P().event.findMany({ where: { scheduledMessageId: c.id } })).toMatchObject([
+      { type: "SEND_FAILED", dedupeKey: `fail:${c.id}`, meta: { error: "permanent_rejected" } },
+    ]);
+    expect(await P().message.count()).toBe(0);
   });
 
   test("cc and bcc: Cc header, never a Bcc header; units = 1 + cc + bcc", async () => {

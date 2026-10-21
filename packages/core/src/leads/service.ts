@@ -409,6 +409,18 @@ export async function gdprDeleteLead(
       },
       data: { reason: "GDPR_ERASURE" },
     });
+    // Mail: the lead's threads (cascading messages and attachments), anything they sent, and their events' lead link
+    await tx.thread.deleteMany({ where: { workspaceId: ws, leadId: { in: ids } } });
+    await tx.message.deleteMany({
+      where: {
+        workspaceId: ws,
+        OR: [{ fromEmail: { in: uniq(set.map((l) => l.email)) } }, { leadId: { in: ids } }],
+      },
+    });
+    await tx.event.updateMany({
+      where: { workspaceId: ws, leadId: { in: ids } },
+      data: { leadId: null },
+    });
     await tx.lead.deleteMany({ where: { workspaceId: ws, id: { in: ids } } });
     await audit(tx, { workspaceId: ws, actorId, at: clock.now() }, "lead.gdpr_delete", undefined, {
       hashes,
@@ -499,6 +511,10 @@ export async function mergeLeads(
         blocked ? "SUPPRESSED" : "SKIPPED",
         clock.now(),
       );
+      const repoint = { where: { workspaceId: ws, leadId: mergeId }, data: { leadId: keepId } };
+      await tx.thread.updateMany(repoint);
+      await tx.message.updateMany(repoint);
+      await tx.event.updateMany(repoint);
       await tx.lead.update({
         where: { id: mergeId },
         data: { deletedAt: clock.now(), mergedIntoId: keepId },
