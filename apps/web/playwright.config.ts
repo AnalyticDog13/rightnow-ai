@@ -6,9 +6,11 @@ export default defineConfig({
   globalSetup: "./e2e/global-setup.ts",
   workers: 1, // one shared DB: the tests are a sequence (first owner, then blocked)
   fullyParallel: false,
+  retries: process.env.CI ? 2 : 0, // a pass on retry is reported as "flaky", not hidden
+  reporter: process.env.CI ? [["list"], ["github"]] : "list",
   timeout: 90_000,
   expect: { timeout: 30_000 }, // first requests compile routes in next dev
-  use: { baseURL: `http://localhost:${E2E_PORT}` },
+  use: { baseURL: `http://localhost:${E2E_PORT}`, trace: "retain-on-failure" },
   projects: [
     // creates the owner the other specs sign in as; every other spec runs after it
     { name: "setup", testMatch: "auth.spec.ts", use: { browserName: "chromium" } },
