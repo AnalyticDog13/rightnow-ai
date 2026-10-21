@@ -440,12 +440,12 @@
    "id": "P4-T01",
    "phase": 4,
    "title": "Threading + ingest (dedupe on rfcMessageId, synthetic id when missing; UIDVALIDITY resync no duplicates; list queries never select attachment `data`); Gmail can re-report a message after labelAdded: dedupe + update folder (from P2-T03)",
-   "status": "todo",
+   "status": "done",
    "deps": [
     "P3-T13"
    ],
    "model": "sonnet",
-   "commit": null,
+   "commit": "8221d0b",
    "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-4.md; tests listed there pass"
   },
   {

@@ -1,7 +1,7 @@
 # Handoff
 
 **Phase:** 4 — Incoming mail & tracking (branch `phase-4-inbox`, from `main` after the Phase 3 merge)
-**Current task:** P4-T01 (plan + Revision 2 approved by review; execute with subagent-driven-development, ledger `.superpowers/sdd/phase-4/`).
+**Current task:** P4-T02 + P4-T04 (parallel). P4-T01 done (8221d0b). Ledger `.superpowers/sdd/phase-4/progress.md`.
 **Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 (approved). Done step plans: `docs/plans/phase-1.md`, `phase-2.md`, `phase-3.md`.
 **Tests:** ~946 vitest + 19 Playwright (prod build) green; CI `check`, `compose-smoke`, `imap-real` green.
 
