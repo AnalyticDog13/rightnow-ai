@@ -243,19 +243,20 @@
    "id": "P3-T01",
    "phase": 3,
    "title": "Leads service/API: fields above, custom fields/labels, tags, statuses, bulk edit, merge, round-robin owner assign, filters/pagination, contact history, GDPR delete (suppression hash kept)",
-   "status": "todo",
+   "status": "done",
    "deps": [
     "P2-T07"
    ],
    "model": "sonnet",
-   "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-3.md; tests listed there pass"
+   "commit": "f2eaa8a..d6709ca",
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-3.md; tests listed there pass",
+   "review": "1 fix round (merge lock, isolation tests, set-based bulk, lock order, GDPR test fails loudly); clean"
   },
   {
    "id": "P3-T02",
    "phase": 3,
    "title": "CSV import/export (BOM, delimiter sniff, auto/manual mapping, validation, dedupe modes, authorized-import confirmation, source/lawful basis), ESP detection via MX (`leads/esp.ts`), background ImportJob",
-   "status": "todo",
+   "status": "in_progress",
    "deps": [
     "P3-T01"
    ],
@@ -347,7 +348,7 @@
    ],
    "model": "opus",
    "commit": null,
-   "acceptance": "parallel claim test (2 dispatchers × 2 accounts, no deadlock, no over-quota); midnight crossing; campaign/workspace caps; reservation rollback; first-of-day claim with allowance 0 and with units > allowance → not claimed; paused campaign / past endAt → not claimed; overdue row at 03:00 → not sent until window opens; freshness and sticky gates; suppression re-check."
+   "acceptance": "parallel claim test (2 dispatchers × 2 accounts, no deadlock, no over-quota); midnight crossing; campaign/workspace caps; reservation rollback; first-of-day claim with allowance 0 and with units > allowance → not claimed; paused campaign / past endAt → not claimed; overdue row at 03:00 → not sent until window opens; freshness and sticky gates; suppression re-check.; from P3-T01: real-table GDPR in-flight test (SENDING/UNCERTAIN → 409; SENT/HELD/SCHEDULED do not block) replacing the T01 temp-table test"
   },
   {
    "id": "P3-T10a",

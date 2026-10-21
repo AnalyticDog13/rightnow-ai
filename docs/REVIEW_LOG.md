@@ -173,3 +173,6 @@ Atomic per-account rate limit (advisory xact lock, send outside tx), live-verify
 
 ## 2026-10-21 · Phase 3 step plan review round 2 · same independent agent (opus) · **APPROVED**
 0 Critical, 0 Important, 7 Minor (appended to plan as Revision 3). Deviations accepted (rotation-first split; import files documented). D16 sending blocked until P4 sync; D17 ProviderVerification gate; D18 rev 2 scope; D19.
+
+## 2026-10-21 · P3-T01 leads service/API · task reviewer (sonnet) · 1 fix round → **Approved**
+Merge row locks, full isolation tests, set-based bulk with 30 s timeout, Suppression→Lead lock order, GDPR in-flight test fails loudly (real-table test owned by P3-T09).
