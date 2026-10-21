@@ -1,5 +1,5 @@
 import { createPrisma } from "@rightnow/db/create";
-import type { AccountProvider, PrismaClient } from "@rightnow/db/client";
+import type { AccountProvider, Prisma, PrismaClient } from "@rightnow/db/client";
 import { createTestDb } from "@rightnow/db/test-db";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { fixedClock } from "../src/clock";
@@ -533,37 +533,93 @@ describe("claimDue: gates", () => {
       ).toBe("ACTIVE");
   });
 
-  test("claim re-checks the CampaignLead under its row lock (T06 I1)", async () => {
-    const s = await seedCampaign(P(), { at: T, rows: 1 });
-    const cl = s.leads[0]!.cl.id;
+  /** Runs claimDue while `hold` keeps a row lock open in another transaction; returns the claim result. */
+  async function claimWhileLocked(
+    hold: (tx: Prisma.TransactionClient) => Promise<unknown>,
+    waiters: number,
+    claims = 1,
+  ) {
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
     let locked!: () => void;
     const held = new Promise<void>((r) => (locked = r));
-    // a concurrent pause holds the CampaignLead row while the claim already holds the message
-    const pause = client().$transaction(
+    const holder = client().$transaction(
       async (tx) => {
-        await tx.campaignLead.update({ where: { id: cl }, data: { state: "PAUSED" } });
+        await hold(tx);
         locked();
         await gate;
       },
       { timeout: 60_000 },
     );
     await held;
-    const claim = claimDue(client(), fixedClock(T), opts());
+    const clock = fixedClock(T);
+    const running = Array.from({ length: claims }, () =>
+      claimDue(client(), clock, opts({ limit: 1 })),
+    );
     for (let i = 0; ; i++) {
       const [w] = await P().$queryRaw<{ n: number }[]>`
         SELECT count(*)::int AS n FROM pg_stat_activity
         WHERE datname = current_database() AND wait_event_type = 'Lock'`;
-      if (w!.n >= 1) break;
-      if (i > 200) throw new Error("claim never waited on the CampaignLead lock");
+      if (w!.n >= waiters) break;
+      if (i > 200) throw new Error("claims never waited on the lock");
       await new Promise((r) => setTimeout(r, 25));
     }
     release();
-    await pause;
-    expect(await claim).toEqual([]);
+    await holder;
+    return (await Promise.all(running)).flat();
+  }
+
+  test("claim re-checks the CampaignLead under its row lock (T06 I1)", async () => {
+    // a concurrent pause, then a concurrent step move, commit while the claim already holds the message
+    const s = await seedCampaign(P(), { at: T, rows: 1, leads: 2, steps: 2 });
+    const [a, b] = s.leads.map((l) => l.cl.id) as [string, string];
+    const paused = await claimWhileLocked(
+      (tx) => tx.campaignLead.update({ where: { id: a }, data: { state: "PAUSED" } }),
+      1,
+    );
+    expect(paused).toEqual([]);
     expect(await row(s.rows[0]!.id)).toMatchObject({ status: "CANCELLED", error: "stale" });
+    const r1 = await planRow(P(), {
+      workspaceId: s.ws,
+      campaignId: s.campaign.id,
+      campaignLeadId: b,
+      stepId: s.steps[0]!.id,
+      variantId: s.steps[0]!.variant.id,
+      accountId: s.accounts[0]!.id,
+      dueAt: T,
+    });
+    const moved = await claimWhileLocked(
+      (tx) => tx.campaignLead.update({ where: { id: b }, data: { currentStepId: s.steps[1]!.id } }),
+      1,
+    );
+    expect(moved).toEqual([]);
+    expect(await row(r1.id)).toMatchObject({ status: "CANCELLED", error: "stale" });
     expect(await P().accountDailyUsage.count()).toBe(0);
+  });
+
+  test("gap race: two claims on one account, the loser waits for nextSendAt", async () => {
+    const s = await seedCampaign(P(), {
+      at: T,
+      rows: 2,
+      accounts: [{ dailyLimit: 50 }],
+      campaign: { minGapSec: 540, randomGapSec: 0 },
+    });
+    const a = s.accounts[0]!.id;
+    await P().accountDailyUsage.create({ data: { accountId: a, day: day("2026-10-20") } });
+    // both claims pass the SELECT, then queue on the usage row; only the gap guard can stop the second
+    const got = await claimWhileLocked(
+      (tx) => tx.$queryRaw`SELECT 1 FROM "AccountDailyUsage" WHERE "accountId" = ${a} FOR UPDATE`,
+      2,
+      2,
+    );
+    expect(got).toHaveLength(1);
+    const next = new Date(T.getTime() + 540_000);
+    expect((await P().emailAccount.findUniqueOrThrow({ where: { id: a } })).nextSendAt).toEqual(
+      next,
+    );
+    const loser = await P().scheduledMessage.findFirstOrThrow({ where: { status: "SCHEDULED" } });
+    expect(loser.dueAt).toEqual(next);
+    expect((await usage(a)).map((u) => u.reserved)).toEqual([1]);
   });
 
   test("provider gate (D17) and physical address", async () => {
