@@ -117,6 +117,9 @@ function analyze(src: string): { nodes: Node[]; issues: TemplateIssue[] } | { fa
       issues.push({ code: first ? "unknown_variable" : "empty_fallback", message: first ? `Unknown variable "${first}"` : "Empty variable", index: from, variable: first || undefined });
     }
     if (parts.slice(1).some((p) => !p)) issues.push({ code: "empty_fallback", message: "Empty fallback", index: from });
+    if (parts.slice(1).some((p) => p.includes("{{") || p.includes("{%"))) {
+      issues.push({ code: "unmatched_braces", message: "Fallback text cannot contain {{ or {% (nest variables inside {{RANDOM | ...}} instead)", index: from });
+    }
     return { k: "v", parts, index: from };
   };
 
@@ -130,9 +133,11 @@ function analyze(src: string): { nodes: Node[]; issues: TemplateIssue[] } | { fa
     if (depth > MAX_TEMPLATE_DEPTH) fatal("unmatched_braces", `Nesting deeper than ${MAX_TEMPLATE_DEPTH}`, from);
     const nodes: Node[] = [];
     let i = from;
+    let a = -2; // -1 = none left; otherwise re-search only once passed, keeping the scan linear
+    let b = -2;
     while (i < to) {
-      const a = src.indexOf("{{", i);
-      const b = src.indexOf("{%", i);
+      if (a !== -1 && a < i) a = src.indexOf("{{", i);
+      if (b !== -1 && b < i) b = src.indexOf("{%", i);
       const ia = a < 0 || a >= to ? Infinity : a;
       const ib = b < 0 || b >= to ? Infinity : b;
       const next = Math.min(ia, ib);
@@ -285,4 +290,14 @@ export function renderDetailed(
 
 export function render(template: string, ctx: RenderContext, opts: { seed: string; html: boolean; singleLine?: boolean }): string {
   return renderDetailed(template, ctx, opts).text;
+}
+
+/** Subjects: always single-line and plain text, whatever the lead data holds. Seeded as `${seed}:subject`. */
+export function renderSubject(template: string, ctx: RenderContext, seed: string): { text: string; missing: string[] } {
+  return renderDetailed(template, ctx, { seed: `${seed}:subject`, html: false, singleLine: true });
+}
+
+/** Bodies: seeded as `${seed}:body`, so subject and body RANDOM picks are independent but both stable per seed. */
+export function renderBody(template: string, ctx: RenderContext, opts: { seed: string; html: boolean }): { text: string; missing: string[] } {
+  return renderDetailed(template, ctx, { seed: `${opts.seed}:body`, html: opts.html });
 }

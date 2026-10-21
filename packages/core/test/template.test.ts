@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pick, render, renderDetailed, templateVariables, validateTemplate } from "../src/template";
+import { pick, render, renderBody, renderDetailed, renderSubject, templateVariables, validateTemplate } from "../src/template";
 
 const sender = { firstName: "Sam", lastName: "Sender", email: "sam@x.io" };
 const ctx = (lead: Record<string, string | number | boolean | null>, unsubscribeLink?: string) => ({ lead, sender, unsubscribeLink });
@@ -98,6 +98,42 @@ describe("validateTemplate", () => {
   });
 });
 
+describe("fix round 1", () => {
+  it("flags braces inside fallback literals", () => {
+    expect(codes("{{firstName | Hi {{lastName}}}}")).toEqual(["unmatched_braces"]);
+    expect(codes("{{firstName | lastName | {% if x %}}}")).toEqual(["unmatched_braces"]);
+    expect(() => render("{{firstName | Hi {{lastName}}}}", ctx({}), o)).toThrow();
+  });
+  it("renderSubject can never be multi-line or html-escaped", () => {
+    const r = renderSubject("Hi {{firstName}} <{{lastName}}>", ctx({ firstName: "A\r\nBcc: x@y\t", lastName: "L\nM" }), "s");
+    expect(r.text).toBe("Hi A Bcc: x@y  <L M>");
+    expect(r.text).not.toMatch(/[\r\n]/);
+  });
+  it("subject and body seeds are independent but deterministic", () => {
+    const t = "{{RANDOM | a | b}}";
+    const pairs = new Set<string>();
+    for (let i = 0; i < 100; i++) {
+      const s = `l${i}:s:v`;
+      const subj = renderSubject(t, ctx({}), s).text;
+      expect(renderSubject(t, ctx({}), s).text).toBe(subj);
+      pairs.add(subj + renderBody(t, ctx({}), { seed: s, html: false }).text);
+    }
+    expect(pairs.size).toBe(4);
+  });
+  it("RANDOM inside if, whitespace variants, case sensitivity, literal tags in values", () => {
+    expect(render('{% if industry == "x" %}{{RANDOM | p | p}}{% endif %}', ctx({ industry: "x" }), o)).toBe("p");
+    expect(render("{{firstName|there}}|{{  firstName  |  there  }}", ctx({}), o)).toBe("there|there");
+    expect(render('{%if industry=="x"%}Y{%else%}N{%endif%}', ctx({ industry: "x" }), o)).toBe("Y");
+    expect(() => render("{{FirstName}}", ctx({ firstName: "a" }), o)).toThrow();
+    expect(render("{{firstName}}", ctx({ firstName: "{% if x %}" }), o)).toBe("{% if x %}");
+  });
+  it("many tags stay fast", () => {
+    const t0 = Date.now();
+    render("{{firstName}}".repeat(7000), ctx({ firstName: "a" }), o);
+    expect(Date.now() - t0).toBeLessThan(500);
+  });
+});
+
 describe("robustness", () => {
   it("bounds depth and size, fast", () => {
     const t0 = Date.now();
@@ -111,7 +147,7 @@ describe("robustness", () => {
       "x".repeat(2_000_000),
     ];
     for (const i of inputs) {
-      expect(validateTemplate(i, known).length).toBeGreaterThanOrEqual(0);
+      expect(validateTemplate(i, known)).toHaveLength(1);
       expect(() => render(i, ctx({}), o)).toThrow();
     }
     expect(Date.now() - t0).toBeLessThan(2000);
