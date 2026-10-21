@@ -300,3 +300,18 @@ describe("fix round 2: merge respects suppression and the conflict rule", () => 
     expect(moved).toMatchObject({ state: "QUEUED", duplicateOk: true });
   });
 });
+
+describe("fix round 3: lock order", () => {
+  test("concurrent merge and enroll on the same lead finish without a deadlock", async () => {
+    for (let i = 0; i < 8; i++) {
+      const [c, d] = [await camp(), await camp()];
+      const [keep, from] = [await lead(), await lead()];
+      await enroll(d, { leadIds: [from] });
+      const rs = await Promise.allSettled([
+        mergeLeads(P(), clock, ws, { keepId: keep, mergeId: from }),
+        enroll(c, { leadIds: [keep, from] }),
+      ]);
+      expect(rs.map((r) => r.status)).toEqual(["fulfilled", "fulfilled"]);
+    }
+  });
+});

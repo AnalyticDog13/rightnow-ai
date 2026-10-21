@@ -385,6 +385,9 @@ export async function mergeLeads(
     .parse(input);
   if (keepId === mergeId) throw new LeadError(400, "same_lead");
   return prisma.$transaction(async (tx) => {
+    // Lock order: enrollment lock 726004 first (as enrollBatch does), then Lead rows. Enrollment's CampaignLead
+    // insert key-share-locks Lead, so the reverse order would deadlock against a concurrent enroll.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(726004, hashtext(${ws}))`;
     await assertNoSendInFlight(tx, [keepId, mergeId]); // I4: ScheduledMessage before Lead
     // Lock both rows in id order, then re-check they are live: concurrent A<-B and B<-A cannot both win.
     await tx.$queryRaw`SELECT id FROM "Lead" WHERE "workspaceId" = ${ws} AND id = ANY(${[keepId, mergeId]}) ORDER BY id FOR UPDATE`;
@@ -414,7 +417,6 @@ export async function mergeLeads(
     await tx.leadListMember.deleteMany({ where: { leadId: mergeId } });
     // Enrollments follow the kept lead unless it is blocklisted, already in that campaign, or the move would break the
     // cross-campaign rule (same check and lock as enrollment; duplicateOk exempts). The rest stop. Rows are re-planned.
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(726004, hashtext(${ws}))`;
     const blocked = (await suppressedEmails(tx, ws, [keep.email])).size > 0;
     const there = new Set(
       (await tx.campaignLead.findMany({ where: { workspaceId: ws, leadId: keepId } })).map(

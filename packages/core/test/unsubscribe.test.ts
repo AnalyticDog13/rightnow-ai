@@ -67,6 +67,18 @@ describe("headers and footer", () => {
       text: "Hi\n\n--\n1 Main St\nUnsubscribe: https://h/u/t",
     });
   });
+  test("blank address throws; bad account email throws", () => {
+    const p = { unsubscribeUrl: "https://h/u/t", physicalAddress: "  ", hasLinkVariable: false };
+    expect(() => withComplianceFooter({ html: "<p>x</p>", text: "x" }, p)).toThrow(
+      "physical_address_required",
+    );
+    expect(() => withComplianceFooter({ html: null, text: "x" }, { ...p, physicalAddress: "" })).toThrow();
+    for (const bad of ["a@x.test>
+Bcc: v@x.test", "a b@x.test", "<a@x.test>", "nope", ""]) {
+      expect(() => listUnsubscribeHeaders(https, P, bad)).toThrow("invalid_account_email");
+      expect(() => listUnsubscribeHeaders(local, P, bad)).toThrow("invalid_account_email");
+    }
+  });
   test("address always present; link omitted with the variable; html escaped; null html stays null", () => {
     const p = {
       unsubscribeUrl: "https://h/u/t",
@@ -174,7 +186,7 @@ describe("workspace settings", () => {
     ws = (await db.prisma.workspace.create({ data: { name: "W", slug: "w" } })).id;
   });
   afterAll(() => db.drop());
-  test("validates timezone, trims address, audits without the address text", async () => {
+  test("validates timezone, trims address, audits the new values (the business address is not personal data)", async () => {
     await expect(
       updateWorkspaceSettings(db.prisma, clock, ws, "u", { timezone: "Bad/Zone" }),
     ).rejects.toMatchObject({ status: 400 });
@@ -187,6 +199,7 @@ describe("workspace settings", () => {
       where: { workspaceId: ws, action: "settings.update" },
     });
     expect(a).toHaveLength(1);
+    expect(a[0]!.meta).toEqual({ timezone: "Europe/Berlin", physicalAddress: "1 Main St" });
     expect(
       (await updateWorkspaceSettings(db.prisma, clock, ws, "u", { physicalAddress: "" }))
         .physicalAddress,
