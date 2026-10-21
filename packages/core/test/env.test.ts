@@ -69,4 +69,11 @@ describe("mail provider env", () => {
       "1",
     );
   });
+  test("SEND_LEASE_SEC defaults to 600 and must be >= 120 unless the Fake runs", () => {
+    expect(parseEnv(good).SEND_LEASE_SEC).toBe(600);
+    expect(() => parseEnv({ ...good, SEND_LEASE_SEC: "60" })).toThrow(/SEND_LEASE_SEC/);
+    expect(
+      parseEnv({ ...good, SEND_LEASE_SEC: "60", MAIL_PROVIDER_FAKE: "1" }).SEND_LEASE_SEC,
+    ).toBe(60);
+  });
 });

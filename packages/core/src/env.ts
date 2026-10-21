@@ -15,6 +15,8 @@ export const envSchema = z.object({
   APP_URL: z.url(),
   DB_POOL_MAX: z.coerce.number().int().positive().default(10),
   SYNC_MAX_STALENESS_SEC: z.coerce.number().int().positive().default(300),
+  // Claim lease: a SENDING row older than this is recovered (send-recovery); >= 120 s unless MAIL_PROVIDER_FAKE=1
+  SEND_LEASE_SEC: z.coerce.number().int().positive().default(600),
   // Verifies unsubscribe links signed before a key rotation (see docs/ops/KEY_ROTATION.md)
   OLD_ENCRYPTION_KEY: z.union([key32, z.literal("").transform(() => undefined)]).optional(),
   // Mail providers (all optional: an unconfigured provider answers 412 not_configured)
@@ -43,6 +45,8 @@ export function parseEnv<T extends z.ZodType = typeof envSchema>(
   // a refine() here would break the .extend() the web and worker schemas do
   if (source.MAIL_PROVIDER_FAKE === "1" && source.MODE === "vps")
     lines.push("  MAIL_PROVIDER_FAKE: must not be set when MODE=vps");
+  if (Number(source.SEND_LEASE_SEC ?? 600) < 120 && source.MAIL_PROVIDER_FAKE !== "1")
+    lines.push("  SEND_LEASE_SEC: must be at least 120 unless MAIL_PROVIDER_FAKE=1");
   if (r.success && lines.length === 0) return r.data;
   throw new Error(`Invalid environment:\n${lines.join("\n")}`);
 }
