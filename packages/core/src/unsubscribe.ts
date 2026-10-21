@@ -2,11 +2,12 @@ import { createHmac, hkdfSync, timingSafeEqual } from "node:crypto";
 import { isIP } from "node:net";
 import { z } from "zod";
 import { isPrivate } from "@rightnow/providers";
-import type { PrismaClient } from "@rightnow/db/client";
+import type { Prisma, PrismaClient } from "@rightnow/db/client";
 import { stopOpenCampaignLeads } from "./campaigns/hooks";
 import { withTxRetry } from "./dispatch";
 import type { Clock } from "./clock";
 import { suppress } from "./leads/suppression";
+import { recordEvent } from "./mail/events";
 
 /** "https" only for a public https URL. Pure classification (no DNS): IPs go through the providers' private-range check; names must be dotted and not local. */
 export function unsubscribeMode(appUrl: string): "https" | "mailto" {
@@ -136,33 +137,32 @@ export function withComplianceFooter(
   };
 }
 
-type Db = Pick<PrismaClient, "$transaction">;
+type Tx = Prisma.TransactionClient;
 
-/** Suppresses `email` and stops the open enrollments of `leadIds`. "done" when the address was newly suppressed. */
-async function optOut(
-  db: Db,
+/**
+ * I3, in the caller's transaction: suppresses `email` and stops the open enrollments of `leadIds`. "done" when the
+ * address was newly suppressed.
+ */
+export async function optOutTx(
+  tx: Tx,
   clock: Clock,
   ws: string,
   email: string,
   leadIds: string[],
   source: string,
-) {
-  // D21 order: ScheduledMessage rows -> CampaignLead (stopOpenCampaignLeads) -> Suppression
-  return withTxRetry(() =>
-    db.$transaction(async (tx) => {
-      // stopReason before suppress(), which would stamp SUPPRESSED on whatever is still open
-      await stopOpenCampaignLeads(tx, ws, leadIds, "UNSUBSCRIBED", clock.now());
-      return (await suppress(tx, ws, [{ kind: "EMAIL", value: email }], "UNSUBSCRIBE", source)) > 0
-        ? ("done" as const)
-        : ("already" as const);
-    }),
-  );
+): Promise<"done" | "already"> {
+  // D21 order: ScheduledMessage rows -> CampaignLead (stopOpenCampaignLeads) -> Suppression.
+  // stopReason before suppress(), which would stamp SUPPRESSED on whatever is still open
+  await stopOpenCampaignLeads(tx, ws, leadIds, "UNSUBSCRIBED", clock.now());
+  return (await suppress(tx, ws, [{ kind: "EMAIL", value: email }], "UNSUBSCRIBE", source)) > 0
+    ? "done"
+    : "already";
 }
 
 /**
  * Opt-out by signed link. Loads the lead by id including soft-deleted and merged-away rows (I10) and suppresses its own
  * email. "already" when the address was already suppressed, or when the lead no longer exists (a GDPR erasure deletes
- * the row and keeps only a suppression hash), so nothing is written.
+ * the row and keeps only a suppression hash), so nothing is written. Records one UNSUBSCRIBE event per lead and campaign.
  */
 export async function unsubscribeLead(
   prisma: PrismaClient,
@@ -174,26 +174,54 @@ export async function unsubscribeLead(
     where: { id: p.l, workspaceId: p.w },
     select: { email: true },
   });
-  return lead ? optOut(prisma, clock, p.w, lead.email, [p.l], source) : "already";
+  if (!lead) return "already";
+  return withTxRetry(() =>
+    prisma.$transaction(async (tx) => {
+      const r = await optOutTx(tx, clock, p.w, lead.email, [p.l], source);
+      await recordEvent(tx, {
+        workspaceId: p.w,
+        type: "UNSUBSCRIBE",
+        occurredAt: clock.now(),
+        leadId: p.l,
+        campaignId: p.c,
+        meta: { source },
+        dedupeKey: `unsub:${p.w}:${p.l}:${p.c}`,
+      });
+      return r;
+    }),
+  );
 }
 
-/** Hook for P4-T02/T03: an "unsubscribe" reply from `fromEmail` to a mailbox of the workspace. */
+/** An "unsubscribe" reply from `fromEmail` (message `rfcMessageId`) to a mailbox of the workspace; `applyInbound` does the same inside the ingest transaction. */
 export async function suppressMailtoUnsubscribe(
   prisma: PrismaClient,
   clock: Clock,
-  p: { workspaceId: string; fromEmail: string },
+  p: { workspaceId: string; fromEmail: string; rfcMessageId: string },
 ): Promise<"done" | "already"> {
   const email = p.fromEmail.trim().toLowerCase();
   const leads = await prisma.lead.findMany({
     where: { workspaceId: p.workspaceId, email },
     select: { id: true },
   });
-  return optOut(
-    prisma,
-    clock,
-    p.workspaceId,
-    email,
-    leads.map((l) => l.id),
-    "mailto",
+  return withTxRetry(() =>
+    prisma.$transaction(async (tx) => {
+      const r = await optOutTx(
+        tx,
+        clock,
+        p.workspaceId,
+        email,
+        leads.map((l) => l.id),
+        "mailto",
+      );
+      await recordEvent(tx, {
+        workspaceId: p.workspaceId,
+        type: "UNSUBSCRIBE",
+        occurredAt: clock.now(),
+        leadId: leads[0]?.id ?? null,
+        meta: { source: "mailto" },
+        dedupeKey: `UNSUBSCRIBE:${p.workspaceId}:${p.rfcMessageId}`,
+      });
+      return r;
+    }),
   );
 }

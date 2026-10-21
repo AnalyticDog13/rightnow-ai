@@ -452,55 +452,64 @@ export async function recordAccepted(
   sentAt?: Date,
 ): Promise<SendOutcome> {
   const res2 = await withTxRetry(() =>
-    db.$transaction(async (tx) => {
-      const now = sentAt ?? clock.now();
-      const data = {
-        status: "SENT" as const,
-        sentAt: now,
-        claimToken: c.claimToken,
-        providerMessageId: res.providerMessageId ?? null,
-        providerThreadId: res.providerThreadId ?? null,
-        error: null,
-      };
-      const r = await tx.scheduledMessage.updateMany({
-        where: { id: c.id, claimToken: c.claimToken, status: "SENDING" },
-        data,
-      });
-      if (r.count) {
-        await recordSent(tx, clock, c, res, now, (t) => commitUsage(t, c));
-        return "SENT";
-      }
-      const [m] = await tx.$queryRaw<
-        {
-          status: string;
-          claimToken: string | null;
-          accountId: string;
-          campaignId: string;
-          workspaceId: string;
-          usageDay: Date | null;
-          campUsageDay: Date | null;
-          wsUsageDay: Date | null;
-          reservedUnits: number;
-        }[]
-      >`SELECT status::text, "claimToken", "accountId", "campaignId", "workspaceId", "usageDay", "campUsageDay",
-          "wsUsageDay", "reservedUnits" FROM "ScheduledMessage" WHERE id = ${c.id} FOR UPDATE`;
-      if (!m) return "LOST"; // the lead was hard-deleted meanwhile
-      if (m.status === "SENT") {
-        // I8: another claim of the same row also went out; both messages count
-        if (m.claimToken !== c.claimToken) await creditSent(tx, c);
-        return "SENT";
-      }
-      const usage =
-        m.status === "UNCERTAIN" || m.status === "SENDING"
-          ? (t: Tx) => commitUsage(t, refOf(m)) // still reserved: ours, or the re-claim's on its stored days
-          : (t: Tx) => creditSent(t, c); // HELD, CANCELLED, SCHEDULED, FAILED: already released
-      await tx.scheduledMessage.update({ where: { id: c.id }, data });
-      await recordSent(tx, clock, c, res, now, usage);
-      return "SENT";
-    }, TX),
+    db.$transaction((tx) => acceptTx(tx, clock, c, res, sentAt), TX),
   );
   if (res2 === "SENT") await recordOutboundMessage(db, c.id); // after every accepted result; idempotent, never throws
   return res2;
+}
+
+/** recordAccepted's transaction body, for a caller that already holds one (M17: a reply proves an UNCERTAIN/HELD row went out). */
+export async function acceptTx(
+  tx: Tx,
+  clock: Clock,
+  c: Claimed,
+  res: SendResult,
+  sentAt?: Date,
+): Promise<"SENT" | "LOST"> {
+  const now = sentAt ?? clock.now();
+  const data = {
+    status: "SENT" as const,
+    sentAt: now,
+    claimToken: c.claimToken,
+    providerMessageId: res.providerMessageId ?? null,
+    providerThreadId: res.providerThreadId ?? null,
+    error: null,
+  };
+  const r = await tx.scheduledMessage.updateMany({
+    where: { id: c.id, claimToken: c.claimToken, status: "SENDING" },
+    data,
+  });
+  if (r.count) {
+    await recordSent(tx, clock, c, res, now, (t) => commitUsage(t, c));
+    return "SENT";
+  }
+  const [m] = await tx.$queryRaw<
+    {
+      status: string;
+      claimToken: string | null;
+      accountId: string;
+      campaignId: string;
+      workspaceId: string;
+      usageDay: Date | null;
+      campUsageDay: Date | null;
+      wsUsageDay: Date | null;
+      reservedUnits: number;
+    }[]
+  >`SELECT status::text, "claimToken", "accountId", "campaignId", "workspaceId", "usageDay", "campUsageDay",
+          "wsUsageDay", "reservedUnits" FROM "ScheduledMessage" WHERE id = ${c.id} FOR UPDATE`;
+  if (!m) return "LOST"; // the lead was hard-deleted meanwhile
+  if (m.status === "SENT") {
+    // I8: another claim of the same row also went out; both messages count
+    if (m.claimToken !== c.claimToken) await creditSent(tx, c);
+    return "SENT";
+  }
+  const usage =
+    m.status === "UNCERTAIN" || m.status === "SENDING"
+      ? (t: Tx) => commitUsage(t, refOf(m)) // still reserved: ours, or the re-claim's on its stored days
+      : (t: Tx) => creditSent(t, c); // HELD, CANCELLED, SCHEDULED, FAILED: already released
+  await tx.scheduledMessage.update({ where: { id: c.id }, data });
+  await recordSent(tx, clock, c, res, now, usage);
+  return "SENT";
 }
 
 /** Side effects of a SENT row, in lock order after the row: CampaignLead, usage, EmailAccount, Lead, then advance. */

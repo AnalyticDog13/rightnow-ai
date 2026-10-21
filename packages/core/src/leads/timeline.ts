@@ -12,11 +12,13 @@ export type TimelineEntry = {
     | "unsubscribed"
     | "suppressed"
     | "opened"
-    | "clicked";
+    | "clicked"
+    | "replied"
+    | "bounced";
   detail: Record<string, unknown>;
 };
 
-/** PS-LEAD-19 (P3 part): everything that happened to a lead, newest first. P4 adds opens/clicks/replies, P6 notes/tasks. */
+/** PS-LEAD-19 (P3 part): everything that happened to a lead, newest first. P4 adds opens, clicks, replies, bounces and unsubscribes (Event), P6 notes/tasks. */
 export async function leadTimeline(
   prisma: PrismaClient,
   ws: string,
@@ -47,19 +49,51 @@ export async function leadTimeline(
       where: { workspaceId: ws, kind: "EMAIL", valueHash: hashValue(lead.email) },
     }),
     prisma.event.findMany({
-      where: { workspaceId: ws, leadId, type: { in: ["OPEN", "CLICK"] } },
+      where: {
+        workspaceId: ws,
+        leadId,
+        type: {
+          in: [
+            "OPEN",
+            "CLICK",
+            "REPLY",
+            "AUTO_REPLY",
+            "UNSUBSCRIBE",
+            "BOUNCE_HARD",
+            "BOUNCE_SOFT",
+            "BOUNCE_UNKNOWN",
+          ],
+        },
+      },
     }),
   ]);
   const out: TimelineEntry[] = [];
   for (const e of engaged) {
     const meta = (e.meta ?? {}) as Record<string, unknown>;
     if (meta.machine || meta.scanner) continue; // not a person
-    out.push({
-      at: e.occurredAt,
-      kind: e.type === "OPEN" ? "opened" : "clicked",
-      detail: { campaignId: e.campaignId, ...(e.type === "CLICK" && { url: meta.url ?? null }) },
-    });
+    const campaignId = e.campaignId;
+    if (e.type === "OPEN" || e.type === "CLICK")
+      out.push({
+        at: e.occurredAt,
+        kind: e.type === "OPEN" ? "opened" : "clicked",
+        detail: { campaignId, ...(e.type === "CLICK" && { url: meta.url ?? null }) },
+      });
+    else if (e.type === "REPLY" || e.type === "AUTO_REPLY")
+      out.push({
+        at: e.occurredAt,
+        kind: "replied",
+        detail: { campaignId, auto: e.type === "AUTO_REPLY", category: meta.category ?? null },
+      });
+    else if (e.type === "UNSUBSCRIBE")
+      out.push({ at: e.occurredAt, kind: "unsubscribed", detail: { campaignId } });
+    else
+      out.push({
+        at: e.occurredAt,
+        kind: "bounced",
+        detail: { campaignId, type: e.type.slice(7), recipient: meta.recipient ?? null },
+      });
   }
+  const unsubEvent = out.some((x) => x.kind === "unsubscribed");
   if (job) out.push({ at: job.createdAt, kind: "imported", detail: { fileName: job.fileName } });
   for (const e of enrolled)
     out.push({
@@ -89,11 +123,13 @@ export async function leadTimeline(
         detail: { interestStatus: meta.interestStatus },
       });
   }
+  // an UNSUBSCRIBE event already tells it, with its campaign
   for (const s of sup)
-    out.push({
-      at: s.createdAt,
-      kind: s.reason === "UNSUBSCRIBE" ? "unsubscribed" : "suppressed",
-      detail: { reason: s.reason },
-    });
+    if (!(s.reason === "UNSUBSCRIBE" && unsubEvent))
+      out.push({
+        at: s.createdAt,
+        kind: s.reason === "UNSUBSCRIBE" ? "unsubscribed" : "suppressed",
+        detail: { reason: s.reason },
+      });
   return out.sort((a, b) => b.at.getTime() - a.at.getTime());
 }

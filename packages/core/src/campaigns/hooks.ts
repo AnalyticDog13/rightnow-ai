@@ -119,20 +119,26 @@ export const editHooks = {
 };
 
 /**
- * STOPs the open CampaignLeads of these leads (deleted, merged away, unsubscribed) and cancels their open rows, in `tx`.
- * D21 order: the rows first, then the CampaignLeads.
+ * STOPs the open CampaignLeads (PAUSED included) of these leads (deleted, merged away, unsubscribed, replied), narrowed
+ * by `where`, and cancels their open rows, in `tx`. D21 order: the rows first, then the CampaignLeads.
  */
 export async function stopOpenCampaignLeads(
   tx: Tx,
   ws: string,
   leadIds: string[],
-  stopReason: "SKIPPED" | "MANUAL" | "SUPPRESSED" | "UNSUBSCRIBED" = "SKIPPED",
+  stopReason: StopReason = "SKIPPED",
   at = new Date(),
+  where: Prisma.CampaignLeadWhereInput = {},
 ) {
   if (!leadIds.length) return;
   const ids = (
     await tx.campaignLead.findMany({
-      where: { workspaceId: ws, leadId: { in: leadIds }, state: { in: [...OPEN_STATES] } },
+      where: {
+        ...where,
+        workspaceId: ws,
+        leadId: { in: leadIds },
+        state: { in: [...OPEN_STATES] },
+      },
       select: { id: true },
     })
   ).map((c) => c.id);

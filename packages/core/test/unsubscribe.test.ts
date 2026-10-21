@@ -132,6 +132,10 @@ describe("unsubscribeLead", () => {
     const s = await rows("a@acme.test");
     expect(s).toHaveLength(1);
     expect(s[0]).toMatchObject({ reason: "UNSUBSCRIBE", source: "one_click" });
+    // one UNSUBSCRIBE event per lead and campaign, however often the link is used
+    expect(await db.prisma.event.findMany({ where: { leadId: l.id } })).toMatchObject([
+      { type: "UNSUBSCRIBE", campaignId: "x", dedupeKey: `unsub:${ws}:${l.id}:x` },
+    ]);
     const cls = await db.prisma.campaignLead.findMany({ where: { leadId: l.id } });
     expect(cls).toHaveLength(2);
     expect(cls.every((c) => c.state === "STOPPED" && c.stopReason === "UNSUBSCRIBED")).toBe(true);
@@ -171,11 +175,15 @@ describe("unsubscribeLead", () => {
       await suppressMailtoUnsubscribe(db.prisma, clock, {
         workspaceId: ws,
         fromEmail: "M@Acme.test",
+        rfcMessageId: "<u1@x.test>",
       }),
     ).toBe("done");
     expect(await rows("m@acme.test")).toHaveLength(1);
     const after = await db.prisma.campaignLead.findUniqueOrThrow({ where: { id: cl!.id } });
     expect(after).toMatchObject({ state: "STOPPED", stopReason: "UNSUBSCRIBED" });
+    expect(await db.prisma.event.findMany({ where: { leadId: l.id } })).toMatchObject([
+      { type: "UNSUBSCRIBE", dedupeKey: `UNSUBSCRIBE:${ws}:<u1@x.test>` },
+    ]);
   });
 });
 

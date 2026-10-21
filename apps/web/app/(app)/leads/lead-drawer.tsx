@@ -40,6 +40,14 @@ const describe = (t: TimelineItem) => {
       return "Merged with a duplicate";
     case "unsubscribed":
       return "Unsubscribed";
+    case "opened":
+      return "Opened (estimated)";
+    case "clicked":
+      return `Clicked ${d.url ?? "a link"}`;
+    case "replied":
+      return d.auto ? "Auto-replied" : "Replied";
+    case "bounced":
+      return `Bounced (${String(d.type).toLowerCase()})`;
     default:
       return `Suppressed (${String(d.reason).toLowerCase()})`;
   }
