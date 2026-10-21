@@ -74,6 +74,16 @@ describe("withTracking / trackingBase", () => {
       app,
     );
   });
+  test("malformed hrefs are left as written and do not throw", () => {
+    const bad = '<a href="http://">a</a><a href="https://exa mple.com">b</a>';
+    const out = withTracking(`${bad}<a href="https://ok.test/x">c</a>`, {
+      ...o,
+      opens: false,
+      skipUrls: [],
+    });
+    expect(out.startsWith(bad)).toBe(true);
+    expect(out).toContain("https://t.test/t/c/");
+  });
   test("opens off / no body tag", () => {
     expect(withTracking("<p>x</p>", { ...o, opens: false, skipUrls: [] })).toBe("<p>x</p>");
     expect(withTracking("<p>x</p>", { ...o, clicks: false, skipUrls: [] })).toMatch(

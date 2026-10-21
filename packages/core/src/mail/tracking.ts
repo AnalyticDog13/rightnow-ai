@@ -46,16 +46,21 @@ export function withTracking(
 ): string {
   let out = html;
   // the footer link is any /u/ path on our hosts (tracking base or app URL), whichever key signed it
-  const origin = (u: string) => new URL(u).origin;
-  const ours = new Set([o.base, ...o.skipUrls].map(origin));
+  const parse = (u: string) => {
+    try {
+      return new URL(u);
+    } catch {
+      return null; // malformed: not ours, left as written
+    }
+  };
+  const ours = new Set([o.base, ...o.skipUrls].map((u) => parse(u)?.origin));
   if (o.clicks) {
     let i = 0;
     out = out.replace(/(<a\b[^>]*?\bhref=)(["'])(https?:\/\/.*?)\2/gi, (all, pre, q, href) => {
       const url = href.replace(/&amp;/g, "&");
-      if (
-        o.skipUrls.includes(url) ||
-        (ours.has(origin(url)) && new URL(url).pathname.startsWith("/u/"))
-      )
+      const parsed = parse(url);
+      if (!parsed) return all;
+      if (o.skipUrls.includes(url) || (ours.has(parsed.origin) && parsed.pathname.startsWith("/u/")))
         return all;
       const t = signTrack({ m: o.scheduledMessageId, u: url, i: i++ }, o.key);
       return `${pre}${q}${o.base}/t/c/${t}${q}`;
