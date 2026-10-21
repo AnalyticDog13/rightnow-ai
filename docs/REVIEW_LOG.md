@@ -218,3 +218,6 @@ No resend path: recovery never resends, every write conditional on state/claimTo
 
 ## 2026-10-21 · P3-T12 campaign builder UI · task reviewer (sonnet) · 1 minor-fix round → **Approved** (sonnet re-review)
 Preview uses the sender's own renderForLead (preview = sent), HTML in a sandboxed iframe, test-send and HELD release session-only ADMIN with the "may already have been delivered" confirm, workspace-scoped. Rulings: test-send copies carry dead unsubscribe text (a live token could opt the real lead out); extra Cancelled tab, save-time template errors, no reorder UI accepted. Round 1: readable preview errors, blank follow-up subject previews as the planner's "Re:", /scheduled stale-response guard, "Finished" column.
+
+## 2026-10-21 · P3-T13 ramp, workspace caps, lead timeline · task reviewer (sonnet) → **Approved**
+Every allowance consumer (claim, pickAccount, explainer, planner, toApiAccount) goes through effectiveAllowance, so the ramp cannot be bypassed; timeline workspace-scoped. Ruling: re-enabling slow ramp restarts it (rampStartedAt stamped on each off→on), overriding the brief's "only when null", because a mailbox must not jump to full volume after a ramp toggle. Deferred: bulk interest changes write no per-lead audit row, so they are absent from the timeline.

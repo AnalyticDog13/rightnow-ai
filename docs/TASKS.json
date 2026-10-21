@@ -427,13 +427,14 @@
    "id": "P3-T13",
    "phase": 3,
    "title": "Ramp-up + workspace/campaign cap settings feeding `effectiveAllowance`",
-   "status": "in_progress",
+   "status": "done",
    "deps": [
     "P3-T12"
    ],
    "model": "sonnet",
-   "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-3.md; tests listed there pass"
+   "commit": "8576e78",
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-3.md; tests listed there pass",
+   "review": "sonnet task review approved (0C 0I 7M); ramp-restart minor fixed by controller"
   },
   {
    "id": "P4-T01",
