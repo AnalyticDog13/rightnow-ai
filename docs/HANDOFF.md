@@ -1,7 +1,7 @@
 # Handoff
 
 **Phase:** 4 — Incoming mail & tracking (branch `phase-4-inbox`, from `main` after the Phase 3 merge)
-**Current task:** P4-T03 (stop rules, opus). Done: T01 8221d0b, T02 2fab48b, T04 fc1664f. Ledger `.superpowers/sdd/phase-4/progress.md`.
+**Current task:** P4-T05 (sync, opus). Done: T01 8221d0b, T02 2fab48b, T03 1795246, T04 fc1664f. Ledger `.superpowers/sdd/phase-4/progress.md`.
 **Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 (approved). Done step plans: `docs/plans/phase-1.md`, `phase-2.md`, `phase-3.md`.
 **Tests:** ~946 vitest + 19 Playwright (prod build) green; CI `check`, `compose-smoke`, `imap-real` green.
 
