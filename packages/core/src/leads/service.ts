@@ -5,6 +5,7 @@ import { CAMPAIGN_LEAD_STATUSES, campaignLeadStatusWhere } from "../campaigns/le
 import { audit } from "../audit";
 import type { Clock } from "../clock";
 import { companyDomainOf } from "./domain";
+import { editHooks, stopOpenCampaignLeads } from "../campaigns/hooks";
 import { hashValue, suppress } from "./suppression";
 
 type Db = PrismaClient;
@@ -290,6 +291,7 @@ export async function softDeleteLead(
       data: { deletedAt: clock.now() },
     });
     if (!r.count) throw notFound();
+    await stopOpenCampaignLeads(tx, ws, [id], "SKIPPED", clock.now());
     await audit(tx, { workspaceId: ws, actorId, at: clock.now() }, "lead.delete", id);
   });
 }
@@ -410,6 +412,21 @@ export async function mergeLeads(
       skipDuplicates: true,
     });
     await tx.leadListMember.deleteMany({ where: { leadId: mergeId } });
+    // Enrollments follow the kept lead unless it is already in that campaign (then they stop). Rows are re-planned.
+    const there = new Set(
+      (await tx.campaignLead.findMany({ where: { workspaceId: ws, leadId: keepId } })).map(
+        (c) => c.campaignId,
+      ),
+    );
+    const open = await tx.campaignLead.findMany({
+      where: { workspaceId: ws, leadId: mergeId, state: { in: ["QUEUED", "ACTIVE", "PAUSED"] } },
+    });
+    const moved = open.filter((c) => !there.has(c.campaignId)).map((c) => c.id);
+    if (moved.length) {
+      await tx.campaignLead.updateMany({ where: { id: { in: moved } }, data: { leadId: keepId } });
+      await editHooks.cancelOpenRows(tx, moved);
+    }
+    await stopOpenCampaignLeads(tx, ws, [mergeId], "SKIPPED", clock.now());
     await tx.lead.update({
       where: { id: mergeId },
       data: { deletedAt: clock.now(), mergedIntoId: keepId },
@@ -484,6 +501,7 @@ export async function bulkLeads(
         await tx.$executeRaw`UPDATE "Lead" SET "updatedAt" = now(), "tags" = ARRAY(SELECT t FROM unnest("tags") t WHERE t <> ALL(${strs()}::text[])) WHERE "workspaceId" = ${ws} AND "id" = ANY(${found})`;
       } else {
         await tx.lead.updateMany({ where: base, data: { deletedAt: clock.now() } });
+        await stopOpenCampaignLeads(tx, ws, found, "SKIPPED", clock.now());
       }
       await audit(tx, { workspaceId: ws, actorId, at: clock.now() }, "lead.bulk", undefined, {
         action,

@@ -169,6 +169,26 @@ async function activate(
 
   await prisma.$transaction(async (tx) => {
     const now = clock.now();
+    // Same lock as enrollment: two DRAFT campaigns sharing a lead cannot both turn live (PS-LEAD-02 conflict rule).
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(726004, hashtext(${ws}))`;
+    const [clash] = await tx.$queryRaw<{ n: bigint }[]>`
+      SELECT count(DISTINCT cl."leadId") AS n
+      FROM "CampaignLead" cl
+      JOIN "CampaignLead" o ON o."leadId" = cl."leadId" AND o."campaignId" <> cl."campaignId"
+        AND o."state" IN ('QUEUED', 'ACTIVE', 'PAUSED')
+      JOIN "Campaign" oc ON oc."id" = o."campaignId" AND oc."deletedAt" IS NULL
+        AND oc."status" IN ('ACTIVE', 'PAUSED', 'ACCOUNTS_UNHEALTHY', 'BOUNCE_PROTECT')
+      WHERE cl."campaignId" = ${id} AND cl."state" IN ('QUEUED', 'ACTIVE', 'PAUSED') AND NOT cl."duplicateOk"`;
+    if (clash && clash.n > 0n)
+      throw new CampaignError(422, "launch_blocked", {
+        issues: [
+          block(
+            "leads_in_other_active_campaign",
+            "Some leads are already in another live campaign; remove them or enroll with allowDuplicates",
+            { leads: Number(clash.n) },
+          ),
+        ],
+      });
     const r = await tx.campaign.updateMany({
       where: { id, workspaceId: ws, deletedAt: null, status: { in: [...FROM[kind]] } },
       data: { status: "ACTIVE", launchedAt: c.launchedAt ?? now },

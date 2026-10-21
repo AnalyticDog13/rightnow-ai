@@ -654,6 +654,7 @@ model CampaignLead {
   threadRef     String?
   enrolledAt    DateTime          @default(now())
   completedAt   DateTime?
+  duplicateOk   Boolean           @default(false) // enrolled with allowDuplicates: exempt from the launch conflict check
 
   @@unique([campaignId, leadId])
   @@index([campaignId, state, nextDueAt])

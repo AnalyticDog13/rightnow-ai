@@ -17,6 +17,8 @@ export type EnrollSkips = {
   suppressed: number;
   deleted: number;
 };
+/** Campaign statuses that count as live for the cross-campaign conflict rule (system-paused ones included). */
+export const LIVE_STATUSES = ["ACTIVE", "PAUSED", "ACCOUNTS_UNHEALTHY", "BOUNCE_PROTECT"] as const;
 export const noSkips = (): EnrollSkips => ({
   in_other_active_campaign: 0,
   already_in_campaign: 0,
@@ -62,7 +64,7 @@ export async function enrollBatch(
             leadId: { in: leads.map((l) => l.id) },
             campaignId: { not: campaignId },
             state: { in: ["QUEUED", "ACTIVE", "PAUSED"] },
-            campaign: { workspaceId: ws, deletedAt: null, status: { in: ["ACTIVE", "PAUSED"] } },
+            campaign: { workspaceId: ws, deletedAt: null, status: { in: [...LIVE_STATUSES] } },
           },
           select: { leadId: true },
         }),
@@ -76,8 +78,19 @@ export async function enrollBatch(
     else if (inOther.has(l.id)) skipped.in_other_active_campaign++;
     else take.push(l.id);
   }
+  // Explicit duplicates are exempt from the launch-time conflict check (also for rows enrolled earlier).
+  if (allowDuplicates && inThis.size)
+    await tx.campaignLead.updateMany({
+      where: { campaignId, leadId: { in: [...inThis] }, duplicateOk: false },
+      data: { duplicateOk: true },
+    });
   const r = await tx.campaignLead.createMany({
-    data: take.map((leadId) => ({ workspaceId: ws, campaignId, leadId })),
+    data: take.map((leadId) => ({
+      workspaceId: ws,
+      campaignId,
+      leadId,
+      duplicateOk: allowDuplicates,
+    })),
     skipDuplicates: true,
   });
   skipped.already_in_campaign += take.length - r.count;
@@ -209,7 +222,8 @@ export async function resumeCampaignLead(prisma: Db, ws: string, actorId: Actor,
     const cl = await liveCl(tx, ws, id);
     const r = await tx.campaignLead.updateMany({
       where: { id, state: "PAUSED" },
-      data: { state: cl.accountId ? "ACTIVE" : "QUEUED" },
+      // ACTIVE once step 1 went out or the lead sits in a subsequence; a stale SEND_FAILED reason is cleared
+      data: { state: cl.accountId || cl.subsequenceId ? "ACTIVE" : "QUEUED", stopReason: null },
     });
     if (!r.count) throw new CampaignError(409, "lead_not_paused");
     await audited(tx, ws, actorId, cl, "resume");
@@ -232,6 +246,8 @@ export async function moveToSubsequence(
 ) {
   return prisma.$transaction(async (tx) => {
     const cl = await liveCl(tx, ws, id);
+    if (![...OPEN, "COMPLETED"].includes(cl.state))
+      throw new CampaignError(409, "lead_not_movable");
     const sub = await tx.subsequence.findFirst({
       where: { id: subsequenceId, campaignId: cl.campaignId, active: true },
       include: { steps: { where: { deletedAt: null }, orderBy: { order: "asc" }, take: 1 } },
@@ -239,7 +255,7 @@ export async function moveToSubsequence(
     if (!sub) throw new CampaignError(404, "Not found");
     if (!sub.steps[0]) throw new CampaignError(400, "subsequence_has_no_steps");
     const r = await tx.campaignLead.updateMany({
-      where: { id, state: { in: [...OPEN, "COMPLETED"] } },
+      where: { id, state: cl.state }, // not overwriting a concurrent pause or stop
       data: {
         subsequenceId,
         state: cl.state === "PAUSED" ? "PAUSED" : "ACTIVE",

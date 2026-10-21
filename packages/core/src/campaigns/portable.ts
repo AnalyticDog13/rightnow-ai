@@ -48,6 +48,7 @@ const portableSchema = z.strictObject({
     .max(50),
   accountIds: z.array(z.string().min(1)).max(100).optional(), // hand-added; resolved in this workspace only
 });
+const MAX_IMPORT_CHARS = 5_000_000;
 export type CampaignExport = z.infer<typeof portableSchema>;
 
 const pick = <T extends object>(o: T, keys: string[]) =>
@@ -157,8 +158,12 @@ export async function duplicateCampaign(prisma: Db, ws: string, actorId: Actor, 
 
 /** Strictly validated; creates a DRAFT. Templates are checked at launch (their custom fields need leads). */
 export async function importCampaign(prisma: Db, ws: string, actorId: Actor, json: unknown) {
+  if (JSON.stringify(json ?? null).length > MAX_IMPORT_CHARS)
+    throw new CampaignError(413, "import_too_large");
   const doc = portableSchema.parse(json);
-  return prisma.$transaction((tx) => create(tx, ws, actorId, doc, "campaign.import", {}));
+  return prisma.$transaction((tx) => create(tx, ws, actorId, doc, "campaign.import", {}), {
+    timeout: 30_000,
+  });
 }
 
 export const importSchema = portableSchema;

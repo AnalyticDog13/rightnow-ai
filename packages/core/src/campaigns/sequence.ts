@@ -170,18 +170,33 @@ export async function updateStep(
     const s = await stepOf(tx, ws, stepId);
     await lock(tx, ws, s.campaignId);
     await tx.sequenceStep.update({ where: { id: stepId }, data: d });
-    await settle(tx, ws, s.campaignId, s.subsequenceId, true);
+    await settle(tx, ws, s.campaignId, s.subsequenceId, false);
+    const now = await tx.sequenceStep.findUniqueOrThrow({ where: { id: stepId } });
+    // only a real change (after step 1 is forced to 0) re-plans rows, and only this step's
+    if (now.delayValue !== s.delayValue || now.delayUnit !== s.delayUnit)
+      await editHooks.stepsChanged(tx, {
+        workspaceId: ws,
+        campaignId: s.campaignId,
+        subsequenceId: s.subsequenceId,
+        stepId,
+      });
     await done(tx, ws, actorId, s.campaignId, { step: stepId });
-    return tx.sequenceStep.findUniqueOrThrow({ where: { id: stepId } });
+    return now;
   });
 }
 
-/** Soft delete while anything still points at the step (send rows, a lead's current step); otherwise hard delete. */
+/**
+ * A DRAFT campaign hard-deletes unless something points at the step. Any other campaign soft-deletes always: the
+ * sender, advanceLead and the planner move currentStepId without taking the campaign lock, so a hard delete could
+ * leave a dangling pointer.
+ */
 export async function deleteStep(prisma: Db, ws: string, actorId: Actor, stepId: string) {
   await prisma.$transaction(async (tx) => {
     const s = await stepOf(tx, ws, stepId);
     await lock(tx, ws, s.campaignId);
+    const c = await liveCampaign(tx, ws, s.campaignId);
     const soft =
+      c.status !== "DRAFT" ||
       (await tx.campaignLead.count({ where: { currentStepId: stepId } })) > 0 ||
       (await editHooks.stepReferenced(tx, stepId));
     await editHooks.stepRemoved(tx, { workspaceId: ws, campaignId: s.campaignId, stepId });
@@ -210,6 +225,15 @@ export async function reorderSteps(
       !live.every((s) => ids.includes(s.id))
     )
       throw new CampaignError(400, "bad_order");
+    if (live.every((s, i) => s.id === ids[i])) return live; // nothing moves, nothing to re-plan
+    // A lead that already got step A would point back at it after a swap; duplicate the campaign instead.
+    const c = await liveCampaign(tx, ws, campaignId);
+    if (
+      c.status !== "DRAFT" &&
+      ((await tx.campaignLead.count({ where: { campaignId, accountId: { not: null } } })) > 0 ||
+        (await editHooks.campaignHasSends(tx, campaignId)))
+    )
+      throw new CampaignError(409, "campaign_has_sends");
     for (const [i, id] of ids.entries())
       await tx.sequenceStep.update({ where: { id }, data: { order: i + 1 } });
     await settle(tx, ws, campaignId, subsequenceId, true);
