@@ -3,8 +3,11 @@ import { Prisma, type AccountProvider, type PrismaClient } from "@rightnow/db/cl
 import { newMessageId } from "@rightnow/providers";
 import type { Clock } from "./clock";
 import { isSuppressed } from "./leads/suppression";
+import { priorSubject, renderForLead, renderProblem } from "./planner";
 import { effectiveAllowance, type UsageRef } from "./quota";
 import { dayKey, isInWindow, nextWindowStart, startOfNextDay, type Window } from "./schedule";
+import { templateVariables } from "./template";
+import type { RenderEnv } from "./unsubscribe";
 
 type Tx = Prisma.TransactionClient;
 
@@ -14,6 +17,8 @@ export type ClaimOpts = {
   stalenessSec: number;
   sendableProviders: AccountProvider[];
   random?: () => number;
+  /** When set, the claim re-renders the row's text under its lock (the sender always passes it; see claimOne). */
+  env?: RenderEnv;
 };
 export type Claimed = UsageRef & {
   id: string;
@@ -163,6 +168,9 @@ async function claimOne(
       await tx.$queryRaw`SELECT 1 FROM "CampaignLead" WHERE id = ${sel.campaignLeadId} FOR NO KEY UPDATE`;
       // loaded one by one: a multi-relation include issues concurrent queries on the transaction's connection
       const m = await tx.scheduledMessage.findUniqueOrThrow({ where: { id: sel.id } });
+      // an edit of the variant that committed before this point is re-rendered below; a later one waits for this claim
+      if (o.env && m.variantId)
+        await tx.$queryRaw`SELECT 1 FROM "StepVariant" WHERE id = ${m.variantId} FOR SHARE`;
       const step = await tx.sequenceStep.findUniqueOrThrow({ where: { id: m.stepId } });
       const variant = m.variantId
         ? await tx.stepVariant.findUnique({ where: { id: m.variantId } })
@@ -217,6 +225,36 @@ async function claimOne(
         return "skip";
       }
 
+      // Stale text (Revision 3): edit hooks skip rows a claim holds, so the claim re-renders under the row lock. The
+      // List-Unsubscribe headers are not stored; the sender rebuilds them.
+      let text: Prisma.ScheduledMessageUpdateManyMutationInput = {};
+      if (o.env) {
+        const v = variant!;
+        try {
+          const r = renderForLead({
+            campaign: c,
+            step,
+            variant: v,
+            lead,
+            account: a,
+            workspace: w,
+            env: o.env,
+            // only the variables this variant uses matter; any of them the lead lacks renders its fallback
+            customKeys: [...templateVariables(v.subject), ...templateVariables(v.body)],
+            replyTo: v.subject.trim() ? null : await priorSubject(tx, cl.id),
+          });
+          text = {
+            renderedSubject: r.subject,
+            renderedBody: r.html ?? r.text,
+            renderedText: r.text,
+          };
+        } catch (e) {
+          if (!renderProblem(e)) throw e;
+          await set({ status: "CANCELLED", error: "rerender_failed" });
+          return "skip";
+        }
+      }
+
       const usageDay = dayKey(a.timezone, now);
       const wsDay = dayKey(w.timezone, now);
       const units = 1 + c.cc.length + c.bcc.length;
@@ -264,6 +302,7 @@ async function claimOne(
         cc: c.cc, // M8: the units were computed from exactly these
         bcc: c.bcc,
         rfcMessageId,
+        ...text,
       });
       if (done.count !== 1) throw new Error("claimed row changed under its lock");
       return {

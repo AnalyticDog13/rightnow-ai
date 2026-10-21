@@ -159,7 +159,7 @@ const processEnv = (): RenderEnv => {
 };
 
 /** The renderedSubject of the lead's first SENT email (normally step 1), for a blank follow-up subject. */
-const priorSubject = async (tx: Tx, campaignLeadId: string) =>
+export const priorSubject = async (tx: Tx, campaignLeadId: string) =>
   (
     await tx.scheduledMessage.findFirst({
       where: { campaignLeadId, status: "SENT" },
@@ -537,6 +537,7 @@ async function planCampaign(tx: Tx, campaignId: string, now: Date, o: PlanOpts) 
       if (cl.accountId) {
         if (fullAccounts.has(cl.accountId)) continue;
         account = await accountOf(cl.accountId);
+        if (account?.deletedAt) continue; // housekeep pauses the lead (deleted sticky sender)
         // no burst: a backlog of follow-ups is planned only as far as today's allowance reaches
         if (
           account &&
@@ -698,8 +699,22 @@ async function endCampaign(tx: Tx, campaignId: string, now: Date) {
 /**
  * C2/I1: SCHEDULED rows that are not their lead's current step, or whose lead finished, are CANCELLED. A non-evergreen
  * campaign with no open lead and no open row is COMPLETED (one conditional statement).
+ *
+ * Deleted sticky sender (P3-T10b re-review): a follow-up must come from the lead's step-1 mailbox, so it is never
+ * re-routed. The lead is PAUSED SEND_FAILED (reversible: reconnecting the address revives the same account row) and
+ * its SCHEDULED rows are CANCELLED, so neither the planner nor the claim looks at it again every tick.
  */
 async function housekeep(tx: Tx, campaignId: string, now: Date) {
+  const orphaned = Prisma.sql`cl."campaignId" = ${campaignId} AND cl.state IN ('QUEUED', 'ACTIVE')
+    AND cl."accountId" IS NOT NULL
+    AND NOT EXISTS (SELECT 1 FROM "EmailAccount" a WHERE a.id = cl."accountId" AND a."deletedAt" IS NULL)`;
+  await cancelRows(
+    tx,
+    Prisma.sql`"campaignId" = ${campaignId} AND EXISTS (SELECT 1 FROM "CampaignLead" cl
+      WHERE cl.id = "ScheduledMessage"."campaignLeadId" AND ${orphaned})`,
+  );
+  await tx.$executeRaw`UPDATE "CampaignLead" cl SET state = 'PAUSED', "stopReason" = 'SEND_FAILED'
+    WHERE ${orphaned}`;
   await cancelRows(
     tx,
     Prisma.sql`"campaignId" = ${campaignId} AND EXISTS (SELECT 1 FROM "CampaignLead" cl

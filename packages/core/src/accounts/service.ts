@@ -227,7 +227,14 @@ export async function resumeAccount(prisma: Db, ws: string, id: string, o: Opts 
   if (a.lifecycle === "NEEDS_ATTENTION") throw new AccountError(409, RECONNECT);
   if (a.status === "DISCONNECTED") throw new AccountError(409, "reconnect first");
   if (a.lifecycle !== "PAUSED") return (await getAccount(prisma, ws, id, o))!;
-  return mutate(prisma, ws, id, o, { lifecycle: "ACTIVE", pausedUntil: null }, "account.resume");
+  return mutate(
+    prisma,
+    ws,
+    id,
+    o,
+    { lifecycle: "ACTIVE", pausedUntil: null, consecutivePermanentErrors: 0 },
+    "account.resume",
+  );
 }
 
 /** Disconnect and delete: revoke at the provider (best effort), then drop credentials through the lease-guarded store. */

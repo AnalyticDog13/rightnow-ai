@@ -43,7 +43,7 @@ export class FakeProvider implements MailProvider {
   readonly address: string;
   private readonly file: string;
   private readonly host?: string;
-  private pending: FailKind[] = [];
+  private pending: { k: FailKind; retryAfterSec: number }[] = [];
   private revoked = false;
 
   constructor(address: string, o: { dir?: string; kind?: ProviderKind; host?: string } = {}) {
@@ -61,10 +61,10 @@ export class FakeProvider implements MailProvider {
     opts?.signal?.throwIfAborted();
     if (mime.from.email.toLowerCase() !== this.address)
       throw new PermanentSendError("from_mismatch");
-    const fail = this.takeFailure();
+    const { k: fail, retryAfterSec } = this.takeFailure() ?? {};
     switch (fail) {
       case "rate_limit":
-        throw new RateLimitedError(7);
+        throw new RateLimitedError(retryAfterSec ?? 7);
       case "auth_revoked":
         throw new AuthError("invalid_grant");
       case "token_5xx":
@@ -72,8 +72,9 @@ export class FakeProvider implements MailProvider {
       case "connect_refused":
         throw new TransientBeforeSendError(fail);
       case "smtp_5xx":
-      case "permanent_rejected":
         throw new PermanentSendError(fail);
+      case "permanent_rejected":
+        throw new PermanentSendError(fail, undefined, { scope: "recipient" });
     }
     const raw = await buildMime(mime);
     const entry = await updateMailbox(this.file, (box) =>
@@ -153,7 +154,7 @@ export class FakeProvider implements MailProvider {
   }
 
   async diagnostics(): Promise<Diagnostics> {
-    if (this.pending[0] === "auth_revoked") this.takeFailure();
+    if (this.pending[0]?.k === "auth_revoked") this.takeFailure();
     const names =
       this.kind === "SMTP"
         ? (["imap_login", "smtp_auth", "sent_folder"] as const)
@@ -176,8 +177,9 @@ export class FakeProvider implements MailProvider {
     this.revoked = false;
   }
 
-  failNext(k: FailKind): void {
-    this.pending.push(k);
+  /** `retryAfterSec` only matters for rate_limit (default 7). */
+  failNext(k: FailKind, retryAfterSec = 7): void {
+    this.pending.push({ k, retryAfterSec });
   }
 
   async receiveInbound(m: {
@@ -283,11 +285,11 @@ export class FakeProvider implements MailProvider {
 
   // ---- internals ----------------------------------------------------------
 
-  private takeFailure(): FailKind | undefined {
-    if (this.revoked) return "auth_revoked";
-    const k = this.pending.shift();
-    if (k === "auth_revoked") this.revoked = true;
-    return k;
+  private takeFailure(): { k: FailKind; retryAfterSec?: number } | undefined {
+    if (this.revoked) return { k: "auth_revoked" };
+    const f = this.pending.shift();
+    if (f?.k === "auth_revoked") this.revoked = true;
+    return f;
   }
 
   private threadOf(box: FakeMailbox, inReplyTo?: string): string | undefined {

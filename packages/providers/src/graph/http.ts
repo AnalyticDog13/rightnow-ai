@@ -119,6 +119,12 @@ export class GraphHttp {
     }
     // 403 without a throttle signal (mailbox not enabled, policy, unknown): AuthError would disconnect a healthy mailbox
     if (res.status === 403 && !o.send) throw new TransientBeforeSendError("graph 403");
-    throw new PermanentSendError(code ?? `http_${res.status}`, `graph ${res.status}`);
+    const scope =
+      code === "ErrorInvalidRecipients"
+        ? "recipient"
+        : code === "ErrorSendAsDenied"
+          ? "account"
+          : undefined;
+    throw new PermanentSendError(code ?? `http_${res.status}`, `graph ${res.status}`, { scope });
   }
 }

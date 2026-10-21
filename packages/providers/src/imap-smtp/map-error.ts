@@ -33,7 +33,7 @@ const TLS_CERT =
   /certificate|self[- ]signed|altname|unable to verify|ERR_TLS|CERT_|wrong version number/i;
 
 /** SMTP failure to the provider error contract. `dataStarted`: the message body was handed to the socket, so a lost reply is ambiguous. */
-export function mapSmtpError(e: unknown, dataStarted: boolean): ProviderError {
+export function mapSmtpError(e: unknown, dataStarted = false): ProviderError {
   if (e instanceof ProviderError) return e;
   const r = raw(e);
   const rc = r.responseCode;
@@ -43,7 +43,7 @@ export function mapSmtpError(e: unknown, dataStarted: boolean): ProviderError {
   if ((r.code === "EAUTH" || rc === 535) && rc !== undefined && [530, 534, 535].includes(rc))
     return new AuthError("bad_credentials");
   if (rc && rc >= 400 && rc < 500) return new TransientBeforeSendError(`smtp ${rc}`);
-  if (rc && rc >= 500) return new PermanentSendError(`smtp_${rc}`);
+  if (rc && rc >= 500) return new PermanentSendError(`smtp_${rc}`, undefined, smtpScope(r));
   if (dataStarted)
     return new AmbiguousSendError(`connection lost after data (${r.code ?? "error"})`);
   return new TransientBeforeSendError(tlsOrCode(r));
@@ -66,6 +66,37 @@ export function mapImapError(e: unknown): ProviderError {
   if (r.authenticationFailed && !/^(E[A-Z]+|NoConnection)$/.test(r.code ?? ""))
     return new AuthError("bad_credentials");
   return new TransientBeforeSendError(tlsOrCode(r));
+}
+
+const POLICY = /block|spam|policy|reputation|listed|blacklist|denied|rbl|spamhaus|barracuda|abuse/i;
+const NO_USER =
+  /user unknown|no such user|unknown user|does not exist|mailbox (unavailable|not found)|invalid recipient|recipient (address )?rejected/i;
+
+/** D18/I6 scope of a 5xx reply, from the enhanced status code and the reply text (read here, never copied). */
+function smtpScope(r: Raw): {
+  scope: "recipient" | "account" | "unknown";
+  countsTowardPause?: boolean;
+} {
+  const text = r.response ?? "";
+  const cmd = (r.command ?? "").toUpperCase();
+  const [, cls, det] = /^\d{3}[ -]+5\.(\d{1,3})\.(\d{1,3})(?![.\d])/.exec(text) ?? [];
+  if (cls === "7" && /^(MAIL|AUTH|DATA)/.test(cmd)) return { scope: "account" };
+  // Microsoft 365's recipient-domain policy ("5.4.1 ... Access denied"): unknown, but says nothing about the mailbox
+  if (cls === "4" && det === "1" && /access denied/i.test(text))
+    return { scope: "unknown", countsTowardPause: false };
+  if (POLICY.test(text)) return { scope: "unknown" };
+  // 5.1.7/5.1.8 are about the SENDER's address (Revision 3)
+  if (cls === "1" && (det === "7" || det === "8"))
+    return { scope: cmd.startsWith("MAIL") ? "account" : "unknown" };
+  if (cls === "1" || (cls === "2" && det === "1")) return { scope: "recipient" };
+  if (
+    !cls &&
+    [550, 551, 553].includes(r.responseCode ?? 0) &&
+    cmd.startsWith("RCPT") &&
+    NO_USER.test(text)
+  )
+    return { scope: "recipient" };
+  return { scope: "unknown" };
 }
 
 function tlsOrCode(r: Raw): string {

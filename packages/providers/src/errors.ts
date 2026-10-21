@@ -27,13 +27,22 @@ export class AuthError extends ProviderError {
   }
 }
 
+/** D18: who the rejection is about. Only `recipient` may suppress a lead; `account` pauses the mailbox. */
+export type PermanentScope = "recipient" | "account" | "unknown";
+
 export class PermanentSendError extends ProviderError {
+  readonly scope: PermanentScope;
+  /** false for a rejection known to say nothing about the mailbox (M365 5.4.1): no strike toward the unknown-scope pause. */
+  readonly countsTowardPause: boolean;
   constructor(
     readonly code: string,
     readonly detail?: string,
-    opts?: { cause?: unknown },
+    opts?: { cause?: unknown; scope?: PermanentScope; countsTowardPause?: boolean },
   ) {
     super(`permanent send error: ${code}${detail ? ` (${detail})` : ""}`, opts);
+    // every provider refuses a foreign From with this code: always the account's problem
+    this.scope = opts?.scope ?? (code === "from_mismatch" ? "account" : "unknown");
+    this.countsTowardPause = opts?.countsTowardPause ?? true;
   }
 }
 

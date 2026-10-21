@@ -1,6 +1,7 @@
 import type { JobDef } from "../boss";
 import { accountsAutoResumeJob } from "./accounts-auto-resume";
 import { accountsAutofixJob } from "./accounts-autofix";
+import { campaignDispatchJob } from "./campaign-dispatch";
 import { campaignPlanJob } from "./campaign-plan";
 import { leadImportJob } from "./lead-import";
 
@@ -10,4 +11,5 @@ export const jobs: JobDef[] = [
   accountsAutofixJob,
   leadImportJob,
   campaignPlanJob,
+  campaignDispatchJob,
 ];
