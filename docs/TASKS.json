@@ -388,25 +388,26 @@
    "id": "P3-T11a",
    "phase": 3,
    "title": "Sender (send claimed, error classification, late-accept, lease/claimToken) — GATED by ProviderVerification (D17)",
-   "status": "in_progress",
+   "status": "done",
    "deps": [
     "P3-T10b"
    ],
    "model": "opus",
-   "commit": null,
-   "acceptance": "See docs/plans/phase-3.md P3-T11a; from P3-T06: set BOUNCED CampaignLead state before suppress(); from P3-T08: use withComplianceFooter + listUnsubscribeHeaders, import RenderEnv from unsubscribe.ts; from P3-T10b: call advanceLead when recording SENT; from P3-T10b review: re-render stale row under claim lock before send; rebuild List-Unsubscribe headers at send time; any cancelScheduled goes through skipStep; from P3-T10b re-review: deleted sticky account must not be re-selected every tick (stop lead or re-route per policy)"
+   "commit": "26c3ade",
+   "acceptance": "See docs/plans/phase-3.md P3-T11a; from P3-T06: set BOUNCED CampaignLead state before suppress(); from P3-T08: use withComplianceFooter + listUnsubscribeHeaders, import RenderEnv from unsubscribe.ts; from P3-T10b: call advanceLead when recording SENT; from P3-T10b review: re-render stale row under claim lock before send; rebuild List-Unsubscribe headers at send time; any cancelScheduled goes through skipStep; from P3-T10b re-review: deleted sticky account must not be re-selected every tick (stop lead or re-route per policy)",
+   "review": "opus task review (C1 I2) + 1 fix round, sonnet re-review approved"
   },
   {
    "id": "P3-T11b",
    "phase": 3,
    "title": "Recovery (UNCERTAIN→findSent→HELD) + HELD view API",
-   "status": "todo",
+   "status": "in_progress",
    "deps": [
     "P3-T11a"
    ],
    "model": "opus",
    "commit": null,
-   "acceptance": "See docs/plans/phase-3.md P3-T11b; from P3-T10b: enqueue planner once at worker start-up"
+   "acceptance": "See docs/plans/phase-3.md P3-T11b; from P3-T10b: enqueue planner once at worker start-up; from P3-T11a: SEND_LEASE_SEC floor ~300 s (SMTP Sent append + OAuth refresh are outside the 60 s send timeout); recoverExpired turns expired SENDING into UNCERTAIN, never SCHEDULED; worker boot enqueues plan, dispatch and recovery jobs once; resolveUncertain advances via advanceLead (already guarded against STOPPED leads)"
   },
   {
    "id": "P3-T12",

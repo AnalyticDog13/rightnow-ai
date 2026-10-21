@@ -209,3 +209,6 @@ Shared accountOk + companyGateOk + remainingToday predicates across claim, pickA
 
 ## 2026-10-21 · P3-T10b planner · task reviewer (opus, adversarial) · 1 fix round → **Approved**
 C-1 batch starvation fixed (paging, per-constraint exclusion, 1 h durable back-off), single-pass edit re-render, deleteStep locks rows; D22 records the step-1 delete and removeFromSubsequence deviations.
+
+## 2026-10-21 · P3-T11a sender · task reviewer (opus, adversarial) · 1 fix round → **Approved** (sonnet re-review)
+No duplicate-send path: provider call outside transactions, every post-send write conditional on claimToken, late accept never resends, reservations committed or released exactly once. Fixed: C advance() could revive a STOPPED last-step lead into a completed_no_reply subsequence (now only QUEUED/ACTIVE/PAUSED advance); I SMTP 5.1.x sender-side rejections (MAIL FROM/AUTH or "sender" text) no longer suppress the lead; `variant!` finding confirmed false positive (claim cancels null/inactive variant as stale), assertion removed and pinned by test. Deferred: SEND_LEASE_SEC floor → P3-T11b; cc-caused rejection → P5; 429 attempt cap kept; hard-delete mid-send reservation stays on that day's usage.
