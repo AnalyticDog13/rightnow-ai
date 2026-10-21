@@ -14,6 +14,10 @@ https:// {
 		on_demand
 	}
 	@track path /t/* /u/*
-	reverse_proxy @track web:3000
-	respond 404
+	handle @track {
+		reverse_proxy web:3000
+	}
+	handle {
+		respond 404
+	}
 }

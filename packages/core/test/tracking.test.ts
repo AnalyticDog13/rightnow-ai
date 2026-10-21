@@ -65,6 +65,15 @@ describe("withTracking / trackingBase", () => {
       /<img src="https:\/\/t\.test\/t\/o\/[\w.-]+" width="1" height="1" alt="" style="display:none"><\/body>/,
     );
   });
+  test("a /u/ link on the base stays untracked even if signed by another key", () => {
+    const html = '<a href="https://t.test/u/signed-by-an-older-key">u</a>';
+    expect(withTracking(html, { ...o, opens: false, skipUrls: [] })).toBe(html);
+    // tracking domain differs from the app URL that carries the footer link
+    const app = '<a href="https://app.test/u/old-key-token">u</a>';
+    expect(withTracking(app, { ...o, opens: false, skipUrls: ["https://app.test/u/new"] })).toBe(
+      app,
+    );
+  });
   test("opens off / no body tag", () => {
     expect(withTracking("<p>x</p>", { ...o, opens: false, skipUrls: [] })).toBe("<p>x</p>");
     expect(withTracking("<p>x</p>", { ...o, clicks: false, skipUrls: [] })).toMatch(
@@ -110,9 +119,7 @@ describe("db", () => {
   const body = '<p>Hi <a href="https://x.test/p">link</a></p>';
 
   /** Seeds one row with `renderedBody`, sends it, returns the stored row and the html the Fake received. */
-  async function sendOne(
-    o: Omit<Parameters<typeof seedCampaign>[1], "at" | "rows" | "accounts">,
-  ) {
+  async function sendOne(o: Omit<Parameters<typeof seedCampaign>[1], "at" | "rows" | "accounts">) {
     const s = await seedCampaign(P(), { at: T, rows: 1, accounts: [{}], ...o });
     // the claim re-renders the row from its variant
     await P().stepVariant.update({ where: { id: s.steps[0]!.variant.id }, data: { body } });

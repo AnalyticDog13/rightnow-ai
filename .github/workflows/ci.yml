@@ -62,6 +62,8 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+      - name: Validate Caddyfile
+        run: docker run --rm -e DOMAIN=app.example.com -v "$PWD/docker/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
       - name: Create .env
         run: |
           cp .env.example .env

@@ -45,11 +45,18 @@ export function withTracking(
   },
 ): string {
   let out = html;
+  // the footer link is any /u/ path on our hosts (tracking base or app URL), whichever key signed it
+  const origin = (u: string) => new URL(u).origin;
+  const ours = new Set([o.base, ...o.skipUrls].map(origin));
   if (o.clicks) {
     let i = 0;
     out = out.replace(/(<a\b[^>]*?\bhref=)(["'])(https?:\/\/.*?)\2/gi, (all, pre, q, href) => {
       const url = href.replace(/&amp;/g, "&");
-      if (o.skipUrls.includes(url) || o.skipUrls.includes(href)) return all;
+      if (
+        o.skipUrls.includes(url) ||
+        (ours.has(origin(url)) && new URL(url).pathname.startsWith("/u/"))
+      )
+        return all;
       const t = signTrack({ m: o.scheduledMessageId, u: url, i: i++ }, o.key);
       return `${pre}${q}${o.base}/t/c/${t}${q}`;
     });
@@ -111,13 +118,24 @@ async function record(
           m.campaignId,
           open ? "opened" : "clicked",
         );
-      const lead = await tx.lead.findUnique({ where: { id: leadId }, select: { lastEngagement: true } });
+      const lead = await tx.lead.findUnique({
+        where: { id: leadId },
+        select: { lastEngagement: true },
+      });
       const eng = (lead?.lastEngagement ?? {}) as Prisma.JsonObject;
       await tx.lead.updateMany({
         where: { id: leadId, workspaceId: m.workspaceId },
         data: open
-          ? { opens: { increment: 1 }, lastOpenAt: now, lastEngagement: { ...eng, open: now.toISOString() } }
-          : { clicks: { increment: 1 }, lastClickAt: now, lastEngagement: { ...eng, click: now.toISOString() } },
+          ? {
+              opens: { increment: 1 },
+              lastOpenAt: now,
+              lastEngagement: { ...eng, open: now.toISOString() },
+            }
+          : {
+              clicks: { increment: 1 },
+              lastClickAt: now,
+              lastEngagement: { ...eng, click: now.toISOString() },
+            },
       });
     }),
   );
