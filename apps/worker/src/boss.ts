@@ -2,7 +2,7 @@ import { hostname } from "node:os";
 import { systemClock, type Clock } from "@rightnow/core";
 import type { PrismaClient } from "@rightnow/db/client";
 import { createPrisma } from "@rightnow/db/create";
-import { PgBoss, type Job, type QueueOptions } from "pg-boss";
+import { PgBoss, type Job, type Queue } from "pg-boss";
 import { startHealthServer } from "./health";
 import { jobs as defaultJobs } from "./jobs";
 import { startHeartbeat } from "./jobs/heartbeat";
@@ -10,7 +10,7 @@ import { startHeartbeat } from "./jobs/heartbeat";
 export type JobDef = {
   name: string;
   cron?: string;
-  options?: QueueOptions;
+  options?: Omit<Queue, "name">;
   handler: (jobs: Job[], deps: JobDeps) => Promise<void>;
 };
 
