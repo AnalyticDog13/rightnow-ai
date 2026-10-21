@@ -1,6 +1,7 @@
-import type { Campaign, CampaignStatus, Prisma, PrismaClient } from "@rightnow/db/client";
+import { Prisma, type Campaign, type CampaignStatus, type PrismaClient } from "@rightnow/db/client";
 import { AccountError } from "../accounts/service";
 import { audit } from "../audit";
+import { cancelRows } from "./hooks";
 import { localMidnightUtc } from "../schedule";
 import { campaignCreateSchema, campaignPatchSchema, schedulesSchema } from "./schema";
 
@@ -165,16 +166,20 @@ async function move(prisma: Db, ws: string, actorId: Actor, id: string, kind: ke
       data: { status: TO[kind] },
     });
     if (r.count !== 1) throw new CampaignError(409, `cannot_${kind}_${was.status.toLowerCase()}`);
+    if (kind === "archive") await cancelCampaignRows(tx, id);
     await audit(tx, ctx(ws, actorId), `campaign.${kind}`, id, { from: was.status });
     return liveCampaign(tx, ws, id);
   });
 }
+const cancelCampaignRows = (tx: Tx, id: string) =>
+  cancelRows(tx, Prisma.sql`"campaignId" = ${id}`, ["SCHEDULED", "HELD"]);
+
 export const pauseCampaign = (p: Db, ws: string, a: Actor, id: string) =>
   move(p, ws, a, id, "pause");
 /**
- * Archive stops sending at once (the status leaves ACTIVE). RULE FOR T09: once ScheduledMessage exists, archive
- * and delete cancel the campaign's SCHEDULED and HELD rows in the same transaction and leave SENDING and
- * UNCERTAIN rows alone: the sender's result transaction and resolveUncertain finish those by row id.
+ * Archive stops sending at once (the status leaves ACTIVE). Archive and delete cancel the campaign's SCHEDULED and HELD
+ * rows in the same transaction and leave SENDING and UNCERTAIN rows alone: the sender's result transaction and
+ * resolveUncertain finish those by row id.
  */
 export const archiveCampaign = (p: Db, ws: string, a: Actor, id: string) =>
   move(p, ws, a, id, "archive");
@@ -188,6 +193,7 @@ export async function deleteCampaign(prisma: Db, ws: string, actorId: Actor, id:
       data: { status: "ARCHIVED", deletedAt: new Date() },
     });
     if (r.count !== 1) throw new CampaignError(409, "campaign_active");
+    await cancelCampaignRows(tx, id);
     await audit(tx, ctx(ws, actorId), "campaign.delete", id, { from: was.status });
   });
 }

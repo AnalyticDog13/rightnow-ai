@@ -30,6 +30,7 @@ import {
 import { fixedClock } from "../src/clock";
 import { addBlocklist } from "../src/leads/blocklist";
 import { bulkLeads, createLead, mergeLeads, softDeleteLead } from "../src/leads/service";
+import { planRow } from "./campaign-fixture";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
 let ws: string;
@@ -107,17 +108,26 @@ describe("fix round 1", () => {
     await P().campaign.update({ where: { id: c }, data: { status: "ACTIVE" } });
     await reorderSteps(P(), ws, null, c, null, [b.id, a.id]); // live, but nothing sent yet
     await enroll(c, { leadIds: [await lead()] });
-    await P().campaignLead.updateMany({ where: { campaignId: c }, data: { accountId: "acc" } });
-    expect(await fail(reorderSteps(P(), ws, null, c, null, [a.id, b.id]))).toMatchObject({
+    const [cl] = await cls(c);
+    const sm = await planRow(P(), {
+      workspaceId: ws,
+      campaignId: c,
+      campaignLeadId: cl!.id,
+      stepId: b.id,
+      accountId: (await account()).id,
+      dueAt: clock.now(),
+      status: "CANCELLED",
+    });
+    await reorderSteps(P(), ws, null, c, null, [a.id, b.id]); // a cancelled row is no send
+    await P().scheduledMessage.update({ where: { id: sm.id }, data: { status: "SENT" } });
+    expect(await fail(reorderSteps(P(), ws, null, c, null, [b.id, a.id]))).toMatchObject({
       status: 409,
       message: "campaign_has_sends",
     });
-    await P().campaignLead.updateMany({ where: { campaignId: c }, data: { accountId: null } });
-    const sends = vi.spyOn(editHooks, "campaignHasSends").mockResolvedValue(true);
-    expect(await fail(reorderSteps(P(), ws, null, c, null, [a.id, b.id]))).toMatchObject({
-      status: 409,
-    });
-    sends.mockRestore();
+    await deleteStep(P(), ws, null, b.id); // referenced by a row: soft, never a Restrict error
+    expect(
+      (await P().sequenceStep.findUniqueOrThrow({ where: { id: b.id } })).deletedAt,
+    ).not.toBeNull();
     await deleteStep(P(), ws, null, a.id); // nothing points at it, still soft on a live campaign
     const row = await P().sequenceStep.findUniqueOrThrow({ where: { id: a.id } });
     expect(row.deletedAt).not.toBeNull();

@@ -16,10 +16,10 @@ test("runs a job, serves /healthz, and stamps stoppedAt on stop", async () => {
   const stamp = new Date("2031-02-03T00:00:00Z");
   const demo: JobDef = {
     name: "demo",
-    handler: async (jobs, { prisma, clock }) => {
-      // Handlers get the worker's own prisma and injected clock.
+    handler: async (jobs, { prisma, clock, bootId }) => {
+      // Handlers get the worker's own prisma, injected clock and boot id (claims record it).
       await prisma.$queryRaw`select 1`;
-      got.push(...jobs.map((j) => j.data), clock.now());
+      got.push(...jobs.map((j) => j.data), clock.now(), bootId);
     },
   };
   const w = await startWorker({
@@ -33,7 +33,7 @@ test("runs a job, serves /healthz, and stamps stoppedAt on stop", async () => {
   expect(res.status).toBe(200);
 
   await w.boss.send("demo", { hello: "world" });
-  await expect.poll(() => got, { timeout: 5000 }).toEqual([{ hello: "world" }, stamp]);
+  await expect.poll(() => got, { timeout: 5000 }).toEqual([{ hello: "world" }, stamp, w.bootId]);
 
   const before = await db.prisma.workerBoot.findUniqueOrThrow({ where: { id: w.bootId } });
   expect(before.stoppedAt).toBeNull();

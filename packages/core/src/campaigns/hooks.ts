@@ -1,11 +1,9 @@
-/* eslint-disable @typescript-eslint/no-unused-vars -- stubs until T09 fills the bodies */
-import type { Prisma } from "@rightnow/db/client";
+import { Prisma } from "@rightnow/db/client";
 
 type Tx = Prisma.TransactionClient;
 
 /**
- * Seams for the send tables. `ScheduledMessage` arrives in P3-T09, so the bodies below are no-ops until then.
- * T09 replaces them in place; every caller already runs them INSIDE the transaction that changes the sequence.
+ * Seams for the send tables (bodies by P3-T09). Every caller runs them INSIDE the transaction that changes the sequence.
  *
  * Rules for the hook bodies: only status SCHEDULED rows are touched (SELECT ... FOR UPDATE SKIP LOCKED never waits, so
  * there is no lock-order constraint here). SENDING and UNCERTAIN rows belong to the sender / resolveUncertain.
@@ -32,47 +30,82 @@ type Tx = Prisma.TransactionClient;
  * suppress() stamps SUPPRESSED on the CampaignLeads it stops. Callers that know better (T08 unsubscribe: UNSUBSCRIBED,
  * T11 bounce: BOUNCED) must set their own stopReason first or in the same transaction before calling suppress().
  */
+/**
+ * CANCELs the rows matching `where` whose status is in `statuses`, skipping rows a claim holds (FOR UPDATE SKIP LOCKED
+ * never waits; the claim re-checks itself). uncertainAt is left as is, so the planner may revive a plain cancel.
+ */
+export async function cancelRows(
+  tx: Tx,
+  where: Prisma.Sql,
+  statuses: ("SCHEDULED" | "HELD")[] = ["SCHEDULED"],
+) {
+  const ids = (
+    await tx.$queryRaw<{ id: string }[]>`
+      SELECT id FROM "ScheduledMessage" WHERE ${where} AND status::text = ANY(${statuses}::text[])
+      ORDER BY id FOR UPDATE SKIP LOCKED`
+  ).map((r) => r.id);
+  if (ids.length)
+    await tx.scheduledMessage.updateMany({
+      where: { id: { in: ids }, status: { in: statuses } },
+      data: { status: "CANCELLED" },
+    });
+}
+
 export const editHooks = {
-  /**
-   * A variant's subject, body, weight or `active` changed, or the variant was deleted (`removed`).
-   * T09: SCHEDULED rows of the variant are CANCELLED (uncertainAt NULL) so the planner re-plans them with the new text.
-   */
+  /** A variant's subject, body or `active` changed, or it was deleted: its SCHEDULED rows are re-planned. */
   async variantChanged(
-    _tx: Tx,
-    _p: {
+    tx: Tx,
+    p: {
       workspaceId: string;
       campaignId: string;
       stepId: string;
       variantId: string;
       removed: boolean;
     },
-  ): Promise<void> {},
+  ): Promise<void> {
+    await cancelRows(tx, Prisma.sql`"variantId" = ${p.variantId}`);
+  },
   /** True when a ScheduledMessage references the step; deleteStep then soft-deletes it (M5, stepId is Restrict). */
-  async stepReferenced(_tx: Tx, _stepId: string): Promise<boolean> {
-    return false;
+  async stepReferenced(tx: Tx, stepId: string): Promise<boolean> {
+    return (await tx.scheduledMessage.count({ where: { stepId } })) > 0;
   },
   /** A step was deleted: CANCEL its SCHEDULED rows. T10b moves the leads whose currentStepId is the step (skipStep). */
   async stepRemoved(
-    _tx: Tx,
-    _p: { workspaceId: string; campaignId: string; stepId: string },
-  ): Promise<void> {},
+    tx: Tx,
+    p: { workspaceId: string; campaignId: string; stepId: string },
+  ): Promise<void> {
+    await cancelRows(tx, Prisma.sql`"stepId" = ${p.stepId}`);
+  },
   /**
    * Step order or delay really changed (never called for a no-op patch). CANCEL the SCHEDULED rows of `stepId` (or of
    * the whole sequence when `stepId` is absent: reorder, delete) so dueAt is recomputed.
    */
   async stepsChanged(
-    _tx: Tx,
-    _p: { workspaceId: string; campaignId: string; subsequenceId: string | null; stepId?: string },
-  ): Promise<void> {},
+    tx: Tx,
+    p: { workspaceId: string; campaignId: string; subsequenceId: string | null; stepId?: string },
+  ): Promise<void> {
+    await cancelRows(
+      tx,
+      p.stepId
+        ? Prisma.sql`"stepId" = ${p.stepId}`
+        : Prisma.sql`"stepId" IN (SELECT id FROM "SequenceStep" WHERE "campaignId" = ${p.campaignId}
+            AND "subsequenceId" IS NOT DISTINCT FROM ${p.subsequenceId})`,
+    );
+  },
   /** True once any non-cancelled ScheduledMessage of the campaign exists; reorderSteps is then refused (409). */
-  async campaignHasSends(_tx: Tx, _campaignId: string): Promise<boolean> {
-    return false;
+  async campaignHasSends(tx: Tx, campaignId: string): Promise<boolean> {
+    return (
+      (await tx.scheduledMessage.count({ where: { campaignId, status: { not: "CANCELLED" } } })) > 0
+    );
   },
   /**
    * CampaignLeads left the main flow (moved to a subsequence, removed, suppressed): CANCEL their SCHEDULED rows in the
    * same transaction (C2). T10b wraps this as enterSubsequence / skipStep.
    */
-  async cancelOpenRows(_tx: Tx, _campaignLeadIds: string[]): Promise<void> {},
+  async cancelOpenRows(tx: Tx, campaignLeadIds: string[]): Promise<void> {
+    if (campaignLeadIds.length)
+      await cancelRows(tx, Prisma.sql`"campaignLeadId" = ANY(${campaignLeadIds}::text[])`);
+  },
 };
 
 const OPEN = ["QUEUED", "ACTIVE", "PAUSED"] as const;

@@ -14,7 +14,7 @@ export type JobDef = {
   handler: (jobs: Job[], deps: JobDeps) => Promise<void>;
 };
 
-export type JobDeps = { prisma: PrismaClient; clock: Clock };
+export type JobDeps = { prisma: PrismaClient; clock: Clock; bootId: string };
 
 export async function startWorker(opts: {
   databaseUrl: string;
@@ -67,7 +67,7 @@ export async function startWorker(opts: {
 
     for (const j of opts.jobs ?? defaultJobs) {
       await boss.createQueue(j.name, j.options);
-      await boss.work<object>(j.name, (js) => j.handler(js, { prisma, clock }));
+      await boss.work<object>(j.name, (js) => j.handler(js, { prisma, clock, bootId: bootId! }));
       if (j.cron) await boss.schedule(j.name, j.cron, {});
     }
 

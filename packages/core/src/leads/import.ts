@@ -4,6 +4,7 @@ import { z } from "zod";
 import { audit } from "../audit";
 import { enrollBatch, noSkips } from "../campaigns/enroll";
 import type { Clock } from "../clock";
+import { withTxRetry } from "../dispatch";
 import { LEAD_FIELDS, autoMap, parseCsv, type Mapping } from "./csv";
 import { DISPOSABLE_DOMAINS } from "./disposable";
 import { companyDomainOf } from "./domain";
@@ -192,19 +193,6 @@ function prepare(
 type Opts = z.infer<typeof importOptions>;
 type Job = { id: string; workspaceId: string; createdAt: Date };
 
-const retryable = (e: unknown) => {
-  const x = e as { code?: string; message?: string; meta?: { code?: string } };
-  return x.code === "P2034" || /40P01|40001/.test(`${x.meta?.code} ${x.message}`);
-};
-async function retryTx<T>(f: () => Promise<T>, tries = 3): Promise<T> {
-  for (let i = 1; ; i++)
-    try {
-      return await f();
-    } catch (e) {
-      if (i >= tries || !retryable(e)) throw e;
-    }
-}
-
 /** One batch in one short transaction. No network here. Returns exact counts. */
 async function insertBatch(prisma: Db, job: Job, opts: Opts, cands: Cand[]) {
   const ws = job.workspaceId;
@@ -361,7 +349,7 @@ export async function runImport(
       }
       // sorted so overlapping writers lock rows in one order; a deadlock/serialization failure retries the batch
       cands.sort((a, b) => (a.email < b.email ? -1 : 1));
-      const res = await retryTx(() => insertBatch(prisma, job, opts, cands));
+      const res = await withTxRetry(() => insertBatch(prisma, job, opts, cands));
       for (const [k, n] of Object.entries(res.skip)) skipped[k] = (skipped[k] ?? 0) + n;
       imported += res.imported;
       attached += res.attached;

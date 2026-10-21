@@ -14,11 +14,11 @@ export const POST = route(
     body: z.strictObject({ overrideDnsWarnings: z.boolean().optional() }),
   },
   (c) =>
-    run(() =>
+    run(async () =>
       resumeCampaign(
         prisma,
         systemClock,
-        launchDeps(),
+        await launchDeps(),
         c.workspaceId,
         c.params.id!,
         c.userId,

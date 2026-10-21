@@ -235,4 +235,39 @@ describe("campaign routes", () => {
     expect((await list.GET(req("GET", "/x"))).status).toBe(200);
     await setRole("owner");
   });
+  it("launch reads sendable providers from ProviderVerification (D17), not the Fake stand-in", async () => {
+    const P = db.prisma;
+    await P.workspace.update({
+      where: { id: workspaceId },
+      data: { physicalAddress: "1 Main St" },
+    });
+    const c = await P.campaign.create({ data: { workspaceId, name: "D17" } });
+    await P.campaignAccount.create({ data: { campaignId: c.id, accountId: own.account } });
+    await P.campaignSchedule.create({
+      data: { campaignId: c.id, name: "o", timezone: "UTC", days: 62, from: "09:00", to: "17:00" },
+    });
+    const st = await P.sequenceStep.create({ data: { campaignId: c.id, order: 1, delayValue: 0 } });
+    await P.stepVariant.create({
+      data: { stepId: st.id, label: "A", subject: "Hi", body: "Hello" },
+    });
+    const lead = await P.lead.create({ data: { workspaceId, email: "d17@lead.test" } });
+    await P.campaignLead.create({ data: { workspaceId, campaignId: c.id, leadId: lead.id } });
+    const { resetWebEnvCache } = await import("../lib/env");
+    const codes = async () =>
+      (await json(await launch.POST(req("POST", "/x", {}), p(c.id)))).warnings.map(
+        (w: { code: string }) => w.code,
+      );
+    delete process.env.MAIL_PROVIDER_FAKE;
+    resetWebEnvCache();
+    try {
+      expect(await codes()).toContain("provider_not_verified");
+      await P.providerVerification.create({
+        data: { provider: "SMTP", passedAt: new Date(), accountId: own.account, report: {} },
+      });
+      expect(await codes()).not.toContain("provider_not_verified");
+    } finally {
+      process.env.MAIL_PROVIDER_FAKE = "1";
+      resetWebEnvCache();
+    }
+  });
 });

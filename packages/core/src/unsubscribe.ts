@@ -4,6 +4,7 @@ import { z } from "zod";
 import { isPrivate } from "@rightnow/providers";
 import type { PrismaClient } from "@rightnow/db/client";
 import { editHooks } from "./campaigns/hooks";
+import { withTxRetry } from "./dispatch";
 import type { Clock } from "./clock";
 import { suppress } from "./leads/suppression";
 
@@ -129,18 +130,6 @@ export function withComplianceFooter(
 }
 
 type Db = Pick<PrismaClient, "$transaction">;
-// shortcut: local copy of T09's withTxRetry (40P01 deadlock / 40001 serialization); switch to it once it exists.
-async function retryDeadlock<T>(f: () => Promise<T>, tries = 3): Promise<T> {
-  for (let i = 1; ; i++) {
-    try {
-      return await f();
-    } catch (e) {
-      const m = e instanceof Error ? e.message : "";
-      const retry = (e as { code?: string }).code === "P2034" || /40P01|40001/.test(m);
-      if (!retry || i >= tries) throw e;
-    }
-  }
-}
 const OPEN = ["QUEUED", "ACTIVE", "PAUSED"] as const;
 
 /** Suppresses `email` and stops the open enrollments of `leadIds`. "done" when the address was newly suppressed. */
@@ -153,7 +142,7 @@ async function optOut(
   source: string,
 ) {
   // I4 order: ScheduledMessage rows (cancelOpenRows, T09) -> CampaignLead -> Suppression
-  return retryDeadlock(() =>
+  return withTxRetry(() =>
     db.$transaction(async (tx) => {
       const open = await tx.campaignLead.findMany({
         where: { workspaceId: ws, leadId: { in: leadIds }, state: { in: [...OPEN] } },

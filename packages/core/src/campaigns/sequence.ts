@@ -228,11 +228,7 @@ export async function reorderSteps(
     if (live.every((s, i) => s.id === ids[i])) return live; // nothing moves, nothing to re-plan
     // A lead that already got step A would point back at it after a swap; duplicate the campaign instead.
     const c = await liveCampaign(tx, ws, campaignId);
-    if (
-      c.status !== "DRAFT" &&
-      ((await tx.campaignLead.count({ where: { campaignId, accountId: { not: null } } })) > 0 ||
-        (await editHooks.campaignHasSends(tx, campaignId)))
-    )
+    if (c.status !== "DRAFT" && (await editHooks.campaignHasSends(tx, campaignId)))
       throw new CampaignError(409, "campaign_has_sends");
     for (const [i, id] of ids.entries())
       await tx.sequenceStep.update({ where: { id }, data: { order: i + 1 } });
