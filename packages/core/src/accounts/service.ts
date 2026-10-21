@@ -183,7 +183,8 @@ export async function updateAccount(
   const { skipCnameCheck, trackingDomain, ...rest } = p;
   const { values, warnings } = applyLimits(cur.capTier, cur, p);
   const data: Prisma.EmailAccountUpdateManyMutationInput = { ...rest, ...values };
-  if (p.slowRamp && !cur.rampStartedAt) data.rampStartedAt = now(o);
+  // Turning the ramp on (again) restarts it: a mailbox paused from ramping must not jump to full volume.
+  if (p.slowRamp && !cur.slowRamp) data.rampStartedAt = now(o);
   if (trackingDomain !== undefined) {
     data.trackingDomain = trackingDomain;
     data.trackingDomainStatus =

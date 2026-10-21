@@ -76,7 +76,7 @@ describe("ramp term", () => {
     expect(toApiAccount(a!, { sent: 1, reserved: 0 }, T).remainingToday).toBe(1);
   });
 
-  test("updateAccount({slowRamp:true}) stamps rampStartedAt once", async () => {
+  test("updateAccount({slowRamp:true}) stamps rampStartedAt on each off->on, not while already on", async () => {
     const [a] = (await seedCampaign(db.prisma, { at: T, accounts: [{}] })).accounts;
     const at = new Date("2026-10-22T00:00:00Z");
     const on = await updateAccount(
@@ -101,7 +101,15 @@ describe("ramp term", () => {
       { slowRamp: true },
       { clock: fixedClock(T) },
     );
-    expect(again.account.rampStartedAt).toEqual(at);
+    expect(again.account.rampStartedAt).toEqual(T);
+    const still = await updateAccount(
+      db.prisma,
+      a!.workspaceId,
+      a!.id,
+      { slowRamp: true },
+      { clock: fixedClock(at) },
+    );
+    expect(still.account.rampStartedAt).toEqual(T);
   });
 });
 
