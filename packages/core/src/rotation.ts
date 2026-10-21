@@ -6,7 +6,7 @@ import type {
   EspType,
   PrismaClient,
 } from "@rightnow/db/client";
-import { accountOk } from "./dispatch";
+import { accountOk, companyGateOk } from "./dispatch";
 import { effectiveAllowance } from "./quota";
 import type { EspRule } from "./campaigns/schema";
 import { dayKey, startOfNextDay } from "./schedule";
@@ -29,26 +29,43 @@ export function routeAllowed(rules: EspRule[], account: AccountProvider, leadEsp
   return !send.length || send.some(hit);
 }
 
-/** Units already spoken for today: sent + reserved + SCHEDULED rows due before the account's next local midnight. */
-export async function committedToday(db: Db, a: EmailAccount, now: Date) {
-  const [u, queued] = await Promise.all([
-    db.accountDailyUsage.findUnique({
-      where: {
-        accountId_day: { accountId: a.id, day: new Date(`${dayKey(a.timezone, now)}T00:00:00Z`) },
-      },
-    }),
-    db.scheduledMessage.findMany({
-      where: {
-        accountId: a.id,
-        status: "SCHEDULED",
-        dueAt: { lt: startOfNextDay(a.timezone, now) },
-      },
-      select: { cc: true, bcc: true },
-    }),
+/**
+ * Units already spoken for today, per account, in two grouped queries whatever the number of accounts:
+ * sent + reserved on the account's local day, and SCHEDULED rows (1 + cc + bcc each) due before its next local midnight.
+ */
+export async function committedToday(db: Db, accounts: EmailAccount[], now: Date) {
+  const out = new Map<string, { used: number; scheduled: number }>();
+  if (!accounts.length) return out;
+  const ids = accounts.map((a) => a.id);
+  const days = accounts.map((a) => dayKey(a.timezone, now));
+  const cutoffs = accounts.map((a) => startOfNextDay(a.timezone, now).toISOString());
+  const [used, queued] = await Promise.all([
+    db.$queryRaw<{ id: string; n: number }[]>`
+      SELECT t.id, COALESCE(SUM(u.sent + u.reserved), 0)::int AS n
+      FROM unnest(${ids}::text[], ${days}::text[]) AS t(id, day)
+      LEFT JOIN "AccountDailyUsage" u ON u."accountId" = t.id AND u.day = t.day::date
+      GROUP BY t.id`,
+    db.$queryRaw<{ id: string; n: number }[]>`
+      SELECT t.id, COALESCE(SUM(1 + COALESCE(cardinality(sm.cc), 0) + COALESCE(cardinality(sm.bcc), 0)), 0)::int AS n
+      FROM unnest(${ids}::text[], ${cutoffs}::text[]) AS t(id, cutoff)
+      LEFT JOIN "ScheduledMessage" sm ON sm."accountId" = t.id AND sm.status = 'SCHEDULED'
+        AND sm."dueAt" < t.cutoff::timestamp
+      GROUP BY t.id`,
   ]);
-  const used = (u?.sent ?? 0) + (u?.reserved ?? 0);
-  return { used, scheduled: queued.reduce((n, r) => n + 1 + r.cc.length + r.bcc.length, 0) };
+  for (const id of ids) out.set(id, { used: 0, scheduled: 0 });
+  for (const r of used) out.get(r.id)!.used = r.n;
+  for (const r of queued) out.get(r.id)!.scheduled = r.n;
+  return out;
 }
+
+/** The one allowance rule for rotation and the explainer: effectiveAllowance minus everything already committed today. */
+export const remainingToday = (
+  a: EmailAccount,
+  c: { used: number; scheduled: number },
+  now: Date,
+) =>
+  // shortcut: no re-warm / health ctx, as the claim; add both here and in the claim together, upgrade in P5-T05/T06
+  effectiveAllowance(a, now) - c.used - c.scheduled;
 
 /**
  * The sender for a new step-1 row, or null. Eligibility = the claim's own account predicate (`accountOk`) plus
@@ -66,6 +83,10 @@ export async function pickAccount(
   },
 ): Promise<EmailAccount | null> {
   const { campaign: c, now } = p;
+  // stopForCompanyOnReply: the claim takes nothing while any assigned account is stale or NEEDS_ATTENTION, so assign nothing
+  const [blocked] = await db.$queryRaw<unknown[]>`
+    SELECT 1 FROM "Campaign" c WHERE c.id = ${c.id} AND NOT ${companyGateOk(now.toISOString(), p)}`;
+  if (blocked) return null;
   const ids = await db.$queryRaw<{ id: string }[]>`
     SELECT a.id FROM "EmailAccount" a
     WHERE ${accountOk(now.toISOString(), p)}
@@ -78,13 +99,11 @@ export async function pickAccount(
       (!c.accountTags.length || a.tags.some((t) => c.accountTags.includes(t))) &&
       routeAllowed(rules, a.provider, p.leadEsp),
   );
-  const ranked: { a: EmailAccount; load: number }[] = [];
-  for (const a of accounts) {
-    const { used, scheduled } = await committedToday(db, a, now);
-    if (effectiveAllowance(a, now) - used - scheduled > 0)
-      ranked.push({ a, load: used + scheduled });
-  }
-  // shortcut: the allowance term excludes re-warm/health ctx, as the claim's does today; add both here when it does
+  const committed = await committedToday(db, accounts, now);
+  const ranked = accounts.flatMap((a) => {
+    const k = committed.get(a.id)!;
+    return remainingToday(a, k, now) > 0 ? [{ a, load: k.used + k.scheduled }] : [];
+  });
   const matches = (a: EmailAccount) =>
     (p.leadEsp === "GOOGLE" && a.provider === "GMAIL") ||
     (p.leadEsp === "MICROSOFT" && a.provider === "MICROSOFT");

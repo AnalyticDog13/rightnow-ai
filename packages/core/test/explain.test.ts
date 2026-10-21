@@ -3,6 +3,7 @@ import { createTestDb } from "@rightnow/db/test-db";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { fixedClock } from "../src/clock";
 import { whyNotSending } from "../src/explain";
+import { pickAccount } from "../src/rotation";
 import { planRow, seedCampaign } from "./campaign-fixture";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
@@ -169,5 +170,46 @@ describe("whyNotSending", () => {
   test("workspace scoped: a foreign campaign is not found", async () => {
     const s = await seedCampaign(P(), { at: T });
     await expect(why("other", s.campaign.id)).rejects.toMatchObject({ status: 404 });
+  });
+
+  test("stopForCompanyOnReply with one stale account blocks, never sending:true", async () => {
+    const s = await seedCampaign(P(), {
+      at: T,
+      leads: 1,
+      accounts: [{}, { lastSyncCompletedAt: null }],
+      campaign: { stopForCompanyOnReply: true },
+    });
+    const r = await why(s.ws, s.campaign.id);
+    expect(r.sending).toBe(false);
+    expect(r.reasons).toContainEqual(
+      expect.objectContaining({ code: "company_stop_waiting_for_sync", blocking: true }),
+    );
+    await P().campaign.update({
+      where: { id: s.campaign.id },
+      data: { stopForCompanyOnReply: false },
+    });
+    const off = await why(s.ws, s.campaign.id); // same state without the flag: sibling is informational
+    expect(off.sending).toBe(true);
+    expect(off.reasons).toEqual([
+      expect.objectContaining({ code: "sync_pending", blocking: false }),
+    ]);
+  });
+
+  test("an account full through SCHEDULED rows is reported, as pickAccount sees it", async () => {
+    const s = await seedCampaign(P(), { at: T, leads: 1, rows: 1, accounts: [{ dailyLimit: 1 }] });
+    const r = await why(s.ws, s.campaign.id);
+    expect(r.sending).toBe(false);
+    expect(r.reasons).toEqual([
+      expect.objectContaining({ code: "account_quota_reached", blocking: true }),
+    ]);
+    expect(
+      await pickAccount(P(), {
+        campaign: s.campaign,
+        leadEsp: "OTHER",
+        now: T,
+        stalenessSec: 300,
+        sendableProviders: ALL,
+      }),
+    ).toBeNull();
   });
 });

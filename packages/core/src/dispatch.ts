@@ -76,6 +76,14 @@ export const accountOk = (
           AND a.provider = ANY(${o.sendableProviders}::text[]::"AccountProvider"[])
           AND a."lastSyncCompletedAt" >= ${ts}::timestamp - make_interval(secs => ${o.stalenessSec}::int)`;
 
+/** stopForCompanyOnReply gate (alias `c`): every assigned live account must be fresh and not NEEDS_ATTENTION. Shared with pickAccount and the explainer. */
+export const companyGateOk = (ts: string, o: Pick<ClaimOpts, "stalenessSec">) => Prisma.sql`
+          (NOT c."stopForCompanyOnReply" OR NOT EXISTS (
+                SELECT 1 FROM "CampaignAccount" ca2 JOIN "EmailAccount" a2 ON a2.id = ca2."accountId"
+                WHERE ca2."campaignId" = c.id AND a2."deletedAt" IS NULL
+                  AND (a2.lifecycle = 'NEEDS_ATTENTION' OR a2."lastSyncCompletedAt" IS NULL
+                       OR a2."lastSyncCompletedAt" < ${ts}::timestamp - make_interval(secs => ${o.stalenessSec}::int))))`;
+
 /** FROM + WHERE of a claimable row (the brief's claim SQL), shared by the SELECT and the re-check under the lock. */
 const eligible = (ts: string, o: ClaimOpts) => Prisma.sql`
         FROM "ScheduledMessage" sm
@@ -93,11 +101,7 @@ const eligible = (ts: string, o: ClaimOpts) => Prisma.sql`
           AND ${accountOk(ts, o)}
           AND a."nextSendAt" <= ${ts}::timestamp AND coalesce(btrim(w."physicalAddress"), '') <> ''
           AND EXISTS (SELECT 1 FROM "CampaignAccount" ca WHERE ca."campaignId" = c.id AND ca."accountId" = a.id)
-          AND (NOT c."stopForCompanyOnReply" OR NOT EXISTS (
-                SELECT 1 FROM "CampaignAccount" ca2 JOIN "EmailAccount" a2 ON a2.id = ca2."accountId"
-                WHERE ca2."campaignId" = c.id AND a2."deletedAt" IS NULL
-                  AND (a2.lifecycle = 'NEEDS_ATTENTION' OR a2."lastSyncCompletedAt" IS NULL
-                       OR a2."lastSyncCompletedAt" < ${ts}::timestamp - make_interval(secs => ${o.stalenessSec}::int))))`;
+          AND ${companyGateOk(ts, o)}`;
 
 /**
  * Claims due rows one message per transaction until `limit` are SENDING or nothing is claimable. Rows pushed back

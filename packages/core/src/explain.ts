@@ -1,9 +1,8 @@
 import type { AccountProvider, PrismaClient } from "@rightnow/db/client";
 import { liveCampaign } from "./campaigns/service";
 import type { Clock } from "./clock";
-import { accountOk } from "./dispatch";
-import { effectiveAllowance } from "./quota";
-import { committedToday } from "./rotation";
+import { accountOk, companyGateOk } from "./dispatch";
+import { committedToday, remainingToday } from "./rotation";
 import { dayKey, isInWindow, nextWindowStart, startOfNextDay } from "./schedule";
 
 export type ReasonCode =
@@ -21,12 +20,19 @@ export type ReasonCode =
   | "account_quota_reached"
   | "campaign_quota_reached"
   | "workspace_quota_reached"
+  | "company_stop_waiting_for_sync"
   | "no_eligible_leads"
   | "claim_errors"
   | "held_messages"
   | "leads_suppressed"
   | "leads_paused";
-export type Reason = { code: ReasonCode; message: string; accountIds?: string[]; at?: Date };
+export type Reason = {
+  code: ReasonCode;
+  message: string;
+  blocking: boolean;
+  accountIds?: string[];
+  at?: Date;
+};
 export type Why = { sending: boolean; nextWindowAt?: Date; reasons: Reason[] };
 
 const NO_CAP = 2147483647;
@@ -51,7 +57,8 @@ const STATUS: Record<string, [ReasonCode, string] | undefined> = {
   COMPLETED: ["completed", "This campaign has finished."],
   ARCHIVED: ["completed", "This campaign is archived."],
 };
-const when = (d: Date) => d.toISOString().replace(/:\d\d\.\d+Z$/, "Z");
+const fmt = (tz: string) => (d: Date) =>
+  `${new Intl.DateTimeFormat("sv-SE", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(d)} (${tz})`;
 
 /**
  * Why a campaign is (not) sending, all reasons at once, from real state. Pure reads: no locks, no provider calls.
@@ -67,18 +74,16 @@ export async function whyNotSending(
 ): Promise<Why> {
   const c = await liveCampaign(db, ws, campaignId);
   const now = clock.now();
-  const reasons: Reason[] = [];
+  const reasons: Omit<Reason, "blocking">[] = [];
   const add = (code: ReasonCode, message: string, extra: Partial<Reason> = {}) =>
     reasons.push({ code, message, ...extra });
 
   const st = STATUS[c.status];
-  if (st) return { sending: false, reasons: [{ code: st[0], message: st[1] }] };
-  if (c.startAt && c.startAt > now)
-    add("not_started", `This campaign starts at ${when(c.startAt)}.`, { at: c.startAt });
+  if (st) return { sending: false, reasons: [{ code: st[0], message: st[1], blocking: true }] };
   if (c.endAt && c.endAt <= now)
     return {
       sending: false,
-      reasons: [{ code: "ended", message: "This campaign's end date has passed." }],
+      reasons: [{ code: "ended", message: "This campaign's end date has passed.", blocking: true }],
     };
 
   const [schedules, w, assigned, openLeads, claimErr, held, suppressed, pausedLeads] =
@@ -95,6 +100,9 @@ export async function whyNotSending(
       db.campaignLead.count({ where: { campaignId, state: "PAUSED" } }),
     ]);
 
+  const when = fmt(w.timezone);
+  if (c.startAt && c.startAt > now)
+    add("not_started", `This campaign starts at ${when(c.startAt)}.`, { at: c.startAt });
   let nextWindowAt: Date | undefined;
   if (!isInWindow(schedules, now)) {
     nextWindowAt = schedules.length ? nextWindowStart(schedules, now) : undefined;
@@ -149,12 +157,25 @@ export async function whyNotSending(
     live.filter((a) => o.sendable.includes(a.provider) && !usable.has(a.id)),
   );
 
+  if (c.stopForCompanyOnReply && assigned.length) {
+    const [ok] = await db.$queryRaw<unknown[]>`SELECT 1 FROM "Campaign" c WHERE c.id = ${campaignId}
+      AND ${companyGateOk(now.toISOString(), { stalenessSec: o.stalenessSec })}`;
+    if (!ok) {
+      add(
+        "company_stop_waiting_for_sync",
+        "Stop-company-on-reply is on, so no email is sent until every assigned account has a fresh inbox sync (available in a later release) and none needs attention.",
+        { accountIds: ids(assigned.filter((a) => !a.deletedAt)) },
+      );
+      blocking.add("company_stop_waiting_for_sync");
+    }
+  }
   if (usable.size) {
     const full: typeof assigned = [];
     let reset: Date | undefined;
-    for (const a of assigned.filter((x) => usable.has(x.id))) {
-      const { used } = await committedToday(db, a, now);
-      if (used >= effectiveAllowance(a, now)) {
+    const mine = assigned.filter((x) => usable.has(x.id));
+    const committed = await committedToday(db, mine, now);
+    for (const a of mine) {
+      if (remainingToday(a, committed.get(a.id)!, now) <= 0) {
         full.push(a);
         const r = startOfNextDay(a.timezone, now);
         if (!reset || r < reset) reset = r;
@@ -163,7 +184,7 @@ export async function whyNotSending(
     if (full.length === usable.size) {
       add(
         "account_quota_reached",
-        `Every sending account has reached its daily limit. Limits reset at ${when(reset!)}.`,
+        `Every sending account has used up its daily limit (sent or already scheduled). Limits reset at ${when(reset!)}.`,
         { accountIds: ids(full), at: reset },
       );
       blocking.add("account_quota_reached");
@@ -210,13 +231,14 @@ export async function whyNotSending(
     add("leads_suppressed", `${suppressed} lead(s) were stopped because they are suppressed.`);
   if (pausedLeads) add("leads_paused", `${pausedLeads} lead(s) are paused.`);
 
-  const stops = reasons.some(
-    (r) =>
-      !INFO.has(r.code) &&
-      (r.code === "not_started" ||
-        r.code === "outside_window" ||
-        r.code === "no_physical_address" ||
-        blocking.has(r.code)),
-  );
-  return { sending: !stops, ...(nextWindowAt && { nextWindowAt }), reasons };
+  const ALWAYS = new Set<ReasonCode>(["not_started", "outside_window", "no_physical_address"]);
+  const out = reasons.map((r) => ({
+    ...r,
+    blocking: !INFO.has(r.code) && (ALWAYS.has(r.code) || blocking.has(r.code)),
+  }));
+  return {
+    sending: !out.some((r) => r.blocking),
+    ...(nextWindowAt && { nextWindowAt }),
+    reasons: out,
+  };
 }
