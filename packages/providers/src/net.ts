@@ -62,7 +62,7 @@ function embeddedV4(ip: string): string | null {
   return b.slice(12).join(".");
 }
 
-function isPrivate(ip: string): boolean {
+export function isPrivate(ip: string): boolean {
   const v4 = embeddedV4(ip);
   if (v4) return blocked.check(v4, "ipv4");
   return blocked.check(ip, isIP(ip) === 6 ? "ipv6" : "ipv4");

@@ -137,7 +137,9 @@ describe("campaign routes", () => {
     await db.prisma.campaign.update({ where: { id: c.id }, data: { status: "ACTIVE" } });
     expect((await one.DELETE(req("DELETE", "/x"), p(c.id))).status).toBe(409);
     expect((await json(await pause.POST(req("POST", "/x"), p(c.id)))).status).toBe("PAUSED");
-    expect((await json(await resume.POST(req("POST", "/x"), p(c.id)))).status).toBe("ACTIVE");
+    // resume re-runs launch validation (no steps yet, so it stays paused)
+    expect((await resume.POST(req("POST", "/x", {}), p(c.id))).status).toBe(422);
+    await db.prisma.campaign.update({ where: { id: c.id }, data: { status: "ACTIVE" } });
     expect((await json(await archive.POST(req("POST", "/x"), p(c.id)))).status).toBe("ARCHIVED");
     expect((await one.DELETE(req("DELETE", "/x"), p(c.id))).status).toBe(200);
     expect((await one.GET(req("GET", "/x"), p(c.id))).status).toBe(404);
@@ -151,7 +153,7 @@ describe("campaign routes", () => {
       await one.DELETE(req("DELETE", "/x"), p(f)),
       await launch.POST(req("POST", "/x", {}), p(f)),
       await pause.POST(req("POST", "/x"), p(f)),
-      await resume.POST(req("POST", "/x"), p(f)),
+      await resume.POST(req("POST", "/x", {}), p(f)),
       await archive.POST(req("POST", "/x"), p(f)),
       await accounts.PUT(req("PUT", "/x", { accountIds: [] }), p(f)),
       await schedules.PUT(req("PUT", "/x", office), p(f)),

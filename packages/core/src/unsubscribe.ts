@@ -1,6 +1,7 @@
-const PRIVATE_V4 = /^(0\.|10\.|127\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/;
+import { isIP } from "node:net";
+import { isPrivate } from "@rightnow/providers";
 
-/** "https" only for a public https host; local, private and IP-literal-in-private-range hosts get mailto-only unsubscribe. */
+/** "https" only for a public https URL. Pure classification (no DNS): IPs go through the providers' private-range check; names must be dotted and not local. */
 export function unsubscribeMode(appUrl: string): "https" | "mailto" {
   let u: URL;
   try {
@@ -8,15 +9,15 @@ export function unsubscribeMode(appUrl: string): "https" | "mailto" {
   } catch {
     return "mailto";
   }
-  const h = u.hostname.toLowerCase().replace(/^\[|\]$/g, "");
-  const local =
-    h === "localhost" ||
-    h === "host.docker.internal" ||
-    h.endsWith(".local") ||
-    h.endsWith(".localhost") ||
-    PRIVATE_V4.test(h) ||
-    h === "::" ||
-    h === "::1" ||
-    /^(f[cd]|fe[89ab])/.test(h.includes(":") ? h : "");
+  const h = u.hostname
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "")
+    .replace(/\.$/, "");
+  const local = isIP(h)
+    ? isPrivate(h)
+    : !h.includes(".") ||
+      h === "localhost" ||
+      h === "host.docker.internal" ||
+      /\.(local|localhost|internal)$/.test(h);
   return u.protocol === "https:" && !local ? "https" : "mailto";
 }

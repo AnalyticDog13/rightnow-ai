@@ -36,23 +36,52 @@ const warn = (code: string, message: string, extra: object = {}): LaunchIssue =>
   ...extra,
 });
 
+type Opts = { overrideDnsWarnings?: boolean };
+type Result = { status: "ACTIVE"; warnings: LaunchIssue[] };
+const FROM = {
+  launch: ["DRAFT", "PAUSED"],
+  resume: ["PAUSED", "ACCOUNTS_UNHEALTHY", "BOUNCE_PROTECT"],
+} as const;
+
 /**
  * Validates everything and returns ALL blocking reasons at once (422 `issues`). The DNS gate runs before the
- * transaction opens (no network inside a transaction). Idempotent on ACTIVE.
+ * transaction opens (no network inside a transaction). Idempotent on ACTIVE (current warnings only).
  */
-export async function launchCampaign(
+export const launchCampaign = (
   prisma: PrismaClient,
   clock: Clock,
   deps: LaunchDeps,
   ws: string,
   id: string,
   actorId: string | null | undefined,
-  opts: { overrideDnsWarnings?: boolean } = {},
-): Promise<{ status: "ACTIVE"; warnings: LaunchIssue[] }> {
+  opts: Opts = {},
+) => activate("launch", prisma, clock, deps, ws, id, actorId, opts);
+
+/** Resume re-runs launch validation: a paused campaign whose accounts, schedule or address went away stays paused. */
+export const resumeCampaign = (
+  prisma: PrismaClient,
+  clock: Clock,
+  deps: LaunchDeps,
+  ws: string,
+  id: string,
+  actorId: string | null | undefined,
+  opts: Opts = {},
+) => activate("resume", prisma, clock, deps, ws, id, actorId, opts);
+
+async function activate(
+  kind: keyof typeof FROM,
+  prisma: PrismaClient,
+  clock: Clock,
+  deps: LaunchDeps,
+  ws: string,
+  id: string,
+  actorId: string | null | undefined,
+  opts: Opts,
+): Promise<Result> {
   const c = await liveCampaign(prisma, ws, id);
-  if (c.status === "ACTIVE") return { status: "ACTIVE", warnings: [] };
-  if (c.status !== "DRAFT" && c.status !== "PAUSED")
-    throw new CampaignError(409, `cannot_launch_${c.status.toLowerCase()}`);
+  const active = kind === "launch" && c.status === "ACTIVE";
+  if (!active && !(FROM[kind] as readonly string[]).includes(c.status))
+    throw new CampaignError(409, `cannot_${kind}_${c.status.toLowerCase()}`);
 
   const [w, schedules, links] = await Promise.all([
     prisma.workspace.findUniqueOrThrow({ where: { id: ws } }),
@@ -62,18 +91,47 @@ export async function launchCampaign(
       include: { account: true },
     }),
   ]);
-  const accounts = links.map((l) => l.account);
-  const usable = c.accountTags.length
-    ? accounts.filter((a) => a.tags.some((t) => c.accountTags.includes(t)))
-    : accounts;
+  // Usable = assigned, live, not paused or broken, and inside the campaign's tag restriction.
+  const usable = links
+    .map((l) => l.account)
+    .filter(
+      (a) =>
+        a.lifecycle !== "PAUSED" &&
+        a.lifecycle !== "NEEDS_ATTENTION" &&
+        (!c.accountTags.length || a.tags.some((t) => c.accountTags.includes(t))),
+    );
+
+  const warnings: LaunchIssue[] = [];
+  if (unsubscribeMode(deps.appUrl) === "mailto")
+    warnings.push(
+      warn("unsubscribe_mailto_only", "Unsubscribe links need a public https APP_URL; mailto only"),
+    );
+  if (c.minGapSec < 300) warnings.push(warn("gap_below_5_min", "Gap below 5 minutes"));
+  const send = (c.espRoutingRules as EspRule[]).filter((r) => r.action === "send");
+  if (
+    send.length &&
+    !usable.some((a) =>
+      send.some((r) => r.senderEsp === "all" || r.senderEsp === ESP_OF[a.provider]),
+    )
+  )
+    warnings.push(warn("no_matching_esp", "No assigned account matches a send routing rule"));
+  const unverified = [...new Set(usable.map((a) => a.provider))].filter(
+    (p) => !deps.sendable.includes(p),
+  );
+  if (unverified.length)
+    warnings.push(
+      warn(
+        "provider_not_verified",
+        "Real sending is off until live verification passes (docs/ops/LIVE_VERIFICATION.md)",
+        { providers: unverified },
+      ),
+    );
+  if (active) return { status: "ACTIVE", warnings };
 
   const issues: LaunchIssue[] = [];
   if (!usable.length)
     issues.push(
-      block(
-        "no_accounts",
-        accounts.length ? "No assigned account has a required tag" : "Assign at least one account",
-      ),
+      block("no_accounts", "Assign at least one usable account (live, not paused, matching tags)"),
     );
   // Steps and leads come from T06; until it ships there are none, so the default always blocks.
   issues.push(
@@ -90,9 +148,7 @@ export async function launchCampaign(
   if (!w.physicalAddress?.trim())
     issues.push(block("no_physical_address", "Set the workspace physical address"));
   const tracking = (c.trackOpens && !w.disableOpenTracking && !c.textOnly) || c.trackClicks;
-  const untracked = accounts.filter(
-    (a) => a.trackingDomain && a.trackingDomainStatus !== "VERIFIED",
-  );
+  const untracked = usable.filter((a) => a.trackingDomain && a.trackingDomainStatus !== "VERIFIED");
   if (tracking && untracked.length)
     issues.push(
       block("tracking_domain_unverified", "Verify the tracking domain", {
@@ -101,7 +157,7 @@ export async function launchCampaign(
     );
 
   // Network call: before any transaction.
-  const domains = [...new Set(accounts.map((a) => a.email.split("@")[1]!))];
+  const domains = [...new Set(usable.map((a) => a.email.split("@")[1]!))];
   const dns = deps.dnsGate && domains.length ? await deps.dnsGate(domains) : [];
   for (const f of dns.filter((f) => f.level === "block"))
     issues.push(block("dns_block", f.reason, { domain: f.domain }));
@@ -109,46 +165,17 @@ export async function launchCampaign(
   if (!opts.overrideDnsWarnings)
     for (const f of dnsWarn) issues.push(block("dns_warn", f.reason, { domain: f.domain }));
 
-  if (issues.some((i) => i.level === "block"))
-    throw new CampaignError(422, "launch_blocked", { issues });
-
-  const warnings: LaunchIssue[] = [];
-  if (unsubscribeMode(deps.appUrl) === "mailto")
-    warnings.push(
-      warn("unsubscribe_mailto_only", "Unsubscribe links need a public https APP_URL; mailto only"),
-    );
-  if (c.minGapSec < 300) warnings.push(warn("gap_below_5_min", "Gap below 5 minutes"));
-  const rules = c.espRoutingRules as EspRule[];
-  if (
-    rules.length &&
-    !usable.some((a) =>
-      rules.some(
-        (r) => r.action === "send" && (r.senderEsp === "all" || r.senderEsp === ESP_OF[a.provider]),
-      ),
-    )
-  )
-    warnings.push(warn("no_matching_esp", "No assigned account matches a send routing rule"));
-  const unverified = [...new Set(accounts.map((a) => a.provider))].filter(
-    (p) => !deps.sendable.includes(p),
-  );
-  if (unverified.length)
-    warnings.push(
-      warn(
-        "provider_not_verified",
-        "Real sending is off until live verification passes (docs/ops/LIVE_VERIFICATION.md)",
-        { providers: unverified },
-      ),
-    );
+  if (issues.length) throw new CampaignError(422, "launch_blocked", { issues });
 
   await prisma.$transaction(async (tx) => {
     const now = clock.now();
     const r = await tx.campaign.updateMany({
-      where: { id, workspaceId: ws, deletedAt: null, status: { in: ["DRAFT", "PAUSED"] } },
+      where: { id, workspaceId: ws, deletedAt: null, status: { in: [...FROM[kind]] } },
       data: { status: "ACTIVE", launchedAt: c.launchedAt ?? now },
     });
     if (r.count !== 1) throw new CampaignError(409, "status_changed");
     const a = { workspaceId: ws, actorId, at: now };
-    await audit(tx, a, "campaign.launch", id, { warnings: warnings.map((x) => x.code) });
+    await audit(tx, a, `campaign.${kind}`, id, { warnings: warnings.map((x) => x.code) });
     if (opts.overrideDnsWarnings && dnsWarn.length)
       await audit(tx, a, "campaign.dns_override", id, { domains: dnsWarn.map((f) => f.domain) });
   });

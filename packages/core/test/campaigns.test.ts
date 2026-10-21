@@ -1,7 +1,7 @@
 import { createTestDb, expectIsolated } from "@rightnow/db/test-db";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { ZodError } from "zod";
-import { launchCampaign, type LaunchDeps } from "../src/campaigns/launch";
+import { launchCampaign, type LaunchDeps, resumeCampaign as resume } from "../src/campaigns/launch";
 import { PRESETS } from "../src/campaigns/schema";
 import {
   archiveCampaign,
@@ -13,7 +13,6 @@ import {
   listAccountCampaigns,
   listCampaigns,
   pauseCampaign,
-  resumeCampaign,
   setCampaignAccounts,
   setSchedules,
   updateCampaign,
@@ -60,6 +59,7 @@ async function ready(over: Record<string, unknown> = {}) {
   await setSchedules(P(), ws, null, id, { schedules: [{ name: "s", ...PRESETS.officeHours }] });
   return { id, a };
 }
+const res = (id: string, d = deps()) => resume(P(), clock, d, ws, id, null);
 const launch = (id: string, d = deps(), o = {}) => launchCampaign(P(), clock, d, ws, id, null, o);
 
 beforeAll(async () => {
@@ -319,7 +319,7 @@ describe("status machine", () => {
   test("pause, resume, archive, delete follow the allowed moves and are audited", async () => {
     const { id } = await ready();
     await expect(pauseCampaign(P(), ws, null, id)).rejects.toMatchObject({ status: 409 }); // DRAFT
-    await expect(resumeCampaign(P(), ws, null, id)).rejects.toMatchObject({ status: 409 });
+    await expect(res(id)).rejects.toMatchObject({ status: 409 });
     await launch(id);
     await expect(deleteCampaign(P(), ws, null, id)).rejects.toMatchObject({
       status: 409,
@@ -327,10 +327,10 @@ describe("status machine", () => {
     });
     expect((await pauseCampaign(P(), ws, null, id)).status).toBe("PAUSED");
     await expect(pauseCampaign(P(), ws, null, id)).rejects.toMatchObject({ status: 409 });
-    expect((await resumeCampaign(P(), ws, null, id)).status).toBe("ACTIVE");
+    expect((await res(id)).status).toBe("ACTIVE");
     expect((await archiveCampaign(P(), ws, null, id)).status).toBe("ARCHIVED");
     await expect(archiveCampaign(P(), ws, null, id)).rejects.toMatchObject({ status: 409 });
-    await expect(resumeCampaign(P(), ws, null, id)).rejects.toMatchObject({ status: 409 });
+    await expect(res(id)).rejects.toMatchObject({ status: 409 });
     await expect(launch(id)).rejects.toMatchObject({ status: 409 });
     await deleteCampaign(P(), ws, null, id);
     await expect(getCampaign(P(), ws, id)).rejects.toMatchObject({ status: 404 });
@@ -363,6 +363,109 @@ describe("status machine", () => {
   });
 });
 
+describe("fix round 1", () => {
+  test("cc+bcc cap holds across two PATCHes", async () => {
+    const id = await camp();
+    const m = (k: string, n: number) => Array.from({ length: n }, (_, i) => `${k}${i}@x.test`);
+    await updateCampaign(P(), ws, null, id, { cc: m("c", 10) });
+    await expect(updateCampaign(P(), ws, null, id, { bcc: m("b", 1) })).rejects.toMatchObject({
+      status: 400,
+    });
+    expect((await getCampaign(P(), ws, id)).bcc).toEqual([]);
+    await expect(
+      updateCampaign(P(), ws, null, id, { cc: m("c", 9), bcc: m("b", 1) }),
+    ).resolves.toBeTruthy();
+  });
+
+  test("launch checks use only usable accounts", async () => {
+    const gate = async (d: string[]) =>
+      d.map((domain) => ({ domain, level: "block" as const, reason: "x" }));
+    // paused / needs-attention accounts do not count
+    for (const lifecycle of ["PAUSED", "NEEDS_ATTENTION"] as const) {
+      const id = await camp();
+      const a = await account(ws, { lifecycle });
+      await setCampaignAccounts(P(), ws, null, id, [a.id]);
+      await setSchedules(P(), ws, null, id, { schedules: [{ name: "s", ...PRESETS.officeHours }] });
+      expect(codes(await launch(id).catch((x) => x))).toEqual(["no_accounts"]);
+    }
+    // a deleted assigned account does not count
+    const d = await camp();
+    const dead = await account(ws);
+    await setCampaignAccounts(P(), ws, null, d, [dead.id]);
+    await P().emailAccount.update({ where: { id: dead.id }, data: { deletedAt: new Date() } });
+    expect(codes(await launch(d).catch((x) => x))).toContain("no_accounts");
+    // an excluded (untagged / paused) account raises no dns_block or tracking block; the usable one does
+    const id = await camp({ accountTags: ["warm"], trackClicks: true });
+    const good = await account(ws, { tags: ["warm"], email: "good@good.test" });
+    const untagged = await account(ws, { email: "bad@bad.test", trackingDomain: "t.bad.test" });
+    const paused = await account(ws, {
+      tags: ["warm"],
+      lifecycle: "PAUSED",
+      email: "p@paused.test",
+      trackingDomain: "t.p.test",
+    });
+    await setCampaignAccounts(P(), ws, null, id, [good.id, untagged.id, paused.id]);
+    await setSchedules(P(), ws, null, id, { schedules: [{ name: "s", ...PRESETS.officeHours }] });
+    const seen: string[][] = [];
+    const spy = async (d: string[]) => (seen.push(d), []);
+    await launch(id, deps({ dnsGate: spy }));
+    expect(seen).toEqual([["good.test"]]);
+    // a usable account is checked
+    const id2 = await camp();
+    const g2 = await account(ws, { email: "z@zed.test" });
+    await setCampaignAccounts(P(), ws, null, id2, [g2.id]);
+    await setSchedules(P(), ws, null, id2, { schedules: [{ name: "s", ...PRESETS.officeHours }] });
+    expect(codes(await launch(id2, deps({ dnsGate: gate })).catch((x) => x))).toEqual([
+      "dns_block",
+    ]);
+  });
+
+  test("no_matching_esp: only send rules count", async () => {
+    const dns = { action: "do_not_send", recipientEsp: "all", senderEsp: "all" };
+    const a = await ready({ espRoutingRules: [dns] });
+    expect((await launch(a.id)).warnings).toEqual([]);
+    const b = await ready({
+      espRoutingRules: [dns, { action: "send", recipientEsp: "all", senderEsp: "other" }],
+    });
+    expect((await launch(b.id)).warnings).toEqual([]);
+  });
+
+  test("relaunch of ACTIVE reports current warnings; resume re-validates", async () => {
+    const { id } = await ready();
+    await launch(id);
+    const r = await launch(id, deps({ sendable: [] }));
+    expect(r.warnings.map((w) => w.code)).toEqual(["provider_not_verified"]);
+    await pauseCampaign(P(), ws, null, id);
+    await P().workspace.update({ where: { id: ws }, data: { physicalAddress: null } });
+    expect(codes(await res(id).catch((x) => x))).toEqual(["no_physical_address"]);
+    expect((await getCampaign(P(), ws, id)).status).toBe("PAUSED");
+    await P().workspace.update({ where: { id: ws }, data: { physicalAddress: "1 Main St" } });
+    expect((await res(id)).status).toBe("ACTIVE");
+    expect((await audits("campaign.resume")).filter((x) => x.target === id)).toHaveLength(1);
+    for (const status of ["ACCOUNTS_UNHEALTHY", "BOUNCE_PROTECT"] as const) {
+      await P().campaign.update({ where: { id }, data: { status } });
+      expect((await res(id)).status).toBe("ACTIVE");
+    }
+  });
+
+  test("unsubscribeMode reuses the providers' private-host logic", () => {
+    for (const u of [
+      "https://[::ffff:7f00:1]",
+      "https://[::ffff:127.0.0.1]",
+      "https://100.64.0.1",
+      "https://localhost./",
+      "https://intranet",
+      "https://[fd00::1]",
+      "https://[::1]",
+      "https://0.0.0.0",
+      "https://2130706433",
+    ])
+      expect(unsubscribeMode(u), u).toBe("mailto");
+    for (const u of ["https://mail.example.com", "https://8.8.8.8", "https://[2606:4700::1111]"])
+      expect(unsubscribeMode(u), u).toBe("https");
+  });
+});
+
 describe("workspace isolation", () => {
   test("every read and write is scoped", async () => {
     await expectIsolated({
@@ -379,7 +482,7 @@ describe("workspace isolation", () => {
       () => setSchedules(P(), other, null, id, { schedules: [{ name: "s", ...PRESETS.anyTime }] }),
       () => setCampaignAccounts(P(), other, null, id, []),
       () => pauseCampaign(P(), other, null, id),
-      () => resumeCampaign(P(), other, null, id),
+      () => resume(P(), clock, deps(), other, id, null),
       () => archiveCampaign(P(), other, null, id),
       () => deleteCampaign(P(), other, null, id),
       () => launchCampaign(P(), clock, deps(), other, id, null),

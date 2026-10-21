@@ -54,6 +54,9 @@ export async function updateCampaign(
   await assertOwner(prisma, ws, d.ownerId);
   return prisma.$transaction(async (tx) => {
     const was = await liveCampaign(tx, ws, id);
+    // The schema sees only the patch; the cap applies to the merged values.
+    if ((d.cc ?? was.cc).length + (d.bcc ?? was.bcc).length > 10)
+      throw new CampaignError(400, "cc_bcc_limit");
     const c = await tx.campaign.update({ where: { id }, data: norm(d, was) });
     await audit(tx, ctx(ws, actorId), "campaign.update", id, { fields: Object.keys(d) });
     return c;
@@ -150,10 +153,9 @@ export async function listAccountCampaigns(prisma: Db, ws: string, accountId: st
  */
 const FROM = {
   pause: ["ACTIVE", "ACCOUNTS_UNHEALTHY", "BOUNCE_PROTECT"],
-  resume: ["PAUSED", "ACCOUNTS_UNHEALTHY", "BOUNCE_PROTECT"],
   archive: ["DRAFT", "ACTIVE", "PAUSED", "COMPLETED", "ACCOUNTS_UNHEALTHY", "BOUNCE_PROTECT"],
 } satisfies Record<string, CampaignStatus[]>;
-const TO = { pause: "PAUSED", resume: "ACTIVE", archive: "ARCHIVED" } as const;
+const TO = { pause: "PAUSED", archive: "ARCHIVED" } as const;
 
 async function move(prisma: Db, ws: string, actorId: Actor, id: string, kind: keyof typeof FROM) {
   return prisma.$transaction(async (tx) => {
@@ -169,8 +171,6 @@ async function move(prisma: Db, ws: string, actorId: Actor, id: string, kind: ke
 }
 export const pauseCampaign = (p: Db, ws: string, a: Actor, id: string) =>
   move(p, ws, a, id, "pause");
-export const resumeCampaign = (p: Db, ws: string, a: Actor, id: string) =>
-  move(p, ws, a, id, "resume");
 /**
  * Archive stops sending at once (the status leaves ACTIVE). RULE FOR T09: once ScheduledMessage exists, archive
  * and delete cancel the campaign's SCHEDULED and HELD rows in the same transaction and leave SENDING and
