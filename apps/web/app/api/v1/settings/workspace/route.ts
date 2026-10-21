@@ -9,7 +9,6 @@ export const GET = route({ auth: "session", role: "ADMIN" }, (c) =>
   getWorkspaceSettings(prisma, c.workspaceId),
 );
 
-// T13 extends this body with the other workspace settings.
 export const PATCH = route({ auth: "session", role: "ADMIN" }, async (c) => {
   const body: unknown = await c.req.json().catch(() => ({}));
   return run(() => updateWorkspaceSettings(prisma, systemClock, c.workspaceId, c.userId, body));

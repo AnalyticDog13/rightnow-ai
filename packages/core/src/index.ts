@@ -28,6 +28,7 @@ export * from "./leads/export";
 export * from "./leads/esp";
 export * from "./leads/validate";
 export * from "./leads/lists";
+export * from "./leads/timeline";
 export * from "./template";
 export * from "./leads/blocklist";
 export * from "./unsubscribe";

@@ -195,7 +195,7 @@ describe("workspace settings", () => {
       timezone: "Europe/Berlin",
       physicalAddress: "  1 Main St  ",
     });
-    expect(r).toEqual({ timezone: "Europe/Berlin", physicalAddress: "1 Main St" });
+    expect(r).toMatchObject({ timezone: "Europe/Berlin", physicalAddress: "1 Main St" });
     const a = await db.prisma.auditLog.findMany({
       where: { workspaceId: ws, action: "settings.update" },
     });

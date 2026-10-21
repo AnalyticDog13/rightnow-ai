@@ -1,4 +1,5 @@
 import type { EmailAccount } from "@rightnow/db/client";
+import { effectiveAllowance } from "../quota";
 import { displayStatus, type DisplayStatus } from "./status";
 
 /** Allowlist: a column added to EmailAccount stays private until it is listed here. */
@@ -66,6 +67,6 @@ export function toApiAccount(
     displayStatus: displayStatus(a, now),
     sentToday: usageToday.sent,
     reservedToday: usageToday.reserved,
-    remainingToday: Math.max(0, a.dailyLimit - usageToday.sent - usageToday.reserved),
+    remainingToday: Math.max(0, effectiveAllowance(a, now) - usageToday.sent - usageToday.reserved),
   };
 }

@@ -183,6 +183,7 @@ export async function updateAccount(
   const { skipCnameCheck, trackingDomain, ...rest } = p;
   const { values, warnings } = applyLimits(cur.capTier, cur, p);
   const data: Prisma.EmailAccountUpdateManyMutationInput = { ...rest, ...values };
+  if (p.slowRamp && !cur.rampStartedAt) data.rampStartedAt = now(o);
   if (trackingDomain !== undefined) {
     data.trackingDomain = trackingDomain;
     data.trackingDomainStatus =

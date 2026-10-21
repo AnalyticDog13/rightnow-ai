@@ -19,7 +19,7 @@ export default async function Page() {
     <div className="flex flex-col gap-6">
       <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
       {s ? (
-        <WorkspaceSettings timezone={s.timezone} physicalAddress={s.physicalAddress ?? ""} />
+        <WorkspaceSettings {...s} physicalAddress={s.physicalAddress ?? ""} />
       ) : (
         <p className="text-sm text-muted-foreground">
           Only workspace owners and admins can change settings.

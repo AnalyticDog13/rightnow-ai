@@ -24,6 +24,26 @@ const FIELDS = [
     ["country", "Country"],
   ],
 ] as const;
+type TimelineItem = { at: string; kind: string; detail: Record<string, unknown> };
+const describe = (t: TimelineItem) => {
+  const d = t.detail;
+  switch (t.kind) {
+    case "imported":
+      return `Imported from ${d.fileName}`;
+    case "enrolled":
+      return `Added to campaign ${d.campaign}`;
+    case "sent":
+      return `Step ${d.step}${d.variant ? ` (variant ${d.variant})` : ""} sent from ${d.account}`;
+    case "status_changed":
+      return `Interest status set to ${INTEREST[String(d.interestStatus)] ?? "Lead"}`;
+    case "merged":
+      return "Merged with a duplicate";
+    case "unsubscribed":
+      return "Unsubscribed";
+    default:
+      return `Suppressed (${String(d.reason).toLowerCase()})`;
+  }
+};
 type Custom = { key: string; value: string }[];
 const toCustom = (l: ApiLead): Custom =>
   Object.entries(l.customFields as Record<string, unknown>).map(([key, v]) => ({
@@ -54,10 +74,14 @@ export function LeadDrawer({
   const [initCustom, setInitCustom] = useState(custom);
   const [msg, setMsg] = useState("");
   const [error, setError] = useState("");
+  const [timeline, setTimeline] = useState<TimelineItem[]>([]);
 
   useEffect(() => {
     dialog.current?.showModal();
-  }, []);
+    void call(`/api/v1/leads/${lead.id}/timeline`, "GET").then((r) =>
+      setTimeline((r.json.timeline as TimelineItem[] | undefined) ?? []),
+    );
+  }, [lead.id]);
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -213,6 +237,21 @@ export function LeadDrawer({
           </div>
         )}
       </form>
+      <section aria-label="Timeline" className="mt-4 border-t border-border pt-4">
+        <h3 className="mb-2 text-sm font-medium">Timeline</h3>
+        {timeline.length ? (
+          <ul className="flex flex-col gap-1 text-sm">
+            {timeline.map((t, i) => (
+              <li key={i}>
+                <span className="text-muted-foreground">{new Date(t.at).toLocaleString()}</span>{" "}
+                {describe(t)}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted-foreground">No activity yet.</p>
+        )}
+      </section>
     </dialog>
   );
 }

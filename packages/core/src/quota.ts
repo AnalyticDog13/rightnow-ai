@@ -1,11 +1,12 @@
 import type { EmailAccount, Prisma } from "@rightnow/db/client";
 import { maxDailyLimit } from "./accounts/factory";
+import { dayKey } from "./schedule";
 
 type Tx = Prisma.TransactionClient;
 
 /**
- * Sends an account may make today: min(user limit, re-warm, health, floor(providerCap/2)). Never negative.
- * The ramp term (slowRamp) is added by P3-T13; the fields are already in the signature.
+ * Sends an account may make today: min(user limit, re-warm, health, ramp, floor(providerCap/2)). Never negative.
+ * Ramp: start + increment x whole local days since rampStartedAt (createdAt when never stamped).
  */
 export function effectiveAllowance(
   a: Pick<
@@ -19,10 +20,23 @@ export function effectiveAllowance(
     | "createdAt"
     | "timezone"
   >,
-  _now: Date,
+  now: Date,
   ctx: { rewarmAllowance?: number | null; healthThrottle?: number | null } = {},
 ): number {
+  const ramp = a.slowRamp
+    ? a.rampStartVolume +
+      a.rampIncrementPerDay *
+        Math.max(
+          0,
+          Math.round(
+            (Date.parse(dayKey(a.timezone, now)) -
+              Date.parse(dayKey(a.timezone, a.rampStartedAt ?? a.createdAt))) /
+              86_400_000,
+          ),
+        )
+    : null;
   const terms = [
+    ramp,
     a.dailyLimit,
     maxDailyLimit(a.providerCap),
     ctx.rewarmAllowance,

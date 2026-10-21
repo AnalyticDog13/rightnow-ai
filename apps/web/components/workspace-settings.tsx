@@ -7,12 +7,22 @@ import { Card } from "./ui/card";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 
+const cap = (v: FormDataEntryValue | null) => (String(v).trim() === "" ? null : Number(v));
+
 export function WorkspaceSettings({
   timezone,
   physicalAddress,
+  dailyCap,
+  perCompanyDailyLimit,
+  disableOpenTracking,
+  firstEmailTextOnly,
 }: {
   timezone: string;
   physicalAddress: string;
+  dailyCap: number | null;
+  perCompanyDailyLimit: number | null;
+  disableOpenTracking: boolean;
+  firstEmailTextOnly: boolean;
 }) {
   const router = useRouter();
   const [msg, setMsg] = useState("");
@@ -26,6 +36,10 @@ export function WorkspaceSettings({
       body: JSON.stringify({
         timezone: f.get("timezone"),
         physicalAddress: f.get("physicalAddress"),
+        dailyCap: cap(f.get("dailyCap")),
+        perCompanyDailyLimit: cap(f.get("perCompanyDailyLimit")),
+        disableOpenTracking: f.has("disableOpenTracking"),
+        firstEmailTextOnly: f.has("firstEmailTextOnly"),
       }),
     });
     const j = (await res.json().catch(() => ({}))) as { error?: string };
@@ -54,6 +68,37 @@ export function WorkspaceSettings({
             while it is empty.
           </p>
         </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="dailyCap">Daily send cap for all campaigns (empty = no cap)</Label>
+          <Input
+            id="dailyCap"
+            name="dailyCap"
+            type="number"
+            min={1}
+            defaultValue={dailyCap ?? ""}
+          />
+          <p className="text-xs text-muted-foreground">
+            Recommended: about 30 per connected account per day.
+          </p>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="perCompanyDailyLimit">Daily emails per company (empty = no limit)</Label>
+          <Input
+            id="perCompanyDailyLimit"
+            name="perCompanyDailyLimit"
+            type="number"
+            min={1}
+            defaultValue={perCompanyDailyLimit ?? ""}
+          />
+        </div>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" name="disableOpenTracking" defaultChecked={disableOpenTracking} />
+          Never track opens
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" name="firstEmailTextOnly" defaultChecked={firstEmailTextOnly} />
+          Send the first email of every sequence as plain text
+        </label>
         <div className="flex items-center gap-3">
           <Button type="submit">Save</Button>
           <p role="status" className="text-sm">

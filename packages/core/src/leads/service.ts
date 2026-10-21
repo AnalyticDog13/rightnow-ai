@@ -196,6 +196,7 @@ export async function updateLead(
     });
     await audit(tx, { workspaceId: ws, actorId, at: clock.now() }, "lead.update", id, {
       fields: Object.keys(p),
+      ...(p.interestStatus !== undefined && { interestStatus: p.interestStatus }),
     });
     return toApiLead(lead);
   });
