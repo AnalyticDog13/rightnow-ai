@@ -405,6 +405,7 @@ model Lead {
   updatedAt            DateTime           @default(now()) @updatedAt
   deletedAt            DateTime?
   listMembers          LeadListMember[]
+  campaignLeads        CampaignLead[]
 
   @@index([workspaceId, createdAt, id])
   @@index([workspaceId, companyDomain])
@@ -536,6 +537,9 @@ model Campaign {
   deletedAt             DateTime?
   schedules             CampaignSchedule[]
   accounts              CampaignAccount[]
+  steps                 SequenceStep[]
+  subsequences          Subsequence[]
+  leads                 CampaignLead[]
 
   @@index([workspaceId, status])
 }
@@ -559,4 +563,99 @@ model CampaignAccount {
 
   @@id([campaignId, accountId])
   @@index([accountId])
+}
+
+enum DelayUnit {
+  MINUTES
+  HOURS
+  DAYS
+}
+
+enum CampaignLeadState {
+  QUEUED
+  ACTIVE
+  PAUSED
+  COMPLETED
+  STOPPED
+}
+
+enum StopReason {
+  REPLIED
+  AUTO_REPLIED
+  COMPANY_REPLIED
+  UNSUBSCRIBED
+  BOUNCED
+  SUPPRESSED
+  SKIPPED
+  MANUAL
+  SEND_FAILED
+}
+
+model Subsequence {
+  id              String         @id @default(cuid())
+  campaignId      String
+  campaign        Campaign       @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  name            String
+  trigger         Json
+  preDelayMinutes Int            @default(0)
+  dailyLimit      Int?
+  active          Boolean        @default(true)
+  activatedAt     DateTime?
+  createdAt       DateTime       @default(now())
+  steps           SequenceStep[]
+  leads           CampaignLead[]
+
+  @@index([campaignId])
+}
+
+model SequenceStep {
+  id            String        @id @default(cuid())
+  campaignId    String
+  campaign      Campaign      @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  subsequenceId String?
+  subsequence   Subsequence?  @relation(fields: [subsequenceId], references: [id], onDelete: Cascade)
+  order         Int
+  delayValue    Int
+  delayUnit     DelayUnit     @default(DAYS)
+  deletedAt     DateTime?
+  variants      StepVariant[]
+
+  @@index([campaignId, subsequenceId, order])
+}
+
+model StepVariant {
+  id       String       @id @default(cuid())
+  stepId   String
+  step     SequenceStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
+  label    String
+  subject  String
+  body     String
+  weight   Int          @default(1)
+  active   Boolean      @default(true)
+  assigned Int          @default(0)
+
+  @@unique([stepId, label])
+}
+
+model CampaignLead {
+  id            String            @id @default(cuid())
+  workspaceId   String
+  campaignId    String
+  campaign      Campaign          @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  leadId        String
+  lead          Lead              @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  subsequenceId String?
+  subsequence   Subsequence?      @relation(fields: [subsequenceId], references: [id])
+  state         CampaignLeadState @default(QUEUED)
+  stopReason    StopReason?
+  currentStepId String?
+  nextDueAt     DateTime?
+  accountId     String?
+  threadRef     String?
+  enrolledAt    DateTime          @default(now())
+  completedAt   DateTime?
+
+  @@unique([campaignId, leadId])
+  @@index([campaignId, state, nextDueAt])
+  @@index([workspaceId, leadId])
 }

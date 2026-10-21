@@ -1,6 +1,7 @@
 import type { Lead, LeadLabel, Prisma, PrismaClient } from "@rightnow/db/client";
 import { z } from "zod";
 import { AccountError } from "../accounts/service";
+import { CAMPAIGN_LEAD_STATUSES, campaignLeadStatusWhere } from "../campaigns/lead-status";
 import { audit } from "../audit";
 import type { Clock } from "../clock";
 import { companyDomainOf } from "./domain";
@@ -183,6 +184,8 @@ export const leadQuery = z
       .optional(),
     ownerId: z.string().min(1).optional(),
     listId: z.string().min(1).optional(),
+    campaignId: z.string().min(1).optional(),
+    status: z.enum(CAMPAIGN_LEAD_STATUSES).optional(), // CampaignLead status; applies only together with campaignId
     openedNoReply: z.union([z.boolean(), z.stringbool()]).optional(),
     lastContactedFrom: z.coerce.date().optional(),
     lastContactedTo: z.coerce.date().optional(),
@@ -209,9 +212,8 @@ export const leadQuery = z
   }));
 export type LeadQuery = z.input<typeof leadQuery>;
 
-export async function listLeads(prisma: Db, ws: string, query: LeadQuery) {
-  const q = leadQuery.parse(query);
-  const take = q.take ?? 50;
+/** The Prisma filter behind a parsed lead query (paging fields ignored). Shared by the list and by enrollment. */
+export function leadWhere(ws: string, q: z.output<typeof leadQuery>): Prisma.LeadWhereInput {
   const and: Prisma.LeadWhereInput[] = [];
   if (q.q) {
     const contains = { contains: q.q, mode: "insensitive" as const };
@@ -233,7 +235,7 @@ export async function listLeads(prisma: Db, ws: string, query: LeadQuery) {
         mode: "insensitive",
       },
     });
-  const where: Prisma.LeadWhereInput = {
+  return {
     workspaceId: ws,
     deletedAt: null,
     ...(q.ids && { id: { in: q.ids } }),
@@ -243,11 +245,26 @@ export async function listLeads(prisma: Db, ws: string, query: LeadQuery) {
     ...(q.verificationStatus && { verificationStatus: q.verificationStatus }),
     ...(q.ownerId && { ownerId: q.ownerId }),
     ...(q.listId && { listMembers: { some: { listId: q.listId, list: { workspaceId: ws } } } }),
+    ...(q.campaignId && {
+      campaignLeads: {
+        some: {
+          campaignId: q.campaignId,
+          workspaceId: ws,
+          ...(q.status && campaignLeadStatusWhere(q.status)),
+        },
+      },
+    }),
     ...((q.lastContactedFrom || q.lastContactedTo) && {
       lastContactedAt: { gte: q.lastContactedFrom, lte: q.lastContactedTo },
     }),
     AND: and,
   };
+}
+
+export async function listLeads(prisma: Db, ws: string, query: LeadQuery) {
+  const q = leadQuery.parse(query);
+  const take = q.take ?? 50;
+  const where = leadWhere(ws, q);
   const rows = await prisma.lead.findMany({
     where,
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],

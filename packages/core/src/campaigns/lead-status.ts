@@ -1,0 +1,43 @@
+import type { CampaignLead, Prisma, StopReason } from "@rightnow/db/client";
+
+export type CampaignLeadStatus =
+  "Active" | "Paused" | "Completed" | "Bounced" | "Unsubscribed" | "Skipped";
+export const CAMPAIGN_LEAD_STATUSES = [
+  "Active",
+  "Paused",
+  "Completed",
+  "Bounced",
+  "Unsubscribed",
+  "Skipped",
+] as const;
+
+const DONE: StopReason[] = ["REPLIED", "AUTO_REPLIED", "COMPANY_REPLIED", "MANUAL"];
+const SKIPPED: StopReason[] = ["SUPPRESSED", "SKIPPED", "SEND_FAILED"];
+
+/** PS-LEAD-18 display status of one CampaignLead. */
+export function campaignLeadStatus(
+  cl: Pick<CampaignLead, "state" | "stopReason">,
+): CampaignLeadStatus {
+  if (cl.state === "QUEUED" || cl.state === "ACTIVE") return "Active";
+  if (cl.state === "PAUSED") return "Paused";
+  if (cl.stopReason === "BOUNCED") return "Bounced";
+  if (cl.stopReason === "UNSUBSCRIBED") return "Unsubscribed";
+  if (cl.stopReason && SKIPPED.includes(cl.stopReason)) return "Skipped";
+  return "Completed"; // COMPLETED, or STOPPED by a reply / manually / with no reason
+}
+
+/** The same table as a Prisma filter, for the lead list. Keep in step with campaignLeadStatus. */
+const WHERE: Record<CampaignLeadStatus, Prisma.CampaignLeadWhereInput> = {
+  Active: { state: { in: ["QUEUED", "ACTIVE"] } },
+  Paused: { state: "PAUSED" },
+  Bounced: { state: "STOPPED", stopReason: "BOUNCED" },
+  Unsubscribed: { state: "STOPPED", stopReason: "UNSUBSCRIBED" },
+  Skipped: { state: "STOPPED", stopReason: { in: SKIPPED } },
+  Completed: {
+    OR: [
+      { state: "COMPLETED" },
+      { state: "STOPPED", OR: [{ stopReason: { in: DONE } }, { stopReason: null }] },
+    ],
+  },
+};
+export const campaignLeadStatusWhere = (s: CampaignLeadStatus) => WHERE[s];

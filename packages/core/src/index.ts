@@ -35,3 +35,8 @@ export * from "./schedule";
 export * from "./campaigns/schema";
 export * from "./campaigns/service";
 export * from "./campaigns/launch";
+export * from "./campaigns/lead-status";
+export * from "./campaigns/hooks";
+export * from "./campaigns/sequence";
+export * from "./campaigns/enroll";
+export * from "./campaigns/portable";

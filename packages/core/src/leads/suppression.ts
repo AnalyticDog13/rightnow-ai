@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { editHooks } from "../campaigns/hooks";
 import type { Prisma, SuppressionKind, SuppressionReason } from "@rightnow/db/client";
 
 type Tx = Prisma.TransactionClient;
@@ -13,13 +14,34 @@ export async function suppress(
   reason: SuppressionReason,
   source: string,
 ): Promise<number> {
+  const norm = entries.map((e) => ({ kind: e.kind, value: e.value.trim().toLowerCase() }));
   const r = await tx.suppression.createMany({
-    data: entries.map((e) => {
-      const value = e.value.trim().toLowerCase();
-      return { workspaceId: ws, kind: e.kind, value, valueHash: hashValue(value), reason, source };
-    }),
+    data: norm.map((e) => ({
+      workspaceId: ws,
+      ...e,
+      valueHash: hashValue(e.value),
+      reason,
+      source,
+    })),
     skipDuplicates: true,
   });
+  // PS-LEAD-23: every open CampaignLead of a matching address or domain stops (set-based, any campaign).
+  const of = (k: SuppressionKind) => norm.filter((e) => e.kind === k).map((e) => e.value);
+  const [emails, domains] = [of("EMAIL"), of("DOMAIN")];
+  if (emails.length || domains.length) {
+    const hit = await tx.$queryRaw<{ id: string }[]>`
+      UPDATE "CampaignLead" cl SET "state" = 'STOPPED', "stopReason" = 'SUPPRESSED', "nextDueAt" = NULL, "completedAt" = now()
+      FROM "Lead" l
+      WHERE l."id" = cl."leadId" AND cl."workspaceId" = ${ws}
+        AND cl."state" IN ('QUEUED', 'ACTIVE', 'PAUSED')
+        AND (l."email" = ANY(${emails}::text[]) OR substring(l."email" from '@([^@]*)$') = ANY(${domains}::text[]))
+      RETURNING cl."id"`;
+    if (hit.length)
+      await editHooks.cancelOpenRows(
+        tx,
+        hit.map((h) => h.id),
+      );
+  }
   return r.count;
 }
 

@@ -18,8 +18,8 @@ export type LaunchDeps = {
   appUrl: string;
   /** Providers allowed to send for real (D17); anything else is warned about. */
   sendable: AccountProvider[];
-  /** Step/lead/variant checks (no_leads, no_steps, missing_*, template_error). T06 supplies the real one. */
-  contentIssues?: (campaignId: string) => Promise<LaunchIssue[]>;
+  /** Step/lead/variant checks: `campaignContentIssues` (sequence.ts). */
+  contentIssues?: (campaignId: string, ws: string) => Promise<LaunchIssue[]>;
 };
 
 const ESP_OF = { GMAIL: "google", MICROSOFT: "outlook", SMTP: "other" } as const;
@@ -136,7 +136,7 @@ async function activate(
   // Steps and leads come from T06; until it ships there are none, so the default always blocks.
   issues.push(
     ...(deps.contentIssues
-      ? await deps.contentIssues(id)
+      ? await deps.contentIssues(id, ws)
       : [block("no_leads", "Add leads"), block("no_steps", "Add a first step")]),
   );
   if (!schedules.length) issues.push(block("no_schedule", "Add a sending schedule"));
