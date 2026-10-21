@@ -256,19 +256,20 @@
    "id": "P3-T02",
    "phase": 3,
    "title": "CSV import/export (BOM, delimiter sniff, auto/manual mapping, validation, dedupe modes, authorized-import confirmation, source/lawful basis), ESP detection via MX (`leads/esp.ts`), background ImportJob",
-   "status": "in_progress",
+   "status": "done",
    "deps": [
     "P3-T01"
    ],
    "model": "sonnet",
-   "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-3.md; tests listed there pass"
+   "commit": "c72e425..b697cf5",
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-3.md; tests listed there pass",
+   "review": "1 fix round (list dedupe, campaign options 400 until T06, parser errors, crash-loop cap, deadlock retry, export numbers); clean"
   },
   {
    "id": "P3-T03",
    "phase": 3,
    "title": "Lead lists + blocklist/suppression UI and API (email + domain, import/export) + Leads UI",
-   "status": "todo",
+   "status": "in_progress",
    "deps": [
     "P3-T02"
    ],
@@ -311,7 +312,7 @@
    ],
    "model": "sonnet",
    "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-3.md; tests listed there pass"
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-3.md; tests listed there pass; from P3-T02: import campaign dedupe (campaignId, skipIfInCampaign → exists_in_campaign, attach to campaign) replacing the 400 placeholder"
   },
   {
    "id": "P3-T07",

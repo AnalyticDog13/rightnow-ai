@@ -176,3 +176,6 @@ Atomic per-account rate limit (advisory xact lock, send outside tx), live-verify
 
 ## 2026-10-21 · P3-T01 leads service/API · task reviewer (sonnet) · 1 fix round → **Approved**
 Merge row locks, full isolation tests, set-based bulk with 30 s timeout, Suppression→Lead lock order, GDPR in-flight test fails loudly (real-table test owned by P3-T09).
+
+## 2026-10-21 · P3-T02 CSV import/export + ESP · task reviewer (sonnet) · 1 fix round → **Approved**
+List dedupe implemented, campaign dedupe 400 until P3-T06, parser errors surfaced, stale-job attempt cap, deadlock batch retry, export formula guard keeps numbers.
