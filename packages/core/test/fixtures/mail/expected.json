@@ -214,5 +214,60 @@
   "outbound-sent-copy.eml": {
     "_direction": "OUT",
     "kind": "OUTBOUND"
+  },
+  "reply-signature-unsubscribe-footer.eml": {
+    "kind": "REPLY",
+    "category": "INTERESTED",
+    "source": "RULE"
+  },
+  "reply-dont-remove-me.eml": {
+    "kind": "REPLY",
+    "category": "UNCERTAIN",
+    "source": "RULE"
+  },
+  "reply-cant-pass-on-this.eml": {
+    "kind": "REPLY",
+    "category": "UNCERTAIN",
+    "source": "RULE"
+  },
+  "reply-all-set-send-contract.eml": {
+    "kind": "REPLY",
+    "category": "UNCERTAIN",
+    "source": "RULE"
+  },
+  "reply-we-pass-on-this.eml": {
+    "kind": "REPLY",
+    "category": "NOT_INTERESTED",
+    "source": "RULE"
+  },
+  "reply-german-outlook-quote.eml": {
+    "kind": "REPLY",
+    "category": "INTERESTED",
+    "source": "RULE"
+  },
+  "reply-header-block-quote.eml": {
+    "kind": "REPLY",
+    "category": "INTERESTED",
+    "source": "RULE"
+  },
+  "ooo-same-day-yearless.eml": {
+    "kind": "AUTO_REPLY",
+    "category": "OUT_OF_OFFICE",
+    "oooUntil": null
+  },
+  "ooo-de-dot-after-day.eml": {
+    "kind": "AUTO_REPLY",
+    "category": "OUT_OF_OFFICE",
+    "oooUntil": "2027-01-12T00:00:00.000Z"
+  },
+  "ooo-second-keyword-hit.eml": {
+    "kind": "AUTO_REPLY",
+    "category": "OUT_OF_OFFICE",
+    "oooUntil": "2026-07-10T00:00:00.000Z"
+  },
+  "ooo-feedback-not-keyword.eml": {
+    "kind": "AUTO_REPLY",
+    "category": "OUT_OF_OFFICE",
+    "oooUntil": null
   }
 }

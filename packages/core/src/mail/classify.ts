@@ -122,15 +122,21 @@ function monthOf(w: string): number | undefined {
 }
 const WORD = "[a-zA-Zéûäôü]+";
 const OOO_UNTIL = new RegExp(
-  String.raw`(?:until|back on|return(?:ing)? on|back|zurück am|de retour le)\s+(?:on\s+)?(?:` +
+  String.raw`\b(?:until|back on|return(?:ing)? on|back|zurück am|de retour le)\s+(?:on\s+)?(?:` +
     String.raw`(\d{4})-(\d{2})-(\d{2})|(\d{1,2})\.(\d{1,2})\.(\d{4})|(\d{1,2})\/(\d{1,2})\/(\d{4})|` +
-    String.raw`(\d{1,2})(?:st|nd|rd|th)?\s+(${WORD})\.?(?:,?\s+(\d{4}))?|(${WORD})\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?)`,
-  "i",
+    String.raw`(\d{1,2})(?:st|nd|rd|th)?\.?\s+(${WORD})\.?(?:,?\s+(\d{4}))?|(${WORD})\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?)`,
+  "gi",
 );
 
 function parseOooUntil(text: string, now: Date): Date | null {
-  const g = OOO_UNTIL.exec(text);
-  if (!g) return null;
+  for (const g of text.matchAll(OOO_UNTIL)) {
+    const t = oooDate(g, now);
+    if (t) return t;
+  }
+  return null;
+}
+
+function oooDate(g: RegExpMatchArray, now: Date): Date | null {
   const n = (i: number) => (g[i] ? Number(g[i]) : undefined);
   let y: number | undefined, mo: number | undefined, d: number | undefined;
   if (g[1]) [y, mo, d] = [n(1), n(2), n(3)];
@@ -142,8 +148,11 @@ function parseOooUntil(text: string, now: Date): Date | null {
   } else if (g[10]) [d, mo, y] = [n(10), monthOf(g[11]!), n(12)];
   else [mo, d, y] = [monthOf(g[13]!), n(14), n(16)];
   if (!mo || !d || mo > 12 || d > 31) return null;
+  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
   let t = new Date(Date.UTC(y ?? now.getUTCFullYear(), mo - 1, d));
-  if (y === undefined && t <= now) t = new Date(Date.UTC(now.getUTCFullYear() + 1, mo - 1, d));
+  // a year-less date earlier than today means next year; today itself is already past
+  if (y === undefined && t.getTime() < today)
+    t = new Date(Date.UTC(now.getUTCFullYear() + 1, mo - 1, d));
   return t > now && t.getUTCMonth() === mo - 1 && t.getUTCDate() === d ? t : null; // past or Feb 30 -> null
 }
 
@@ -164,10 +173,15 @@ function isAutoReply(m: ClassifyInput): boolean {
   );
 }
 
+// negated forms ("don't remove me") are not requests
 const UNSUB =
-  /\b(unsubscribe|remove me|take me off|opt[ -]?out|stop (emailing|contacting)|do not (contact|email))\b/i;
+  /(?<!(?:don'?t|do not|never|not|won'?t)\s+)\b(unsubscribe|remove me|take me off|opt[ -]?out|stop (emailing|contacting))\b|\bdo not (contact|email)\b/i;
+const UNSUB_ALONE =
+  /^\W*(please\s+)?(unsubscribe|remove me|take me off|opt[ -]?out)\b[\w\s,.!-]{0,40}$/i;
+const REQUEST = /\b(send|contract|call|go ahead)\b/i;
+const ALL_SET = /we('re| are) all set\b(?!\s+(up|for|to))/gi;
 const NOT_INTERESTED =
-  /not interested|no,? thanks\b(?!\s+needed)|no thank you|not a (good )?fit|not for us|we('re| are) all set\b(?!\s+(up|for|to))|pass on this/gi;
+  /not interested|no,? thanks\b(?!\s+needed)|no thank you|not a (good )?fit|not for us|we(?:'ll| will)? pass on this/gi;
 const WRONG_PERSON =
   /wrong person|not the right (person|contact)|no longer (with|at|works)|left the company/i;
 const MEETING =
@@ -176,12 +190,16 @@ const INTERESTED =
   /\binterested\b|sounds (good|great)|tell me more|send (me )?(more )?(info|details)|pricing|how much/i;
 
 function replyCategory(body: string): ReplyCategory {
-  const negated = body.replace(NOT_INTERESTED, " ");
-  const notInterested = negated !== body;
   // negated phrases are removed first so "not interested" does not also read as INTERESTED
-  const meeting = MEETING.test(negated);
-  const interested = INTERESTED.test(negated);
-  if (notInterested) return meeting || interested ? "UNCERTAIN" : "NOT_INTERESTED";
+  const noNeg = body.replace(NOT_INTERESTED, " ");
+  const rest = noNeg.replace(ALL_SET, " ");
+  const strong = noNeg !== body;
+  const weak = rest !== noNeg; // "we're all set" is a decline only when nothing is asked for
+  const meeting = MEETING.test(rest);
+  const interested = INTERESTED.test(rest);
+  if (strong || weak) {
+    return meeting || interested || (weak && REQUEST.test(rest)) ? "UNCERTAIN" : "NOT_INTERESTED";
+  }
   if (WRONG_PERSON.test(body)) return "WRONG_PERSON";
   return meeting ? "MEETING_REQUESTED" : interested ? "INTERESTED" : "UNCERTAIN";
 }
@@ -202,11 +220,11 @@ export function classify(
       oooUntil: ooo ? parseOooUntil(`${m.subject}\n${body}`, o.now) : null,
     };
   }
-  const head = body
-    .split("\n")
-    .filter((l) => l.trim())
-    .slice(0, 5)
-    .join("\n");
-  if (/^\s*unsubscribe\s*$/i.test(m.subject) || UNSUB.test(head)) return { kind: "UNSUBSCRIBE" };
-  return { kind: "REPLY", category: replyCategory(body), source: "RULE" };
+  // signature and disclaimer lines are not requests: look at the text above a "-- " line only
+  const own = body.split(/^-- ?$/m)[0]!;
+  const lines = own.split("\n").filter((l) => l.trim());
+  const short = lines.length <= 2 || own.length <= 200;
+  const unsub = (short && UNSUB.test(own)) || lines.some((l) => UNSUB_ALONE.test(l));
+  if (/^\s*unsubscribe\s*$/i.test(m.subject) || unsub) return { kind: "UNSUBSCRIBE" };
+  return { kind: "REPLY", category: replyCategory(own), source: "RULE" };
 }
