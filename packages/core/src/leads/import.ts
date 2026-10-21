@@ -80,6 +80,7 @@ export async function previewImport(prisma: Db, ws: string, buf: Buffer, mapping
       .split(/\r?\n/)
       .filter((l) => l.trim()).length - 1;
   return {
+    headers,
     mapping: map,
     delimiter,
     sample: rows.slice(0, 5),
