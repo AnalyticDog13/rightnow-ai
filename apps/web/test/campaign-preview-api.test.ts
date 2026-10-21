@@ -89,7 +89,11 @@ it("preview is a read for VIEWER; test-send is ADMIN, blocks on issues and disab
   await setRole("VIEWER");
   const r = await preview.POST(req("POST", ref), p(id));
   expect(r.status).toBe(200);
-  expect(await r.json()).toMatchObject({ subject: "Hi there", issues: [] });
+  const shown = (await r.json()) as { subject: string; issues: unknown[]; text: string };
+  expect(shown).toMatchObject({ subject: "Hi there", issues: [] });
+  // gate M-5: a reader never sees the lead's live unsubscribe token
+  expect(shown.text).not.toContain("/u/");
+  expect(shown.text).toContain("(unsubscribe disabled");
   expect((await preview.POST(req("POST", { ...ref, leadId: "nope" }), p(id))).status).toBe(404);
   expect((await preview.POST(req("POST", { ...ref, extra: 1 }), p(id))).status).toBe(400);
 
@@ -106,6 +110,13 @@ it("preview is a read for VIEWER; test-send is ADMIN, blocks on issues and disab
   expect(m!.headers["x-rightnow-test"]).toEqual(["1"]);
   expect(m!.text).toContain("1 Main St");
   expect(m!.text).not.toContain("/u/");
+
+  // gate M-4: never to a suppressed address (same check as the claim, domain entries included)
+  const { suppress } = await import("@rightnow/core");
+  await suppress(P, workspaceId, [{ kind: "DOMAIN", value: "gone.example" }], "MANUAL", "test");
+  const refused = await testSend.POST(req("POST", { ...body, to: "x@gone.example" }), p(id));
+  expect(refused.status).toBe(409);
+  expect(await refused.json()).toMatchObject({ error: "recipient_suppressed" });
 
   await P.stepVariant.update({ where: { id: v.id }, data: { body: "{{nope}}" } });
   const bad = await testSend.POST(req("POST", body), p(id));

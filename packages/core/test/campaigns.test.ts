@@ -214,7 +214,11 @@ describe("launch", () => {
   test("an empty campaign lists every blocker at once", async () => {
     const id = await camp();
     await P().workspace.update({ where: { id: ws }, data: { physicalAddress: " " } });
-    const e = await launch(id, deps({ contentIssues: undefined })).catch((x) => x);
+    const content = async () => [
+      { code: "no_leads", level: "block" as const, message: "Add leads" },
+      { code: "no_steps", level: "block" as const, message: "Add a first step" },
+    ];
+    const e = await launch(id, deps({ contentIssues: content })).catch((x) => x);
     expect(e).toMatchObject({ status: 422 });
     expect(codes(e).sort()).toEqual(
       ["no_accounts", "no_leads", "no_physical_address", "no_schedule", "no_steps"].sort(),
@@ -428,6 +432,18 @@ describe("fix round 1", () => {
       espRoutingRules: [dns, { action: "send", recipientEsp: "all", senderEsp: "other" }],
     });
     expect((await launch(b.id)).warnings).toEqual([]);
+  });
+
+  test("gate I-4: a COMPLETED campaign resumes (re-validated) so leads added after it finished get sent", async () => {
+    const { id } = await ready();
+    await launch(id);
+    await P().campaign.update({ where: { id }, data: { status: "COMPLETED" } });
+    await expect(launch(id)).rejects.toMatchObject({ status: 409 });
+    await P().workspace.update({ where: { id: ws }, data: { physicalAddress: null } });
+    expect(codes(await res(id).catch((x) => x))).toEqual(["no_physical_address"]);
+    expect((await getCampaign(P(), ws, id)).status).toBe("COMPLETED");
+    await P().workspace.update({ where: { id: ws }, data: { physicalAddress: "1 Main St" } });
+    expect((await res(id)).status).toBe("ACTIVE");
   });
 
   test("relaunch of ACTIVE reports current warnings; resume re-validates", async () => {

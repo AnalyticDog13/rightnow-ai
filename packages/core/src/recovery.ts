@@ -54,7 +54,7 @@ async function hold(
 export async function resolveUncertain(
   db: PrismaClient,
   clock: Clock,
-  deps: Pick<SenderDeps, "providerFor">,
+  deps: Pick<SenderDeps, "providerFor"> & { signal?: AbortSignal },
 ): Promise<{ sent: number; held: number; searched: number; errors: number }> {
   const out = { sent: 0, held: 0, searched: 0, errors: 0 };
   const now = clock.now();
@@ -71,6 +71,7 @@ export async function resolveUncertain(
     take: BATCH,
   });
   for (const m of due) {
+    if (deps.signal?.aborted) break; // worker stopping: the rest wait for the next run
     try {
       const r = await resolveOne(db, clock, deps, m, now);
       if (r !== "error" && r !== "capped") out.searched += 1;

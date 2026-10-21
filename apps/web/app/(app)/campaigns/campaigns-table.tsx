@@ -17,7 +17,7 @@ type Row = {
   completed: number;
   sentToday: number;
 };
-const RESUMABLE = ["Paused", "Bounce Protect", "Accounts Unhealthy"];
+const RESUMABLE = ["Paused", "Bounce Protect", "Accounts Unhealthy", "Completed"];
 
 export function CampaignsTable({ rows, canEdit }: { rows: Row[]; canEdit: boolean }) {
   const router = useRouter();

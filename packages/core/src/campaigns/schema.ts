@@ -2,7 +2,7 @@ import { z } from "zod";
 import { isValidTimeZone } from "../schedule";
 
 const esp = z.enum(["all", "google", "outlook", "other"]);
-export const espRule = z.strictObject({
+const espRule = z.strictObject({
   action: z.enum(["send", "do_not_send"]),
   recipientEsp: esp,
   senderEsp: esp,

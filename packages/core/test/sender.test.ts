@@ -17,8 +17,9 @@ import {
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { fixedClock } from "../src/clock";
 import { resumeAccount } from "../src/accounts/service";
-import { removeCampaignLead } from "../src/campaigns/enroll";
+import { removeCampaignLead, resumeCampaignLead } from "../src/campaigns/enroll";
 import { claimDue, sendableProviders, type ClaimOpts, type Claimed } from "../src/dispatch";
+import { whyNotSending } from "../src/explain";
 import { planDue } from "../src/planner";
 import { releaseUsage } from "../src/quota";
 import {
@@ -430,6 +431,17 @@ describe("sendClaimed: pre-call checks", () => {
     expect(await usage(A.id)).toEqual([[0, 0]]);
   });
 
+  test("gate M-2: a claim that went stale during the pre-call check (sleep) is not sent", async () => {
+    const s = await seedCampaign(P(), { at: T, rows: 1, accounts: [{}] });
+    const c = await claim(fixedClock(T));
+    let calls = 0;
+    // the machine sleeps right after the pre-call check read the time
+    const clock = { now: () => new Date(T.getTime() + (calls++ === 0 ? 0 : 121_000)) };
+    expect(await sendClaimed(P(), clock, deps(), c)).toBe("STALE");
+    expect(await sent(s.accounts[0]!)).toBe(0);
+    expect(await row(c.id)).toMatchObject({ status: "SCHEDULED" });
+  });
+
   test("a claim exactly 2 min old is still sent", async () => {
     const clock = fixedClock(T);
     const s = await seedCampaign(P(), { at: T, rows: 1, accounts: [{}] });
@@ -827,6 +839,36 @@ describe("dispatchTick", () => {
     }
   });
 
+  test("gate I-1: a stop signal ends the tick after the in-flight batch; nothing new is claimed or left SENDING", async () => {
+    const clock = fixedClock(T);
+    await seedCampaign(P(), { at: T, rows: 3, accounts: [{}, {}, {}] });
+    const stop = new AbortController();
+    const tick = await dispatchTick(P(), clock, {
+      ...deps({
+        // SIGTERM arrives while the first send is in flight
+        providerFor: (a) => around(a, { before: async () => stop.abort() }),
+      }),
+      bootId: "boot-1",
+      stalenessSec: 300,
+      sendableProviders: ALL,
+      concurrency: 1,
+      signal: stop.signal,
+    });
+    expect(tick.SENT).toBe(1);
+    const rows = await P().scheduledMessage.findMany();
+    expect(rows.map((r) => r.status).sort()).toEqual(["SCHEDULED", "SCHEDULED", "SENT"]);
+    // already stopped: claims nothing at all
+    const again = await dispatchTick(P(), clock, {
+      ...deps(),
+      bootId: "boot-1",
+      stalenessSec: 300,
+      sendableProviders: ALL,
+      signal: stop.signal,
+    });
+    expect(again.SENT).toBe(0);
+    expect(await P().scheduledMessage.count({ where: { status: "SENDING" } })).toBe(0);
+  });
+
   test("D17: nothing is sent from an unverified real provider; a verification row enables it", async () => {
     const clock = fixedClock(T);
     const s = await seedCampaign(P(), { at: T, rows: 1, accounts: [{}] });
@@ -973,5 +1015,50 @@ describe("deleted sticky account (P3-T10b re-review)", () => {
     expect(await P().scheduledMessage.count({ where: { accountId: { not: c.accountId } } })).toBe(
       0,
     );
+  });
+
+  test("gate I-3: a sticky account removed from the campaign pauses the lead visibly; re-assign + resume continues", async () => {
+    const clock = fixedClock(T);
+    const s = await seedCampaign(P(), { at: T, rows: 1, steps: 3, accounts: [{}, {}] });
+    const c = await claim(clock);
+    expect(await sendClaimed(P(), clock, deps(), c)).toBe("SENT");
+    const clId = c.campaignLeadId;
+    const due = (await P().campaignLead.findUniqueOrThrow({ where: { id: clId } })).nextDueAt!;
+    clock.advance(due.getTime() - T.getTime());
+    await markFresh(
+      P(),
+      s.accounts.map((a) => a.id),
+      clock.now(),
+    );
+    const plan = () => planDue(P(), clock, { stalenessSec: 300, sendableProviders: ALL, env });
+    await plan();
+    const step2 = await P().scheduledMessage.findFirstOrThrow({
+      where: { stepId: s.steps[1]!.id },
+    });
+    await P().campaignAccount.deleteMany({ where: { accountId: c.accountId } });
+    await plan();
+    expect(await P().campaignLead.findUniqueOrThrow({ where: { id: clId } })).toMatchObject({
+      state: "PAUSED",
+      stopReason: "SEND_FAILED",
+    });
+    expect((await row(step2.id)).status).toBe("CANCELLED");
+    const why = await whyNotSending(P(), clock, s.ws, s.campaign.id, {
+      stalenessSec: 300,
+      sendable: ALL,
+    });
+    expect(why.reasons).toContainEqual(
+      expect.objectContaining({
+        code: "sticky_account_unassigned",
+        blocking: false,
+        accountIds: [c.accountId],
+      }),
+    );
+
+    await P().campaignAccount.create({
+      data: { campaignId: s.campaign.id, accountId: c.accountId },
+    });
+    await resumeCampaignLead(P(), s.ws, null, clId);
+    await plan();
+    expect(await row(step2.id)).toMatchObject({ status: "SCHEDULED", accountId: c.accountId });
   });
 });

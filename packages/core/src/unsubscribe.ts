@@ -3,7 +3,7 @@ import { isIP } from "node:net";
 import { z } from "zod";
 import { isPrivate } from "@rightnow/providers";
 import type { PrismaClient } from "@rightnow/db/client";
-import { editHooks } from "./campaigns/hooks";
+import { stopOpenCampaignLeads } from "./campaigns/hooks";
 import { withTxRetry } from "./dispatch";
 import type { Clock } from "./clock";
 import { suppress } from "./leads/suppression";
@@ -130,7 +130,6 @@ export function withComplianceFooter(
 }
 
 type Db = Pick<PrismaClient, "$transaction">;
-const OPEN = ["QUEUED", "ACTIVE", "PAUSED"] as const;
 
 /** Suppresses `email` and stops the open enrollments of `leadIds`. "done" when the address was newly suppressed. */
 async function optOut(
@@ -141,27 +140,11 @@ async function optOut(
   leadIds: string[],
   source: string,
 ) {
-  // I4 order: ScheduledMessage rows (cancelOpenRows, T09) -> CampaignLead -> Suppression
+  // D21 order: ScheduledMessage rows -> CampaignLead (stopOpenCampaignLeads) -> Suppression
   return withTxRetry(() =>
     db.$transaction(async (tx) => {
-      const open = await tx.campaignLead.findMany({
-        where: { workspaceId: ws, leadId: { in: leadIds }, state: { in: [...OPEN] } },
-        select: { id: true },
-      });
-      if (open.length) {
-        const ids = open.map((c) => c.id);
-        await editHooks.cancelOpenRows(tx, ids);
-        // stopReason before suppress(), which would stamp SUPPRESSED on whatever is still open
-        await tx.campaignLead.updateMany({
-          where: { id: { in: ids }, state: { in: [...OPEN] } },
-          data: {
-            state: "STOPPED",
-            stopReason: "UNSUBSCRIBED",
-            nextDueAt: null,
-            completedAt: clock.now(),
-          },
-        });
-      }
+      // stopReason before suppress(), which would stamp SUPPRESSED on whatever is still open
+      await stopOpenCampaignLeads(tx, ws, leadIds, "UNSUBSCRIBED", clock.now());
       return (await suppress(tx, ws, [{ kind: "EMAIL", value: email }], "UNSUBSCRIBE", source)) > 0
         ? ("done" as const)
         : ("already" as const);

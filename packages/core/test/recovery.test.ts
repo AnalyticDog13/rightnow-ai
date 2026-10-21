@@ -345,6 +345,42 @@ describe("HELD release / cancel / retry", () => {
     expect((await row(c.id)).status).toBe("SENT");
   });
 
+  test("gate I-2: a released row whose variant was deleted is re-planned with a live variant, never stranded", async () => {
+    const clock = fixedClock(T);
+    const s = await seedCampaign(P(), { at: T, rows: 1, accounts: [{}] });
+    const A = s.accounts[0]!;
+    const c = await held(clock);
+    const B = await P().stepVariant.create({
+      data: { stepId: s.steps[0]!.id, label: "B", subject: "Hi", body: "Other" },
+    });
+    await P().stepVariant.delete({ where: { id: s.steps[0]!.variant.id } }); // FK SetNull on the HELD row
+    await releaseHeld(P(), clock, s.ws, c.id, "user-1", { confirm: true });
+    await tick(clock, [A.id]); // the claim cancels the row: its variant is gone
+    expect(await row(c.id)).toMatchObject({ status: "CANCELLED", error: "stale" });
+    await plan(clock);
+    expect(await row(c.id)).toMatchObject({ status: "SCHEDULED", variantId: B.id });
+    // and the user can still cancel it
+    await cancelScheduled(P(), clock, s.ws, c.id, null);
+    expect((await row(c.id)).status).toBe("CANCELLED");
+  });
+
+  test("gate I-1: resolveUncertain stops before the next row once the stop signal fired", async () => {
+    const clock = fixedClock(T);
+    const s = await seedCampaign(P(), { at: T, rows: 2, accounts: [{}, {}] });
+    await uncertain(clock);
+    await uncertain(clock);
+    const stop = new AbortController();
+    const p = spy(s.accounts[0]!, {
+      findSent: async () => {
+        stop.abort();
+        return null;
+      },
+    });
+    const r = await resolveUncertain(P(), clock, { providerFor: () => p, signal: stop.signal });
+    expect(r.searched).toBe(1);
+    expect(p.calls).toHaveLength(1);
+  });
+
   test("releaseHeld: 409 when not HELD, when the step is not current, when the lead is STOPPED; 404 foreign", async () => {
     const clock = fixedClock(T);
     const s = await seedCampaign(P(), { at: T, rows: 1, steps: 2, accounts: [{}] });

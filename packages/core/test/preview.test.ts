@@ -45,13 +45,14 @@ async function seed(subject: string, body: string, workspace = {}) {
 }
 
 describe("previewMessage", () => {
-  test("renders the lead's first name, the footer with the address and an unsubscribe link", async () => {
+  test("renders the lead's first name, the footer with the address and a dead unsubscribe link (gate M-5)", async () => {
     const { s, p } = await seed("Hello {{firstName}}", "<p>Hi {{firstName | there}}</p>");
     const r = await previewMessage(db.prisma, s.ws, p, env);
     expect(r.subject).toBe("Hello Ann");
     expect(r.text).toContain("Hi Ann");
     expect(r.html).toContain("1 Main St");
-    expect(r.text).toContain("https://app.example.com/u/");
+    expect(r.text).toContain("Unsubscribe: (unsubscribe disabled in test emails)");
+    expect(r.html).not.toContain("/u/");
     expect(r.issues).toEqual([]);
   });
 

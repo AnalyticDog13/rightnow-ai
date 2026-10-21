@@ -174,7 +174,7 @@ export class ImapSmtpProvider implements MailProvider {
   /** Connects, logs in and, when given a message, sends it. Rejects with SmtpFailure. */
   private async smtpSession(
     s: MailServer,
-    msg?: { raw: Buffer; to: string[]; from: string },
+    msg?: { raw: Buffer; to: string[]; from: string; lead: string[] },
   ): Promise<void> {
     const t = await this.target(s);
     return new Promise<void>((resolve, reject) => {
@@ -202,7 +202,10 @@ export class ImapSmtpProvider implements MailProvider {
         c.login({ user: s.username, pass: s.password }, (e2) => {
           if (e2) return end(e2);
           if (!msg) return end();
-          c.send({ from: msg.from, to: msg.to }, body, (e3) => end(e3));
+          // gate M-3 (D25): a refused To with an accepted Cc is still a failure for the lead, never a send
+          c.send({ from: msg.from, to: msg.to }, body, (e3, info) =>
+            end(e3 ?? info?.rejectedErrors?.find((r) => msg.lead.includes(r.recipient ?? ""))),
+          );
         });
       });
     });
@@ -217,7 +220,12 @@ export class ImapSmtpProvider implements MailProvider {
     const raw = await buildMime(m);
     const to = [...m.to, ...(m.cc ?? []), ...(m.bcc ?? [])].map((a) => a.email);
     try {
-      await this.smtpSession(creds.smtp, { raw, to, from: m.from.email });
+      await this.smtpSession(creds.smtp, {
+        raw,
+        to,
+        from: m.from.email,
+        lead: m.to.map((a) => a.email),
+      });
     } catch (e) {
       throw e instanceof SmtpFailure ? mapSmtpError(e.error, e.dataStarted) : e;
     }

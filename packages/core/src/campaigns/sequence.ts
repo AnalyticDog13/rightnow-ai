@@ -7,13 +7,13 @@ import { recomputeDue, skipStep } from "../planner";
 import { TEMPLATE_VARIABLES, validateTemplate } from "../template";
 import { editHooks } from "./hooks";
 import { CampaignError, liveCampaign } from "./service";
+import { OPEN_STATES } from "./lead-status";
 
 type Db = PrismaClient;
 type Tx = Prisma.TransactionClient;
 type Actor = string | null | undefined;
 
-export const MAX_VARIANTS = 26;
-export const MAX_SEQUENCE_DAYS = 366;
+const MAX_SEQUENCE_DAYS = 366;
 const MINUTES: Record<DelayUnit, number> = { MINUTES: 1, HOURS: 60, DAYS: 1440 };
 const MAX_MINUTES = MAX_SEQUENCE_DAYS * 1440;
 const INTEREST = [1, 2, 3, 4, 0, -1, -2, -3, -4];
@@ -215,7 +215,7 @@ async function deleteStepTx(tx: Tx, ws: string, actorId: Actor, stepId: string) 
   if (rows.some((r) => r.status !== "SCHEDULED"))
     throw new CampaignError(409, "step_has_messages_in_flight");
   const waiting = await tx.campaignLead.findMany({
-    where: { currentStepId: stepId, state: { in: ["QUEUED", "ACTIVE", "PAUSED"] } },
+    where: { currentStepId: stepId, state: { in: [...OPEN_STATES] } },
     select: { id: true },
     orderBy: { id: "asc" },
   });
@@ -271,7 +271,7 @@ export async function campaignVariables(db: Db | Tx, campaignId: string): Promis
   return new Set([...TEMPLATE_VARIABLES, ...rows.map((r) => r.k)]);
 }
 
-export const templateIssues = (known: ReadonlySet<string>, subject: string, body: string) => [
+const templateIssues = (known: ReadonlySet<string>, subject: string, body: string) => [
   ...validateTemplate(subject, known).map((i) => ({ field: "subject", ...i })),
   ...validateTemplate(body, known).map((i) => ({ field: "body", ...i })),
 ];
@@ -356,22 +356,25 @@ export async function updateVariant(
 }
 
 export async function deleteVariant(prisma: Db, ws: string, actorId: Actor, variantId: string) {
-  await prisma.$transaction(
-    async (tx) => {
-      const v = await variantOf(tx, ws, variantId);
-      await lock(tx, ws, v.step.campaignId);
-      await assertNotLastActive(tx, v);
-      await editHooks.variantChanged(tx, {
-        workspaceId: ws,
-        campaignId: v.step.campaignId,
-        stepId: v.stepId,
-        variantId,
-        removed: true,
-      });
-      await tx.stepVariant.delete({ where: { id: variantId } });
-      await done(tx, ws, actorId, v.step.campaignId, { deletedVariant: variantId });
-    },
-    { timeout: 30_000 },
+  // gate M-1: the FK SetNull locks ScheduledMessage rows after the variant (the claim locks the reverse): retried
+  await withTxRetry(() =>
+    prisma.$transaction(
+      async (tx) => {
+        const v = await variantOf(tx, ws, variantId);
+        await lock(tx, ws, v.step.campaignId);
+        await assertNotLastActive(tx, v);
+        await editHooks.variantChanged(tx, {
+          workspaceId: ws,
+          campaignId: v.step.campaignId,
+          stepId: v.stepId,
+          variantId,
+          removed: true,
+        });
+        await tx.stepVariant.delete({ where: { id: variantId } });
+        await done(tx, ws, actorId, v.step.campaignId, { deletedVariant: variantId });
+      },
+      { timeout: 30_000 },
+    ),
   );
 }
 

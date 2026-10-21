@@ -1,5 +1,6 @@
-import { Prisma } from "@rightnow/db/client";
+import { Prisma, type StopReason } from "@rightnow/db/client";
 import { rerenderScheduled } from "../planner";
+import { OPEN_STATES } from "./lead-status";
 
 type Tx = Prisma.TransactionClient;
 
@@ -117,33 +118,46 @@ export const editHooks = {
   },
 };
 
-const OPEN = ["QUEUED", "ACTIVE", "PAUSED"] as const;
-
-/** STOPs the open CampaignLeads of these leads (lead deleted or merged away) and cancels their open rows, in `tx`. */
+/**
+ * STOPs the open CampaignLeads of these leads (deleted, merged away, unsubscribed) and cancels their open rows, in `tx`.
+ * D21 order: the rows first, then the CampaignLeads.
+ */
 export async function stopOpenCampaignLeads(
   tx: Tx,
   ws: string,
   leadIds: string[],
-  stopReason: "SKIPPED" | "MANUAL" | "SUPPRESSED" = "SKIPPED",
+  stopReason: "SKIPPED" | "MANUAL" | "SUPPRESSED" | "UNSUBSCRIBED" = "SKIPPED",
   at = new Date(),
 ) {
   if (!leadIds.length) return;
   const ids = (
     await tx.campaignLead.findMany({
-      where: { workspaceId: ws, leadId: { in: leadIds }, state: { in: [...OPEN] } },
+      where: { workspaceId: ws, leadId: { in: leadIds }, state: { in: [...OPEN_STATES] } },
       select: { id: true },
     })
   ).map((c) => c.id);
   if (!ids.length) return;
+  await editHooks.cancelOpenRows(tx, ids);
   await tx.campaignLead.updateMany({
-    where: { id: { in: ids }, state: { in: [...OPEN] } },
+    where: { id: { in: ids }, state: { in: [...OPEN_STATES] } },
     data: { state: "STOPPED", stopReason, nextDueAt: null, completedAt: at },
   });
-  await editHooks.cancelOpenRows(tx, ids);
 }
 
+/** Stops one QUEUED or ACTIVE CampaignLead (a PAUSED one stays paused); the caller already holds its row lock. */
+export const stopLead = (tx: Tx, id: string, stopReason: StopReason, at: Date) =>
+  tx.campaignLead.updateMany({
+    where: { id, state: { in: ["QUEUED", "ACTIVE"] } },
+    data: { state: "STOPPED", stopReason, nextDueAt: null, completedAt: at },
+  });
+
+/** Advisory lock namespace 726004 (CLAUDE.md registry): per workspace, held by enrollment, launch/resume and merge. */
+export const ENROLL_LOCK = 726004;
+export const lockEnrollment = (tx: Tx, ws: string) =>
+  tx.$executeRaw`SELECT pg_advisory_xact_lock(${ENROLL_LOCK}::int, hashtext(${ws}))`;
+
 /** Campaign statuses that count as live for the cross-campaign conflict rule (system-paused ones included). */
-export const LIVE_STATUSES = ["ACTIVE", "PAUSED", "ACCOUNTS_UNHEALTHY", "BOUNCE_PROTECT"] as const;
+const LIVE_STATUSES = ["ACTIVE", "PAUSED", "ACCOUNTS_UNHEALTHY", "BOUNCE_PROTECT"] as const;
 
 /** The conflict rule: which of these leads are open in a live campaign other than `exceptCampaignId`. */
 export async function openInOtherLive(
@@ -157,7 +171,7 @@ export async function openInOtherLive(
       workspaceId: ws,
       leadId: { in: leadIds },
       campaignId: { not: exceptCampaignId },
-      state: { in: [...OPEN] },
+      state: { in: [...OPEN_STATES] },
       campaign: { workspaceId: ws, deletedAt: null, status: { in: [...LIVE_STATUSES] } },
     },
     select: { leadId: true },

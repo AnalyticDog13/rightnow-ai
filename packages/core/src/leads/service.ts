@@ -3,14 +3,21 @@ import { z } from "zod";
 import { AccountError } from "../accounts/service";
 import {
   CAMPAIGN_LEAD_STATUSES,
+  OPEN_STATES,
   campaignLeadStatus,
   campaignLeadStatusWhere,
 } from "../campaigns/lead-status";
 import { audit } from "../audit";
 import type { Clock } from "../clock";
 import { companyDomainOf } from "./domain";
-import { editHooks, openInOtherLive, stopOpenCampaignLeads } from "../campaigns/hooks";
+import {
+  editHooks,
+  lockEnrollment,
+  openInOtherLive,
+  stopOpenCampaignLeads,
+} from "../campaigns/hooks";
 import { enterSubsequence, leadStatusTrigger } from "../planner";
+import { withTxRetry } from "../dispatch";
 import { hashValue, suppress, suppressedEmails } from "./suppression";
 
 type Db = PrismaClient;
@@ -147,9 +154,8 @@ export async function applyInterestChange(
   }
   if (interest === null || interest < 1 || interest > 4) return;
   const now = clock.now();
-  const open = ["QUEUED", "ACTIVE", "PAUSED"] as const;
   const cls = await tx.campaignLead.findMany({
-    where: { workspaceId: ws, leadId, state: { in: [...open] } },
+    where: { workspaceId: ws, leadId, state: { in: [...OPEN_STATES] } },
     orderBy: { id: "asc" },
   });
   for (const cl of cls) {
@@ -163,7 +169,7 @@ export async function applyInterestChange(
     // D21: rows before the CampaignLead
     await editHooks.cancelOpenRows(tx, [cl.id]);
     await tx.campaignLead.updateMany({
-      where: { id: cl.id, state: { in: [...open] } },
+      where: { id: cl.id, state: { in: [...OPEN_STATES] } },
       data: { state: "COMPLETED", stopReason: "MANUAL", nextDueAt: null, completedAt: now },
     });
   }
@@ -331,15 +337,18 @@ export async function softDeleteLead(
   id: string,
   actorId?: Actor,
 ) {
-  await prisma.$transaction(async (tx) => {
-    const r = await tx.lead.updateMany({
-      where: { id, workspaceId: ws, deletedAt: null },
-      data: { deletedAt: clock.now() },
-    });
-    if (!r.count) throw notFound();
-    await stopOpenCampaignLeads(tx, ws, [id], "SKIPPED", clock.now());
-    await audit(tx, { workspaceId: ws, actorId, at: clock.now() }, "lead.delete", id);
-  });
+  // gate M-1: locks Lead before CampaignLead (the sender locks the reverse), so a deadlock is retried, not a 500
+  await withTxRetry(() =>
+    prisma.$transaction(async (tx) => {
+      const r = await tx.lead.updateMany({
+        where: { id, workspaceId: ws, deletedAt: null },
+        data: { deletedAt: clock.now() },
+      });
+      if (!r.count) throw notFound();
+      await stopOpenCampaignLeads(tx, ws, [id], "SKIPPED", clock.now());
+      await audit(tx, { workspaceId: ws, actorId, at: clock.now() }, "lead.delete", id);
+    }),
+  );
 }
 
 /**
@@ -430,66 +439,76 @@ export async function mergeLeads(
     .strictObject({ keepId: z.string().min(1), mergeId: z.string().min(1) })
     .parse(input);
   if (keepId === mergeId) throw new LeadError(400, "same_lead");
-  return prisma.$transaction(async (tx) => {
-    // Lock order: enrollment lock 726004 first (as enrollBatch does), then Lead rows. Enrollment's CampaignLead
-    // insert key-share-locks Lead, so the reverse order would deadlock against a concurrent enroll.
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(726004, hashtext(${ws}))`;
-    await assertNoSendInFlight(tx, ws, [keepId, mergeId]); // I4: ScheduledMessage before Lead
-    // Lock both rows in id order, then re-check they are live: concurrent A<-B and B<-A cannot both win.
-    await tx.$queryRaw`SELECT id FROM "Lead" WHERE "workspaceId" = ${ws} AND id = ANY(${[keepId, mergeId]}) ORDER BY id FOR UPDATE`;
-    const keep = await liveLead(tx, ws, keepId);
-    const from = await liveLead(tx, ws, mergeId);
-    const data: Prisma.LeadUpdateInput = {
-      customFields: { ...(from.customFields as object), ...(keep.customFields as object) },
-      tags: uniq([...keep.tags, ...from.tags]),
-      labels: uniq([...keep.labels, ...from.labels]),
-      emailsSent: keep.emailsSent + from.emailsSent,
-      opens: keep.opens + from.opens,
-      clicks: keep.clicks + from.clicks,
-      replies: keep.replies + from.replies,
-    };
-    for (const f of FILL)
-      if (blank(keep[f]) && !blank(from[f])) Object.assign(data, { [f]: from[f] });
-    for (const f of LATEST) {
-      const t = Math.max(keep[f]?.getTime() ?? 0, from[f]?.getTime() ?? 0);
-      if (t) Object.assign(data, { [f]: new Date(t) });
-    }
-    const merged = await tx.lead.update({ where: { id: keepId }, data });
-    const members = await tx.leadListMember.findMany({ where: { leadId: mergeId } });
-    await tx.leadListMember.createMany({
-      data: members.map((m) => ({ listId: m.listId, leadId: keepId })),
-      skipDuplicates: true,
-    });
-    await tx.leadListMember.deleteMany({ where: { leadId: mergeId } });
-    // Enrollments follow the kept lead unless it is blocklisted, already in that campaign, or the move would break the
-    // cross-campaign rule (same check and lock as enrollment; duplicateOk exempts). The rest stop. Rows are re-planned.
-    const blocked = (await suppressedEmails(tx, ws, [keep.email])).size > 0;
-    const there = new Set(
-      (await tx.campaignLead.findMany({ where: { workspaceId: ws, leadId: keepId } })).map(
-        (c) => c.campaignId,
-      ),
-    );
-    const open = await tx.campaignLead.findMany({
-      where: { workspaceId: ws, leadId: mergeId, state: { in: ["QUEUED", "ACTIVE", "PAUSED"] } },
-    });
-    const moved: string[] = [];
-    for (const c of open) {
-      if (blocked || there.has(c.campaignId)) continue;
-      if (!c.duplicateOk && (await openInOtherLive(tx, ws, [keepId], c.campaignId)).size) continue;
-      await tx.campaignLead.update({ where: { id: c.id }, data: { leadId: keepId } });
-      moved.push(c.id);
-    }
-    if (moved.length) await editHooks.cancelOpenRows(tx, moved);
-    await stopOpenCampaignLeads(tx, ws, [mergeId], blocked ? "SUPPRESSED" : "SKIPPED", clock.now());
-    await tx.lead.update({
-      where: { id: mergeId },
-      data: { deletedAt: clock.now(), mergedIntoId: keepId },
-    });
-    await audit(tx, { workspaceId: ws, actorId, at: clock.now() }, "lead.merge", keepId, {
-      mergedId: mergeId,
-    });
-    return toApiLead(merged);
-  });
+  // gate M-1: Lead before CampaignLead (the sender locks the reverse): a deadlock is retried, not a 500
+  return withTxRetry(() =>
+    prisma.$transaction(async (tx) => {
+      // Lock order: enrollment lock 726004 first (as enrollBatch does), then Lead rows. Enrollment's CampaignLead
+      // insert key-share-locks Lead, so the reverse order would deadlock against a concurrent enroll.
+      await lockEnrollment(tx, ws);
+      await assertNoSendInFlight(tx, ws, [keepId, mergeId]); // I4: ScheduledMessage before Lead
+      // Lock both rows in id order, then re-check they are live: concurrent A<-B and B<-A cannot both win.
+      await tx.$queryRaw`SELECT id FROM "Lead" WHERE "workspaceId" = ${ws} AND id = ANY(${[keepId, mergeId]}) ORDER BY id FOR UPDATE`;
+      const keep = await liveLead(tx, ws, keepId);
+      const from = await liveLead(tx, ws, mergeId);
+      const data: Prisma.LeadUpdateInput = {
+        customFields: { ...(from.customFields as object), ...(keep.customFields as object) },
+        tags: uniq([...keep.tags, ...from.tags]),
+        labels: uniq([...keep.labels, ...from.labels]),
+        emailsSent: keep.emailsSent + from.emailsSent,
+        opens: keep.opens + from.opens,
+        clicks: keep.clicks + from.clicks,
+        replies: keep.replies + from.replies,
+      };
+      for (const f of FILL)
+        if (blank(keep[f]) && !blank(from[f])) Object.assign(data, { [f]: from[f] });
+      for (const f of LATEST) {
+        const t = Math.max(keep[f]?.getTime() ?? 0, from[f]?.getTime() ?? 0);
+        if (t) Object.assign(data, { [f]: new Date(t) });
+      }
+      const merged = await tx.lead.update({ where: { id: keepId }, data });
+      const members = await tx.leadListMember.findMany({ where: { leadId: mergeId } });
+      await tx.leadListMember.createMany({
+        data: members.map((m) => ({ listId: m.listId, leadId: keepId })),
+        skipDuplicates: true,
+      });
+      await tx.leadListMember.deleteMany({ where: { leadId: mergeId } });
+      // Enrollments follow the kept lead unless it is blocklisted, already in that campaign, or the move would break the
+      // cross-campaign rule (same check and lock as enrollment; duplicateOk exempts). The rest stop. Rows are re-planned.
+      const blocked = (await suppressedEmails(tx, ws, [keep.email])).size > 0;
+      const there = new Set(
+        (await tx.campaignLead.findMany({ where: { workspaceId: ws, leadId: keepId } })).map(
+          (c) => c.campaignId,
+        ),
+      );
+      const open = await tx.campaignLead.findMany({
+        where: { workspaceId: ws, leadId: mergeId, state: { in: [...OPEN_STATES] } },
+      });
+      const moved: string[] = [];
+      for (const c of open) {
+        if (blocked || there.has(c.campaignId)) continue;
+        if (!c.duplicateOk && (await openInOtherLive(tx, ws, [keepId], c.campaignId)).size)
+          continue;
+        await tx.campaignLead.update({ where: { id: c.id }, data: { leadId: keepId } });
+        moved.push(c.id);
+      }
+      if (moved.length) await editHooks.cancelOpenRows(tx, moved);
+      await stopOpenCampaignLeads(
+        tx,
+        ws,
+        [mergeId],
+        blocked ? "SUPPRESSED" : "SKIPPED",
+        clock.now(),
+      );
+      await tx.lead.update({
+        where: { id: mergeId },
+        data: { deletedAt: clock.now(), mergedIntoId: keepId },
+      });
+      await audit(tx, { workspaceId: ws, actorId, at: clock.now() }, "lead.merge", keepId, {
+        mergedId: mergeId,
+      });
+      return toApiLead(merged);
+    }),
+  );
 }
 
 export const bulkInput = z.strictObject({
@@ -511,60 +530,63 @@ export async function bulkLeads(
 ) {
   const { ids, action, value } = bulkInput.parse(input);
   const strs = () => z.array(text(50)).min(1).parse(value);
-  return prisma.$transaction(
-    async (tx) => {
-      const base = { workspaceId: ws, deletedAt: null, id: { in: ids } };
-      const leads = await tx.lead.findMany({
-        where: base,
-        select: { id: true },
-        orderBy: { id: "asc" },
-      });
-      const found = leads.map((l) => l.id);
-      if (action === "assign_round_robin") {
-        const users = uniq(z.array(text(100)).min(1).parse(value));
-        await assertMembers(tx, ws, users);
-        const owners = found.map((_, i) => users[i % users.length]!);
-        await tx.$executeRaw`UPDATE "Lead" l SET "ownerId" = v.o, "updatedAt" = now() FROM unnest(${found}::text[], ${owners}::text[]) AS v(id, o) WHERE l.id = v.id AND l."workspaceId" = ${ws}`;
-      } else if (action === "set_owner") {
-        const owner = z
-          .string()
-          .min(1)
-          .nullable()
-          .parse(value ?? null);
-        if (owner) await assertMembers(tx, ws, [owner]);
-        await tx.lead.updateMany({ where: base, data: { ownerId: owner } });
-      } else if (action === "set_interest") {
-        const v = interest.nullable().parse(value ?? null);
-        if (v === -1) {
-          const rows = await tx.lead.findMany({ where: base, select: { email: true } });
-          await suppress(
-            tx,
-            ws,
-            rows.map((r) => ({ kind: "EMAIL", value: r.email })),
-            "NOT_INTERESTED",
-            "status",
-          );
-        } else if (v !== null && v >= 1 && v <= 4)
-          for (const id of found) await applyInterestChange(tx, clock, ws, id, v);
-        await tx.lead.updateMany({
+  // gate M-1: delete and set_interest lock Lead before CampaignLead: a deadlock is retried, not a 500
+  return withTxRetry(() =>
+    prisma.$transaction(
+      async (tx) => {
+        const base = { workspaceId: ws, deletedAt: null, id: { in: ids } };
+        const leads = await tx.lead.findMany({
           where: base,
-          data: { interestStatus: v, lastInterestChangeAt: clock.now() },
+          select: { id: true },
+          orderBy: { id: "asc" },
         });
-      } else if (action === "add_tags") {
-        await tx.$executeRaw`UPDATE "Lead" SET "updatedAt" = now(), "tags" = ARRAY(SELECT DISTINCT unnest("tags" || ${strs()}::text[])) WHERE "workspaceId" = ${ws} AND "id" = ANY(${found})`;
-      } else if (action === "remove_tags") {
-        await tx.$executeRaw`UPDATE "Lead" SET "updatedAt" = now(), "tags" = ARRAY(SELECT t FROM unnest("tags") t WHERE t <> ALL(${strs()}::text[])) WHERE "workspaceId" = ${ws} AND "id" = ANY(${found})`;
-      } else {
-        await tx.lead.updateMany({ where: base, data: { deletedAt: clock.now() } });
-        await stopOpenCampaignLeads(tx, ws, found, "SKIPPED", clock.now());
-      }
-      await audit(tx, { workspaceId: ws, actorId, at: clock.now() }, "lead.bulk", undefined, {
-        action,
-        count: found.length,
-      });
-      return { affected: found.length };
-    },
-    { timeout: 30_000 },
+        const found = leads.map((l) => l.id);
+        if (action === "assign_round_robin") {
+          const users = uniq(z.array(text(100)).min(1).parse(value));
+          await assertMembers(tx, ws, users);
+          const owners = found.map((_, i) => users[i % users.length]!);
+          await tx.$executeRaw`UPDATE "Lead" l SET "ownerId" = v.o, "updatedAt" = now() FROM unnest(${found}::text[], ${owners}::text[]) AS v(id, o) WHERE l.id = v.id AND l."workspaceId" = ${ws}`;
+        } else if (action === "set_owner") {
+          const owner = z
+            .string()
+            .min(1)
+            .nullable()
+            .parse(value ?? null);
+          if (owner) await assertMembers(tx, ws, [owner]);
+          await tx.lead.updateMany({ where: base, data: { ownerId: owner } });
+        } else if (action === "set_interest") {
+          const v = interest.nullable().parse(value ?? null);
+          if (v === -1) {
+            const rows = await tx.lead.findMany({ where: base, select: { email: true } });
+            await suppress(
+              tx,
+              ws,
+              rows.map((r) => ({ kind: "EMAIL", value: r.email })),
+              "NOT_INTERESTED",
+              "status",
+            );
+          } else if (v !== null && v >= 1 && v <= 4)
+            for (const id of found) await applyInterestChange(tx, clock, ws, id, v);
+          await tx.lead.updateMany({
+            where: base,
+            data: { interestStatus: v, lastInterestChangeAt: clock.now() },
+          });
+        } else if (action === "add_tags") {
+          await tx.$executeRaw`UPDATE "Lead" SET "updatedAt" = now(), "tags" = ARRAY(SELECT DISTINCT unnest("tags" || ${strs()}::text[])) WHERE "workspaceId" = ${ws} AND "id" = ANY(${found})`;
+        } else if (action === "remove_tags") {
+          await tx.$executeRaw`UPDATE "Lead" SET "updatedAt" = now(), "tags" = ARRAY(SELECT t FROM unnest("tags") t WHERE t <> ALL(${strs()}::text[])) WHERE "workspaceId" = ${ws} AND "id" = ANY(${found})`;
+        } else {
+          await tx.lead.updateMany({ where: base, data: { deletedAt: clock.now() } });
+          await stopOpenCampaignLeads(tx, ws, found, "SKIPPED", clock.now());
+        }
+        await audit(tx, { workspaceId: ws, actorId, at: clock.now() }, "lead.bulk", undefined, {
+          action,
+          count: found.length,
+        });
+        return { affected: found.length };
+      },
+      { timeout: 30_000 },
+    ),
   ); // set-based statements; same budget as the planner's per-campaign transaction
 }
 

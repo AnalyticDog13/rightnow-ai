@@ -13,7 +13,7 @@ import {
   type Workspace,
 } from "@rightnow/db/client";
 import type { Clock } from "./clock";
-import { cancelRows, editHooks } from "./campaigns/hooks";
+import { cancelRows, editHooks, stopLead } from "./campaigns/hooks";
 import { campaignVariables } from "./campaigns/sequence";
 import { accountOk, withTxRetry } from "./dispatch";
 import { getEnv } from "./env";
@@ -37,11 +37,11 @@ import {
   withComplianceFooter,
   type RenderEnv,
 } from "./unsubscribe";
+import { OPEN_STATES, OPEN_STATES_SQL } from "./campaigns/lead-status";
 
 type Tx = Prisma.TransactionClient;
 type Now = Pick<Clock, "now">;
 
-const OPEN = ["QUEUED", "ACTIVE", "PAUSED"] as const;
 const PLANNER_LOCK = 726003;
 const PLAN_TX_MS = 30_000;
 const MAX_PAGES = 10; // candidates examined per campaign and tick: at most 10 x batch
@@ -309,7 +309,8 @@ export async function upsertScheduled(
     ON CONFLICT ("idempotencyKey") DO UPDATE SET status = 'SCHEDULED', "dueAt" = EXCLUDED."dueAt",
       "accountId" = EXCLUDED."accountId", "variantId" = EXCLUDED."variantId",
       "renderedSubject" = EXCLUDED."renderedSubject", "renderedBody" = EXCLUDED."renderedBody",
-      "renderedText" = EXCLUDED."renderedText", error = NULL, "claimToken" = NULL, "updatedAt" = EXCLUDED."updatedAt"
+      "renderedText" = EXCLUDED."renderedText", error = NULL, "claimToken" = NULL, attempts = 0, "claimErrors" = 0,
+      "updatedAt" = EXCLUDED."updatedAt"
     WHERE "ScheduledMessage".status = 'CANCELLED' AND "ScheduledMessage"."uncertainAt" IS NULL
     RETURNING id, (xmax::text <> '0') AS revived`;
   return row ?? null;
@@ -354,6 +355,14 @@ export async function planDue(db: PrismaClient, clock: Clock, o: PlanOpts): Prom
       console.error(`planDue: campaign ${c.id} skipped this tick`, e);
     }
   }
+  // gate M-7: archive/delete/end cancel with SKIP LOCKED, so a row a claim held then stays SCHEDULED; sweep it up here
+  await db.$transaction((tx) =>
+    cancelRows(
+      tx,
+      Prisma.sql`"campaignId" IN (SELECT id FROM "Campaign"
+        WHERE status IN ('ARCHIVED', 'COMPLETED') OR "deletedAt" IS NOT NULL)`,
+    ),
+  );
   return out;
 }
 
@@ -501,10 +510,7 @@ async function planCampaign(tx: Tx, campaignId: string, now: Date, o: PlanOpts) 
             ? "SKIPPED"
             : null;
       if (stop) {
-        await tx.campaignLead.updateMany({
-          where: { id: cl.id, state: { in: ["QUEUED", "ACTIVE"] } },
-          data: { state: "STOPPED", stopReason: stop, nextDueAt: null, completedAt: now },
-        });
+        await stopLead(tx, cl.id, stop, now);
         continue;
       }
       const isNew = cl.state === "QUEUED";
@@ -700,14 +706,16 @@ async function endCampaign(tx: Tx, campaignId: string, now: Date) {
  * C2/I1: SCHEDULED rows that are not their lead's current step, or whose lead finished, are CANCELLED. A non-evergreen
  * campaign with no open lead and no open row is COMPLETED (one conditional statement).
  *
- * Deleted sticky sender (P3-T10b re-review): a follow-up must come from the lead's step-1 mailbox, so it is never
- * re-routed. The lead is PAUSED SEND_FAILED (reversible: reconnecting the address revives the same account row) and
- * its SCHEDULED rows are CANCELLED, so neither the planner nor the claim looks at it again every tick.
+ * Deleted or unassigned sticky sender (P3-T10b re-review, gate I-3, D23): a follow-up must come from the lead's step-1
+ * mailbox, so it is never re-routed. The lead is PAUSED SEND_FAILED (reversible: reconnect or re-assign the mailbox,
+ * then resume the lead; the explainer lists it) and its SCHEDULED rows are CANCELLED, so neither the planner nor the
+ * claim looks at it again every tick.
  */
 async function housekeep(tx: Tx, campaignId: string, now: Date) {
   const orphaned = Prisma.sql`cl."campaignId" = ${campaignId} AND cl.state IN ('QUEUED', 'ACTIVE')
     AND cl."accountId" IS NOT NULL
-    AND NOT EXISTS (SELECT 1 FROM "EmailAccount" a WHERE a.id = cl."accountId" AND a."deletedAt" IS NULL)`;
+    AND NOT EXISTS (SELECT 1 FROM "EmailAccount" a JOIN "CampaignAccount" ca ON ca."accountId" = a.id
+      WHERE a.id = cl."accountId" AND a."deletedAt" IS NULL AND ca."campaignId" = cl."campaignId")`;
   await cancelRows(
     tx,
     Prisma.sql`"campaignId" = ${campaignId} AND EXISTS (SELECT 1 FROM "CampaignLead" cl
@@ -724,7 +732,7 @@ async function housekeep(tx: Tx, campaignId: string, now: Date) {
   return tx.$executeRaw`
     UPDATE "Campaign" c SET status = 'COMPLETED', "updatedAt" = ${now.toISOString()}::timestamp
     WHERE c.id = ${campaignId} AND c.status = 'ACTIVE' AND NOT c.evergreen
-      AND NOT EXISTS (SELECT 1 FROM "CampaignLead" WHERE "campaignId" = c.id AND state IN ('QUEUED', 'ACTIVE', 'PAUSED'))
+      AND NOT EXISTS (SELECT 1 FROM "CampaignLead" WHERE "campaignId" = c.id AND state = ANY(${OPEN_STATES_SQL}))
       AND NOT EXISTS (SELECT 1 FROM "ScheduledMessage" WHERE "campaignId" = c.id
         AND status IN ('SCHEDULED', 'SENDING', 'UNCERTAIN', 'HELD'))`;
 }
@@ -758,7 +766,8 @@ async function advance(
 ) {
   const cl = await tx.campaignLead.findUnique({ where: { id } });
   // a stopped or completed lead never moves again: a late SENT must not revive it into a subsequence
-  if (!cl || cl.currentStepId !== stepId || !(OPEN as readonly string[]).includes(cl.state)) return;
+  if (!cl || cl.currentStepId !== stepId || !(OPEN_STATES as readonly string[]).includes(cl.state))
+    return;
   const step = await tx.sequenceStep.findUniqueOrThrow({ where: { id: stepId } });
   const next = await tx.sequenceStep.findFirst({
     where: {
@@ -791,7 +800,7 @@ async function advance(
     return;
   }
   await tx.campaignLead.updateMany({
-    where: { ...mine, state: { in: [...OPEN] } },
+    where: { ...mine, state: { in: [...OPEN_STATES] } },
     data: { state: "COMPLETED", completedAt: now, nextDueAt: null, accountId },
   });
   if (step.subsequenceId) return; // completed_no_reply follows the main sequence only
@@ -836,7 +845,7 @@ export async function skipStep(
   if (!step) return;
   if (step.subsequenceId === null && step.order === 1 && !o.keepDue) {
     await tx.campaignLead.updateMany({
-      where: { id: campaignLeadId, currentStepId: stepId, state: { in: [...OPEN] } },
+      where: { id: campaignLeadId, currentStepId: stepId, state: { in: [...OPEN_STATES] } },
       data: { state: "STOPPED", stopReason: "MANUAL", nextDueAt: null, completedAt: now },
     });
     return;
@@ -914,7 +923,7 @@ export async function recomputeDue(tx: Tx, stepId: string) {
   });
   if (!prev) return; // a first step has no delay to apply (main step 1 is 0; a subsequence waits preDelayMinutes)
   const cls = await tx.campaignLead.findMany({
-    where: { currentStepId: stepId, state: { in: [...OPEN] } },
+    where: { currentStepId: stepId, state: { in: [...OPEN_STATES] } },
     select: {
       id: true,
       messages: { where: { stepId: prev.id, status: "SENT" }, select: { sentAt: true } },

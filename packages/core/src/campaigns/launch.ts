@@ -5,6 +5,8 @@ import { isValidTimeZone } from "../schedule";
 import { unsubscribeMode } from "../unsubscribe";
 import type { EspRule } from "./schema";
 import { CampaignError, liveCampaign } from "./service";
+import { lockEnrollment } from "./hooks";
+import { OPEN_STATES_SQL } from "./lead-status";
 
 export type DnsFinding = { domain: string; level: "ok" | "warn" | "block"; reason: string };
 export type LaunchIssue = {
@@ -19,7 +21,7 @@ export type LaunchDeps = {
   /** Providers allowed to send for real (D17); anything else is warned about. */
   sendable: AccountProvider[];
   /** Step/lead/variant checks: `campaignContentIssues` (sequence.ts). */
-  contentIssues?: (campaignId: string, ws: string) => Promise<LaunchIssue[]>;
+  contentIssues: (campaignId: string, ws: string) => Promise<LaunchIssue[]>;
 };
 
 const ESP_OF = { GMAIL: "google", MICROSOFT: "outlook", SMTP: "other" } as const;
@@ -40,7 +42,8 @@ type Opts = { overrideDnsWarnings?: boolean };
 type Result = { status: "ACTIVE"; warnings: LaunchIssue[] };
 const FROM = {
   launch: ["DRAFT", "PAUSED"],
-  resume: ["PAUSED", "ACCOUNTS_UNHEALTHY", "BOUNCE_PROTECT"],
+  // COMPLETED (gate I-4, D25): leads enrolled after the campaign finished are sent once the user resumes it
+  resume: ["PAUSED", "ACCOUNTS_UNHEALTHY", "BOUNCE_PROTECT", "COMPLETED"],
 } as const;
 
 /**
@@ -57,7 +60,10 @@ export const launchCampaign = (
   opts: Opts = {},
 ) => activate("launch", prisma, clock, deps, ws, id, actorId, opts);
 
-/** Resume re-runs launch validation: a paused campaign whose accounts, schedule or address went away stays paused. */
+/**
+ * Resume re-runs launch validation: a paused campaign whose accounts, schedule or address went away stays paused. A
+ * COMPLETED campaign resumes too, so leads added after it finished are sent (housekeeping completes it again).
+ */
 export const resumeCampaign = (
   prisma: PrismaClient,
   clock: Clock,
@@ -133,12 +139,7 @@ async function activate(
     issues.push(
       block("no_accounts", "Assign at least one usable account (live, not paused, matching tags)"),
     );
-  // Steps and leads come from T06; until it ships there are none, so the default always blocks.
-  issues.push(
-    ...(deps.contentIssues
-      ? await deps.contentIssues(id, ws)
-      : [block("no_leads", "Add leads"), block("no_steps", "Add a first step")]),
-  );
+  issues.push(...(await deps.contentIssues(id, ws)));
   if (!schedules.length) issues.push(block("no_schedule", "Add a sending schedule"));
   for (const s of schedules)
     if (s.days < 1 || s.days > 127 || !isValidTimeZone(s.timezone))
@@ -170,15 +171,15 @@ async function activate(
   await prisma.$transaction(async (tx) => {
     const now = clock.now();
     // Same lock as enrollment: two DRAFT campaigns sharing a lead cannot both turn live (PS-LEAD-02 conflict rule).
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(726004, hashtext(${ws}))`;
+    await lockEnrollment(tx, ws);
     const [clash] = await tx.$queryRaw<{ n: bigint }[]>`
       SELECT count(DISTINCT cl."leadId") AS n
       FROM "CampaignLead" cl
       JOIN "CampaignLead" o ON o."leadId" = cl."leadId" AND o."campaignId" <> cl."campaignId"
-        AND o."state" IN ('QUEUED', 'ACTIVE', 'PAUSED')
+        AND o."state" = ANY(${OPEN_STATES_SQL})
       JOIN "Campaign" oc ON oc."id" = o."campaignId" AND oc."deletedAt" IS NULL
         AND oc."status" IN ('ACTIVE', 'PAUSED', 'ACCOUNTS_UNHEALTHY', 'BOUNCE_PROTECT')
-      WHERE cl."campaignId" = ${id} AND cl."state" IN ('QUEUED', 'ACTIVE', 'PAUSED') AND NOT cl."duplicateOk"`;
+      WHERE cl."campaignId" = ${id} AND cl."state" = ANY(${OPEN_STATES_SQL}) AND NOT cl."duplicateOk"`;
     if (clash && clash.n > 0n)
       throw new CampaignError(422, "launch_blocked", {
         issues: [

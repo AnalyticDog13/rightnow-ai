@@ -5,8 +5,9 @@ import { leadQuery, leadWhere, type LeadQuery } from "../leads/service";
 import { suppressedEmails } from "../leads/suppression";
 import { withTxRetry } from "../dispatch";
 import { enterSubsequence, subsequenceUsed } from "../planner";
-import { editHooks, openInOtherLive } from "./hooks";
+import { editHooks, lockEnrollment, openInOtherLive } from "./hooks";
 import { CampaignError, liveCampaign } from "./service";
+import { OPEN_STATES } from "./lead-status";
 
 type Db = PrismaClient;
 type Tx = Prisma.TransactionClient;
@@ -39,7 +40,7 @@ export async function enrollBatch(
   allowDuplicates: boolean,
   skipped: EnrollSkips,
 ): Promise<number> {
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(726004, hashtext(${ws}))`;
+  await lockEnrollment(tx, ws);
   const ids = [...new Set(leadIds)];
   const leads = await tx.lead.findMany({
     where: { id: { in: ids }, workspaceId: ws, deletedAt: null },
@@ -156,7 +157,6 @@ export async function enrollLeads(
 
 // --- CampaignLead operations ---------------------------------------------------------------------------------------
 
-const OPEN = ["QUEUED", "ACTIVE", "PAUSED"] as const;
 async function liveCl(tx: Tx, ws: string, id: string) {
   const cl = await tx.campaignLead.findFirst({
     where: { id, workspaceId: ws, campaign: { deletedAt: null } },
@@ -187,7 +187,7 @@ export async function removeCampaignLead(
   return prisma.$transaction(async (tx) => {
     const cl = await liveCl(tx, ws, id);
     const r = await tx.campaignLead.updateMany({
-      where: { id, state: { in: [...OPEN] } },
+      where: { id, state: { in: [...OPEN_STATES] } },
       data: { state: "STOPPED", stopReason: "MANUAL", nextDueAt: null, completedAt: clock.now() },
     });
     if (r.count) {
@@ -243,7 +243,7 @@ export async function moveToSubsequence(
   return withTxRetry(() =>
     prisma.$transaction(async (tx) => {
       const cl = await liveCl(tx, ws, id);
-      if (![...OPEN, "COMPLETED"].includes(cl.state))
+      if (![...OPEN_STATES, "COMPLETED"].includes(cl.state))
         throw new CampaignError(409, "lead_not_movable");
       const sub = await tx.subsequence.findFirst({
         where: { id: subsequenceId, campaignId: cl.campaignId, active: true },
@@ -275,7 +275,7 @@ export async function removeFromSubsequence(
     const cl = await liveCl(tx, ws, id);
     if (!cl.subsequenceId) throw new CampaignError(409, "not_in_subsequence");
     const r = await tx.campaignLead.updateMany({
-      where: { id, subsequenceId: { not: null }, state: { in: [...OPEN] } },
+      where: { id, subsequenceId: { not: null }, state: { in: [...OPEN_STATES] } },
       data: {
         subsequenceId: null,
         state: "STOPPED",

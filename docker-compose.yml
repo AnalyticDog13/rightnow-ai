@@ -50,7 +50,7 @@ services:
   worker:
     <<: *app
     command: ["worker"]
-    stop_grace_period: 40s # pg-boss graceful stop can take up to 30 s
+    stop_grace_period: 100s # above the worker's graceful stop bound (STOP_TIMEOUT_MS, 90 s: one in-flight send)
     depends_on:
       migrate: { condition: service_completed_successfully }
     healthcheck:

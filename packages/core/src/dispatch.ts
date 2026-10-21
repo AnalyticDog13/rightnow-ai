@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Prisma, type AccountProvider, type PrismaClient } from "@rightnow/db/client";
 import { newMessageId } from "@rightnow/providers";
 import type { Clock } from "./clock";
+import { stopLead } from "./campaigns/hooks";
 import { isSuppressed } from "./leads/suppression";
 import { priorSubject, renderForLead, renderProblem } from "./planner";
 import { effectiveAllowance, type UsageRef } from "./quota";
@@ -37,7 +38,7 @@ const BUSY_PUSH_MS = 60_000;
 const ALL: AccountProvider[] = ["GMAIL", "MICROSOFT", "SMTP"];
 
 /** Deadlock (40P01) or serialization failure (40001), however Prisma or the pg adapter surfaces it. */
-export const isRetryable = (e: unknown) => {
+const isRetryable = (e: unknown) => {
   const x = e as { code?: string; message?: string; meta?: { code?: string } } | null;
   return x?.code === "P2034" || /40P01|40001/.test(`${x?.code} ${x?.meta?.code} ${x?.message}`);
 };
@@ -202,10 +203,7 @@ async function claimOne(
         (await isSuppressed(tx, m.workspaceId, lead.email))
       ) {
         await set({ status: "CANCELLED", error: "suppressed" });
-        await tx.campaignLead.updateMany({
-          where: { id: cl.id, state: { in: ["QUEUED", "ACTIVE"] } },
-          data: { state: "STOPPED", stopReason: "SUPPRESSED", nextDueAt: null, completedAt: now },
-        });
+        await stopLead(tx, cl.id, "SUPPRESSED", now);
         return "skip";
       }
       // The SELECT's campaign/account/workspace checks came from its snapshot; a pause, stale sync or unassignment that

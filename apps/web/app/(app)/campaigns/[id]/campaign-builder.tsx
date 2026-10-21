@@ -101,7 +101,7 @@ export function CampaignBuilder(p: Props) {
         {canEdit && (
           <div className="flex gap-2">
             {p.status === "Draft" && <Button onClick={() => void go("launch")}>Launch</Button>}
-            {["Paused", "Bounce Protect", "Accounts Unhealthy"].includes(p.status) && (
+            {["Paused", "Bounce Protect", "Accounts Unhealthy", "Completed"].includes(p.status) && (
               <Button onClick={() => void go("resume")}>Resume</Button>
             )}
             {p.status === "Active" && (

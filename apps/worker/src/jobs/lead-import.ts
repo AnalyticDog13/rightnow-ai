@@ -36,6 +36,7 @@ export async function leadImport(prisma: PrismaClient, clock: Clock) {
 export const leadImportJob: JobDef = {
   name: "lead-import",
   cron: "* * * * *",
-  options: { policy: "stately", retryLimit: 0, expireInSeconds: 3 * 3600 },
+  // heartbeat (gate M-9): a killed worker's import job is failed within ~40 s instead of blocking imports for 3 h
+  options: { policy: "stately", retryLimit: 0, expireInSeconds: 3 * 3600, heartbeatSeconds: 10 },
   handler: (_jobs, { prisma, clock }) => leadImport(prisma, clock),
 };

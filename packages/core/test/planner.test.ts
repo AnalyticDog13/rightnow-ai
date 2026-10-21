@@ -227,6 +227,17 @@ describe("planDue: routing", () => {
   });
 });
 
+describe("gate M-7", () => {
+  test("a SCHEDULED row an archive skipped (claim held it) is cancelled by the next planner tick", async () => {
+    const s = await seedCampaign(P(), { at: T, rows: 1, accounts: [{}] });
+    const live = await seedCampaign(P(), { at: T, rows: 1, accounts: [{}] });
+    await P().campaign.update({ where: { id: s.campaign.id }, data: { status: "ARCHIVED" } });
+    await plan();
+    expect((await rowsOf(s.campaign.id)).map((r) => r.status)).toEqual(["CANCELLED"]);
+    expect((await rowsOf(live.campaign.id)).map((r) => r.status)).toEqual(["SCHEDULED"]);
+  });
+});
+
 describe("planDue: no duplicates", () => {
   test("revive-not-duplicate re-plan", async () => {
     const s = await seedCampaign(P(), {
@@ -347,6 +358,8 @@ describe("planDue: no duplicates", () => {
         status,
         uncertainAt,
         renderedSubject: "old",
+        attempts: 3,
+        claimErrors: 4,
       });
       const got = await tx((t) =>
         upsertScheduled(t, {
@@ -365,7 +378,13 @@ describe("planDue: no duplicates", () => {
       const now = await P().scheduledMessage.findUniqueOrThrow({ where: { id: old.id } });
       if (revives) {
         expect(got).toEqual({ id: old.id, revived: true });
-        expect(now).toMatchObject({ status: "SCHEDULED", renderedSubject: "new" });
+        // gate M-8: a revived row starts with fresh retry and claim-error budgets
+        expect(now).toMatchObject({
+          status: "SCHEDULED",
+          renderedSubject: "new",
+          attempts: 0,
+          claimErrors: 0,
+        });
       } else {
         expect(got).toBeNull();
         expect([now.status, now.renderedSubject, now.uncertainAt]).toEqual([

@@ -25,7 +25,8 @@ export type ReasonCode =
   | "claim_errors"
   | "held_messages"
   | "leads_suppressed"
-  | "leads_paused";
+  | "leads_paused"
+  | "sticky_account_unassigned";
 export type Reason = {
   code: ReasonCode;
   message: string;
@@ -42,6 +43,7 @@ const INFO = new Set<ReasonCode>([
   "held_messages",
   "leads_suppressed",
   "leads_paused",
+  "sticky_account_unassigned",
 ]);
 const STATUS: Record<string, [ReasonCode, string] | undefined> = {
   DRAFT: ["draft", "This campaign is a draft. Launch it to start sending."],
@@ -54,7 +56,7 @@ const STATUS: Record<string, [ReasonCode, string] | undefined> = {
     "accounts_unavailable",
     "Sending is stopped because the campaign's accounts are unhealthy.",
   ],
-  COMPLETED: ["completed", "This campaign has finished."],
+  COMPLETED: ["completed", "This campaign has finished. Resume it to send to leads added since."],
   ARCHIVED: ["completed", "This campaign is archived."],
 };
 const fmt = (tz: string) => (d: Date) =>
@@ -230,6 +232,24 @@ export async function whyNotSending(
   if (suppressed)
     add("leads_suppressed", `${suppressed} lead(s) were stopped because they are suppressed.`);
   if (pausedLeads) add("leads_paused", `${pausedLeads} lead(s) are paused.`);
+  // D23 / gate I-3: follow-ups only go out from the lead's first sender; housekeeping paused these leads
+  const sticky = await db.campaignLead.groupBy({
+    by: ["accountId"],
+    where: {
+      campaignId,
+      state: "PAUSED",
+      stopReason: "SEND_FAILED",
+      accountId: { notIn: assigned.filter((a) => !a.deletedAt).map((a) => a.id) },
+    },
+    _count: true,
+  });
+  const orphans = sticky.flatMap((g) => (g.accountId ? [{ id: g.accountId, n: g._count }] : []));
+  if (orphans.length)
+    add(
+      "sticky_account_unassigned",
+      `${orphans.reduce((t, g) => t + g.n, 0)} lead(s) are paused because the mailbox that sent their first email was removed from this campaign or deleted. Assign or reconnect it, then resume those leads.`,
+      { accountIds: ids(orphans) },
+    );
 
   const ALWAYS = new Set<ReasonCode>(["not_started", "outside_window", "no_physical_address"]);
   const out = reasons.map((r) => ({

@@ -11,6 +11,7 @@ import {
   type SendResult,
 } from "@rightnow/providers";
 import { recordProviderError } from "./accounts/health";
+import { stopLead } from "./campaigns/hooks";
 import type { Clock } from "./clock";
 import { claimDue, withTxRetry, type ClaimOpts, type Claimed } from "./dispatch";
 import { isSuppressed, suppress } from "./leads/suppression";
@@ -18,6 +19,7 @@ import { advanceLead } from "./planner";
 import { commitUsage, creditSent, releaseUsage, type UsageRef } from "./quota";
 import { isInWindow, nextWindowStart, type Window } from "./schedule";
 import { listUnsubscribeHeaders, type RenderEnv } from "./unsubscribe";
+import { OPEN_STATES } from "./campaigns/lead-status";
 
 type Tx = Prisma.TransactionClient;
 
@@ -69,7 +71,6 @@ export const refOf = (m: {
 
 const lockLead = (tx: Tx, campaignLeadId: string) =>
   tx.$queryRaw`SELECT 1 FROM "CampaignLead" WHERE id = ${campaignLeadId} FOR NO KEY UPDATE`;
-const OPEN = ["QUEUED", "ACTIVE", "PAUSED"] as const;
 const pauseLead = (tx: Tx, id: string) =>
   tx.campaignLead.updateMany({
     where: { id, state: { in: ["QUEUED", "ACTIVE"] } },
@@ -109,17 +110,18 @@ async function settle(
   );
 }
 
-/** One claimed row: stale check, pre-call re-check, send outside any transaction, then record the result. */
+/** One claimed row: pre-call re-check, stale check, send outside any transaction, then record the result. */
 export async function sendClaimed(
   db: PrismaClient,
   clock: Clock,
   deps: SenderDeps,
   c: Claimed,
 ): Promise<SendOutcome> {
-  if (clock.now().getTime() - c.claimedAt.getTime() > STALE_CLAIM_MS)
-    return (await settle(db, c, { status: "SCHEDULED" }, { release: true })) ? "STALE" : "LOST";
   const pre = await precheck(db, clock, deps, c);
   if (typeof pre === "string") return pre;
+  // after the pre-call check (gate M-2): a sleep during it must not send on hours-old window/suppression reads
+  if (clock.now().getTime() - c.claimedAt.getTime() > STALE_CLAIM_MS)
+    return (await settle(db, c, { status: "SCHEDULED" }, { release: true })) ? "STALE" : "LOST";
   let res: SendResult;
   try {
     let provider: MailProvider;
@@ -166,12 +168,7 @@ async function precheck(
     );
 
   if (lead.deletedAt || (await isSuppressed(db, m.workspaceId, lead.email)))
-    return cancel("suppressed", (tx) =>
-      tx.campaignLead.updateMany({
-        where: { id: cl.id, state: { in: ["QUEUED", "ACTIVE"] } },
-        data: { state: "STOPPED", stopReason: "SUPPRESSED", nextDueAt: null, completedAt: now },
-      }),
-    );
+    return cancel("suppressed", (tx) => stopLead(tx, cl.id, "SUPPRESSED", now));
   // will never resume (I1): the planner re-plans whatever is still the lead's current step
   if (
     cl.state === "STOPPED" ||
@@ -336,7 +333,7 @@ async function failed(
             lead: async (tx) => {
               // BOUNCED first: suppress() stamps SUPPRESSED on whatever is still open
               await tx.campaignLead.updateMany({
-                where: { id: c.campaignLeadId, state: { in: [...OPEN] } },
+                where: { id: c.campaignLeadId, state: { in: [...OPEN_STATES] } },
                 data: {
                   state: "STOPPED",
                   stopReason: "BOUNCED",
@@ -487,17 +484,19 @@ async function recordSent(
 }
 
 /**
- * One dispatcher tick: claim up to `concurrency` rows, send them in parallel, repeat until nothing is claimable or
- * `maxMs` (wall time) has passed. A throw from one send is logged and leaves that row SENDING for recovery (I5).
+ * One dispatcher tick: claim up to `concurrency` rows, send them in parallel, repeat until nothing is claimable,
+ * `maxMs` (wall time) has passed or `signal` fired (worker stopping: the batch in flight finishes, nothing new is
+ * claimed). A throw from one send is logged and leaves that row SENDING for recovery (I5).
  */
 export async function dispatchTick(
   db: PrismaClient,
   clock: Clock,
-  deps: SenderDeps & Omit<ClaimOpts, "limit"> & { maxMs?: number; concurrency?: number },
+  deps: SenderDeps &
+    Omit<ClaimOpts, "limit"> & { maxMs?: number; concurrency?: number; signal?: AbortSignal },
 ): Promise<Record<SendOutcome, number>> {
   const out = Object.fromEntries(OUTCOMES.map((k) => [k, 0])) as Record<SendOutcome, number>;
   const start = Date.now();
-  while (Date.now() - start < (deps.maxMs ?? 50_000)) {
+  while (!deps.signal?.aborted && Date.now() - start < (deps.maxMs ?? 50_000)) {
     const batch = await claimDue(db, clock, { ...deps, limit: deps.concurrency ?? 4 });
     if (!batch.length) break;
     await Promise.all(

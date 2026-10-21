@@ -22,7 +22,8 @@ const MISSING_ADDRESS = "[Your physical address: set it in Settings]";
 /**
  * What the sender would send for this lead (same `renderForLead`), as data. Template and footer problems come back as
  * `issues` and never throw; an empty address renders a placeholder. 404 for a foreign campaign / step / variant / lead.
- * `testSafe` swaps the lead's real unsubscribe link for a dead one: a test recipient must not be able to opt the lead out.
+ * The lead's real unsubscribe link is always swapped for a dead one (gate M-5): neither a preview reader (VIEWER, API
+ * key) nor a test recipient may opt the lead out.
  */
 export async function previewMessage(
   db: PrismaClient,
@@ -33,7 +34,6 @@ export async function previewMessage(
     variantId: string;
     leadId: string;
     accountId?: string | null;
-    testSafe?: boolean;
   },
   env: RenderEnv,
 ): Promise<{
@@ -97,18 +97,15 @@ export async function previewMessage(
       // a blank follow-up subject replies in the lead's thread, exactly as the planner does
       replyTo: variant.subject.trim() ? null : await priorSubject(db, enrollment?.id ?? ""),
     });
-    if (p.testSafe) {
-      const url = unsubscribeUrl(env, { w: ws, l: lead.id, c: campaign.id }, account.email);
-      const dead = (s: string) => s.replaceAll(url, "(unsubscribe disabled in test emails)");
-      return {
-        subject: r.subject,
-        html: r.html && dead(r.html),
-        text: dead(r.text),
-        issues,
-        accountId: account.id,
-      };
-    }
-    return { subject: r.subject, html: r.html, text: r.text, issues, accountId: account.id };
+    const url = unsubscribeUrl(env, { w: ws, l: lead.id, c: campaign.id }, account.email);
+    const dead = (s: string) => s.replaceAll(url, "(unsubscribe disabled in test emails)");
+    return {
+      subject: r.subject,
+      html: r.html && dead(r.html),
+      text: dead(r.text),
+      issues,
+      accountId: account.id,
+    };
   } catch (e) {
     // Template errors are already in `issues` (validateTemplate); anything else is reported once.
     if (!issues.some((i) => i.field))

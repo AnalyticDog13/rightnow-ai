@@ -16,9 +16,10 @@ export async function sendRecovery(
   clock: Clock,
   env: Pick<Env, "SEND_LEASE_SEC"> = getEnv(),
   providerFor: SenderDeps["providerFor"] = (a) => createProvider(a, { prisma, clock }),
+  signal?: AbortSignal,
 ) {
   const expired = await recoverExpired(prisma, clock, env.SEND_LEASE_SEC);
-  return { expired, ...(await resolveUncertain(prisma, clock, { providerFor })) };
+  return { expired, ...(await resolveUncertain(prisma, clock, { providerFor, signal })) };
 }
 
 export const sendRecoveryJob: JobDef = {
@@ -27,7 +28,7 @@ export const sendRecoveryJob: JobDef = {
   boot: true,
   // heartbeat: a killed worker's active job is failed within ~40 s, so the stately queue is not blocked for 15 min
   options: { policy: "stately", retryLimit: 0, heartbeatSeconds: 10 },
-  handler: async (_jobs, { prisma, clock }) => {
-    await sendRecovery(prisma, clock);
+  handler: async (_jobs, { prisma, clock, signal }) => {
+    await sendRecovery(prisma, clock, undefined, undefined, signal);
   },
 };

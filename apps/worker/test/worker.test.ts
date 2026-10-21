@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { createTestDb } from "@rightnow/db/test-db";
-import { startWorker, type JobDef } from "../src/boss";
+import { SEND_TIMEOUT_MS } from "@rightnow/core";
+import { STOP_TIMEOUT_MS, startWorker, type JobDef } from "../src/boss";
 import { startHealthServer } from "../src/health";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
@@ -42,6 +43,29 @@ test("runs a job, serves /healthz, and stamps stoppedAt on stop", async () => {
   const after = await db.prisma.workerBoot.findUniqueOrThrow({ where: { id: w.bootId } });
   expect(after.stoppedAt).not.toBeNull();
   await expect(fetch(`http://127.0.0.1:${w.healthPort}/healthz`)).rejects.toThrow();
+});
+
+test("gate I-1: stop signals running handlers first and waits for them before closing", async () => {
+  const events: string[] = [];
+  let started = false;
+  const long: JobDef = {
+    name: "long",
+    handler: async (_jobs, { prisma, signal }) => {
+      started = true;
+      await new Promise((r) => signal.addEventListener("abort", r, { once: true }));
+      events.push("aborted");
+      await new Promise((r) => setTimeout(r, 300)); // the in-flight send finishing
+      await prisma.$queryRaw`select 1`;
+      events.push("handler-done");
+    },
+  };
+  const w = await startWorker({ databaseUrl: db.url, jobs: [long], healthPort: 0 });
+  await w.boss.send("long", {});
+  await expect.poll(() => started, { timeout: 5000 }).toBe(true);
+  await w.stop();
+  events.push("stopped");
+  expect(events).toEqual(["aborted", "handler-done", "stopped"]);
+  expect(STOP_TIMEOUT_MS).toBeGreaterThan(SEND_TIMEOUT_MS);
 });
 
 test("heartbeat updates lastHeartbeatAt using the injected clock", async () => {

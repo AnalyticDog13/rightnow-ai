@@ -25,11 +25,16 @@ beforeAll(async () => {
 afterAll(() => db.drop());
 
 describe("lead-import job", () => {
-  test("is registered every minute with a stately queue", () => {
+  test("is registered every minute with a stately queue and a heartbeat (gate M-9)", () => {
     expect(leadImportJob).toMatchObject({
       name: "lead-import",
       cron: "* * * * *",
-      options: { policy: "stately", retryLimit: 0 },
+      options: {
+        policy: "stately",
+        retryLimit: 0,
+        heartbeatSeconds: 10,
+        expireInSeconds: 3 * 3600,
+      },
     });
   });
 

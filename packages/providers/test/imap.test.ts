@@ -217,6 +217,37 @@ describe("send and Sent copy", () => {
     expect((await p.findSent("<s1@rn.test>"))?.folder).toBe("SENT");
   });
 
+  it("gate M-3: the lead's RCPT refused while a Cc is accepted is a recipient-scope failure, not a send", async () => {
+    const s = await start({
+      smtp: {
+        onRcptTo(a, _s, cb) {
+          if (a.address !== "to@rn.test") return cb();
+          cb(Object.assign(new Error("5.1.1 User unknown"), { responseCode: 550 }));
+        },
+      },
+    });
+    const e = await s
+      .provider()
+      .send({ ...mime, cc: [{ email: "cc@rn.test" }] })
+      .catch((x: unknown) => x);
+    expect(e).toBeInstanceOf(PermanentSendError);
+    expect(e).toMatchObject({ scope: "recipient" });
+    // a refused Cc alone does not fail the lead's send
+    const ok = await start({
+      smtp: {
+        onRcptTo(a, _s, cb) {
+          if (a.address !== "cc@rn.test") return cb();
+          cb(Object.assign(new Error("5.1.1 User unknown"), { responseCode: 550 }));
+        },
+      },
+    });
+    await expect(
+      ok.provider().send({ ...mime, cc: [{ email: "cc@rn.test" }] }),
+    ).resolves.toMatchObject({
+      rfcMessageId: "<s1@rn.test>",
+    });
+  });
+
   it("an APPEND failure after SMTP success is logged and send still resolves", async () => {
     const ref: { s?: Servers } = {};
     const s = (ref.s = await start({ onSmtpData: () => ref.s?.imap.close() }));

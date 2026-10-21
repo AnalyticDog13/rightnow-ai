@@ -9,7 +9,7 @@ type Reason = { code: string; message: string; blocking: boolean };
 const SENTENCE: Record<string, string> = {
   draft: "This campaign is a draft. Launch it to start sending.",
   paused: "This campaign is paused.",
-  completed: "This campaign has finished.",
+  completed: "This campaign has finished. Resume it to send to leads added since.",
   not_started: "Waiting for the start date.",
   ended: "The end date has passed.",
   outside_window: "Outside the sending window.",

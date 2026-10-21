@@ -27,8 +27,10 @@ export async function campaignDispatch(
   bootId: string,
   env: DispatchEnv = getEnv(),
   providerFor: SenderDeps["providerFor"] = (a) => createProvider(a, { prisma, clock }),
+  signal?: AbortSignal,
 ) {
   return dispatchTick(prisma, clock, {
+    signal,
     bootId,
     providerFor,
     env: { appUrl: env.APP_URL, unsubscribeKeys: unsubscribeKeys(env) },
@@ -43,7 +45,7 @@ export const campaignDispatchJob: JobDef = {
   boot: true,
   // heartbeat: a killed worker's active job is failed within ~40 s, so the stately queue is not blocked for 15 min
   options: { policy: "stately", retryLimit: 0, heartbeatSeconds: 10 },
-  handler: async (_jobs, { prisma, clock, bootId }) => {
-    await campaignDispatch(prisma, clock, bootId);
+  handler: async (_jobs, { prisma, clock, bootId, signal }) => {
+    await campaignDispatch(prisma, clock, bootId, undefined, undefined, signal);
   },
 };

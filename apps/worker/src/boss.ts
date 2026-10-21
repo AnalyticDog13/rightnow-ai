@@ -1,5 +1,5 @@
 import { hostname } from "node:os";
-import { systemClock, type Clock } from "@rightnow/core";
+import { SEND_TIMEOUT_MS, systemClock, type Clock } from "@rightnow/core";
 import type { PrismaClient } from "@rightnow/db/client";
 import { createPrisma } from "@rightnow/db/create";
 import { PgBoss, type Job, type Queue } from "pg-boss";
@@ -16,7 +16,14 @@ export type JobDef = {
   handler: (jobs: Job[], deps: JobDeps) => Promise<void>;
 };
 
-export type JobDeps = { prisma: PrismaClient; clock: Clock; bootId: string };
+/** `signal` fires when the worker starts stopping: long jobs stop taking new work and finish what is in flight. */
+export type JobDeps = { prisma: PrismaClient; clock: Clock; bootId: string; signal: AbortSignal };
+
+/**
+ * How long a graceful stop waits for running handlers before the DB is closed (gate I-1): one in-flight send (60 s
+ * provider bound) plus its pre-check and result transactions. docker-compose's worker stop_grace_period is above it.
+ */
+export const STOP_TIMEOUT_MS = SEND_TIMEOUT_MS + 30_000;
 
 export async function startWorker(opts: {
   databaseUrl: string;
@@ -42,6 +49,7 @@ export async function startWorker(opts: {
   let bootId: string | undefined;
   let health: Awaited<ReturnType<typeof startHealthServer>> | undefined;
   let stopHeartbeat: (() => Promise<void>) | undefined;
+  const stopping = new AbortController();
 
   // Idempotent; releases whatever was acquired, always stamps stoppedAt, throws the first error.
   let tearing: Promise<void> | undefined;
@@ -56,8 +64,9 @@ export async function startWorker(opts: {
         }
       };
       started = false;
+      stopping.abort(); // first: dispatch and recovery stop claiming before pg-boss waits for them
       await step(stopHeartbeat);
-      await step(() => boss.stop({ graceful: true }));
+      await step(() => boss.stop({ graceful: true, timeout: STOP_TIMEOUT_MS }));
       await step(health?.close);
       if (bootId) {
         await step(() =>
@@ -75,7 +84,9 @@ export async function startWorker(opts: {
 
     for (const j of opts.jobs ?? defaultJobs) {
       await boss.createQueue(j.name, j.options);
-      await boss.work<object>(j.name, (js) => j.handler(js, { prisma, clock, bootId: bootId! }));
+      await boss.work<object>(j.name, (js) =>
+        j.handler(js, { prisma, clock, bootId: bootId!, signal: stopping.signal }),
+      );
       if (j.cron) await boss.schedule(j.name, j.cron, {});
     }
     for (const j of opts.jobs ?? defaultJobs) if (j.boot) await boss.send(j.name, {});

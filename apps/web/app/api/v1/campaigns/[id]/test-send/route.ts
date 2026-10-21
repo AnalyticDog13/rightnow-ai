@@ -1,5 +1,6 @@
 import {
   AccountError,
+  isSuppressed,
   previewInput,
   previewMessage,
   sendTestEmail,
@@ -26,10 +27,13 @@ export const POST = route(
       const r = await previewMessage(
         prisma,
         c.workspaceId,
-        { ...ref, campaignId: c.params.id!, testSafe: true },
+        { ...ref, campaignId: c.params.id! },
         renderEnv(),
       );
       if (r.issues.length) throw new AccountError(422, "preview_has_issues", { issues: r.issues });
+      // gate M-4: the claim's suppression check (address or domain), so campaign content never reaches an opt-out
+      if (await isSuppressed(prisma, c.workspaceId, to))
+        throw new AccountError(409, "recipient_suppressed");
       return sendTestEmail(
         prisma,
         systemClock,

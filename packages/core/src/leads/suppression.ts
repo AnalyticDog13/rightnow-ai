@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { editHooks } from "../campaigns/hooks";
+import { OPEN_STATES_SQL } from "../campaigns/lead-status";
 import type { Prisma, SuppressionKind, SuppressionReason } from "@rightnow/db/client";
 
 type Tx = Prisma.TransactionClient;
@@ -33,7 +34,7 @@ export async function suppress(
       UPDATE "CampaignLead" cl SET "state" = 'STOPPED', "stopReason" = 'SUPPRESSED', "nextDueAt" = NULL, "completedAt" = now()
       FROM "Lead" l
       WHERE l."id" = cl."leadId" AND cl."workspaceId" = ${ws}
-        AND cl."state" IN ('QUEUED', 'ACTIVE', 'PAUSED')
+        AND cl."state" = ANY(${OPEN_STATES_SQL})
         AND (l."email" = ANY(${emails}::text[]) OR substring(l."email" from '@([^@]*)$') = ANY(${domains}::text[]))
       RETURNING cl."id"`;
     if (hit.length)

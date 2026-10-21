@@ -30,7 +30,8 @@ const inTx = <T>(db: PrismaClient, f: (tx: Tx) => Promise<T>) =>
 /**
  * A human decision on a HELD row (D5): back to SCHEDULED, due now, with the same Message-ID (a late copy then settles
  * as a late accept). It may send a duplicate, so `confirm` is required (400). 409 unless the row is HELD, its step is the
- * lead's current step (C2) and the lead is ACTIVE (M15).
+ * lead's current step (C2) and the lead is ACTIVE (M15). uncertainAt is cleared (D25): the duplicate risk is accepted
+ * here, so a later plain cancel (dead variant, edit, pause) lets the planner re-plan the step instead of stranding it.
  */
 export async function releaseHeld(
   db: PrismaClient,
@@ -52,6 +53,7 @@ export async function releaseHeld(
         status: "SCHEDULED",
         dueAt: clock.now(),
         error: null,
+        uncertainAt: null,
         searchCount: 0,
         lastSearchAt: null,
       },

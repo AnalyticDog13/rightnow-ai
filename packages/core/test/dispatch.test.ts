@@ -870,3 +870,14 @@ describe("quota helpers", () => {
     expect(n).toBe(1);
   });
 });
+
+describe("schema (audit A6)", () => {
+  test("the claim's raw-SQL partial index exists (Prisma does not know about it)", async () => {
+    const rows = await P().$queryRaw<{ indexdef: string }[]>`
+      SELECT indexdef FROM pg_indexes WHERE indexname = 'ScheduledMessage_scheduled_due_idx'`;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.indexdef).toMatch(
+      /\("dueAt", id\) WHERE \(status = 'SCHEDULED'::"MessageStatus"\)/,
+    );
+  });
+});

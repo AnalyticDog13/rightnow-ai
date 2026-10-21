@@ -165,5 +165,3 @@ export async function importCampaign(prisma: Db, ws: string, actorId: Actor, jso
     timeout: 30_000,
   });
 }
-
-export const importSchema = portableSchema;

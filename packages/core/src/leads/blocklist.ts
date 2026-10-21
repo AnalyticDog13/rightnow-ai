@@ -1,17 +1,18 @@
 import type { Prisma, PrismaClient, SuppressionReason } from "@rightnow/db/client";
 import { z } from "zod";
 import { audit } from "../audit";
+import { withTxRetry } from "../dispatch";
 import { parseCsv } from "./csv";
 import { csvCell } from "./export";
 import { MAX_IMPORT_ROWS } from "./import";
 import { LeadError } from "./service";
-import { suppress, suppressedEmails } from "./suppression";
+import { suppress } from "./suppression";
 import { parseEmail } from "./validate";
 
 type Db = PrismaClient;
 type Actor = string | null | undefined;
 
-export const MAX_BLOCKLIST_VALUES = 1000;
+const MAX_BLOCKLIST_VALUES = 1000;
 export const MAX_BLOCKLIST_CSV_BYTES = 5 * 1024 * 1024;
 /** D20: erasure records and complaints can never be removed; the other system reasons only one at a time. Bulk paths touch MANUAL entries only. */
 const NEVER: SuppressionReason[] = ["GDPR_ERASURE", "COMPLAINT"];
@@ -32,7 +33,10 @@ async function addValues(prisma: Db, ws: string, values: string[]) {
   const valid = values.map(classify).filter((x) => x !== null);
   const unique = [...new Map(valid.map((e) => [`${e.kind}:${e.value}`, e])).values()];
   const added = unique.length
-    ? await prisma.$transaction((tx) => suppress(tx, ws, unique, "MANUAL", "blocklist"))
+    ? // gate M-1: Suppression before CampaignLead (a hard-bounce settle locks the reverse): retried
+      await withTxRetry(() =>
+        prisma.$transaction((tx) => suppress(tx, ws, unique, "MANUAL", "blocklist")),
+      )
     : 0;
   return { added, duplicates: valid.length - added, invalid: values.length - valid.length };
 }
@@ -190,13 +194,4 @@ export async function importBlocklistCsv(prisma: Db, ws: string, actorId: Actor,
     csv: true,
   });
   return total;
-}
-
-/** Enrollment and send-time guard (P3-T06, P3-T09): throws 409 `suppressed` when any address or its domain is blocked. */
-export async function assertNotSuppressed(
-  db: Pick<Db, "suppression">,
-  ws: string,
-  emails: string[],
-) {
-  if ((await suppressedEmails(db, ws, emails)).size) throw new LeadError(409, "suppressed");
 }

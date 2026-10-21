@@ -3,7 +3,6 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { fixedClock } from "../src/clock";
 import {
   addBlocklist,
-  assertNotSuppressed,
   bulkDeleteBlocklist,
   clearBlocklist,
   exportBlocklistCsv,
@@ -169,10 +168,6 @@ describe("blocklist", () => {
       "fine@ok.test",
     ]);
     expect([...set].sort()).toEqual(["blocked@ok.test", "x@evil.test"]);
-    await expect(
-      assertNotSuppressed(db.prisma, ws, ["fine@ok.test", "x@evil.test"]),
-    ).rejects.toMatchObject({ status: 409, message: "suppressed" });
-    await assertNotSuppressed(db.prisma, ws, ["fine@ok.test"]);
     expect((await suppressedEmails(db.prisma, other, ["x@evil.test"])).size).toBe(0);
   });
 
