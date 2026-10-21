@@ -296,25 +296,26 @@
    "id": "P3-T05",
    "phase": 3,
    "title": "Campaign service/API: CRUD, duplicate, archive, delete, JSON export/import, evergreen, all options listed in data model, schedules, account assignment, launch validation (accounts, steps, schedule, physical address, DNS gate hook, unsubscribe reachability) + \"why not sending\" explainer",
-   "status": "in_progress",
+   "status": "done",
    "deps": [
     "P3-T04"
    ],
    "model": "sonnet",
-   "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-3.md; tests listed there pass"
+   "commit": "545006a..24e8f14",
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-3.md; tests listed there pass",
+   "review": "1 fix round (cc/bcc merged cap, usable-account launch checks, shared private-host classification, relaunch/resume validation); clean"
   },
   {
    "id": "P3-T06",
    "phase": 3,
    "title": "Sequences: steps (minute/hour/day delays), variants (≤26), subsequences with triggers and pre-delay; enrollment from lists/filters with cross-campaign conflict check",
-   "status": "todo",
+   "status": "in_progress",
    "deps": [
     "P3-T05"
    ],
    "model": "sonnet",
    "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-3.md; tests listed there pass; from P3-T02: import campaign dedupe (campaignId, skipIfInCampaign → exists_in_campaign, attach to campaign) replacing the 400 placeholder"
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-3.md; tests listed there pass; from P3-T02: import campaign dedupe (campaignId, skipIfInCampaign → exists_in_campaign, attach to campaign) replacing the 400 placeholder; from P3-T05: implement real contentIssues and wire into launch route"
   },
   {
    "id": "P3-T07",
@@ -351,7 +352,7 @@
    ],
    "model": "opus",
    "commit": null,
-   "acceptance": "parallel claim test (2 dispatchers × 2 accounts, no deadlock, no over-quota); midnight crossing; campaign/workspace caps; reservation rollback; first-of-day claim with allowance 0 and with units > allowance → not claimed; paused campaign / past endAt → not claimed; overdue row at 03:00 → not sent until window opens; freshness and sticky gates; suppression re-check.; from P3-T01: real-table GDPR in-flight test (SENDING/UNCERTAIN → 409; SENT/HELD/SCHEDULED do not block) replacing the T01 temp-table test"
+   "acceptance": "parallel claim test (2 dispatchers × 2 accounts, no deadlock, no over-quota); midnight crossing; campaign/workspace caps; reservation rollback; first-of-day claim with allowance 0 and with units > allowance → not claimed; paused campaign / past endAt → not claimed; overdue row at 03:00 → not sent until window opens; freshness and sticky gates; suppression re-check.; from P3-T01: real-table GDPR in-flight test (SENDING/UNCERTAIN → 409; SENT/HELD/SCHEDULED do not block) replacing the T01 temp-table test; from P3-T05: launch route reads ProviderVerification (D17); archive/delete cancel SCHEDULED+HELD rows, never SENDING/UNCERTAIN"
   },
   {
    "id": "P3-T10a",
@@ -531,7 +532,7 @@
    ],
    "model": "sonnet",
    "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-5.md; tests listed there pass"
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-5.md; tests listed there pass; from P3-T05: wire dnsGate into campaign launch route"
   },
   {
    "id": "P5-T02",

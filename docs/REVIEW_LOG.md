@@ -188,3 +188,6 @@ Root cause (likely): better-auth 5/min sign-in rate limit across specs. Fix: sha
 
 ## 2026-10-21 · P3-T04 template engine · task reviewer (sonnet) · 1 fix round → **Approved**
 Fallback-brace validation, renderSubject (single-line, no HTML) as the only subject path, independent subject/body seeds, template-injection via lead data impossible (values never re-parsed).
+
+## 2026-10-21 · P3-T05 campaign service/API · task reviewer (sonnet) · 1 fix round → **Approved**
+Merged cc/bcc cap, launch checks over usable accounts only, unsubscribe reachability via shared isPrivate, relaunch/resume re-validate. physicalAddress settings owned by P3-T08.

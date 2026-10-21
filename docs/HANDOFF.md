@@ -1,7 +1,7 @@
 # Handoff
 
 **Phase:** 3 — Campaign automation (branch `phase-3-campaigns`, from `main` after the Phase 2 merge)
-**Current task:** P3-T05 campaign service/API (P3-T04 done 28f4ad5; flaky-e2e chore done 6ff3fc0).
+**Current task:** P3-T06 sequences/subsequences/enrollment/duplicate/export (P3-T05 done 24e8f14).
 **Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 (approved). Done step plans: `docs/plans/phase-1.md`, `docs/plans/phase-2.md`.
 **Tests:** 522 vitest + 16 Playwright (prod build) green; CI `check`, `compose-smoke`, `imap-real` green.
 
