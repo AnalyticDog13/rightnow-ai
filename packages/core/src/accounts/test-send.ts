@@ -26,6 +26,8 @@ export async function sendTestEmail(
     accountId: string;
     to: string;
     confirmAuthorized: boolean;
+    /** A rendered campaign step to send instead of the fixed test text (campaign test-send). */
+    content?: { subject: string; html?: string | null; text: string };
   },
 ): Promise<{ rfcMessageId: string; providerMessageId?: string }> {
   if (!p.confirmAuthorized)
@@ -74,8 +76,12 @@ export async function sendTestEmail(
       from: { email: a.email, name: a.fromName },
       to: [{ email: to.data }],
       replyTo: a.replyTo ? { email: a.replyTo } : undefined,
-      subject: "RightNow test email",
-      text: a.signature ? `${body}\n\n${a.signature}` : body,
+      ...(p.content
+        ? { subject: p.content.subject, text: p.content.text, html: p.content.html ?? undefined }
+        : {
+            subject: "RightNow test email",
+            text: a.signature ? `${body}\n\n${a.signature}` : body,
+          }),
       messageId: rfcMessageId,
       headers: { "X-RightNow-Test": "1" },
     });

@@ -1,7 +1,11 @@
 import type { Lead, LeadLabel, Prisma, PrismaClient } from "@rightnow/db/client";
 import { z } from "zod";
 import { AccountError } from "../accounts/service";
-import { CAMPAIGN_LEAD_STATUSES, campaignLeadStatusWhere } from "../campaigns/lead-status";
+import {
+  CAMPAIGN_LEAD_STATUSES,
+  campaignLeadStatus,
+  campaignLeadStatusWhere,
+} from "../campaigns/lead-status";
 import { audit } from "../audit";
 import type { Clock } from "../clock";
 import { companyDomainOf } from "./domain";
@@ -301,7 +305,22 @@ export async function listLeads(prisma: Db, ws: string, query: LeadQuery) {
   const next = rows.length > take ? rows.pop()! : null;
   // `total` is a database count of the whole filter, taken on the first page only
   const total = q.cursor ? undefined : await prisma.lead.count({ where });
-  return { leads: rows.map(toApiLead), nextCursor: next?.id ?? null, total };
+  // with a campaignId each lead also carries its enrollment's display status (PS-LEAD-18)
+  const cls = q.campaignId
+    ? await prisma.campaignLead.findMany({
+        where: { campaignId: q.campaignId, workspaceId: ws, leadId: { in: rows.map((r) => r.id) } },
+        select: { leadId: true, state: true, stopReason: true },
+      })
+    : [];
+  const status = new Map(cls.map((c) => [c.leadId, campaignLeadStatus(c)]));
+  return {
+    leads: rows.map((l) => ({
+      ...toApiLead(l),
+      ...(q.campaignId && { campaignStatus: status.get(l.id) }),
+    })),
+    nextCursor: next?.id ?? null,
+    total,
+  };
 }
 
 export async function softDeleteLead(

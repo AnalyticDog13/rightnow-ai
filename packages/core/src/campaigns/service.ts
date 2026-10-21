@@ -1,6 +1,7 @@
 import { Prisma, type Campaign, type CampaignStatus, type PrismaClient } from "@rightnow/db/client";
 import { AccountError } from "../accounts/service";
 import { audit } from "../audit";
+import { dayKey } from "../accounts/daykey";
 import { cancelRows } from "./hooks";
 import { localMidnightUtc } from "../schedule";
 import { campaignCreateSchema, campaignPatchSchema, schedulesSchema } from "./schema";
@@ -221,3 +222,42 @@ export const displayCampaignStatus = (
   hasActiveSubsequence: boolean,
 ): CampaignDisplayStatus =>
   c.status === "COMPLETED" && hasActiveSubsequence ? "Running Subsequences" : LABEL[c.status];
+
+/** The campaign list rows: display status, enrolled / finished leads, and emails sent today (workspace-timezone day). */
+export async function campaignOverview(prisma: Db, ws: string, now: Date) {
+  const [campaigns, { timezone }] = await Promise.all([
+    listCampaigns(prisma, ws),
+    prisma.workspace.findUniqueOrThrow({ where: { id: ws }, select: { timezone: true } }),
+  ]);
+  const ids = campaigns.map((c) => c.id);
+  const [leads, sent, subs] = await Promise.all([
+    prisma.campaignLead.groupBy({
+      by: ["campaignId", "state"],
+      where: { campaignId: { in: ids } },
+      _count: true,
+    }),
+    prisma.campaignDailyUsage.findMany({
+      where: { campaignId: { in: ids }, day: new Date(`${dayKey(timezone, now)}T00:00:00Z`) },
+    }),
+    prisma.subsequence.findMany({
+      where: { campaignId: { in: ids }, active: true },
+      select: { campaignId: true },
+    }),
+  ]);
+  return campaigns.map((c) => {
+    const mine = leads.filter((l) => l.campaignId === c.id);
+    return {
+      id: c.id,
+      name: c.name,
+      status: displayCampaignStatus(
+        c,
+        subs.some((s) => s.campaignId === c.id),
+      ),
+      total: mine.reduce((n, l) => n + l._count, 0),
+      completed: mine
+        .filter((l) => l.state === "COMPLETED" || l.state === "STOPPED")
+        .reduce((n, l) => n + l._count, 0),
+      sentToday: sent.find((u) => u.campaignId === c.id)?.sent ?? 0,
+    };
+  });
+}
