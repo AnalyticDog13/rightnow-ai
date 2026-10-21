@@ -349,19 +349,20 @@
    "id": "P3-T09",
    "phase": 3,
    "title": "Quota + dispatcher claim exactly as specified above",
-   "status": "in_progress",
+   "status": "done",
    "deps": [
     "P3-T08"
    ],
    "model": "opus",
-   "commit": null,
-   "acceptance": "parallel claim test (2 dispatchers × 2 accounts, no deadlock, no over-quota); midnight crossing; campaign/workspace caps; reservation rollback; first-of-day claim with allowance 0 and with units > allowance → not claimed; paused campaign / past endAt → not claimed; overdue row at 03:00 → not sent until window opens; freshness and sticky gates; suppression re-check.; from P3-T01: real-table GDPR in-flight test (SENDING/UNCERTAIN → 409; SENT/HELD/SCHEDULED do not block) replacing the T01 temp-table test; from P3-T05: launch route reads ProviderVerification (D17); archive/delete cancel SCHEDULED+HELD rows, never SENDING/UNCERTAIN; from P3-T06: ScheduledMessage.variantId survives variant delete; implement editHooks per T06 contract; from P3-T06 review I1: claim re-checks under CampaignLead lock — cl.state ACTIVE, sm.stepId=cl.currentStepId, Lead.deletedAt IS NULL, step not soft-deleted, variant active; from P3-T08: shared withTxRetry helper; replace local retry copies (unsubscribe optOut, import batches)"
+   "commit": "7dd85d5..9459504",
+   "acceptance": "parallel claim test (2 dispatchers × 2 accounts, no deadlock, no over-quota); midnight crossing; campaign/workspace caps; reservation rollback; first-of-day claim with allowance 0 and with units > allowance → not claimed; paused campaign / past endAt → not claimed; overdue row at 03:00 → not sent until window opens; freshness and sticky gates; suppression re-check.; from P3-T01: real-table GDPR in-flight test (SENDING/UNCERTAIN → 409; SENT/HELD/SCHEDULED do not block) replacing the T01 temp-table test; from P3-T05: launch route reads ProviderVerification (D17); archive/delete cancel SCHEDULED+HELD rows, never SENDING/UNCERTAIN; from P3-T06: ScheduledMessage.variantId survives variant delete; implement editHooks per T06 contract; from P3-T06 review I1: claim re-checks under CampaignLead lock — cl.state ACTIVE, sm.stepId=cl.currentStepId, Lead.deletedAt IS NULL, step not soft-deleted, variant active; from P3-T08: shared withTxRetry helper; replace local retry copies (unsubscribe optOut, import batches)",
+   "review": "opus review (no double-send/over-quota/window/deadlock path); 1 fix round (claimed rows kept on error, D21 lock order, post-lock re-check, indexes, (clId,stepId) unique, cap concurrency tests, lock-wait busy); clean"
   },
   {
    "id": "P3-T10a",
    "phase": 3,
    "title": "Rotation (pickAccount), why-not-sending explainer, status route",
-   "status": "todo",
+   "status": "in_progress",
    "deps": [
     "P3-T09"
    ],

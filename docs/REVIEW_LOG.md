@@ -200,3 +200,6 @@ HMAC tokens (constant-time, no enumeration), RFC 8058 one-click POST (no cookies
 
 ## 2026-10-21 · P3-T06 sequences/enrollment/duplicate/export · task reviewer (sonnet) · 3 fix rounds → **Approved**
 Claim re-check contract for T09/T10b, active-campaign edit guards, merge/delete stop enrollments, conflict rule covers unhealthy states + launch re-check, merge move honors suppression/conflict, lock order 726004 before Lead rows.
+
+## 2026-10-21 · P3-T09 quota + dispatcher claim · task reviewer (opus, adversarial) · 1 fix round → **Approved**
+No double-send, over-quota, outside-window or unretried-deadlock path. Fixed: claimed rows kept on late error, lock order documented as D21 (SM→CL→usage→EA), post-lock eligibility re-check, claim indexes, DB unique (campaignLeadId,stepId), deterministic campaign/workspace cap tests, lock-wait treated as busy.
