@@ -206,3 +206,6 @@ No double-send, over-quota, outside-window or unretried-deadlock path. Fixed: cl
 
 ## 2026-10-21 · P3-T10a rotation/explainer/status · task reviewer (sonnet) · 1 fix round → **Approved**
 Shared accountOk + companyGateOk + remainingToday predicates across claim, pickAccount and explainer; constant-query rotation; blocking flag; pickAccount null = not now.
+
+## 2026-10-21 · P3-T10b planner · task reviewer (opus, adversarial) · 1 fix round → **Approved**
+C-1 batch starvation fixed (paging, per-constraint exclusion, 1 h durable back-off), single-pass edit re-render, deleteStep locks rows; D22 records the step-1 delete and removeFromSubsequence deviations.
