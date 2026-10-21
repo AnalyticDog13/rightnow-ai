@@ -194,3 +194,6 @@ Merged cc/bcc cap, launch checks over usable accounts only, unsubscribe reachabi
 
 ## 2026-10-21 · P3-T07 schedule math · task reviewer (sonnet, with probes) · 1 fix round → **Approved**
 DST spring-forward/fall-back, overnight windows, multi-timezone earliest, dayKey at midnight, empty schedules throw; windows wholly inside a DST gap skipped.
+
+## 2026-10-21 · P3-T08 unsubscribe/footer/physical address · task reviewer (sonnet, compliance lens) · 1 fix round → **Approved**
+HMAC tokens (constant-time, no enumeration), RFC 8058 one-click POST (no cookies, idempotent, enrollments UNSUBSCRIBED), GET never unsubscribes, footer always carries address, List-Unsubscribe(-Post) per mode, lock order + retry.

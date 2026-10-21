@@ -335,13 +335,14 @@
    "id": "P3-T08",
    "phase": 3,
    "title": "Unsubscribe early: signed tokens, `/u/[token]` page + RFC 8058 POST, mailto handling hook, suppression on unsubscribe, physical-address setting, footer injection",
-   "status": "in_progress",
+   "status": "done",
    "deps": [
     "P3-T07"
    ],
    "model": "sonnet",
-   "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-3.md; tests listed there pass"
+   "commit": "169511d..b9a91e8",
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-3.md; tests listed there pass",
+   "review": "compliance review; 1 fix round (optOut lock order + retry, footer requires address, header validation, body cap); clean"
   },
   {
    "id": "P3-T09",
@@ -353,7 +354,7 @@
    ],
    "model": "opus",
    "commit": null,
-   "acceptance": "parallel claim test (2 dispatchers × 2 accounts, no deadlock, no over-quota); midnight crossing; campaign/workspace caps; reservation rollback; first-of-day claim with allowance 0 and with units > allowance → not claimed; paused campaign / past endAt → not claimed; overdue row at 03:00 → not sent until window opens; freshness and sticky gates; suppression re-check.; from P3-T01: real-table GDPR in-flight test (SENDING/UNCERTAIN → 409; SENT/HELD/SCHEDULED do not block) replacing the T01 temp-table test; from P3-T05: launch route reads ProviderVerification (D17); archive/delete cancel SCHEDULED+HELD rows, never SENDING/UNCERTAIN; from P3-T06: ScheduledMessage.variantId survives variant delete; implement editHooks per T06 contract; from P3-T06 review I1: claim re-checks under CampaignLead lock — cl.state ACTIVE, sm.stepId=cl.currentStepId, Lead.deletedAt IS NULL, step not soft-deleted, variant active"
+   "acceptance": "parallel claim test (2 dispatchers × 2 accounts, no deadlock, no over-quota); midnight crossing; campaign/workspace caps; reservation rollback; first-of-day claim with allowance 0 and with units > allowance → not claimed; paused campaign / past endAt → not claimed; overdue row at 03:00 → not sent until window opens; freshness and sticky gates; suppression re-check.; from P3-T01: real-table GDPR in-flight test (SENDING/UNCERTAIN → 409; SENT/HELD/SCHEDULED do not block) replacing the T01 temp-table test; from P3-T05: launch route reads ProviderVerification (D17); archive/delete cancel SCHEDULED+HELD rows, never SENDING/UNCERTAIN; from P3-T06: ScheduledMessage.variantId survives variant delete; implement editHooks per T06 contract; from P3-T06 review I1: claim re-checks under CampaignLead lock — cl.state ACTIVE, sm.stepId=cl.currentStepId, Lead.deletedAt IS NULL, step not soft-deleted, variant active; from P3-T08: shared withTxRetry helper; replace local retry copies (unsubscribe optOut, import batches)"
   },
   {
    "id": "P3-T10a",
@@ -377,7 +378,7 @@
    ],
    "model": "opus",
    "commit": null,
-   "acceptance": "See docs/plans/phase-3.md P3-T10b; from P3-T04: subjects rendered ONLY via renderSubject() (header safety), test it; pass all campaign custom-field keys (null if absent) to render; from P3-T06: editHooks re-render stale rendered text"
+   "acceptance": "See docs/plans/phase-3.md P3-T10b; from P3-T04: subjects rendered ONLY via renderSubject() (header safety), test it; pass all campaign custom-field keys (null if absent) to render; from P3-T06: editHooks re-render stale rendered text; from P3-T06: account routing for QUEUED lead entering subsequence; subsequence re-entry vs idempotency key; from P3-T08: use withComplianceFooter + listUnsubscribeHeaders, import RenderEnv from unsubscribe.ts; from P3-T08: preview handles footer/header validation errors gracefully"
   },
   {
    "id": "P3-T11a",
@@ -389,7 +390,7 @@
    ],
    "model": "opus",
    "commit": null,
-   "acceptance": "See docs/plans/phase-3.md P3-T11a"
+   "acceptance": "See docs/plans/phase-3.md P3-T11a; from P3-T06: set BOUNCED CampaignLead state before suppress(); from P3-T08: use withComplianceFooter + listUnsubscribeHeaders, import RenderEnv from unsubscribe.ts"
   },
   {
    "id": "P3-T11b",
@@ -413,7 +414,7 @@
    ],
    "model": "sonnet",
    "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-3.md; tests listed there pass"
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-3.md; tests listed there pass; from P3-T08: preview handles footer/header validation errors gracefully"
   },
   {
    "id": "P3-T13",
