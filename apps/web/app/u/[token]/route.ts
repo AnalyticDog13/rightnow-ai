@@ -54,7 +54,10 @@ export const GET = route({ auth: "public" }, async (c) => {
 export const POST = route({ auth: "public" }, async (c) => {
   const p = verify(c.params.token);
   if (!p) return invalid();
-  const oneClick = (await c.req.text().catch(() => "")).includes("List-Unsubscribe=One-Click");
+  if (Number(c.req.headers.get("content-length") ?? 0) > 4096)
+    return html(413, "<p>Request too large.</p>");
+  const text = (await c.req.text().catch(() => "")).slice(0, 4096);
+  const oneClick = text.includes("List-Unsubscribe=One-Click");
   await unsubscribeLead(prisma, systemClock, p, oneClick ? "one_click" : "page");
   return html(200, "<p>You have been unsubscribed.</p>");
 });

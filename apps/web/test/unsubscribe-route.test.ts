@@ -95,6 +95,7 @@ describe("/u/[token]", () => {
     });
     const r = await page("POST", token, body);
     expect(r.status).toBe(200);
+    expect(r.headers.get("set-cookie")).toBeNull();
     expect(await r.text()).toContain("You have been unsubscribed.");
     expect((await sup()).map((s) => s.source)).toEqual(["one_click"]);
     expect((await page("POST", token, body)).status).toBe(200);
@@ -128,6 +129,20 @@ describe("/u/[token]", () => {
     const r = await page("POST", t, "List-Unsubscribe=One-Click");
     expect(r.status).toBe(200);
     expect(await r.text()).toContain("You have been unsubscribed.");
+    const hash = core.hashValue("gone@acme.test");
+    expect(await db.prisma.suppression.count({ where: { workspaceId, valueHash: hash } })).toBe(1);
+  });
+
+  it("an oversized POST body is refused", async () => {
+    const r = await u.POST(
+      new Request(`${ORIGIN}/u/${token}`, {
+        method: "POST",
+        headers: { "content-length": "100000" },
+        body: "x",
+      }),
+      p(token),
+    );
+    expect(r.status).toBe(413);
   });
 });
 
