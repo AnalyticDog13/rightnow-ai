@@ -476,12 +476,12 @@
    "id": "P4-T04",
    "phase": 4,
    "title": "Event store + open/click tracking (signed tokens, open-redirect protection, proxy/bot → isEstimated, custom tracking domain)",
-   "status": "todo",
+   "status": "done",
    "deps": [
     "P4-T01"
    ],
    "model": "sonnet",
-   "commit": null,
+   "commit": "fc1664f",
    "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-4.md; tests listed there pass"
   },
   {
