@@ -147,13 +147,37 @@ describe("import (Review Focus #4)", () => {
     expect(await job(importJobId)).toMatchObject({ status: "DONE", imported: 3 });
   });
 
-  test("campaign targets are rejected until campaigns exist", async () => {
+  test("campaign targets: validated, imported leads are enrolled, skipIfInCampaign skips members", async () => {
     const ws = await mkWs();
-    for (const options of [{ campaignId: "c1" }, { skipIfInCampaign: true }])
-      await expect(createImport(db.prisma, ws, null, { ...base, options })).rejects.toMatchObject({
-        status: 400,
-        message: "campaign_dedupe_not_available",
-      });
+    await expect(
+      createImport(db.prisma, ws, null, { ...base, options: { campaignId: "nope" } }),
+    ).rejects.toMatchObject({ status: 400, message: "unknown_campaign" });
+    await expect(
+      createImport(db.prisma, ws, null, { ...base, options: { skipIfInCampaign: true } }),
+    ).rejects.toMatchObject({ status: 400, message: "campaign_required" });
+    const camp = await db.prisma.campaign.create({ data: { workspaceId: ws, name: "C" } });
+    const ex = await db.prisma.lead.findFirstOrThrow({
+      where: { workspaceId: ws, email: "existing@x.test" },
+    });
+    await db.prisma.campaignLead.create({
+      data: { workspaceId: ws, campaignId: camp.id, leadId: ex.id },
+    });
+    const options = { campaignId: camp.id, skipIfInCampaign: true, skipIfInWorkspace: false };
+    const { importJobId } = await createImport(db.prisma, ws, null, { ...base, options });
+    await runImport(db.prisma, clock, { resolveMx: noMx }, importJobId);
+    const done = await job(importJobId);
+    expect(done).toMatchObject({ status: "DONE", imported: 3 });
+    expect(done.skipped).toMatchObject({ exists_in_campaign: 1 });
+    const rows = await db.prisma.campaignLead.findMany({
+      where: { campaignId: camp.id },
+      include: { lead: true },
+    });
+    expect(rows.map((c) => c.lead.email).sort()).toEqual([
+      "a@x.test",
+      "alice@x.test",
+      "e@y.test",
+      "existing@x.test",
+    ]);
   });
 
   test("list dedupe: skipIfInList skips members, otherwise they count as attached; resume keeps the counts", async () => {

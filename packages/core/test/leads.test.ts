@@ -304,12 +304,14 @@ describe("gdpr delete", () => {
     // Never skip silently: once T09 adds the real tables this must be rewritten with real rows.
     if (t) throw new Error("T09: replace this temp-table test with real ScheduledMessage rows");
     const run = (sql: string) => db.prisma.$executeRawUnsafe(sql);
-    await run(`CREATE TABLE "CampaignLead" (id text, "leadId" text)`);
     try {
       await run(`CREATE TABLE "ScheduledMessage" ("campaignLeadId" text, status text)`);
       const l = await mk({ email: "busy@acme.test" });
-      await run(`INSERT INTO "CampaignLead" VALUES ('cl1', '${l.id}')`);
-      await run(`INSERT INTO "ScheduledMessage" VALUES ('cl1', 'SENDING')`);
+      const camp = await db.prisma.campaign.create({ data: { workspaceId: ws, name: "busy" } });
+      const cl = await db.prisma.campaignLead.create({
+        data: { workspaceId: ws, campaignId: camp.id, leadId: l.id },
+      });
+      await run(`INSERT INTO "ScheduledMessage" VALUES ('${cl.id}', 'SENDING')`);
       await expect(gdprDeleteLead(db.prisma, clock, ws, l.id)).rejects.toMatchObject({
         status: 409,
         message: "send_in_progress",
@@ -317,7 +319,6 @@ describe("gdpr delete", () => {
       expect(await db.prisma.lead.count({ where: { id: l.id } })).toBe(1);
     } finally {
       await run(`DROP TABLE IF EXISTS "ScheduledMessage"`);
-      await run(`DROP TABLE IF EXISTS "CampaignLead"`);
     }
   });
 });

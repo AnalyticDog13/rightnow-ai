@@ -2,6 +2,7 @@ import dns from "node:dns";
 import type { Prisma, PrismaClient } from "@rightnow/db/client";
 import { z } from "zod";
 import { audit } from "../audit";
+import { enrollBatch, noSkips } from "../campaigns/enroll";
 import type { Clock } from "../clock";
 import { LEAD_FIELDS, autoMap, parseCsv, type Mapping } from "./csv";
 import { DISPOSABLE_DOMAINS } from "./disposable";
@@ -108,9 +109,16 @@ export async function createImport(
   if (!LAWFUL_BASES.includes(p.lawfulBasis)) throw new LeadError(400, "invalid_lawful_basis");
   if (p.data.length > MAX_IMPORT_BYTES) throw new LeadError(413, "file_too_large");
   const options = importOptions.parse(p.options);
-  // Campaign does not exist yet (P3-T05/T06 carry campaign dedupe): reject rather than ignore silently
-  if (options.campaignId || options.skipIfInCampaign)
-    throw new LeadError(400, "campaign_dedupe_not_available");
+  if (options.skipIfInCampaign && !options.campaignId)
+    throw new LeadError(400, "campaign_required");
+  if (options.campaignId) {
+    const c = await prisma.campaign.findFirst({
+      where: { id: options.campaignId, workspaceId: ws, deletedAt: null },
+      select: { status: true },
+    });
+    if (!c) throw new LeadError(400, "unknown_campaign");
+    if (c.status === "ARCHIVED") throw new LeadError(400, "campaign_archived");
+  }
   const mapping = mappingSchema.parse(p.mapping);
   const { headers, rows } = parseCsv(p.data);
   if (rows.length > MAX_IMPORT_ROWS) throw new LeadError(413, "too_many_rows");
@@ -239,6 +247,19 @@ async function insertBatch(prisma: Db, job: Job, opts: Opts, cands: Cand[]) {
             ).map((m) => [m.leadId, m.createdAt] as const),
           )
         : new Map<string, Date>();
+      const inCampaign = new Set(
+        opts.campaignId && opts.skipIfInCampaign && existing.size
+          ? (
+              await tx.campaignLead.findMany({
+                where: {
+                  campaignId: opts.campaignId,
+                  leadId: { in: [...existing.values()].map((l) => l.id) },
+                },
+                select: { leadId: true },
+              })
+            ).map((m) => m.leadId)
+          : [],
+      );
       const skip: Record<string, number> = {};
       const bump = (k: string) => void (skip[k] = (skip[k] ?? 0) + 1);
       const ours: string[] = []; // already imported by an earlier, interrupted run of this job
@@ -254,7 +275,9 @@ async function insertBatch(prisma: Db, job: Job, opts: Opts, cands: Cand[]) {
           const ex = existing.get(c.email);
           if (!ex) fresh.push(c);
           else if (ex.importJobId === job.id) ours.push(ex.id);
-          else if (opts.skipIfInWorkspace || !opts.listId) bump("exists_in_workspace");
+          else if (inCampaign.has(ex.id)) bump("exists_in_campaign");
+          else if (opts.skipIfInWorkspace || (!opts.listId && !opts.campaignId))
+            bump("exists_in_workspace");
           else if (!inList.has(ex.id)) attach.push(ex.id);
           // added by an earlier, interrupted run of this job (or skipIfInList is off): count it as attached again
           else if (!opts.skipIfInList || inList.get(ex.id)! >= job.createdAt) attach.push(ex.id);
@@ -284,6 +307,13 @@ async function insertBatch(prisma: Db, job: Job, opts: Opts, cands: Cand[]) {
           data: members.map((leadId) => ({ listId: opts.listId!, leadId })),
           skipDuplicates: true,
         });
+      // Imported leads join the campaign; enrollment applies the blocklist and the cross-campaign conflict check.
+      if (opts.campaignId && members.length) {
+        const sk = noSkips();
+        await enrollBatch(tx, ws, opts.campaignId, members, false, sk);
+        if (sk.in_other_active_campaign)
+          skip.in_other_active_campaign = sk.in_other_active_campaign;
+      }
       return { skip, imported: ours.length + newIds.length, attached: attach.length };
     },
     { timeout: 30_000 },
