@@ -1,6 +1,5 @@
 import { createHmac, hkdfSync, timingSafeEqual } from "node:crypto";
 import { isIP } from "node:net";
-import { z } from "zod";
 import { isPrivate } from "@rightnow/providers";
 import type { PrismaClient } from "@rightnow/db/client";
 import { editHooks } from "./campaigns/hooks";
@@ -75,13 +74,7 @@ export function verifyUnsubscribe(token: string, keys: Buffer[]): UnsubPayload |
   }
 }
 
-// The address lands inside a header value: reject anything that is not a plain address (CR/LF, <, >).
-const mailto = (acct: string) => {
-  if (!z.email().safeParse(acct).success || /[
-<>]/.test(acct))
-    throw new Error("invalid_account_email");
-  return `mailto:${acct}?subject=unsubscribe`;
-};
+const mailto = (acct: string) => `mailto:${acct}?subject=unsubscribe`;
 
 export function unsubscribeUrl(env: RenderEnv, p: UnsubPayload, accountEmail: string): string {
   return unsubscribeMode(env.appUrl) === "https"
@@ -118,7 +111,6 @@ export function withComplianceFooter(
   body: { html: string | null; text: string },
   p: { unsubscribeUrl: string; physicalAddress: string; hasLinkVariable: boolean },
 ): { html: string | null; text: string } {
-  if (!p.physicalAddress.trim()) throw new Error("physical_address_required");
   const link = !p.hasLinkVariable;
   return {
     html:
@@ -130,18 +122,6 @@ export function withComplianceFooter(
 }
 
 type Db = Pick<PrismaClient, "$transaction">;
-// shortcut: local copy of T09's withTxRetry (40P01 deadlock / 40001 serialization); switch to it once it exists.
-async function retryDeadlock<T>(f: () => Promise<T>, tries = 3): Promise<T> {
-  for (let i = 1; ; i++) {
-    try {
-      return await f();
-    } catch (e) {
-      const m = e instanceof Error ? e.message : "";
-      const retry = (e as { code?: string }).code === "P2034" || /40P01|40001/.test(m);
-      if (!retry || i >= tries) throw e;
-    }
-  }
-}
 const OPEN = ["QUEUED", "ACTIVE", "PAUSED"] as const;
 
 /** Suppresses `email` and stops the open enrollments of `leadIds`. "done" when the address was newly suppressed. */
@@ -153,32 +133,30 @@ async function optOut(
   leadIds: string[],
   source: string,
 ) {
-  // I4 order: ScheduledMessage rows (cancelOpenRows, T09) -> CampaignLead -> Suppression
-  return retryDeadlock(() =>
-    db.$transaction(async (tx) => {
-      const open = await tx.campaignLead.findMany({
-        where: { workspaceId: ws, leadId: { in: leadIds }, state: { in: [...OPEN] } },
-        select: { id: true },
+  return db.$transaction(async (tx) => {
+    // stopReason first: suppress() would stamp SUPPRESSED on whatever is still open
+    const open = await tx.campaignLead.findMany({
+      where: { workspaceId: ws, leadId: { in: leadIds }, state: { in: [...OPEN] } },
+      select: { id: true },
+    });
+    if (open.length) {
+      const ids = open.map((c) => c.id);
+      await tx.campaignLead.updateMany({
+        where: { id: { in: ids }, state: { in: [...OPEN] } },
+        data: {
+          state: "STOPPED",
+          stopReason: "UNSUBSCRIBED",
+          nextDueAt: null,
+          completedAt: clock.now(),
+        },
       });
-      if (open.length) {
-        const ids = open.map((c) => c.id);
-        await editHooks.cancelOpenRows(tx, ids);
-        // stopReason before suppress(), which would stamp SUPPRESSED on whatever is still open
-        await tx.campaignLead.updateMany({
-          where: { id: { in: ids }, state: { in: [...OPEN] } },
-          data: {
-            state: "STOPPED",
-            stopReason: "UNSUBSCRIBED",
-            nextDueAt: null,
-            completedAt: clock.now(),
-          },
-        });
-      }
-      return (await suppress(tx, ws, [{ kind: "EMAIL", value: email }], "UNSUBSCRIBE", source)) > 0
-        ? ("done" as const)
-        : ("already" as const);
-    }),
-  );
+      // T09 fills this hook in: it cancels the SCHEDULED rows of these enrollments
+      await editHooks.cancelOpenRows(tx, ids);
+    }
+    return (await suppress(tx, ws, [{ kind: "EMAIL", value: email }], "UNSUBSCRIBE", source)) > 0
+      ? ("done" as const)
+      : ("already" as const);
+  });
 }
 
 /**
