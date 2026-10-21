@@ -18,6 +18,7 @@ import {
   updateLead,
 } from "../src/leads/service";
 import { isSuppressed } from "../src/leads/suppression";
+import { planRow, seedCampaign } from "./campaign-fixture";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
 let ws: string;
@@ -295,31 +296,58 @@ describe("gdpr delete", () => {
     expect(sup.map((s) => s.value)).toEqual([null, null]);
   });
 
-  test("409 send_in_progress while a send is in flight", async () => {
-    const t = (
-      await db.prisma.$queryRaw<
-        { t: string | null }[]
-      >`SELECT to_regclass('"ScheduledMessage"')::text AS t`
-    )[0]?.t;
-    // Never skip silently: once T09 adds the real tables this must be rewritten with real rows.
-    if (t) throw new Error("T09: replace this temp-table test with real ScheduledMessage rows");
-    const run = (sql: string) => db.prisma.$executeRawUnsafe(sql);
-    try {
-      await run(`CREATE TABLE "ScheduledMessage" ("campaignLeadId" text, status text)`);
-      const l = await mk({ email: "busy@acme.test" });
-      const camp = await db.prisma.campaign.create({ data: { workspaceId: ws, name: "busy" } });
+  test("409 send_in_progress while a send is in flight; SENT, HELD and SCHEDULED rows do not block", async () => {
+    const { campaign, accounts, steps } = await seedCampaign(db.prisma, {
+      at: T0,
+      workspaceId: ws,
+      accounts: [{}],
+    });
+    const row = async (
+      email: string,
+      status: "SENDING" | "UNCERTAIN" | "SENT" | "HELD" | "SCHEDULED",
+    ) => {
+      const l = await mk({ email });
       const cl = await db.prisma.campaignLead.create({
-        data: { workspaceId: ws, campaignId: camp.id, leadId: l.id },
+        data: { workspaceId: ws, campaignId: campaign.id, leadId: l.id, state: "ACTIVE" },
       });
-      await run(`INSERT INTO "ScheduledMessage" VALUES ('${cl.id}', 'SENDING')`);
+      await planRow(db.prisma, {
+        workspaceId: ws,
+        campaignId: campaign.id,
+        campaignLeadId: cl.id,
+        stepId: steps[0]!.id,
+        accountId: accounts[0]!.id,
+        dueAt: T0,
+        status,
+      });
+      return l;
+    };
+    for (const status of ["SENDING", "UNCERTAIN"] as const) {
+      const l = await row(`busy-${status}@acme.test`, status);
       await expect(gdprDeleteLead(db.prisma, clock, ws, l.id)).rejects.toMatchObject({
         status: 409,
         message: "send_in_progress",
       });
       expect(await db.prisma.lead.count({ where: { id: l.id } })).toBe(1);
-    } finally {
-      await run(`DROP TABLE IF EXISTS "ScheduledMessage"`);
+      expect(await db.prisma.suppression.count({ where: { valueHash: sha(l.email) } })).toBe(0);
+      const other = await mk({ email: `merge-${status}@acme.test` });
+      await expect(
+        mergeLeads(db.prisma, clock, ws, { keepId: other.id, mergeId: l.id }),
+      ).rejects.toMatchObject({ status: 409, message: "send_in_progress" });
     }
+    for (const status of ["SENT", "HELD", "SCHEDULED"] as const) {
+      const l = await row(`free-${status}@acme.test`, status);
+      await gdprDeleteLead(db.prisma, clock, ws, l.id);
+      expect(await db.prisma.lead.count({ where: { id: l.id } })).toBe(0);
+      // the lead's rows cascade away with it; a SCHEDULED one can therefore never be sent
+      expect(
+        await db.prisma.scheduledMessage.count({ where: { campaignLead: { leadId: l.id } } }),
+      ).toBe(0);
+    }
+    expect(
+      await db.prisma.scheduledMessage.count({
+        where: { campaignId: campaign.id, status: "SCHEDULED" },
+      }),
+    ).toBe(0);
   });
 });
 

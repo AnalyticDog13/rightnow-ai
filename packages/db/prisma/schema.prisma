@@ -28,6 +28,7 @@ model Workspace {
   suppressions         Suppression[]
   importJobs           ImportJob[]
   campaigns            Campaign[]
+  scheduledMessages    ScheduledMessage[]
   timezone             String                @default("UTC")
   physicalAddress      String?
   dailyCap             Int? // null = no workspace cap
@@ -216,55 +217,57 @@ enum CnameStatus {
 
 // Partial unique index (workspaceId, lower(email)) WHERE deletedAt IS NULL lives in the `accounts` migration (raw SQL).
 model EmailAccount {
-  id                     String              @id @default(cuid())
-  workspaceId            String
-  workspace              Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  provider               AccountProvider
-  email                  String // lowercased
-  fromName               String
-  firstName              String
-  lastName               String
-  replyTo                String?
-  signature              String?
-  tags                   String[]
-  credentialsEnc         String? // AES-256-GCM JSON; null after disconnect; never returned by any API
+  id                         String              @id @default(cuid())
+  workspaceId                String
+  workspace                  Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  provider                   AccountProvider
+  email                      String // lowercased
+  fromName                   String
+  firstName                  String
+  lastName                   String
+  replyTo                    String?
+  signature                  String?
+  tags                       String[]
+  credentialsEnc             String? // AES-256-GCM JSON; null after disconnect; never returned by any API
   // Bumped by every credential replacement (disconnect, soft delete, reconnect): an in-flight refresh then writes nothing (R2-I1).
-  credentialGen          Int                 @default(0)
-  status                 AccountStatus       @default(CONNECTED)
-  lifecycle              AccountLifecycle    @default(ACTIVE)
-  pausedUntil            DateTime?
-  capTier                CapTier
-  providerCap            Int
-  dailyLimit             Int                 @default(30)
-  minGapSec              Int                 @default(0)
-  randomGapSec           Int                 @default(0)
-  timezone               String              @default("UTC")
-  slowRamp               Boolean             @default(false)
-  rampStartVolume        Int                 @default(2)
-  rampIncrementPerDay    Int                 @default(2)
-  rampStartedAt          DateTime?
-  historyImportDays      Int                 @default(30)
-  nextSendAt             DateTime            @default(now())
-  lastSentAt             DateTime?
-  lastCampaignActivityAt DateTime?
-  lastError              Json?
-  lastErrorAt            DateTime?
-  errorCount24h          Int                 @default(0)
-  autofixState           AutofixState        @default(NONE)
-  autofixAt              DateTime?
-  refreshLeaseId         String?
-  refreshLeaseUntil      DateTime?
-  syncState              SyncState           @default(IDLE)
-  syncCursor             Json?
-  lastSyncCompletedAt    DateTime?
-  healthScore            Int?
-  trackingDomain         String?
-  trackingDomainStatus   CnameStatus         @default(UNVERIFIED)
-  appendToSent           Boolean             @default(true)
-  createdAt              DateTime            @default(now())
-  deletedAt              DateTime?
-  dailyUsage             AccountDailyUsage[]
-  campaigns              CampaignAccount[]
+  credentialGen              Int                 @default(0)
+  status                     AccountStatus       @default(CONNECTED)
+  lifecycle                  AccountLifecycle    @default(ACTIVE)
+  pausedUntil                DateTime?
+  capTier                    CapTier
+  providerCap                Int
+  dailyLimit                 Int                 @default(30)
+  minGapSec                  Int                 @default(0)
+  randomGapSec               Int                 @default(0)
+  timezone                   String              @default("UTC")
+  slowRamp                   Boolean             @default(false)
+  rampStartVolume            Int                 @default(2)
+  rampIncrementPerDay        Int                 @default(2)
+  rampStartedAt              DateTime?
+  historyImportDays          Int                 @default(30)
+  nextSendAt                 DateTime            @default(now())
+  lastSentAt                 DateTime?
+  lastCampaignActivityAt     DateTime?
+  lastError                  Json?
+  lastErrorAt                DateTime?
+  errorCount24h              Int                 @default(0)
+  autofixState               AutofixState        @default(NONE)
+  autofixAt                  DateTime?
+  refreshLeaseId             String?
+  refreshLeaseUntil          DateTime?
+  syncState                  SyncState           @default(IDLE)
+  syncCursor                 Json?
+  lastSyncCompletedAt        DateTime?
+  healthScore                Int?
+  trackingDomain             String?
+  trackingDomainStatus       CnameStatus         @default(UNVERIFIED)
+  appendToSent               Boolean             @default(true)
+  createdAt                  DateTime            @default(now())
+  deletedAt                  DateTime?
+  consecutivePermanentErrors Int                 @default(0)
+  dailyUsage                 AccountDailyUsage[]
+  campaigns                  CampaignAccount[]
+  scheduledMessages          ScheduledMessage[]
 
   @@index([workspaceId])
 }
@@ -497,31 +500,31 @@ enum CampaignStatus {
 }
 
 model Campaign {
-  id                    String             @id @default(cuid())
+  id                    String               @id @default(cuid())
   workspaceId           String
-  workspace             Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace             Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   name                  String
-  status                CampaignStatus     @default(DRAFT)
-  evergreen             Boolean            @default(false)
+  status                CampaignStatus       @default(DRAFT)
+  evergreen             Boolean              @default(false)
   dailyLimit            Int?
   maxNewLeadsPerDay     Int?
   perCompanyDailyLimit  Int?
-  minGapSec             Int                @default(540)
-  randomGapSec          Int                @default(300)
-  stopOnReply           Boolean            @default(true)
-  stopOnAutoReply       Boolean            @default(false)
-  stopForCompanyOnReply Boolean            @default(false)
-  trackOpens            Boolean            @default(false)
-  trackClicks           Boolean            @default(false)
-  textOnly              Boolean            @default(false)
-  firstEmailTextOnly    Boolean            @default(false)
-  prioritizeNewLeads    Boolean            @default(false)
-  matchProvider         Boolean            @default(false)
-  espRoutingRules       Json               @default("[]")
+  minGapSec             Int                  @default(540)
+  randomGapSec          Int                  @default(300)
+  stopOnReply           Boolean              @default(true)
+  stopOnAutoReply       Boolean              @default(false)
+  stopForCompanyOnReply Boolean              @default(false)
+  trackOpens            Boolean              @default(false)
+  trackClicks           Boolean              @default(false)
+  textOnly              Boolean              @default(false)
+  firstEmailTextOnly    Boolean              @default(false)
+  prioritizeNewLeads    Boolean              @default(false)
+  matchProvider         Boolean              @default(false)
+  espRoutingRules       Json                 @default("[]")
   accountTags           String[]
-  allowRisky            Boolean            @default(false)
-  bounceProtect         Boolean            @default(true)
-  unsubscribeHeader     Boolean            @default(true)
+  allowRisky            Boolean              @default(false)
+  bounceProtect         Boolean              @default(true)
+  unsubscribeHeader     Boolean              @default(true)
   cc                    String[]
   bcc                   String[]
   startAt               DateTime?
@@ -529,17 +532,19 @@ model Campaign {
   ownerId               String?
   plValue               Decimal?
   tags                  String[]
-  abAutoOptimize        Boolean            @default(false)
+  abAutoOptimize        Boolean              @default(false)
   abWinnerMetric        String?
   launchedAt            DateTime?
-  createdAt             DateTime           @default(now())
-  updatedAt             DateTime           @updatedAt
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
   deletedAt             DateTime?
   schedules             CampaignSchedule[]
   accounts              CampaignAccount[]
   steps                 SequenceStep[]
   subsequences          Subsequence[]
   leads                 CampaignLead[]
+  dailyUsage            CampaignDailyUsage[]
+  scheduledMessages     ScheduledMessage[]
 
   @@index([workspaceId, status])
 }
@@ -609,54 +614,136 @@ model Subsequence {
 }
 
 model SequenceStep {
-  id            String        @id @default(cuid())
-  campaignId    String
-  campaign      Campaign      @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  subsequenceId String?
-  subsequence   Subsequence?  @relation(fields: [subsequenceId], references: [id], onDelete: Cascade)
-  order         Int
-  delayValue    Int
-  delayUnit     DelayUnit     @default(DAYS)
-  deletedAt     DateTime?
-  variants      StepVariant[]
+  id                String             @id @default(cuid())
+  campaignId        String
+  campaign          Campaign           @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  subsequenceId     String?
+  subsequence       Subsequence?       @relation(fields: [subsequenceId], references: [id], onDelete: Cascade)
+  order             Int
+  delayValue        Int
+  delayUnit         DelayUnit          @default(DAYS)
+  deletedAt         DateTime?
+  variants          StepVariant[]
+  scheduledMessages ScheduledMessage[]
 
   @@index([campaignId, subsequenceId, order])
 }
 
 model StepVariant {
-  id       String       @id @default(cuid())
-  stepId   String
-  step     SequenceStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
-  label    String
-  subject  String
-  body     String
-  weight   Int          @default(1)
-  active   Boolean      @default(true)
-  assigned Int          @default(0)
+  id                String             @id @default(cuid())
+  stepId            String
+  step              SequenceStep       @relation(fields: [stepId], references: [id], onDelete: Cascade)
+  label             String
+  subject           String
+  body              String
+  weight            Int                @default(1)
+  active            Boolean            @default(true)
+  assigned          Int                @default(0)
+  scheduledMessages ScheduledMessage[]
 
   @@unique([stepId, label])
 }
 
 model CampaignLead {
-  id            String            @id @default(cuid())
+  id            String             @id @default(cuid())
   workspaceId   String
   campaignId    String
-  campaign      Campaign          @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  campaign      Campaign           @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   leadId        String
-  lead          Lead              @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  lead          Lead               @relation(fields: [leadId], references: [id], onDelete: Cascade)
   subsequenceId String?
-  subsequence   Subsequence?      @relation(fields: [subsequenceId], references: [id])
-  state         CampaignLeadState @default(QUEUED)
+  subsequence   Subsequence?       @relation(fields: [subsequenceId], references: [id])
+  state         CampaignLeadState  @default(QUEUED)
   stopReason    StopReason?
   currentStepId String?
   nextDueAt     DateTime?
   accountId     String?
   threadRef     String?
-  enrolledAt    DateTime          @default(now())
+  enrolledAt    DateTime           @default(now())
   completedAt   DateTime?
-  duplicateOk   Boolean           @default(false) // enrolled with allowDuplicates: exempt from the launch conflict check
+  duplicateOk   Boolean            @default(false) // enrolled with allowDuplicates: exempt from the launch conflict check
+  messages      ScheduledMessage[]
 
   @@unique([campaignId, leadId])
   @@index([campaignId, state, nextDueAt])
   @@index([workspaceId, leadId])
+}
+
+model CampaignDailyUsage {
+  campaignId String
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  day        DateTime @db.Date
+  sent       Int      @default(0)
+  reserved   Int      @default(0)
+  newLeads   Int      @default(0)
+
+  @@id([campaignId, day])
+}
+
+enum MessageStatus {
+  SCHEDULED
+  SENDING
+  SENT
+  FAILED
+  CANCELLED
+  UNCERTAIN
+  HELD
+}
+
+// The send queue. Claimed with FOR UPDATE SKIP LOCKED (dispatch.ts); every write is conditional on status/claimToken.
+model ScheduledMessage {
+  id                String        @id @default(cuid())
+  workspaceId       String
+  workspace         Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  campaignId        String
+  campaign          Campaign      @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  campaignLeadId    String
+  campaignLead      CampaignLead  @relation(fields: [campaignLeadId], references: [id], onDelete: Cascade)
+  stepId            String
+  step              SequenceStep  @relation(fields: [stepId], references: [id], onDelete: Restrict)
+  // SetNull: deleting a variant never deletes or blocks send history
+  variantId         String?
+  variant           StepVariant?  @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  accountId         String
+  account           EmailAccount  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  dueAt             DateTime
+  status            MessageStatus @default(SCHEDULED)
+  attempts          Int           @default(0) // send retries only
+  claimErrors       Int           @default(0) // claim-side errors (Revision 3: kept apart from attempts)
+  idempotencyKey    String        @unique // "${campaignLeadId}:${stepId}"
+  claimToken        String?
+  claimedAt         DateTime?
+  claimBootId       String?
+  usageDay          DateTime?     @db.Date
+  wsUsageDay        DateTime?     @db.Date
+  campUsageDay      DateTime?     @db.Date
+  reservedUnits     Int           @default(0)
+  rfcMessageId      String?
+  providerMessageId String?
+  providerThreadId  String?
+  sentAt            DateTime?
+  error             String?
+  renderedSubject   String
+  renderedBody      String
+  renderedText      String
+  cc                String[]
+  bcc               String[]
+  uncertainAt       DateTime?
+  searchCount       Int           @default(0)
+  lastSearchAt      DateTime?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @default(now()) @updatedAt
+
+  @@index([status, dueAt])
+  @@index([campaignLeadId])
+  @@index([accountId, status])
+  @@index([campaignId, status])
+}
+
+// Install-level: written only by scripts/live-verify.ts when every live step passes (D17).
+model ProviderVerification {
+  provider  AccountProvider @id
+  passedAt  DateTime
+  accountId String
+  report    Json
 }

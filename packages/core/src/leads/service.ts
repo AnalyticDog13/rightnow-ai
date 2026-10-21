@@ -81,12 +81,8 @@ async function assertMembers(db: Tx, ws: string, ids: string[]) {
   if (n !== new Set(ids).size) throw new LeadError(400, "unknown_owner");
 }
 
-/** 409 while a send for any of these leads is in flight or of unknown outcome. Locks those rows. No-op until the send tables exist. */
+/** 409 while a send for any of these leads is in flight or of unknown outcome. Locks those rows (I4: ScheduledMessage first). */
 async function assertNoSendInFlight(tx: Tx, leadIds: string[]) {
-  const t = (
-    await tx.$queryRaw<{ t: string | null }[]>`SELECT to_regclass('"ScheduledMessage"')::text AS t`
-  )[0]?.t;
-  if (!t) return;
   const rows = await tx.$queryRaw<{ status: string }[]>`
     SELECT m."status"::text AS status FROM "ScheduledMessage" m
     WHERE m."campaignLeadId" IN (SELECT id FROM "CampaignLead" WHERE "leadId" = ANY(${leadIds}))
