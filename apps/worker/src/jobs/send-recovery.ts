@@ -25,7 +25,7 @@ export const sendRecoveryJob: JobDef = {
   name: "send-recovery",
   cron: "*/5 * * * *",
   boot: true,
-  // heartbeat: a killed worker's active job is failed within ~25 s, so the stately queue is not blocked for 15 min
+  // heartbeat: a killed worker's active job is failed within ~40 s, so the stately queue is not blocked for 15 min
   options: { policy: "stately", retryLimit: 0, heartbeatSeconds: 10 },
   handler: async (_jobs, { prisma, clock }) => {
     await sendRecovery(prisma, clock);

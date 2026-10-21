@@ -109,6 +109,10 @@ test("multistep over simulated days: 3 messages per lead from its step-1 account
     expect(got3.inReplyTo).toBe(m2.rfcMessageId);
     expect(got3.references).toEqual([m1.rfcMessageId, m2.rfcMessageId]);
   }
+  // exactly 12 copies left the Fake: a duplicate send would not show in the (lead, step)-unique rows
+  let copies = 0;
+  for (const a of s.accounts) copies += (await fake(a).sentRaw()).length;
+  expect(copies).toBe(12);
   const usage = await P.accountDailyUsage.findMany({ where: { accountId: { in: ids } } });
   expect(usage.reduce((n, u) => n + u.sent, 0)).toBe(12);
   expect(usage.every((u) => u.reserved === 0)).toBe(true);

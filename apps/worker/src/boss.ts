@@ -33,7 +33,9 @@ export async function startWorker(opts: {
   const boss = new PgBoss({
     connectionString: opts.databaseUrl,
     max,
+    // heartbeat failures are checked per queue on the monitor interval
     superviseIntervalSeconds: 15,
+    monitorIntervalSeconds: 15,
   });
   boss.on("error", (e) => console.error("pg-boss error", e));
   let started = false;

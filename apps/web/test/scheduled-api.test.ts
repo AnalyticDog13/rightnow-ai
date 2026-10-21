@@ -17,10 +17,15 @@ let release: typeof import("../app/api/v1/scheduled-messages/[id]/release/route"
 let cancel: typeof import("../app/api/v1/scheduled-messages/[id]/cancel/route");
 let retry: typeof import("../app/api/v1/scheduled-messages/[id]/retry/route");
 
-const req = (method: string, url: string, body?: unknown) =>
+const req = (
+  method: string,
+  url: string,
+  body?: unknown,
+  headers: Record<string, string> = { cookie },
+) =>
   new Request(`${ORIGIN}${url}`, {
     method,
-    headers: { origin: ORIGIN, "content-type": "application/json", cookie },
+    headers: { origin: ORIGIN, "content-type": "application/json", ...headers },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 const p = (id: string) => ({ params: Promise.resolve({ id }) });
@@ -86,13 +91,28 @@ it("list, release, cancel, retry: roles, confirm, 409, 404 and one audit row per
 
   const l = await list.GET(req("GET", "/api/v1/scheduled-messages?status=HELD"));
   expect(l.status).toBe(200);
-  const body = (await l.json()) as { rows: { id: string; leadEmail: string }[] };
+  const body = (await l.json()) as { rows: Record<string, unknown>[] };
   expect(body.rows.map((r) => r.id)).toEqual([held]);
-  expect(body.rows[0]!.leadEmail).toBe(s.leads[0]!.lead.email);
+  expect(body.rows[0]).toMatchObject({
+    leadEmail: s.leads[0]!.lead.email,
+    uncertainAt: at.toISOString(), // the search history the releaser decides on
+    searchCount: 0,
+    lastSearchAt: null,
+  });
 
   await setRole("VIEWER");
   expect((await release.POST(req("POST", "/x", { confirm: true }), p(held))).status).toBe(403);
   await setRole("MEMBER");
+  // a release may send a second copy: ADMIN in a session only, never an API key (like test-send)
+  expect((await release.POST(req("POST", "/x", { confirm: true }), p(held))).status).toBe(403);
+  const { createApiKey } = await import("@rightnow/core");
+  const key = (await createApiKey(P, workspaceId, "w", ["campaigns:write"])).token;
+  const k = { authorization: `Bearer ${key}` };
+  expect((await release.POST(req("POST", "/x", { confirm: true }, k), p(held))).status).toBe(403);
+  expect((await cancel.POST(req("POST", "/x", undefined, k), p(foreign.rows[0]!.id))).status).toBe(
+    404,
+  ); // cancel stays MEMBER, keys allowed
+  await setRole("ADMIN");
   expect((await release.POST(req("POST", "/x", {}), p(held))).status).toBe(400);
   expect((await release.POST(req("POST", "/x", { confirm: true }), p(sent))).status).toBe(409);
   expect(

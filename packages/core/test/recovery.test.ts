@@ -234,24 +234,26 @@ describe("recoverExpired + resolveUncertain", () => {
     expect((await row(c2.id)).searchCount).toBe(1);
   });
 
-  test("uncertain is capped at 24 h after a search attempt (I2); the lead can then be GDPR-deleted", async () => {
+  test("uncertain is capped at 24 h after two failed attempts 15 min apart (I2); the lead can then be GDPR-deleted", async () => {
     const clock = fixedClock(T);
     const s = await seedCampaign(P(), { at: T, rows: 1, accounts: [{}] });
     const A = s.accounts[0]!;
     const c = await uncertain(clock);
     const p = spy(A, { findSent: () => Promise.reject(new TransientBeforeSendError("x")) });
     await resolveUncertain(P(), clock, { providerFor: () => p });
-    clock.advance(23 * HOUR + 59 * MIN);
+    clock.advance(23 * HOUR + 45 * MIN);
+    await resolveUncertain(P(), clock, { providerFor: () => p });
+    clock.advance(14 * MIN); // +23h59m
     await resolveUncertain(P(), clock, { providerFor: () => p });
     expect((await row(c.id)).status).toBe("UNCERTAIN");
-    clock.advance(2 * MIN);
+    clock.advance(2 * MIN); // +24h01m
     expect(await resolveUncertain(P(), clock, { providerFor: () => p })).toMatchObject({ held: 1 });
     expect((await row(c.id)).status).toBe("HELD");
     expect(await usage(A.id)).toEqual([[0, 0]]);
     await gdprDeleteLead(P(), clock, s.ws, s.leads[0]!.lead.id); // no 409 send_in_progress
   });
 
-  test("a machine that slept past 24 h still searches once before holding (Revision 3)", async () => {
+  test("a machine that slept past 24 h searches twice, 15 min apart, before holding (Revision 3)", async () => {
     const clock = fixedClock(T);
     const s = await seedCampaign(P(), { at: T, rows: 2, accounts: [{}] });
     const A = s.accounts[0]!;
@@ -274,9 +276,14 @@ describe("recoverExpired + resolveUncertain", () => {
     });
     expect((await row(c1.id)).status).toBe("SENT");
     expect((await row(c2.id)).status).toBe("UNCERTAIN");
+    // one failed search on wake (network not up yet) never holds by itself
     clock.advance(5 * MIN);
+    expect(await resolveUncertain(P(), clock, { providerFor: () => p })).toMatchObject({ held: 0 });
+    expect((await row(c2.id)).status).toBe("UNCERTAIN");
+    clock.advance(10 * MIN);
     expect(await resolveUncertain(P(), clock, { providerFor: () => p })).toMatchObject({ held: 1 });
     expect((await row(c2.id)).status).toBe("HELD");
+    expect(p.calls.filter((x) => x.id !== r1.rfcMessageId)).toHaveLength(2);
   });
 
   test("the Graph draft id reaches findSent as the hint", async () => {
