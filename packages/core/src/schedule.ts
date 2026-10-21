@@ -34,7 +34,8 @@ function local(t: number, tz: string) {
     fmts.set(tz, f);
   }
   const p = Object.fromEntries(f.formatToParts(t).map((x) => [x.type, +x.value]));
-  const msOfDay = ((p.hour! * 60 + p.minute!) * 60 + p.second!) * 1000 + (((t % 1000) + 1000) % 1000);
+  const msOfDay =
+    ((p.hour! * 60 + p.minute!) * 60 + p.second!) * 1000 + (((t % 1000) + 1000) % 1000);
   const dow = new Date(Date.UTC(p.year!, p.month! - 1, p.day!)).getUTCDay();
   return { y: p.year!, m: p.month!, d: p.day!, msOfDay, dow };
 }
@@ -79,7 +80,11 @@ function inWindow(w: Window, t: number): boolean {
   const f = hm(w.from);
   const e = hm(w.to);
   if (f < e) return hasDay(w.days, l.dow) && l.msOfDay >= f && l.msOfDay < e;
-  if (f > e) return (hasDay(w.days, l.dow) && l.msOfDay >= f) || (hasDay(w.days, (l.dow + 6) % 7) && l.msOfDay < e);
+  if (f > e)
+    return (
+      (hasDay(w.days, l.dow) && l.msOfDay >= f) ||
+      (hasDay(w.days, (l.dow + 6) % 7) && l.msOfDay < e)
+    );
   return false; // from == to: empty window
 }
 
@@ -96,16 +101,18 @@ export function nextWindowStart(windows: Window[], at: Date): Date {
   for (const w of windows) {
     if (hm(w.from) === hm(w.to)) continue;
     const l = local(now, w.timezone);
-    for (let k = 0; k < 8; k++) {
+    for (let k = 0; k < 15; k++) {
       if (!hasDay(w.days, (l.dow + k) % 7)) continue;
       const c = wallToUtc(l.y, l.m, l.d + k, hm(w.from), w.timezone);
-      if (c > now) {
+      if (c > now && inWindow(w, c)) {
+        // a window wholly inside a DST gap never opens that day
         best = Math.min(best, c);
         break;
       }
     }
   }
-  if (best === Infinity) throw new Error("no schedule window can open: no allowed day or empty window");
+  if (best === Infinity)
+    throw new Error("no schedule window can open: no allowed day or empty window");
   return new Date(best);
 }
 

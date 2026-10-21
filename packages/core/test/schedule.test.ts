@@ -89,6 +89,16 @@ describe("nextWindowStart", () => {
     const w: Window = { timezone: NY, days: 0b1111111, from: "02:30", to: "04:00" };
     expect(iso(nextWindowStart([w], d("2026-03-08T06:00:00Z")))).toBe("2026-03-08T07:30:00.000Z"); // 03:30 EDT
   });
+  test("window wholly inside the spring-forward gap is skipped to the next real opening", () => {
+    const ny: Window = { timezone: NY, days: 0b1111111, from: "02:00", to: "02:30" };
+    const r = nextWindowStart([ny], d("2026-03-08T05:00:00Z"));
+    expect(iso(r)).toBe("2026-03-09T06:00:00.000Z"); // Mar 9 02:00 EDT
+    expect(isInWindow([ny], r)).toBe(true);
+    const ldn: Window = { timezone: "Europe/London", days: 0b1111111, from: "01:00", to: "02:00" };
+    const r2 = nextWindowStart([ldn], d("2026-03-29T00:00:00Z"));
+    expect(iso(r2)).toBe("2026-03-30T00:00:00.000Z"); // Mar 30 01:00 BST
+    expect(isInWindow([ldn], r2)).toBe(true);
+  });
   test("zone without DST (Asia/Kolkata, +05:30)", () => {
     const w: Window = { timezone: "Asia/Kolkata", days: 0b1111111, from: "09:00", to: "10:00" };
     expect(iso(nextWindowStart([w], d("2026-07-01T05:00:00Z")))).toBe("2026-07-02T03:30:00.000Z");
