@@ -191,3 +191,6 @@ Fallback-brace validation, renderSubject (single-line, no HTML) as the only subj
 
 ## 2026-10-21 · P3-T05 campaign service/API · task reviewer (sonnet) · 1 fix round → **Approved**
 Merged cc/bcc cap, launch checks over usable accounts only, unsubscribe reachability via shared isPrivate, relaunch/resume re-validate. physicalAddress settings owned by P3-T08.
+
+## 2026-10-21 · P3-T07 schedule math · task reviewer (sonnet, with probes) · 1 fix round → **Approved**
+DST spring-forward/fall-back, overnight windows, multi-timezone earliest, dayKey at midnight, empty schedules throw; windows wholly inside a DST gap skipped.

@@ -321,20 +321,21 @@
    "id": "P3-T07",
    "phase": 3,
    "title": "Schedule math (`isInWindow`, `nextWindowStart`, `addDelay` with units, DST, overnight windows) + day-key helpers",
-   "status": "todo",
+   "status": "done",
    "deps": [
     "P3-T06"
    ],
    "model": "sonnet",
-   "commit": null,
+   "commit": "b98dd93..b0d4550",
    "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-3.md; tests listed there pass",
-   "note": "parallel-safe with P3-T01..T03 (disjoint files) per phase-3 plan"
+   "note": "parallel-safe with P3-T01..T03 (disjoint files) per phase-3 plan",
+   "review": "1 fix round (DST-gap window skip); clean; reviewer probed DST/overnight/dayKey edge cases"
   },
   {
    "id": "P3-T08",
    "phase": 3,
    "title": "Unsubscribe early: signed tokens, `/u/[token]` page + RFC 8058 POST, mailto handling hook, suppression on unsubscribe, physical-address setting, footer injection",
-   "status": "todo",
+   "status": "in_progress",
    "deps": [
     "P3-T07"
    ],
@@ -352,7 +353,7 @@
    ],
    "model": "opus",
    "commit": null,
-   "acceptance": "parallel claim test (2 dispatchers × 2 accounts, no deadlock, no over-quota); midnight crossing; campaign/workspace caps; reservation rollback; first-of-day claim with allowance 0 and with units > allowance → not claimed; paused campaign / past endAt → not claimed; overdue row at 03:00 → not sent until window opens; freshness and sticky gates; suppression re-check.; from P3-T01: real-table GDPR in-flight test (SENDING/UNCERTAIN → 409; SENT/HELD/SCHEDULED do not block) replacing the T01 temp-table test; from P3-T05: launch route reads ProviderVerification (D17); archive/delete cancel SCHEDULED+HELD rows, never SENDING/UNCERTAIN"
+   "acceptance": "parallel claim test (2 dispatchers × 2 accounts, no deadlock, no over-quota); midnight crossing; campaign/workspace caps; reservation rollback; first-of-day claim with allowance 0 and with units > allowance → not claimed; paused campaign / past endAt → not claimed; overdue row at 03:00 → not sent until window opens; freshness and sticky gates; suppression re-check.; from P3-T01: real-table GDPR in-flight test (SENDING/UNCERTAIN → 409; SENT/HELD/SCHEDULED do not block) replacing the T01 temp-table test; from P3-T05: launch route reads ProviderVerification (D17); archive/delete cancel SCHEDULED+HELD rows, never SENDING/UNCERTAIN; from P3-T06: ScheduledMessage.variantId survives variant delete; implement editHooks per T06 contract; from P3-T06 review I1: claim re-checks under CampaignLead lock — cl.state ACTIVE, sm.stepId=cl.currentStepId, Lead.deletedAt IS NULL, step not soft-deleted, variant active"
   },
   {
    "id": "P3-T10a",
@@ -376,7 +377,7 @@
    ],
    "model": "opus",
    "commit": null,
-   "acceptance": "See docs/plans/phase-3.md P3-T10b; from P3-T04: subjects rendered ONLY via renderSubject() (header safety), test it; pass all campaign custom-field keys (null if absent) to render"
+   "acceptance": "See docs/plans/phase-3.md P3-T10b; from P3-T04: subjects rendered ONLY via renderSubject() (header safety), test it; pass all campaign custom-field keys (null if absent) to render; from P3-T06: editHooks re-render stale rendered text"
   },
   {
    "id": "P3-T11a",

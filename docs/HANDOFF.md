@@ -1,7 +1,7 @@
 # Handoff
 
 **Phase:** 3 — Campaign automation (branch `phase-3-campaigns`, from `main` after the Phase 2 merge)
-**Current task:** P3-T06 sequences/subsequences/enrollment/duplicate/export (P3-T05 done 24e8f14).
+**Current task:** P3-T06 fix round + P3-T08 unsubscribe/footer/physical address (parallel). P3-T07 done b0d4550.
 **Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 (approved). Done step plans: `docs/plans/phase-1.md`, `docs/plans/phase-2.md`.
 **Tests:** 522 vitest + 16 Playwright (prod build) green; CI `check`, `compose-smoke`, `imap-real` green.
 
