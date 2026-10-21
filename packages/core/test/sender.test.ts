@@ -847,6 +847,94 @@ describe("dispatchTick", () => {
   });
 });
 
+describe("review round 1", () => {
+  test("a send that completes after the lead was stopped on its last step never revives it into a subsequence", async () => {
+    const clock = fixedClock(T);
+    const s = await seedCampaign(P(), { at: T, rows: 1, accounts: [{}] });
+    const sub = await P().subsequence.create({
+      data: {
+        campaignId: s.campaign.id,
+        name: "no reply",
+        trigger: { kind: "ACTIVITY", activity: "completed_no_reply" },
+        active: true,
+        activatedAt: new Date(T.getTime() - 60_000),
+      },
+    });
+    const st = await P().sequenceStep.create({
+      data: { campaignId: s.campaign.id, subsequenceId: sub.id, order: 1, delayValue: 0 },
+    });
+    await P().stepVariant.create({ data: { stepId: st.id, label: "A", subject: "S", body: "B" } });
+    const c = await claim(clock);
+    const out = await sendClaimed(
+      P(),
+      clock,
+      deps({
+        providerFor: (a) =>
+          around(a, {
+            before: async () =>
+              void (await removeCampaignLead(P(), clock, s.ws, null, c.campaignLeadId)),
+          }),
+      }),
+      c,
+    );
+    expect(out).toBe("SENT");
+    expect(
+      await P().campaignLead.findUniqueOrThrow({ where: { id: c.campaignLeadId } }),
+    ).toMatchObject({
+      state: "STOPPED",
+      stopReason: "MANUAL",
+      subsequenceId: null,
+    });
+    await planDue(P(), clock, { stalenessSec: 300, sendableProviders: ALL, env });
+    expect(await P().scheduledMessage.count()).toBe(1);
+  });
+
+  test("a row whose variant was deleted while it was claimed is cancelled at the next claim, not a claim error", async () => {
+    const clock = fixedClock(T);
+    const s = await seedCampaign(P(), { at: T, rows: 1, accounts: [{}] });
+    const A = s.accounts[0]!;
+    const c = await claim(clock);
+    fake(A).failNext("connect_refused");
+    expect(await sendClaimed(P(), clock, deps(), c)).toBe("RETRY");
+    await P().stepVariant.create({
+      data: { stepId: s.steps[0]!.id, label: "B", subject: "Hi", body: "Other" },
+    });
+    await P().stepVariant.delete({ where: { id: s.steps[0]!.variant.id } }); // FK SetNull on the row
+    clock.advance(61_000);
+    await markFresh(P(), [A.id], clock.now());
+    expect(await claimDue(P(), clock, claimOpts())).toEqual([]);
+    expect(await row(c.id)).toMatchObject({ status: "CANCELLED", variantId: null, claimErrors: 0 });
+  });
+
+  test("one throwing send does not block the rest of the dispatch round (I5)", async () => {
+    const clock = fixedClock(T);
+    const s = await seedCampaign(P(), { at: T, rows: 3, accounts: [{}, {}, {}] });
+    const [bad] = s.accounts;
+    const tick = await dispatchTick(P(), clock, {
+      ...deps({
+        providerFor: (a) =>
+          a.id === bad!.id
+            ? Object.assign(Object.create(fake(a)) as MailProvider, {
+                // an accepted send whose result cannot be recorded (Prisma validation throws)
+                send: async () => ({
+                  rfcMessageId: "x",
+                  providerMessageId: 123 as unknown as string,
+                }),
+              })
+            : fake(a),
+      }),
+      bootId: "boot-1",
+      stalenessSec: 300,
+      sendableProviders: ALL,
+      concurrency: 3,
+    });
+    expect(tick.SENT).toBe(2);
+    const rows = await P().scheduledMessage.findMany();
+    expect(rows.find((r) => r.accountId === bad!.id)!.status).toBe("SENDING"); // left for recovery
+    expect(rows.filter((r) => r.status === "SENT")).toHaveLength(2);
+  });
+});
+
 describe("deleted sticky account (P3-T10b re-review)", () => {
   test("a lead whose sticky account was deleted is paused SEND_FAILED, its open row cancelled, and not re-selected", async () => {
     const clock = fixedClock(T);

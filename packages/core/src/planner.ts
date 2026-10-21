@@ -757,7 +757,8 @@ async function advance(
   keepDue: boolean,
 ) {
   const cl = await tx.campaignLead.findUnique({ where: { id } });
-  if (!cl || cl.currentStepId !== stepId) return;
+  // a stopped or completed lead never moves again: a late SENT must not revive it into a subsequence
+  if (!cl || cl.currentStepId !== stepId || !(OPEN as readonly string[]).includes(cl.state)) return;
   const step = await tx.sequenceStep.findUniqueOrThrow({ where: { id: stepId } });
   const next = await tx.sequenceStep.findFirst({
     where: {

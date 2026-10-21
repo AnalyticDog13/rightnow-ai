@@ -19,6 +19,21 @@ const smtp = (o: { responseCode: number; command?: string; response: string }) =
 describe("D18 scope (I6)", () => {
   test.each([
     [{ responseCode: 550, command: "RCPT TO", response: "550 5.1.1 user unknown" }, "recipient"],
+    // round 1: sender-side wording or command is never recipient (Postfix smtpd_delay_reject reports at RCPT TO)
+    [
+      {
+        responseCode: 550,
+        command: "RCPT TO",
+        response:
+          "550 5.1.0 <me@x.test>: Sender address rejected: User unknown in virtual mailbox table",
+      },
+      "unknown",
+    ],
+    [
+      { responseCode: 553, command: "MAIL FROM", response: "553 5.1.3 bad address syntax" },
+      "account",
+    ],
+    [{ responseCode: 550, command: "AUTH PLAIN", response: "550 5.1.1 user unknown" }, "unknown"],
     [
       {
         responseCode: 550,

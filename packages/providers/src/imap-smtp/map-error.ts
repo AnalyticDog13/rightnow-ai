@@ -85,9 +85,14 @@ function smtpScope(r: Raw): {
   if (cls === "4" && det === "1" && /access denied/i.test(text))
     return { scope: "unknown", countsTowardPause: false };
   if (POLICY.test(text)) return { scope: "unknown" };
-  // 5.1.7/5.1.8 are about the SENDER's address (Revision 3)
-  if (cls === "1" && (det === "7" || det === "8"))
-    return { scope: cmd.startsWith("MAIL") ? "account" : "unknown" };
+  // About the SENDER, never the recipient: 5.1.7/5.1.8 (Revision 3), MAIL FROM/AUTH replies, and "Sender address
+  // rejected" wording, which Postfix (smtpd_delay_reject) reports at RCPT TO. Account scope only on MAIL FROM.
+  if (
+    /^(MAIL|AUTH)/.test(cmd) ||
+    /sender/i.test(text) ||
+    (cls === "1" && (det === "7" || det === "8"))
+  )
+    return { scope: cmd.startsWith("MAIL") && cls === "1" ? "account" : "unknown" };
   if (cls === "1" || (cls === "2" && det === "1")) return { scope: "recipient" };
   if (
     !cls &&

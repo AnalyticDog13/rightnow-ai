@@ -229,7 +229,7 @@ async function claimOne(
       // List-Unsubscribe headers are not stored; the sender rebuilds them.
       let text: Prisma.ScheduledMessageUpdateManyMutationInput = {};
       if (o.env) {
-        const v = variant!;
+        const v = variant; // null or inactive was cancelled as "stale" above
         try {
           const r = renderForLead({
             campaign: c,
