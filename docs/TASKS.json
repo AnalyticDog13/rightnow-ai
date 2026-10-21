@@ -452,12 +452,12 @@
    "id": "P4-T02",
    "phase": 4,
    "title": "Classification (DSN hard/soft, auto-reply headers + OOO return date, unsubscribe intent, interest rules, uncertain; AI hook) with ≥30-email corpus",
-   "status": "todo",
+   "status": "done",
    "deps": [
     "P4-T01"
    ],
    "model": "sonnet",
-   "commit": null,
+   "commit": "2fab48b",
    "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-4.md; tests listed there pass"
   },
   {
