@@ -18,7 +18,8 @@ import { campaignVariables } from "./campaigns/sequence";
 import { accountOk, withTxRetry } from "./dispatch";
 import { getEnv } from "./env";
 import { suppressedEmails } from "./leads/suppression";
-import { committedToday, pickAccount, remainingToday } from "./rotation";
+import type { EspRule } from "./campaigns/schema";
+import { committedToday, pickAccount, remainingToday, routeAllowed } from "./rotation";
 import {
   addDelay,
   dayKey,
@@ -43,6 +44,8 @@ type Now = Pick<Clock, "now">;
 const OPEN = ["QUEUED", "ACTIVE", "PAUSED"] as const;
 const PLANNER_LOCK = 726003;
 const PLAN_TX_MS = 30_000;
+const MAX_PAGES = 10; // candidates examined per campaign and tick: at most 10 x batch
+const BACKOFF_MS = 3600_000;
 const LEAD_FIELDS = [
   "email",
   "firstName",
@@ -165,30 +168,56 @@ const priorSubject = async (tx: Tx, campaignLeadId: string) =>
     })
   )?.renderedSubject ?? null;
 
-/** Renders an existing row for `accountId`. null when its variant is gone or inactive (the row must not be sent). */
-async function renderRow(
-  tx: Tx,
-  m: { campaignLeadId: string; stepId: string; variantId: string | null },
-  accountId: string,
-  env: RenderEnv,
-): Promise<Rendered | null> {
-  const variant = m.variantId
-    ? await tx.stepVariant.findUnique({ where: { id: m.variantId } })
-    : null;
-  if (!variant?.active) return null;
-  const cl = await tx.campaignLead.findUniqueOrThrow({ where: { id: m.campaignLeadId } });
-  const campaign = await tx.campaign.findUniqueOrThrow({ where: { id: cl.campaignId } });
-  return renderForLead({
-    campaign,
-    step: await tx.sequenceStep.findUniqueOrThrow({ where: { id: m.stepId } }),
-    variant,
-    lead: await tx.lead.findUniqueOrThrow({ where: { id: cl.leadId } }),
-    account: await tx.emailAccount.findUniqueOrThrow({ where: { id: accountId } }),
-    workspace: await tx.workspace.findUniqueOrThrow({ where: { id: campaign.workspaceId } }),
-    env,
-    customKeys: await campaignVariables(tx, campaign.id),
-    replyTo: variant.subject.trim() ? null : await priorSubject(tx, cl.id),
-  });
+type RowRef = { campaignLeadId: string; stepId: string; variantId: string | null };
+
+/** Loads `f(k)` once per key (awaited one at a time: a transaction runs one query at a time). */
+const memo = <V>(f: (k: string) => Promise<V>) => {
+  const m = new Map<string, Promise<V>>();
+  return (k: string) => {
+    if (!m.has(k)) m.set(k, f(k));
+    return m.get(k)!;
+  };
+};
+
+/**
+ * Renders existing rows (I-1): the leads of all `rows` load in one query, and the shared data (campaign, workspace,
+ * campaign custom-field keys, step, variant, account) once per call, not per row. A row renders to null when its
+ * variant is gone or inactive (it must not be sent).
+ */
+async function rowRenderer(tx: Tx, rows: RowRef[], env: RenderEnv) {
+  const cls = new Map(
+    (
+      await tx.campaignLead.findMany({ where: { id: { in: rows.map((r) => r.campaignLeadId) } } })
+    ).map((c) => [c.id, c]),
+  );
+  const leads = new Map(
+    (await tx.lead.findMany({ where: { id: { in: [...cls.values()].map((c) => c.leadId) } } })).map(
+      (l) => [l.id, l],
+    ),
+  );
+  const campaignOf = memo((id) => tx.campaign.findUniqueOrThrow({ where: { id } }));
+  const workspaceOf = memo((id) => tx.workspace.findUniqueOrThrow({ where: { id } }));
+  const keysOf = memo((id) => campaignVariables(tx, id));
+  const stepOf = memo((id) => tx.sequenceStep.findUniqueOrThrow({ where: { id } }));
+  const variantOf = memo((id) => tx.stepVariant.findUnique({ where: { id } }));
+  const accountOf = memo((id) => tx.emailAccount.findUniqueOrThrow({ where: { id } }));
+  return async (m: RowRef, accountId: string): Promise<Rendered | null> => {
+    const variant = m.variantId ? await variantOf(m.variantId) : null;
+    if (!variant?.active) return null;
+    const cl = cls.get(m.campaignLeadId)!;
+    const campaign = await campaignOf(cl.campaignId);
+    return renderForLead({
+      campaign,
+      step: await stepOf(m.stepId),
+      variant,
+      lead: leads.get(cl.leadId)!,
+      account: await accountOf(accountId),
+      workspace: await workspaceOf(campaign.workspaceId),
+      env,
+      customKeys: await keysOf(campaign.id),
+      replyTo: variant.subject.trim() ? null : await priorSubject(tx, cl.id),
+    });
+  };
 }
 
 const stored = (r: Rendered) => ({
@@ -198,9 +227,9 @@ const stored = (r: Rendered) => ({
 });
 
 /**
- * Edit hook body (Revision 3): re-renders the SCHEDULED rows matching `where` in place. Rows a claim holds are skipped
- * (SKIP LOCKED) and keep their text. A row whose variant is gone, or that no longer renders, is CANCELLED (uncertainAt
- * stays NULL, so the planner re-plans it with a working variant).
+ * Edit hook body (Revision 3): re-renders the SCHEDULED rows matching `where` in place, written back in one statement.
+ * Rows a claim holds are skipped (SKIP LOCKED) and keep their text. A row whose variant is gone, or that no longer
+ * renders, is CANCELLED (uncertainAt stays NULL, so the planner re-plans it with a working variant).
  */
 export async function rerenderScheduled(tx: Tx, where: Prisma.Sql, env?: RenderEnv) {
   const rows = await tx.$queryRaw<
@@ -215,20 +244,37 @@ export async function rerenderScheduled(tx: Tx, where: Prisma.Sql, env?: RenderE
     SELECT id, "campaignLeadId", "stepId", "variantId", "accountId" FROM "ScheduledMessage"
     WHERE ${where} AND status = 'SCHEDULED' ORDER BY id FOR UPDATE SKIP LOCKED`;
   if (!rows.length) return;
-  env ??= processEnv();
+  const render = await rowRenderer(tx, rows, env ?? processEnv());
+  const ok = { id: [] as string[], s: [] as string[], b: [] as string[], t: [] as string[] };
+  const bad: string[] = [];
   for (const m of rows) {
     let r: Rendered | null;
     try {
-      r = await renderRow(tx, m, m.accountId, env);
+      r = await render(m, m.accountId);
     } catch (e) {
       if (!renderProblem(e)) throw e;
       r = null;
     }
-    await tx.scheduledMessage.updateMany({
-      where: { id: m.id, status: "SCHEDULED" },
-      data: r ? stored(r) : { status: "CANCELLED", error: "rerender_failed" },
-    });
+    if (!r) bad.push(m.id);
+    else {
+      const x = stored(r);
+      ok.id.push(m.id);
+      ok.s.push(x.renderedSubject);
+      ok.b.push(x.renderedBody);
+      ok.t.push(x.renderedText);
+    }
   }
+  if (ok.id.length)
+    await tx.$executeRaw`
+      UPDATE "ScheduledMessage" sm SET "renderedSubject" = v.s, "renderedBody" = v.b, "renderedText" = v.t,
+        "updatedAt" = now()
+      FROM unnest(${ok.id}::text[], ${ok.s}::text[], ${ok.b}::text[], ${ok.t}::text[]) AS v(id, s, b, t)
+      WHERE sm.id = v.id AND sm.status = 'SCHEDULED'`;
+  if (bad.length)
+    await tx.scheduledMessage.updateMany({
+      where: { id: { in: bad }, status: "SCHEDULED" },
+      data: { status: "CANCELLED", error: "rerender_failed" },
+    });
 }
 
 // --- the row write --------------------------------------------------------------------------------------------------
@@ -331,34 +377,8 @@ async function planCampaign(tx: Tx, campaignId: string, now: Date, o: PlanOpts) 
   const first = steps.find((s) => s.subsequenceId === null);
   if (!first) return r;
   const ts = now.toISOString();
+  const batch = o.batch ?? 200;
 
-  // I3/C2: only the lead's current step, and only while no row for it exists except a plain CANCELLED one
-  const due = await tx.$queryRaw<{ id: string }[]>`
-    SELECT cl.id FROM "CampaignLead" cl
-    WHERE cl."campaignId" = ${campaignId} AND cl.state IN ('QUEUED', 'ACTIVE')
-      AND (cl."nextDueAt" IS NULL OR cl."nextDueAt" <= ${ts}::timestamp)
-      AND NOT EXISTS (SELECT 1 FROM "ScheduledMessage" sm
-        WHERE sm."campaignLeadId" = cl.id AND sm."stepId" = COALESCE(cl."currentStepId", ${first.id})
-          AND (sm.status <> 'CANCELLED' OR sm."uncertainAt" IS NOT NULL))
-    ORDER BY ((cl.state = 'QUEUED') = ${c.prioritizeNewLeads}::boolean) DESC, cl."nextDueAt" ASC NULLS FIRST, cl.id
-    LIMIT ${o.batch ?? 200}
-    FOR UPDATE SKIP LOCKED`;
-  if (!due.length) return r;
-  const order = new Map(due.map((d, i) => [d.id, i]));
-  const cls = (await tx.campaignLead.findMany({ where: { id: { in: [...order.keys()] } } })).sort(
-    (a, b) => order.get(a.id)! - order.get(b.id)!,
-  );
-  const leads = new Map(
-    (await tx.lead.findMany({ where: { id: { in: cls.map((x) => x.leadId) } } })).map((l) => [
-      l.id,
-      l,
-    ]),
-  );
-  const blocked = await suppressedEmails(
-    tx,
-    w.id,
-    [...leads.values()].map((l) => l.email),
-  );
   const byId = new Map(steps.map((s) => [s.id, s]));
   const variants = await tx.stepVariant.findMany({
     where: { stepId: { in: steps.map((s) => s.id) }, active: true },
@@ -370,7 +390,18 @@ async function planCampaign(tx: Tx, campaignId: string, now: Date, o: PlanOpts) 
     (await tx.subsequence.findMany({ where: { campaignId } })).map((s) => [s.id, s]),
   );
   const customKeys = await campaignVariables(tx, campaignId);
-  const accounts = new Map<string, EmailAccount | null>();
+  // assigned live accounts: a lead whose ESP none of them may serve (tags, ESP rules) is durably unroutable
+  const assignedAccounts = await tx.emailAccount.findMany({
+    where: { deletedAt: null, campaigns: { some: { campaignId } } },
+  });
+  const rules = (c.espRoutingRules ?? []) as EspRule[];
+  const routable = (esp: Lead["espType"]) =>
+    assignedAccounts.some(
+      (a) =>
+        (!c.accountTags.length || a.tags.some((t) => c.accountTags.includes(t))) &&
+        routeAllowed(rules, a.provider, esp),
+    );
+  const accounts = new Map<string, EmailAccount | null>(assignedAccounts.map((a) => [a.id, a]));
   const accountOf = async (id: string) => {
     if (!accounts.has(id)) accounts.set(id, await tx.emailAccount.findUnique({ where: { id } }));
     return accounts.get(id)!;
@@ -382,6 +413,8 @@ async function planCampaign(tx: Tx, campaignId: string, now: Date, o: PlanOpts) 
     where: { campaignId_day: { campaignId, day: new Date(`${day}T00:00:00Z`) } },
   });
   let newLeads = 0;
+  const newBudgetLeft = () =>
+    c.maxNewLeadsPerDay === null || (usage?.newLeads ?? 0) + newLeads < c.maxNewLeadsPerDay;
   const units = 1 + c.cc.length + c.bcc.length;
 
   // rows already planned for today (dueAt on the workspace's day, not cancelled); this transaction's inserts included
@@ -401,108 +434,188 @@ async function planCampaign(tx: Tx, campaignId: string, now: Date, o: PlanOpts) 
   const atLimit = async (q: Promise<{ n: number }[]>, limit: number | null) =>
     limit !== null && ((await q)[0]?.n ?? 0) >= limit;
 
-  for (const cl of cls) {
-    const lead = leads.get(cl.leadId)!;
-    const step = byId.get(cl.currentStepId ?? first.id);
-    if (!step) continue; // its step was deleted under it; deleteStep moves such leads
-    const stop = lead.deletedAt
-      ? "SKIPPED"
-      : blocked.has(lead.email)
-        ? "SUPPRESSED"
-        : lead.verificationStatus === "INVALID" ||
-            (!c.allowRisky && ["RISKY", "CATCH_ALL"].includes(lead.verificationStatus))
-          ? "SKIPPED"
-          : null;
-    if (stop) {
-      await tx.campaignLead.updateMany({
-        where: { id: cl.id, state: { in: ["QUEUED", "ACTIVE"] } },
-        data: { state: "STOPPED", stopReason: stop, nextDueAt: null, completedAt: now },
-      });
-      continue;
-    }
-    const isNew = cl.state === "QUEUED";
-    if (isNew) {
-      if (c.maxNewLeadsPerDay !== null && (usage?.newLeads ?? 0) + newLeads >= c.maxNewLeadsPerDay)
-        continue;
-      const dom = lead.companyDomain; // null (free mail) never matches a company rule
-      if (
-        dom &&
-        ((await atLimit(companyToday(dom, false), c.perCompanyDailyLimit)) ||
-          (await atLimit(companyToday(dom, true), w.perCompanyDailyLimit)))
-      )
-        continue;
-    }
-    const sub = step.subsequenceId ? subs.get(step.subsequenceId) : undefined;
-    if (sub && (await atLimit(subToday(sub.id), sub.dailyLimit))) continue;
-
-    // sticky sender once something was SENT; until then (step 1, or a subsequence entered from QUEUED) rotation picks
-    let account: EmailAccount | null;
-    if (cl.accountId) {
-      account = await accountOf(cl.accountId);
-      // no burst: a backlog of follow-ups is planned only as far as today's allowance reaches
-      if (
-        account &&
-        remainingToday(account, (await committedToday(tx, [account], now)).get(account.id)!, now) <
-          units
-      )
-        continue;
-    } else
-      account = await pickAccount(tx, {
-        campaign: c,
-        leadEsp: lead.espType,
-        now,
-        stalenessSec: o.stalenessSec,
-        sendableProviders: o.sendableProviders,
-      });
-    if (!account) continue; // "not now": no row, the next tick tries again
-
-    const pool = variants.filter((v) => v.stepId === step.id);
-    if (!pool.length) continue;
-    const variant = pool.reduce((best, v) =>
-      assigned.get(v.id)! / v.weight < assigned.get(best.id)! / best.weight ? v : best,
-    );
-    let out: Rendered;
-    try {
-      out = renderForLead({
-        campaign: c,
-        step,
-        variant,
-        lead,
-        account,
-        workspace: w,
-        env: o.env,
-        customKeys,
-        replyTo: variant.subject.trim() ? null : await priorSubject(tx, cl.id),
-      });
-    } catch (e) {
-      const p = renderProblem(e);
-      if (!p) throw e;
-      r.skipped += 1; // M14: this lead only; the batch goes on
-      console.warn(`planDue: lead ${cl.id} skipped: ${p.code}: ${p.message}`);
-      continue;
-    }
-    const row = await upsertScheduled(tx, {
-      workspaceId: c.workspaceId,
-      campaignId,
-      campaignLeadId: cl.id,
-      stepId: step.id,
-      variantId: variant.id,
-      accountId: account.id,
-      subject: out.subject,
-      body: out.html ?? out.text,
-      text: out.text,
-      now,
-    });
-    if (!row) continue;
-    if (row.revived) r.revived += 1;
-    else r.planned += 1;
+  // C-1 (I5): whatever is full for the rest of this tick is excluded from later pages, so it cannot starve other leads
+  const seen: string[] = [];
+  const fullAccounts = new Set<string>();
+  const fullSubs = new Set<string>();
+  const fullDomains = new Set<string>();
+  const noCapacity = new Set<string>(); // ESPs for which pickAccount found no account with room this tick
+  // a durable reason (no route, no variant, broken template, missing step) backs the lead off instead of looping hot
+  const backOff = async (id: string, why: string) => {
     await tx.campaignLead.updateMany({
-      where: { id: cl.id, state: cl.state },
-      data: { state: "ACTIVE", currentStepId: step.id },
+      where: { id },
+      data: { nextDueAt: new Date(now.getTime() + BACKOFF_MS) },
     });
-    if (isNew) newLeads += 1;
-    assigned.set(variant.id, assigned.get(variant.id)! + 1);
-    inc.set(variant.id, (inc.get(variant.id) ?? 0) + 1);
+    console.warn(`planDue: lead ${id} backed off 1 h: ${why}`);
+  };
+
+  let written = 0;
+  while (written < batch && seen.length < batch * MAX_PAGES) {
+    // I3/C2: only the lead's current step, and only while no row for it exists except a plain CANCELLED one
+    const due = await tx.$queryRaw<{ id: string }[]>`
+      SELECT cl.id FROM "CampaignLead" cl
+      WHERE cl."campaignId" = ${campaignId} AND cl.state IN ('QUEUED', 'ACTIVE')
+        AND (${newBudgetLeft()}::boolean OR cl.state <> 'QUEUED')
+        AND (cl."nextDueAt" IS NULL OR cl."nextDueAt" <= ${ts}::timestamp)
+        AND cl.id <> ALL(${seen}::text[])
+        AND (cl."accountId" IS NULL OR cl."accountId" <> ALL(${[...fullAccounts]}::text[]))
+        AND (cl."subsequenceId" IS NULL OR cl."subsequenceId" <> ALL(${[...fullSubs]}::text[]))
+        AND NOT EXISTS (SELECT 1 FROM "ScheduledMessage" sm
+          WHERE sm."campaignLeadId" = cl.id AND sm."stepId" = COALESCE(cl."currentStepId", ${first.id})
+            AND (sm.status <> 'CANCELLED' OR sm."uncertainAt" IS NOT NULL))
+      ORDER BY ((cl.state = 'QUEUED') = ${c.prioritizeNewLeads}::boolean) DESC, cl."nextDueAt" ASC NULLS FIRST, cl.id
+      LIMIT ${batch}
+      FOR UPDATE SKIP LOCKED`;
+    if (!due.length) break;
+    seen.push(...due.map((d) => d.id));
+    const order = new Map(due.map((d, i) => [d.id, i]));
+    const cls = (await tx.campaignLead.findMany({ where: { id: { in: [...order.keys()] } } })).sort(
+      (a, b) => order.get(a.id)! - order.get(b.id)!,
+    );
+    const leads = new Map(
+      (await tx.lead.findMany({ where: { id: { in: cls.map((x) => x.leadId) } } })).map((l) => [
+        l.id,
+        l,
+      ]),
+    );
+    const blocked = await suppressedEmails(
+      tx,
+      w.id,
+      [...leads.values()].map((l) => l.email),
+    );
+
+    for (const cl of cls) {
+      if (written >= batch) break; // the rest are planned next tick
+      const lead = leads.get(cl.leadId)!;
+      const step = byId.get(cl.currentStepId ?? first.id);
+      if (!step) {
+        await backOff(cl.id, "its current step was deleted");
+        continue;
+      }
+      const stop = lead.deletedAt
+        ? "SKIPPED"
+        : blocked.has(lead.email)
+          ? "SUPPRESSED"
+          : lead.verificationStatus === "INVALID" ||
+              (!c.allowRisky && ["RISKY", "CATCH_ALL"].includes(lead.verificationStatus))
+            ? "SKIPPED"
+            : null;
+      if (stop) {
+        await tx.campaignLead.updateMany({
+          where: { id: cl.id, state: { in: ["QUEUED", "ACTIVE"] } },
+          data: { state: "STOPPED", stopReason: stop, nextDueAt: null, completedAt: now },
+        });
+        continue;
+      }
+      const isNew = cl.state === "QUEUED";
+      if (isNew) {
+        if (!newBudgetLeft()) continue;
+        const dom = lead.companyDomain; // null (free mail) never matches a company rule
+        if (dom && fullDomains.has(dom)) continue;
+        if (
+          dom &&
+          ((await atLimit(companyToday(dom, false), c.perCompanyDailyLimit)) ||
+            (await atLimit(companyToday(dom, true), w.perCompanyDailyLimit)))
+        ) {
+          fullDomains.add(dom);
+          continue;
+        }
+      }
+      const sub = step.subsequenceId ? subs.get(step.subsequenceId) : undefined;
+      if (sub && (await atLimit(subToday(sub.id), sub.dailyLimit))) {
+        fullSubs.add(sub.id);
+        continue;
+      }
+      const choices = variants.filter((v) => v.stepId === step.id);
+      if (!choices.length) {
+        await backOff(cl.id, "its step has no active variant");
+        continue;
+      }
+
+      // sticky sender once something was SENT; until then (step 1, or a subsequence entered from QUEUED) rotation picks
+      let account: EmailAccount | null;
+      if (cl.accountId) {
+        if (fullAccounts.has(cl.accountId)) continue;
+        account = await accountOf(cl.accountId);
+        // no burst: a backlog of follow-ups is planned only as far as today's allowance reaches
+        if (
+          account &&
+          remainingToday(
+            account,
+            (await committedToday(tx, [account], now)).get(account.id)!,
+            now,
+          ) < units
+        ) {
+          fullAccounts.add(account.id);
+          continue;
+        }
+      } else {
+        if (!routable(lead.espType)) {
+          await backOff(
+            cl.id,
+            `no assigned account may send to ${lead.espType} (tags or ESP rules)`,
+          );
+          continue;
+        }
+        if (noCapacity.has(lead.espType)) continue;
+        account = await pickAccount(tx, {
+          campaign: c,
+          leadEsp: lead.espType,
+          now,
+          stalenessSec: o.stalenessSec,
+          sendableProviders: o.sendableProviders,
+        });
+        if (!account) noCapacity.add(lead.espType);
+      }
+      if (!account) continue; // "not now": no row, the next tick tries again
+
+      const variant = choices.reduce((best, v) =>
+        assigned.get(v.id)! / v.weight < assigned.get(best.id)! / best.weight ? v : best,
+      );
+      let out: Rendered;
+      try {
+        out = renderForLead({
+          campaign: c,
+          step,
+          variant,
+          lead,
+          account,
+          workspace: w,
+          env: o.env,
+          customKeys,
+          replyTo: variant.subject.trim() ? null : await priorSubject(tx, cl.id),
+        });
+      } catch (e) {
+        const p = renderProblem(e);
+        if (!p) throw e;
+        r.skipped += 1; // M14: this lead only; the batch goes on
+        await backOff(cl.id, `${p.code}: ${p.message}`);
+        continue;
+      }
+      const row = await upsertScheduled(tx, {
+        workspaceId: c.workspaceId,
+        campaignId,
+        campaignLeadId: cl.id,
+        stepId: step.id,
+        variantId: variant.id,
+        accountId: account.id,
+        subject: out.subject,
+        body: out.html ?? out.text,
+        text: out.text,
+        now,
+      });
+      if (!row) continue;
+      written += 1;
+      if (row.revived) r.revived += 1;
+      else r.planned += 1;
+      await tx.campaignLead.updateMany({
+        where: { id: cl.id, state: cl.state },
+        data: { state: "ACTIVE", currentStepId: step.id },
+      });
+      if (isNew) newLeads += 1;
+      assigned.set(variant.id, assigned.get(variant.id)! + 1);
+      inc.set(variant.id, (inc.get(variant.id) ?? 0) + 1);
+    }
   }
   for (const [id, n] of [...inc].sort(([a], [b]) => (a < b ? -1 : 1)))
     await tx.stepVariant.update({ where: { id }, data: { assigned: { increment: n } } });
@@ -544,6 +657,7 @@ async function reroute(tx: Tx, campaignId: string, now: Date, o: PlanOpts) {
   if (!rows.length) return 0;
   const campaign = await tx.campaign.findUniqueOrThrow({ where: { id: campaignId } });
   let n = 0;
+  const render = await rowRenderer(tx, rows, o.env);
   for (const m of rows) {
     const to = await pickAccount(tx, {
       campaign,
@@ -555,7 +669,7 @@ async function reroute(tx: Tx, campaignId: string, now: Date, o: PlanOpts) {
     if (!to || to.id === m.accountId) continue;
     let r: Rendered | null;
     try {
-      r = await renderRow(tx, m, to.id, o.env);
+      r = await render(m, to.id);
     } catch (e) {
       if (!renderProblem(e)) throw e;
       continue;

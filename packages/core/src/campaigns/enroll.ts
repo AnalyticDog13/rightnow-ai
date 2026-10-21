@@ -263,7 +263,7 @@ export async function moveToSubsequence(
   );
 }
 
-/** Leaves the subsequence and stops the lead (STOPPED MANUAL), cancelling its open rows. T10b routes this through skipStep. */
+/** Leaves the subsequence and stops the lead (STOPPED MANUAL), cancelling its open rows (D22: not skipStep, which would advance it). */
 export async function removeFromSubsequence(
   prisma: Db,
   clock: Clock,

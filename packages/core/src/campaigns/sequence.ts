@@ -206,12 +206,13 @@ async function deleteStepTx(tx: Tx, ws: string, actorId: Actor, stepId: string) 
   const s = await stepOf(tx, ws, stepId);
   await lock(tx, ws, s.campaignId);
   const c = await liveCampaign(tx, ws, s.campaignId);
-  // a row whose outcome is open or unknown must be resolved first, or its lead could be moved under it
-  if (
-    await tx.scheduledMessage.count({
-      where: { stepId, status: { in: ["SENDING", "UNCERTAIN", "HELD"] } },
-    })
-  )
+  // a row whose outcome is open or unknown must be resolved first, or its lead could be moved under it. The rows are
+  // locked (waiting for a claim in progress; D21: ScheduledMessage before CampaignLead) so a claim cannot slip past.
+  const rows = await tx.$queryRaw<{ status: string }[]>`
+    SELECT status::text AS status FROM "ScheduledMessage"
+    WHERE "stepId" = ${stepId} AND status IN ('SCHEDULED', 'SENDING', 'UNCERTAIN', 'HELD')
+    ORDER BY id FOR UPDATE`;
+  if (rows.some((r) => r.status !== "SCHEDULED"))
     throw new CampaignError(409, "step_has_messages_in_flight");
   const waiting = await tx.campaignLead.findMany({
     where: { currentStepId: stepId, state: { in: ["QUEUED", "ACTIVE", "PAUSED"] } },
@@ -329,43 +330,49 @@ export async function updateVariant(
   patch: unknown,
 ) {
   const d = variantPatch.parse(patch);
-  return prisma.$transaction(async (tx) => {
-    const was = await variantOf(tx, ws, variantId);
-    const cid = was.step.campaignId;
-    await lock(tx, ws, cid);
-    if (d.active === false) await assertNotLastActive(tx, was);
-    if (d.subject !== undefined || d.body !== undefined)
-      await assertTemplates(tx, cid, d.subject ?? was.subject, d.body ?? was.body);
-    const v = await tx.stepVariant.update({ where: { id: variantId }, data: d });
-    // weight alone does not change any rendered text
-    if (v.subject !== was.subject || v.body !== was.body || v.active !== was.active)
-      await editHooks.variantChanged(tx, {
-        workspaceId: ws,
-        campaignId: cid,
-        stepId: was.stepId,
-        variantId,
-        removed: false,
-      });
-    await done(tx, ws, actorId, cid, { variant: variantId });
-    return v;
-  });
+  return prisma.$transaction(
+    async (tx) => {
+      const was = await variantOf(tx, ws, variantId);
+      const cid = was.step.campaignId;
+      await lock(tx, ws, cid);
+      if (d.active === false) await assertNotLastActive(tx, was);
+      if (d.subject !== undefined || d.body !== undefined)
+        await assertTemplates(tx, cid, d.subject ?? was.subject, d.body ?? was.body);
+      const v = await tx.stepVariant.update({ where: { id: variantId }, data: d });
+      // weight alone does not change any rendered text
+      if (v.subject !== was.subject || v.body !== was.body || v.active !== was.active)
+        await editHooks.variantChanged(tx, {
+          workspaceId: ws,
+          campaignId: cid,
+          stepId: was.stepId,
+          variantId,
+          removed: false,
+        });
+      await done(tx, ws, actorId, cid, { variant: variantId });
+      return v;
+    },
+    { timeout: 30_000 },
+  );
 }
 
 export async function deleteVariant(prisma: Db, ws: string, actorId: Actor, variantId: string) {
-  await prisma.$transaction(async (tx) => {
-    const v = await variantOf(tx, ws, variantId);
-    await lock(tx, ws, v.step.campaignId);
-    await assertNotLastActive(tx, v);
-    await editHooks.variantChanged(tx, {
-      workspaceId: ws,
-      campaignId: v.step.campaignId,
-      stepId: v.stepId,
-      variantId,
-      removed: true,
-    });
-    await tx.stepVariant.delete({ where: { id: variantId } });
-    await done(tx, ws, actorId, v.step.campaignId, { deletedVariant: variantId });
-  });
+  await prisma.$transaction(
+    async (tx) => {
+      const v = await variantOf(tx, ws, variantId);
+      await lock(tx, ws, v.step.campaignId);
+      await assertNotLastActive(tx, v);
+      await editHooks.variantChanged(tx, {
+        workspaceId: ws,
+        campaignId: v.step.campaignId,
+        stepId: v.stepId,
+        variantId,
+        removed: true,
+      });
+      await tx.stepVariant.delete({ where: { id: variantId } });
+      await done(tx, ws, actorId, v.step.campaignId, { deletedVariant: variantId });
+    },
+    { timeout: 30_000 },
+  );
 }
 
 export async function createSubsequence(

@@ -984,7 +984,10 @@ describe("isolation, windows and completion", () => {
       (await rowsOf(x.campaign.id)).filter((r) => r.status === "SCHEDULED").map((r) => r.stepId),
     ).toEqual([x.steps[1]!.id]);
     expect(await rowsOf(z.campaign.id)).toHaveLength(0);
-    expect((await clOf(x.leads[0]!.cl.id)).state).toBe("QUEUED");
+    expect(await clOf(x.leads[0]!.cl.id)).toMatchObject({
+      state: "QUEUED",
+      nextDueAt: new Date(T.getTime() + 60 * MIN),
+    });
   });
 
   test("outside the window, with an empty-days schedule, before startAt or without an address nothing is planned and nothing throws", async () => {
@@ -1080,7 +1083,147 @@ describe("isolation, windows and completion", () => {
   });
 });
 
+describe("forward progress (C-1, I5)", () => {
+  test("prioritizeNewLeads with the new-lead limit reached still plans the due follow-up", async () => {
+    const s = await seedCampaign(P(), {
+      at: T,
+      leads: 5,
+      steps: 2,
+      accounts: [{ dailyLimit: 100 }],
+      campaign: { prioritizeNewLeads: true, maxNewLeadsPerDay: 1 },
+    });
+    await onFollowUp(s, 4, s.accounts[0]!.id);
+    for (let i = 0; i < 4; i++)
+      await P().campaignLead.update({
+        where: { id: s.leads[i]!.cl.id },
+        data: { state: "QUEUED", currentStepId: null },
+      });
+    expect((await plan({ batch: 3 })).planned).toBe(2);
+    const follow = await P().scheduledMessage.findMany({
+      where: { campaignLeadId: s.leads[4]!.cl.id, stepId: s.steps[1]!.id },
+    });
+    expect(follow.map((r) => r.status)).toEqual(["SCHEDULED"]);
+    expect((await P().campaignDailyUsage.findMany()).map((u) => u.newLeads)).toEqual([1]);
+  });
+
+  test("a sticky account out of quota does not starve other leads", async () => {
+    const s = await seedCampaign(P(), {
+      at: T,
+      leads: 5,
+      steps: 2,
+      accounts: [{ dailyLimit: 5 }, { dailyLimit: 5 }],
+    });
+    const [a, b] = s.accounts.map((x) => x.id) as [string, string];
+    await P().accountDailyUsage.create({
+      data: { accountId: a, day: new Date("2026-10-20"), sent: 5 },
+    });
+    for (let i = 0; i < 4; i++) await onFollowUp(s, i, a, { due: ago(60 * MIN) }); // due first
+    await onFollowUp(s, 4, b, { due: ago(MIN) });
+    expect((await plan({ batch: 3 })).planned).toBe(1);
+    const rows = await P().scheduledMessage.findMany({ where: { stepId: s.steps[1]!.id } });
+    expect(rows.map((r) => [r.campaignLeadId, r.accountId])).toEqual([[s.leads[4]!.cl.id, b]]);
+  });
+
+  test("an ESP do_not_send lead is backed off, not re-selected every tick, and others are planned", async () => {
+    const s = await seedCampaign(P(), {
+      at: T,
+      leads: 2,
+      accounts: [{ dailyLimit: 100 }],
+      campaign: {
+        espRoutingRules: [{ action: "do_not_send", recipientEsp: "google", senderEsp: "all" }],
+      },
+    });
+    await queue(s);
+    const [g, other] = [...s.leads].sort((x, y) => (x.cl.id < y.cl.id ? -1 : 1));
+    await P().lead.update({ where: { id: g!.lead.id }, data: { espType: "GOOGLE" } });
+    expect((await plan({ batch: 1 })).planned).toBe(1);
+    expect(await P().scheduledMessage.count({ where: { campaignLeadId: other!.cl.id } })).toBe(1);
+    expect(await clOf(g!.cl.id)).toMatchObject({
+      state: "QUEUED",
+      nextDueAt: new Date(T.getTime() + 60 * MIN),
+    });
+  });
+});
+
 describe("edits (Review Focus 3)", () => {
+  test("deleting main step 1 moves its waiting leads to the new step 1, where rotation still routes them", async () => {
+    const s = await seedCampaign(P(), {
+      at: T,
+      leads: 3,
+      steps: 2,
+      accounts: [{ dailyLimit: 100 }],
+    });
+    await queue(s);
+    await plan({ batch: 2 }); // two leads ACTIVE on step 1 with an unsent row, one still QUEUED (no step yet)
+    await P().campaignLead.updateMany({
+      where: { campaignId: s.campaign.id, currentStepId: s.steps[0]!.id },
+      data: { state: "QUEUED" },
+    });
+    await deleteStep(P(), s.ws, null, s.steps[0]!.id);
+    expect(
+      (await P().sequenceStep.findUniqueOrThrow({ where: { id: s.steps[1]!.id } })).order,
+    ).toBe(1);
+    for (const l of s.leads) {
+      const c = await clOf(l.cl.id);
+      expect(c.state).toBe("QUEUED");
+      expect([null, s.steps[1]!.id]).toContain(c.currentStepId);
+    }
+    expect((await rowsOf(s.campaign.id)).filter((r) => r.status === "SCHEDULED")).toHaveLength(0);
+    expect((await plan()).planned).toBe(3);
+    const rows = (await rowsOf(s.campaign.id)).filter((r) => r.status === "SCHEDULED");
+    expect(rows.map((r) => r.stepId)).toEqual(Array(3).fill(s.steps[1]!.id));
+    expect(rows.every((r) => r.accountId === s.accounts[0]!.id)).toBe(true);
+  });
+
+  test("re-rendering a few thousand SCHEDULED rows after a variant edit completes", async () => {
+    const N = 3000;
+    const s = await seedCampaign(P(), { at: T, leads: 1, accounts: [{ dailyLimit: 100 }] });
+    const tag = randomBytes(3).toString("hex");
+    await P().lead.createMany({
+      data: Array.from({ length: N }, (_, i) => ({
+        id: `bulk-${tag}-${i}`,
+        workspaceId: s.ws,
+        email: `b${i}-${tag}@bulk.test`,
+        customFields: { region: `r${i}` },
+      })),
+    });
+    await P().campaignLead.createMany({
+      data: Array.from({ length: N }, (_, i) => ({
+        id: `bcl-${tag}-${i}`,
+        workspaceId: s.ws,
+        campaignId: s.campaign.id,
+        leadId: `bulk-${tag}-${i}`,
+        state: "ACTIVE" as const,
+        currentStepId: s.steps[0]!.id,
+      })),
+    });
+    await P().scheduledMessage.createMany({
+      data: Array.from({ length: N }, (_, i) => ({
+        workspaceId: s.ws,
+        campaignId: s.campaign.id,
+        campaignLeadId: `bcl-${tag}-${i}`,
+        stepId: s.steps[0]!.id,
+        variantId: s.steps[0]!.variant.id,
+        accountId: s.accounts[0]!.id,
+        dueAt: T,
+        idempotencyKey: `bcl-${tag}-${i}:${s.steps[0]!.id}`,
+        renderedSubject: "Hi",
+        renderedBody: "x",
+        renderedText: "x",
+      })),
+    });
+    const t0 = Date.now();
+    await updateVariant(P(), s.ws, null, s.steps[0]!.variant.id, {
+      subject: "Fixed {{region}}",
+    });
+    const took = Date.now() - t0;
+    const rows = await P().scheduledMessage.findMany({ where: { campaignId: s.campaign.id } });
+    expect(rows).toHaveLength(N);
+    expect(
+      rows.every((r) => r.status === "SCHEDULED" && r.renderedSubject.startsWith("Fixed r")),
+    ).toBe(true);
+    expect(took).toBeLessThan(30_000);
+  }, 120_000);
   test("updateVariant re-renders SCHEDULED rows in place and leaves SENT rows alone", async () => {
     const s = await seedCampaign(P(), { at: T, leads: 2, accounts: [{ dailyLimit: 100 }] });
     await queue(s);
