@@ -414,19 +414,20 @@
    "id": "P3-T12",
    "phase": 3,
    "title": "Campaign builder UI (list with status/progress; tabs Leads/Sequences/Schedule/Options/Accounts; preview with real lead; Scheduled emails view incl. HELD actions)",
-   "status": "in_progress",
+   "status": "done",
    "deps": [
     "P3-T11b"
    ],
    "model": "sonnet",
-   "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-3.md; tests listed there pass; from P3-T08: preview handles footer/header validation errors gracefully"
+   "commit": "9b7b375",
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-3.md; tests listed there pass; from P3-T08: preview handles footer/header validation errors gracefully",
+   "review": "sonnet task review approved (0C 0I 8M) + 1 minor-fix round, sonnet re-review approved"
   },
   {
    "id": "P3-T13",
    "phase": 3,
    "title": "Ramp-up + workspace/campaign cap settings feeding `effectiveAllowance`",
-   "status": "todo",
+   "status": "in_progress",
    "deps": [
     "P3-T12"
    ],

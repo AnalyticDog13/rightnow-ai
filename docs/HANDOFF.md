@@ -1,12 +1,12 @@
 # Handoff
 
 **Phase:** 3 — Campaign automation (branch `phase-3-campaigns`, from `main` after the Phase 2 merge)
-**Current task:** P3-T12 builder UI (sonnet). P3-T11b recovery done 60d68da (D24).
+**Current task:** P3-T13 ramp/caps/timeline (sonnet). P3-T12 builder UI done 9b7b375.
 **Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 (approved). Done step plans: `docs/plans/phase-1.md`, `docs/plans/phase-2.md`.
 **Tests:** 522 vitest + 16 Playwright (prod build) green; CI `check`, `compose-smoke`, `imap-real` green.
 
 ## Next exact action
-Finish P3-T12 (review loop), then P3-T13, then the Phase 3 gate (opus whole-branch review + ponytail-audit). SDD ledger: `.superpowers/sdd/phase-3/progress.md`.
+Finish P3-T13 (review loop), then the Phase 3 gate (opus whole-branch review + ponytail-audit). SDD ledger: `.superpowers/sdd/phase-3/progress.md`.
 Gate follow-ups: lead-import queue needs `heartbeatSeconds: 10` (keep 3 h expiry); existing dev DBs keep old pg-boss queue settings (heartbeat added in P3-T11b applies to new queues only).
 
 ## Interfaces available (Phases 1–2)
