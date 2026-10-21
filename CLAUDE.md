@@ -78,7 +78,7 @@ Verify (every task; no Docker or Postgres needed, tests start embedded Postgres 
 - `npm test`: all Vitest projects. One project: `npx vitest run --project @rightnow/web`; one file: `npx vitest run apps/web/test/api.test.ts`
 - `npm run lint` · `npm run typecheck` (`tsc --noEmit` per workspace)
 - `npm run e2e`: Playwright (boots embedded Postgres + `next dev` on :3100). First time: `npx playwright install chromium`.
-  On the Windows dev machine `next dev` e2e has a pre-existing overlay failure: use `E2E_PROD=1` (needs a prior `next build`; delete `apps/web/.next` afterwards)
+  On the Windows dev machine `next dev` e2e has a pre-existing overlay failure: use `E2E_PROD=1` (needs a prior `next build` with the Dockerfile placeholder env vars such as `DATABASE_URL`; delete `apps/web/.next` afterwards; Playwright may exit 1 on Windows from the embedded-Postgres temp-dir cleanup even when all tests pass)
 - Real IMAP/SMTP contract (CI job `imap-real`, Linux, GreenMail): `MODE=local IMAP_TEST_URL='imap://me:secret@127.0.0.1:3143?smtp=3025&address=me@rn.test' npx vitest run packages/providers/test/imap.real.test.ts`
 - Fake mailboxes for dev/e2e: `MAIL_PROVIDER_FAKE=1` (refused when `MODE=vps`), state in `FAKE_MAIL_DIR`; inspect via `GET /api/v1/_fake/mailbox/<address>`
 - Live check with real credentials (gates P3-T11): `npx tsx scripts/live-verify.ts --account <id> --to <other address>` (refuses the Fake; see docs/ops/LIVE_VERIFICATION.md)

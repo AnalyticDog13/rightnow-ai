@@ -44,7 +44,7 @@ Areas: UI, ACC, WARM, CAMP, SEQ, SEND, LEAD, INBOX, TRACK, CRM, ANALYTICS, AUTO,
 - [ ] PS-UI-03: Every control wired to real backend behavior; no dead buttons; Playwright smoke test walks each nav item — master §2.
 - [ ] PS-UI-04: Dashboard widgets: sends today vs capacity, active campaigns progress, reply/positive/bounce rates, account health strip, remaining daily capacity, pending reminders/tasks — master §11 + Instantly workspace analytics (S16).
 - [ ] PS-UI-05: Original visual design, light/dark theme, accessible components (keyboard, labels, contrast) — master §2.
-- [ ] PS-UI-06: Global status badges for accounts and campaigns using the status sets in PS-ACC-14 and PS-CAMP-20 — Instantly numeric status enums (S4, S9).
+- [x] PS-UI-06: Global status badges for accounts and campaigns using the status sets in PS-ACC-14 and PS-CAMP-20 — Instantly numeric status enums (S4, S9).
 - [ ] PS-UI-07: Global date-range and workspace-timezone display; analytics bucketed in UTC unless user chooses otherwise — Instantly reports in UTC (S16).
 - [ ] PS-UI-08: Tags (custom tags) assignable to accounts and campaigns, filterable everywhere — Instantly custom tags map to accounts/campaigns; `email_tag_list` on campaign limits sending accounts (S3, S23 Custom Tag).
 
@@ -75,13 +75,13 @@ Areas: UI, ACC, WARM, CAMP, SEQ, SEND, LEAD, INBOX, TRACK, CRM, ANALYTICS, AUTO,
 - [x] PS-ACC-18: `replyTo` address per account — Instantly `reply_to` (S4).
 - [x] PS-ACC-19: Custom tracking domain per account with CNAME verification and status; `skipCnameCheck` escape hatch for admins only — Instantly `tracking_domain_name/status`, `skip_cname_check` (S4); open-tracking guide recommends it per account (S17).
 - [x] PS-ACC-20: First/last name per account used by `{{sendingAccountFirstName}}`/`{{sendingAccountLastName}}` variables (see PS-SEQ-12) — Instantly account has first_name/last_name (S4).
-- [ ] PS-ACC-21: Tags per account; campaigns may restrict sending to accounts with given tags — S3 `email_tag_list`.
-- [ ] PS-ACC-22: Account-to-campaign mapping view: given an account, list campaigns using it — Instantly "Get campaigns associated with an email" (S23).
+- [x] PS-ACC-21: Tags per account; campaigns may restrict sending to accounts with given tags — S3 `email_tag_list`.
+- [x] PS-ACC-22: Account-to-campaign mapping view: given an account, list campaigns using it — Instantly "Get campaigns associated with an email" (S23).
 - [x] PS-ACC-23: Per-account daily activity and remaining limit shown in the accounts table (sent today / limit / remaining) — master §3; Instantly has daily account analytics (S23).
 - [ ] PS-ACC-24: "Test account vitals" / connectivity diagnostics: IMAP login, SMTP auth, token validity, MX/SPF/DKIM/DMARC presence, custom-domain CNAME — Instantly "Test domain setup" checks MX, SPF, DKIM, DMARC (S18, S23).
 - [x] PS-ACC-25: "Mark as fixed" action clears an error status after the user remediates and a re-test passes — Instantly has "Mark an account as fixed" endpoint (S23).
 - [x] PS-ACC-26: Autofix state for transient errors (in progress / failed / succeeded) — Instantly `autofix_failed` tri-state (S4).
-- [ ] PS-ACC-27: Pause/resume single and multiple accounts; paused accounts excluded from rotation immediately, queued jobs rescheduled — S23.
+- [x] PS-ACC-27: Pause/resume single and multiple accounts; paused accounts excluded from rotation immediately, queued jobs rescheduled — S23.
 - [x] PS-ACC-28: Delete account preserves historical emails/events for analytics (soft delete) — undocumented in Instantly; RightNow decision.
 - [x] PS-ACC-29: Microsoft SMTP-disabled remediation hint shown on connection error — Instantly help: enable SMTP, remove account, wait ~1 hour, reconnect (S18).
 - [x] PS-ACC-30: Provider-specific real limits shown as warnings (Gmail/Workspace/Microsoft); user limit cannot exceed a configurable hard ceiling — master §5.
@@ -95,94 +95,94 @@ See section 17 (SYNC) for requirements; account-level items:
 ## 4. Campaign Creation and Automation (master §4)
 
 ### 4.1 Lifecycle
-- [ ] PS-CAMP-01: Create, duplicate, edit, archive, delete, pause, resume campaigns — Instantly has create, activate/resume, stop/pause, duplicate, delete, export to JSON, share/clone from shared (S23 Campaign).
-- [ ] PS-CAMP-02: Campaign export/import as JSON (sequence + settings, no leads) — Instantly export-to-JSON and create-from-shared (S23).
-- [ ] PS-CAMP-03: Draft campaigns cannot send; subsequences tab appears only after first launch — Instantly (S13).
+- [x] PS-CAMP-01: Create, duplicate, edit, archive, delete, pause, resume campaigns — Instantly has create, activate/resume, stop/pause, duplicate, delete, export to JSON, share/clone from shared (S23 Campaign).
+- [x] PS-CAMP-02: Campaign export/import as JSON (sequence + settings, no leads) — Instantly export-to-JSON and create-from-shared (S23).
+- [x] PS-CAMP-03: Draft campaigns cannot send; subsequences tab appears only after first launch — Instantly (S13).
 - [ ] PS-CAMP-04: Campaign statuses: Draft, Active, Paused, Completed, Running Subsequences, Accounts Unhealthy, Bounce Protect, Account Suspended — Instantly codes 0,1,2,3,4,-1,-2,-99 (S9).
-- [ ] PS-CAMP-05: Campaign "Completed" when every lead has finished the sequence or been stopped; "evergreen" flag keeps it open for new leads — S3 `is_evergreen`, S9.
-- [ ] PS-CAMP-06: Campaign wizard sections: Leads, Sequences, Schedule, Options (with Sending accounts) — Instantly campaign builder tabs (S1; layout partly undocumented).
-- [ ] PS-CAMP-07: Assign multiple sending accounts; system rotates among them; no account-count limit — Instantly "Accounts to use" (S1).
-- [ ] PS-CAMP-08: Campaign can reference lead lists or direct uploads; leads attach to campaign (S5 `campaign`, `list_id`).
-- [ ] PS-CAMP-09: Per-campaign `owner` (workspace user) for filtering and CRM reporting; custom tags on campaigns — Instantly Owner and Custom Tags (S1, S3 `owned_by`).
-- [ ] PS-CAMP-10: Positive-lead value `plValue` per campaign (value of each positive lead) feeding pipeline value reports — S3 `pl_value`.
+- [x] PS-CAMP-05: Campaign "Completed" when every lead has finished the sequence or been stopped; "evergreen" flag keeps it open for new leads — S3 `is_evergreen`, S9.
+- [x] PS-CAMP-06: Campaign wizard sections: Leads, Sequences, Schedule, Options (with Sending accounts) — Instantly campaign builder tabs (S1; layout partly undocumented).
+- [x] PS-CAMP-07: Assign multiple sending accounts; system rotates among them; no account-count limit — Instantly "Accounts to use" (S1).
+- [x] PS-CAMP-08: Campaign can reference lead lists or direct uploads; leads attach to campaign (S5 `campaign`, `list_id`).
+- [x] PS-CAMP-09: Per-campaign `owner` (workspace user) for filtering and CRM reporting; custom tags on campaigns — Instantly Owner and Custom Tags (S1, S3 `owned_by`).
+- [x] PS-CAMP-10: Positive-lead value `plValue` per campaign (value of each positive lead) feeding pipeline value reports — S3 `pl_value`.
 
 ### 4.2 Schedule
-- [ ] PS-CAMP-11: One or more named schedules per campaign, each with: days of week (seven booleans), from/to time (24h HH:MM), IANA timezone (required); campaign-level optional start_date and end_date (YYYY-MM-DD in campaign timezone) — Instantly `campaign_schedule.schedules[]` min 1, `timing.from/to`, `days` keys "0"–"6" (mapping to weekdays not defined in the docs; RightNow uses 0=Sunday), timezone enum of ~100 zones (S3).
-- [ ] PS-CAMP-12: Schedule presets: any day/any time, office hours, custom — Instantly options (S1).
-- [ ] PS-CAMP-13: Min time gap between emails default 9 minutes; random additional time default 5 minutes (so 9–14 min between sends per account); warn below 5 minutes — Instantly (S1, S25); API `email_gap` and `random_wait_max` in minutes (S3).
+- [x] PS-CAMP-11: One or more named schedules per campaign, each with: days of week (seven booleans), from/to time (24h HH:MM), IANA timezone (required); campaign-level optional start_date and end_date (YYYY-MM-DD in campaign timezone) — Instantly `campaign_schedule.schedules[]` min 1, `timing.from/to`, `days` keys "0"–"6" (mapping to weekdays not defined in the docs; RightNow uses 0=Sunday), timezone enum of ~100 zones (S3).
+- [x] PS-CAMP-12: Schedule presets: any day/any time, office hours, custom — Instantly options (S1).
+- [x] PS-CAMP-13: Min time gap between emails default 9 minutes; random additional time default 5 minutes (so 9–14 min between sends per account); warn below 5 minutes — Instantly (S1, S25); API `email_gap` and `random_wait_max` in minutes (S3).
 - [ ] PS-CAMP-14: Lead local-time sending ("send in recipient timezone") — undocumented as a campaign option; optional extension, not parity.
 
 ### 4.3 Options
-- [ ] PS-CAMP-15: Daily limit = cap on total campaign emails per day across all assigned accounts; recommend 30 x accounts — Instantly (S1, S25). Effective cap per account = min(account limit, share of campaign limit, warm-up/reactivation allowance).
-- [ ] PS-CAMP-16: Max new leads per day (`dailyMaxLeads`, integer >= 0): caps how many leads receive Step 1 daily — S1, S3 `daily_max_leads`.
-- [ ] PS-CAMP-17: Prioritize new leads (default off: follow-ups go first) — S1, S3.
-- [ ] PS-CAMP-18: Stop sending on reply (recommended on) — stops sequence for the replying lead only — S1.
+- [x] PS-CAMP-15: Daily limit = cap on total campaign emails per day across all assigned accounts; recommend 30 x accounts — Instantly (S1, S25). Effective cap per account = min(account limit, share of campaign limit, warm-up/reactivation allowance).
+- [x] PS-CAMP-16: Max new leads per day (`dailyMaxLeads`, integer >= 0): caps how many leads receive Step 1 daily — S1, S3 `daily_max_leads`.
+- [x] PS-CAMP-17: Prioritize new leads (default off: follow-ups go first) — S1, S3.
+- [x] PS-CAMP-18: Stop sending on reply (recommended on) — stops sequence for the replying lead only — S1.
 - [ ] PS-CAMP-19: Stop campaign for company on reply: when one lead at a company (same domain) replies, remaining leads at that domain become Completed; auto-replies do not trigger it — S1, S3 `stop_for_company`.
 - [ ] PS-CAMP-20: Stop on auto-reply (OOO etc.): off by default recommended when using out-of-office smart pause (resume date); when on, auto-reply stops the lead — S1, S3 `stop_on_auto_reply`.
 - [ ] PS-CAMP-21: Open tracking toggle and link tracking toggle per campaign; global org-level overrides (disable open tracking / always text-only first email) win over campaign settings — S1, S17.
-- [ ] PS-CAMP-22: Delivery optimization: send as text-only (all steps) and send first email as text-only; enabling text-only disables open tracking and strips images/HTML styling — S1, S3 `text_only`, `first_email_text_only`, S17.
-- [ ] PS-CAMP-23: Provider matching (`matchLeadEsp`): prefer sender with same ESP as recipient (Gmail to Gmail, Outlook to Outlook); needs at least one matching account — S1, S3. ESP detection for lead stored in lead record (Google, Microsoft, Zoho, Yahoo, Yandex, Other) — S5 ESP codes.
-- [ ] PS-CAMP-24: ESP routing rules: list of {action send|do_not_send, recipientEsp[all|google|outlook|other], senderEsp[all|google|outlook|other]} evaluated at account selection — S3 `provider_routing_rules`.
-- [ ] PS-CAMP-25: Insert unsubscribe header (List-Unsubscribe + one-click) toggle; RightNow default ON for compliance — S1 `insert_unsubscribe_header` (default undocumented).
-- [ ] PS-CAMP-26: Allow risky emails (leads whose verification is Risky/Catch-all) toggle, default off; Disable BounceProtect toggle with warning — S1, S3.
+- [x] PS-CAMP-22: Delivery optimization: send as text-only (all steps) and send first email as text-only; enabling text-only disables open tracking and strips images/HTML styling — S1, S3 `text_only`, `first_email_text_only`, S17.
+- [x] PS-CAMP-23: Provider matching (`matchLeadEsp`): prefer sender with same ESP as recipient (Gmail to Gmail, Outlook to Outlook); needs at least one matching account — S1, S3. ESP detection for lead stored in lead record (Google, Microsoft, Zoho, Yahoo, Yandex, Other) — S5 ESP codes.
+- [x] PS-CAMP-24: ESP routing rules: list of {action send|do_not_send, recipientEsp[all|google|outlook|other], senderEsp[all|google|outlook|other]} evaluated at account selection — S3 `provider_routing_rules`.
+- [x] PS-CAMP-25: Insert unsubscribe header (List-Unsubscribe + one-click) toggle; RightNow default ON for compliance — S1 `insert_unsubscribe_header` (default undocumented).
+- [x] PS-CAMP-26: Allow risky emails (leads whose verification is Risky/Catch-all) toggle, default off; Disable BounceProtect toggle with warning — S1, S3.
 - [ ] PS-CAMP-27: BounceProtect: automatically pause campaign (status Bounce Protect) when bounce rate threshold exceeded; RightNow default: pause when hard-bounce rate > 3% over >= 50 sends in rolling 24h (configurable) — Instantly feature exists, threshold undocumented in fetched pages (S21 refers to a "High Bounce Auto-Pause" article).
-- [ ] PS-CAMP-28: Limit emails per company (domain): caps daily emails to leads sharing a domain; scope per campaign or workspace; mode custom/disabled; min 1 — S1, S3 `limit_emails_per_company_override`.
-- [ ] PS-CAMP-29: CC and BCC recipient lists on every campaign email (CC visible, BCC hidden) — S1, S3.
+- [x] PS-CAMP-28: Limit emails per company (domain): caps daily emails to leads sharing a domain; scope per campaign or workspace; mode custom/disabled; min 1 — S1, S3 `limit_emails_per_company_override`.
+- [x] PS-CAMP-29: CC and BCC recipient lists on every campaign email (CC visible, BCC hidden) — S1, S3.
 - [ ] PS-CAMP-30: Auto-optimize A/Z test: pick winning metric (reply rate, click rate, open rate); disable underperforming variants automatically; thresholds undocumented, RightNow requires min sample (default 100 sends per variant) before disabling — S1, S3 `auto_variant_select.trigger`, S20.
 - [ ] PS-CAMP-31: Reset A/Z variant usage tracking daily (preference) — default balances variant usage over campaign lifetime — S20.
-- [ ] PS-CAMP-32: Preview personalized message per lead before launch (render with real lead data, spintax resolved, fallback shown) and send-test-email action — master §4; Instantly send-a-test-email (S23, S12).
-- [ ] PS-CAMP-33: Pre-launch validation: no sending accounts, no leads, missing subject/body, unresolved variable, invalid schedule, unverified tracking domain, compliance gate disabled provider — master §4.
-- [ ] PS-CAMP-34: Campaign sending status endpoint/UI explains why a campaign is not sending (outside window, quota reached, accounts unhealthy, no eligible leads, startup sync pending) — Instantly "Get campaign sending status" (S23).
-- [ ] PS-CAMP-35: Campaign-level lead statuses: Active, Paused, Completed, Bounced, Unsubscribed, Skipped — S5.
-- [ ] PS-CAMP-36: Conflict prevention: a contact already in an active campaign is not added to another unless the user disables dedupe; global rule prevents two active sequences on the same email — master §7; Instantly workspace-wide duplicate check on import (S19).
+- [x] PS-CAMP-32: Preview personalized message per lead before launch (render with real lead data, spintax resolved, fallback shown) and send-test-email action — master §4; Instantly send-a-test-email (S23, S12).
+- [x] PS-CAMP-33: Pre-launch validation: no sending accounts, no leads, missing subject/body, unresolved variable, invalid schedule, unverified tracking domain, compliance gate disabled provider — master §4.
+- [x] PS-CAMP-34: Campaign sending status endpoint/UI explains why a campaign is not sending (outside window, quota reached, accounts unhealthy, no eligible leads, startup sync pending) — Instantly "Get campaign sending status" (S23).
+- [x] PS-CAMP-35: Campaign-level lead statuses: Active, Paused, Completed, Bounced, Unsubscribed, Skipped — S5.
+- [x] PS-CAMP-36: Conflict prevention: a contact already in an active campaign is not added to another unless the user disables dedupe; global rule prevents two active sequences on the same email — master §7; Instantly workspace-wide duplicate check on import (S19).
 
 ---
 
 ## 5. Sequences, Personalization, A/B, Spintax (master §4)
 
-- [ ] PS-SEQ-01: Unlimited ordered steps per sequence; step type `email` only at launch — Instantly step type enum has only `email` (S3).
-- [ ] PS-SEQ-02: Step delay = number + unit (minutes|hours|days; default unit days); max total delay 366 days; step 1 delay 0 — S3.
-- [ ] PS-SEQ-03: Delay counted from previous step's actual send time and only fires inside a schedule window — S1/S3 (exact semantics undocumented).
-- [ ] PS-SEQ-04: Each step has >= 1 variant (A/Z), each with subject and HTML body; up to 26 variants per step; variants can be disabled individually — S3 `v_disabled`, S20 (26 max).
+- [x] PS-SEQ-01: Unlimited ordered steps per sequence; step type `email` only at launch — Instantly step type enum has only `email` (S3).
+- [x] PS-SEQ-02: Step delay = number + unit (minutes|hours|days; default unit days); max total delay 366 days; step 1 delay 0 — S3.
+- [x] PS-SEQ-03: Delay counted from previous step's actual send time and only fires inside a schedule window — S1/S3 (exact semantics undocumented).
+- [x] PS-SEQ-04: Each step has >= 1 variant (A/Z), each with subject and HTML body; up to 26 variants per step; variants can be disabled individually — S3 `v_disabled`, S20 (26 max).
 - [ ] PS-SEQ-05: Variant assignment is balanced over campaign lifetime by default (new variants catch up); optional daily reset; assignment recorded per send — S20.
-- [ ] PS-SEQ-06: Follow-up steps may reuse previous subject (empty subject = reply in same thread) — undocumented in fetched pages; RightNow: empty subject on step N>1 sends as threaded reply (In-Reply-To/References).
-- [ ] PS-SEQ-07: Sequence stops for a lead on reply, unsubscribe, hard bounce, manual removal/status change to non-active, global blocklist hit — S1, S5 statuses; master §4.
+- [x] PS-SEQ-06: Follow-up steps may reuse previous subject (empty subject = reply in same thread) — undocumented in fetched pages; RightNow: empty subject on step N>1 sends as threaded reply (In-Reply-To/References).
+- [x] PS-SEQ-07: Sequence stops for a lead on reply, unsubscribe, hard bounce, manual removal/status change to non-active, global blocklist hit — S1, S5 statuses; master §4.
 - [ ] PS-SEQ-08: Out-of-office handling: detect auto-reply, optionally pause the lead and resume sending after the OOO return date ("AI Smart Pause"/OOO Resume); resume date visible in lead details — S1, S14.
-- [ ] PS-SEQ-09: Subsequences: separate mini-sequences attached to a campaign, triggered by (a) lead status/label (default or custom, multiple allowed), (b) activity: email opened, link clicked, campaign completed without reply, (c) reply keywords (semicolon-separated exact phrases) — S13.
+- [x] PS-SEQ-09: Subsequences: separate mini-sequences attached to a campaign, triggered by (a) lead status/label (default or custom, multiple allowed), (b) activity: email opened, link clicked, campaign completed without reply, (c) reply keywords (semicolon-separated exact phrases) — S13.
 - [ ] PS-SEQ-10: Subsequence settings: pre-delay before step 1 (minutes/hours/days), inherits campaign schedule and daily limit by default (custom or "no limit"), optional ignore-account-limits (with warning; RightNow disallows it for warming/re-warming accounts), pause/resume, duplicate, analytics — S13, S3 `pre_delay`.
-- [ ] PS-SEQ-11: Only leads labeled after the subsequence is active enter automatically; existing leads can be moved manually; lead has `subsequenceId`; a lead can be removed from a subsequence; sends occur within ~10 minutes of entry if schedule/limits allow — S13, S5, S23.
-- [ ] PS-SEQ-12: Variables (camelCase, case-sensitive, matching CSV headers): `{{firstName}} {{lastName}} {{companyName}} {{jobTitle}} {{website}} {{phone}} {{personalization}} {{email}}`, custom lead fields by column name, sender variables `{{sendingAccountFirstName}} {{sendingAccountLastName}} {{sendingAccountEmail}}` (RightNow naming; sender variable names are inferred, the fetched Instantly pages did not list them) — S5 payload known keys, S12.
-- [ ] PS-SEQ-13: `{{industry}}` and other master-listed fields exist as standard lead columns — master §4.
-- [ ] PS-SEQ-14: Fallback syntax `{{var | fallback}}`; fallbacks can chain (`{{firstName | lastName | for you}}` style) inside spintax options — S12.
-- [ ] PS-SEQ-15: Spintax `{{RANDOM | a | b | c}}` picks one option per lead, deterministic per (lead, step, variant) so retries do not reshuffle; variables allowed inside options; usable in subject and body — S12.
-- [ ] PS-SEQ-16: Conditional blocks `{% if var == "value" %}...{% endif %}` (LiquidJS subset), case-sensitive compare; hidden-variable trick not needed since RightNow resolves variables from lead payload directly — S12.
-- [ ] PS-SEQ-17: `{{personalization}}` is a free-text lead field (typically AI-written opener) inserted verbatim — S5.
-- [ ] PS-SEQ-18: Template validation: unknown variable, unmatched braces, missing `RANDOM` keyword, empty fallback, variable absent from >0 leads (warn count) — S12 troubleshooting; master §4 validation.
-- [ ] PS-SEQ-19: Unsubscribe link/variable `{{unsubscribeLink}}` available in body and auto-appended footer if absent when compliance setting on — master §14 (Instantly variable name undocumented).
-- [ ] PS-SEQ-20: Body stored as HTML with plain-text alternative auto-generated; `<br/>` line breaks — S3.
+- [x] PS-SEQ-11: Only leads labeled after the subsequence is active enter automatically; existing leads can be moved manually; lead has `subsequenceId`; a lead can be removed from a subsequence; sends occur within ~10 minutes of entry if schedule/limits allow — S13, S5, S23.
+- [x] PS-SEQ-12: Variables (camelCase, case-sensitive, matching CSV headers): `{{firstName}} {{lastName}} {{companyName}} {{jobTitle}} {{website}} {{phone}} {{personalization}} {{email}}`, custom lead fields by column name, sender variables `{{sendingAccountFirstName}} {{sendingAccountLastName}} {{sendingAccountEmail}}` (RightNow naming; sender variable names are inferred, the fetched Instantly pages did not list them) — S5 payload known keys, S12.
+- [x] PS-SEQ-13: `{{industry}}` and other master-listed fields exist as standard lead columns — master §4.
+- [x] PS-SEQ-14: Fallback syntax `{{var | fallback}}`; fallbacks can chain (`{{firstName | lastName | for you}}` style) inside spintax options — S12.
+- [x] PS-SEQ-15: Spintax `{{RANDOM | a | b | c}}` picks one option per lead, deterministic per (lead, step, variant) so retries do not reshuffle; variables allowed inside options; usable in subject and body — S12.
+- [x] PS-SEQ-16: Conditional blocks `{% if var == "value" %}...{% endif %}` (LiquidJS subset), case-sensitive compare; hidden-variable trick not needed since RightNow resolves variables from lead payload directly — S12.
+- [x] PS-SEQ-17: `{{personalization}}` is a free-text lead field (typically AI-written opener) inserted verbatim — S5.
+- [x] PS-SEQ-18: Template validation: unknown variable, unmatched braces, missing `RANDOM` keyword, empty fallback, variable absent from >0 leads (warn count) — S12 troubleshooting; master §4 validation.
+- [x] PS-SEQ-19: Unsubscribe link/variable `{{unsubscribeLink}}` available in body and auto-appended footer if absent when compliance setting on — master §14 (Instantly variable name undocumented).
+- [x] PS-SEQ-20: Body stored as HTML with plain-text alternative auto-generated; `<br/>` line breaks — S3.
 - [ ] PS-SEQ-21: Per-step and per-variant analytics: sent, opened, replied, clicked, reply rate, positive reply rate, opportunities, meetings booked, won; date-range selectable — S20, S23 steps analytics.
-- [ ] PS-SEQ-22: Reply-dependent branching only via subsequences (no full visual flow builder) — S13.
+- [x] PS-SEQ-22: Reply-dependent branching only via subsequences (no full visual flow builder) — S13.
 
 ---
 
 ## 6. Backend Email Sending Pipeline (master §5)
 
-- [ ] PS-SEND-01: BullMQ queues: per-account send queue, campaign scheduler queue, retry/dead-letter queue, sync queue; jobs persisted in Redis with AOF — master §5.
-- [ ] PS-SEND-02: Scheduler selects next (lead, step) per campaign honoring: schedule window, campaign daily cap, max-new-leads cap, per-company cap, prioritize-new-leads flag, account cap, account gap — S1, S3.
-- [ ] PS-SEND-03: Account rotation round-robin weighted by remaining capacity; provider matching and ESP routing applied before rotation — S1, S3.
-- [ ] PS-SEND-04: Per-account gap = campaign min gap (default 9 min) + uniform random 0..random_wait_max (default 5 min), also >= account `sendingGap` — S1, S4.
-- [ ] PS-SEND-05: Atomic quota reservation (Redis Lua or Postgres row lock) before enqueue; released on definite failure; counted on provider acceptance; day boundary in campaign/account timezone — master §5.
-- [ ] PS-SEND-06: Workspace-wide daily quota in addition to per-account/per-campaign — master §5.
-- [ ] PS-SEND-07: Idempotency key per (leadId, campaignId, step, variant); unique DB constraint; "uncertain" state when a send outcome is unknown after crash; uncertain sends are reconciled against the sent folder before any retry, never blindly resent — master §5, Local-First.
-- [ ] PS-SEND-08: Worker crash recovery: stalled-job detection, lease expiry, reconciliation of in-flight sends — master §5.
-- [ ] PS-SEND-09: Provider rate-limit handling: honor 429/`Retry-After`, Gmail/Graph throttling errors, SMTP 4xx; exponential backoff with jitter and max attempts, then mark failed — master §5.
-- [ ] PS-SEND-10: Message states: scheduled, reserved, sending, provider_accepted, failed, bounced_hard, bounced_soft, delivered_unknown (never "delivered" unless a provider receipt/DSN says so) — master §5.
+- [x] PS-SEND-01: BullMQ queues: per-account send queue, campaign scheduler queue, retry/dead-letter queue, sync queue; jobs persisted in Redis with AOF — master §5.
+- [x] PS-SEND-02: Scheduler selects next (lead, step) per campaign honoring: schedule window, campaign daily cap, max-new-leads cap, per-company cap, prioritize-new-leads flag, account cap, account gap — S1, S3.
+- [x] PS-SEND-03: Account rotation round-robin weighted by remaining capacity; provider matching and ESP routing applied before rotation — S1, S3.
+- [x] PS-SEND-04: Per-account gap = campaign min gap (default 9 min) + uniform random 0..random_wait_max (default 5 min), also >= account `sendingGap` — S1, S4.
+- [x] PS-SEND-05: Atomic quota reservation (Redis Lua or Postgres row lock) before enqueue; released on definite failure; counted on provider acceptance; day boundary in campaign/account timezone — master §5.
+- [x] PS-SEND-06: Workspace-wide daily quota in addition to per-account/per-campaign — master §5.
+- [x] PS-SEND-07: Idempotency key per (leadId, campaignId, step, variant); unique DB constraint; "uncertain" state when a send outcome is unknown after crash; uncertain sends are reconciled against the sent folder before any retry, never blindly resent — master §5, Local-First.
+- [x] PS-SEND-08: Worker crash recovery: stalled-job detection, lease expiry, reconciliation of in-flight sends — master §5.
+- [x] PS-SEND-09: Provider rate-limit handling: honor 429/`Retry-After`, Gmail/Graph throttling errors, SMTP 4xx; exponential backoff with jitter and max attempts, then mark failed — master §5.
+- [x] PS-SEND-10: Message states: scheduled, reserved, sending, provider_accepted, failed, bounced_hard, bounced_soft, delivered_unknown (never "delivered" unless a provider receipt/DSN says so) — master §5.
 - [ ] PS-SEND-11: Auto-pause account on sustained failure (default: 5 consecutive auth failures or bounce rate > threshold) and set status Sending Error / Soft Bounce Error; auto-pause campaign (Accounts Unhealthy) when all its accounts are unhealthy — S4, S9.
-- [ ] PS-SEND-12: Gradual volume ramp-up respected by scheduler (new accounts, re-warming accounts) — S25 slow ramp, REWARM section.
-- [ ] PS-SEND-13: Jobs continue with browser closed; no sending-related logic in the request path — master §5.
-- [ ] PS-SEND-14: Headers on outgoing mail: honest From, Reply-To, Message-ID, In-Reply-To/References for follow-ups, List-Unsubscribe when enabled; custom tracking domain used for pixel/link rewriting — S1, S3, S4.
-- [ ] PS-SEND-15: Sent message is appended to the account's Sent folder (SMTP/IMAP) or visible via provider API so threading and sync see it — master §3.
-- [ ] PS-SEND-16: Never send when startup reconciliation incomplete (see SYNC) — Local-First.
+- [x] PS-SEND-12: Gradual volume ramp-up respected by scheduler (new accounts, re-warming accounts) — S25 slow ramp, REWARM section.
+- [x] PS-SEND-13: Jobs continue with browser closed; no sending-related logic in the request path — master §5.
+- [x] PS-SEND-14: Headers on outgoing mail: honest From, Reply-To, Message-ID, In-Reply-To/References for follow-ups, List-Unsubscribe when enabled; custom tracking domain used for pixel/link rewriting — S1, S3, S4.
+- [x] PS-SEND-15: Sent message is appended to the account's Sent folder (SMTP/IMAP) or visible via provider API so threading and sync see it — master §3.
+- [x] PS-SEND-16: Never send when startup reconciliation incomplete (see SYNC) — Local-First.
 - [ ] PS-SEND-17: Failure monitoring: per-account/per-campaign failure counters, dead-letter view in UI, alerting hook — master §5.
 - [x] PS-SEND-18: Send test email to arbitrary address from a chosen account (counts against nothing, flagged as test) — S23.
 
@@ -216,32 +216,32 @@ See section 17 (SYNC) for requirements; account-level items:
 
 ## 8. Lead Management (master §7)
 
-- [ ] PS-LEAD-01: Lead fields: email (required, unique per workspace unless dedupe off), firstName, lastName, companyName, companyDomain (derived), jobTitle, phone, website, personalization, plValueLead, custom variables (string/number/boolean/null), assignedTo, listId, campaign — S5.
-- [ ] PS-LEAD-02: Lead status (per campaign): Active, Paused, Completed, Bounced, Unsubscribed, Skipped — S5.
-- [ ] PS-LEAD-03: Interest status (`interest`): Interested, Meeting Booked, Meeting Completed, Won, Out of Office, Not Interested, Wrong Person, Lost, No Show, (null = plain "Lead"); numeric codes 1,2,3,4,0,-1,-2,-3,-4 — S5, S11. Custom labels with a user-chosen name, color, positive/negative flag, AI description — S28 (custom labels), S7.
+- [x] PS-LEAD-01: Lead fields: email (required, unique per workspace unless dedupe off), firstName, lastName, companyName, companyDomain (derived), jobTitle, phone, website, personalization, plValueLead, custom variables (string/number/boolean/null), assignedTo, listId, campaign — S5.
+- [x] PS-LEAD-02: Lead status (per campaign): Active, Paused, Completed, Bounced, Unsubscribed, Skipped — S5.
+- [x] PS-LEAD-03: Interest status (`interest`): Interested, Meeting Booked, Meeting Completed, Won, Out of Office, Not Interested, Wrong Person, Lost, No Show, (null = plain "Lead"); numeric codes 1,2,3,4,0,-1,-2,-3,-4 — S5, S11. Custom labels with a user-chosen name, color, positive/negative flag, AI description — S28 (custom labels), S7.
 - [ ] PS-LEAD-04: Setting interest status has side effects: may complete the lead in campaigns, create/update an opportunity, fire automations and subsequences; setting null resets to Lead; processed asynchronously — S11.
-- [ ] PS-LEAD-05: Verification status: Not verified, Verified, Pending, Pending job, Invalid, Risky, Catch-all, Job change — S5. Campaign does not send to Invalid; Risky/Catch-all only when "allow risky" — S1.
-- [ ] PS-LEAD-06: Enrichment status field (enriched, pending, not available, error) kept for integration hooks — S5.
-- [ ] PS-LEAD-07: ESP code (Google, Microsoft, Zoho, Yahoo, Yandex, Other, Not found, In queue) and ESG code (Barracuda, Mimecast, Proofpoint, Cisco) detected via MX lookup; used for provider matching — S5. RightNow implements MX-based ESP/ESG detection; "in queue" while pending.
-- [ ] PS-LEAD-08: Per-lead counters and timestamps: open/reply/click counts, last contact/open/reply/click/interest-change/touch, step and variant of last open/reply/click, last sender — S5.
-- [ ] PS-LEAD-09: Lead lists: create, rename, delete, move leads between lists and campaigns, list-level verification statistics — S23 Lead List, "Move leads to a campaign or list".
-- [ ] PS-LEAD-10: CSV import wizard: upload, auto-map columns by header (case-insensitive) with manual remap, choose target list/campaign, preview first rows, show counts of missing/invalid emails, skipped duplicates ("X emails already exist") — S19, S27 (verify option), S5.
-- [ ] PS-LEAD-11: Email column mandatory; rows with missing/malformed email rejected and counted; unmapped columns become custom fields — S27 (search result).
-- [ ] PS-LEAD-12: Dedupe options on import: (a) skip if already in workspace, (b) skip if already in campaign, (c) skip if already in list; workspace-wide check default ON; within-file duplicate check always ON — S5 `skip_if_in_*`, S19.
-- [ ] PS-LEAD-13: Import honors blocklist (emails and domains) automatically and reports the skipped count — S19/S27, S5 `blocklist_id`.
+- [x] PS-LEAD-05: Verification status: Not verified, Verified, Pending, Pending job, Invalid, Risky, Catch-all, Job change — S5. Campaign does not send to Invalid; Risky/Catch-all only when "allow risky" — S1.
+- [x] PS-LEAD-06: Enrichment status field (enriched, pending, not available, error) kept for integration hooks — S5.
+- [x] PS-LEAD-07: ESP code (Google, Microsoft, Zoho, Yahoo, Yandex, Other, Not found, In queue) and ESG code (Barracuda, Mimecast, Proofpoint, Cisco) detected via MX lookup; used for provider matching — S5. RightNow implements MX-based ESP/ESG detection; "in queue" while pending.
+- [x] PS-LEAD-08: Per-lead counters and timestamps: open/reply/click counts, last contact/open/reply/click/interest-change/touch, step and variant of last open/reply/click, last sender — S5.
+- [x] PS-LEAD-09: Lead lists: create, rename, delete, move leads between lists and campaigns, list-level verification statistics — S23 Lead List, "Move leads to a campaign or list".
+- [x] PS-LEAD-10: CSV import wizard: upload, auto-map columns by header (case-insensitive) with manual remap, choose target list/campaign, preview first rows, show counts of missing/invalid emails, skipped duplicates ("X emails already exist") — S19, S27 (verify option), S5.
+- [x] PS-LEAD-11: Email column mandatory; rows with missing/malformed email rejected and counted; unmapped columns become custom fields — S27 (search result).
+- [x] PS-LEAD-12: Dedupe options on import: (a) skip if already in workspace, (b) skip if already in campaign, (c) skip if already in list; workspace-wide check default ON; within-file duplicate check always ON — S5 `skip_if_in_*`, S19.
+- [x] PS-LEAD-13: Import honors blocklist (emails and domains) automatically and reports the skipped count — S19/S27, S5 `blocklist_id`.
 - [ ] PS-LEAD-14: Optional "verify on import" toggle calling a pluggable verification provider (hook interface); Instantly charges 0.25 credit/lead for built-in verifier; RightNow has no credits, provider cost is the user's — S27, S5 `verify_leads_on_import`.
-- [ ] PS-LEAD-15: Built-in local syntax + MX + disposable-domain validation always on; SMTP-probe verification not provided by default (provider-hook only) — master §7.
-- [ ] PS-LEAD-16: Lead merge (two records into one, keeping history) — S23 "Merge two leads".
-- [ ] PS-LEAD-17: Bulk actions: assign to users (round-robin option), move, delete, add to blocklist, change interest status, add/remove tag, export selected CSV — S14, S15, S23.
-- [ ] PS-LEAD-18: Advanced lead filters: status, interest status, verification status, campaign, list, owner, "opened but no reply", last contacted, custom field contains — S17 ("Email opened, No reply" filter), S15, S23 (advanced filtering article exists).
+- [x] PS-LEAD-15: Built-in local syntax + MX + disposable-domain validation always on; SMTP-probe verification not provided by default (provider-hook only) — master §7.
+- [x] PS-LEAD-16: Lead merge (two records into one, keeping history) — S23 "Merge two leads".
+- [x] PS-LEAD-17: Bulk actions: assign to users (round-robin option), move, delete, add to blocklist, change interest status, add/remove tag, export selected CSV — S14, S15, S23.
+- [x] PS-LEAD-18: Advanced lead filters: status, interest status, verification status, campaign, list, owner, "opened but no reply", last contacted, custom field contains — S17 ("Email opened, No reply" filter), S15, S23 (advanced filtering article exists).
 - [ ] PS-LEAD-19: Contact history timeline per lead: imports, sends (step/variant/account), opens, clicks, replies, status changes, notes, tasks, campaign attribution — master §7; Instantly "Lead activity" article exists (search result).
-- [ ] PS-LEAD-20: Blocklist entries: single `value` that is an email or a domain (`isDomain` derived); CRUD, bulk create/delete, CSV download, delete-all; checked at import, campaign scheduling and send time — S10, S23.
-- [ ] PS-LEAD-21: Global suppression list: unsubscribes, hard bounces, complaints and manual blocks added automatically; durable, survives lead deletion; enforced across all campaigns/workspace — master §7, §12, §14.
+- [x] PS-LEAD-20: Blocklist entries: single `value` that is an email or a domain (`isDomain` derived); CRUD, bulk create/delete, CSV download, delete-all; checked at import, campaign scheduling and send time — S10, S23.
+- [x] PS-LEAD-21: Global suppression list: unsubscribes, hard bounces, complaints and manual blocks added automatically; durable, survives lead deletion; enforced across all campaigns/workspace — master §7, §12, §14.
 - [ ] PS-LEAD-22: Import and export of historical conversations from authorized accounts and association with leads by email match — master §7.
-- [ ] PS-LEAD-23: Conflict prevention: a lead active in campaign A is not enqueued by campaign B (configurable) — master §7.
-- [ ] PS-LEAD-24: Lead owner assignment (`assignedTo`) used by CRM/inbox filters — S5, S15.
-- [ ] PS-LEAD-25: Bounced-lead management view: filter bounced leads, reasons, option to remove/re-verify — Instantly "Managing Bounced Leads" article exists (search result).
-- [ ] PS-LEAD-26: Payload custom variables are added at campaign level so all leads share the same variable set (missing = empty) — S5.
+- [x] PS-LEAD-23: Conflict prevention: a lead active in campaign A is not enqueued by campaign B (configurable) — master §7.
+- [x] PS-LEAD-24: Lead owner assignment (`assignedTo`) used by CRM/inbox filters — S5, S15.
+- [x] PS-LEAD-25: Bounced-lead management view: filter bounced leads, reasons, option to remove/re-verify — Instantly "Managing Bounced Leads" article exists (search result).
+- [x] PS-LEAD-26: Payload custom variables are added at campaign level so all leads share the same variable set (missing = empty) — S5.
 
 ---
 

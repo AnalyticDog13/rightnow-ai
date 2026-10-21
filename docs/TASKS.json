@@ -494,7 +494,7 @@
    ],
    "model": "sonnet",
    "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-4.md; tests listed there pass"
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-4.md; tests listed there pass; from Phase 3 gate: must land AFTER reply-stop (P4-T03) and mailto-unsubscribe processing — writing lastSyncCompletedAt is what enables real campaign sends (D16); decide whether the re-warm cap ships with it; BLOCKING before writing freshness (gate re-review N-1): a 4xx on the To address with the Cc accepted is retried up to 5 times, so Cc/Bcc can get several copies that are not counted in usage (provider.ts:205, sender.ts failed()) — fail that send without retry or record Cc/Bcc usage; (N-3) activate() must refuse or not reopen a COMPLETED campaign whose end date has passed"
   },
   {
    "id": "P4-T06",
@@ -554,7 +554,7 @@
    ],
    "model": "sonnet",
    "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-5.md; tests listed there pass"
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-5.md; tests listed there pass; from Phase 3 gate M-6: claim re-checks ESP routing rules / account tags; from P3-T11a: a rejection caused by a cc address must not suppress the lead; gate re-review N-2: a mailbox unassigned from a campaign pauses its follow-up leads with no bulk/automatic resume when it is re-assigned — add bulk resume or auto-resume on re-assign"
   },
   {
    "id": "P5-T03",

@@ -1,16 +1,15 @@
 # Handoff
 
-**Phase:** 3 — Campaign automation (branch `phase-3-campaigns`, from `main` after the Phase 2 merge)
-**Current task:** Phase 3 gate: review + audit done, fix wave committed (see REVIEW_LOG); next is fast-forwarding `main`.
-**Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 (approved). Done step plans: `docs/plans/phase-1.md`, `docs/plans/phase-2.md`.
-**Tests:** 522 vitest + 16 Playwright (prod build) green; CI `check`, `compose-smoke`, `imap-real` green.
+**Phase:** 4 — Incoming mail & tracking (branch `phase-4-inbox`, from `main` after the Phase 3 merge)
+**Current task:** none started. Phase 3 merged to main (gate approved). Next: write `docs/plans/phase-4.md`.
+**Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 (approved). Done step plans: `docs/plans/phase-1.md`, `phase-2.md`, `phase-3.md`.
+**Tests:** ~946 vitest + 19 Playwright (prod build) green; CI `check`, `compose-smoke`, `imap-real` green.
 
 ## Next exact action
-Phase 3 gate fixes are in (I-1..I-4, M-1..M-5, M-7..M-9, audit A1/A2/A6/A8/A9/A11; D25). Once CI is green on
-`phase-3-campaigns`, fast-forward `main`. Carry into Phase 4 planning: P4-T05 (freshness writer) must land after
-reply-stop (P4-T03) and mailto-unsubscribe processing (gate review "ordering constraint"); M-6 (claim re-check of
-ESP rules / tags) deferred to P5. Existing dev DBs keep old pg-boss queue settings (recreate the pg-boss schema to
-pick up the new heartbeats).
+Phase 4: write the step plan `docs/plans/phase-4.md` from IMPLEMENTATION_PLAN Phase 4 + PRODUCT_SPEC inbox/tracking items + TASKS.json acceptance carry-forwards, get an independent (opus) plan review, then execute with subagent-driven-development (new ledger `.superpowers/sdd/phase-4/`).
+Ordering constraint: P4-T05 (writes `lastSyncCompletedAt`, which enables real campaign sends per D16) lands only AFTER reply-stop (P4-T03), mailto-unsubscribe processing, and the N-1 Cc-retry fix (see TASKS.json P4-T05).
+Existing dev DBs keep old pg-boss queue settings (recreate the pg-boss schema to pick up the new heartbeats).
+Known env issue: Windows vitest worker crash (exit 3221226505) recurs in random files; vitest 5 already uses forks; rerun affected files alone.
 
 ## Interfaces available (Phases 1–2)
 Phase 1: `route()` (auth/role/scope/params, CSRF), `startWorker`/`JobDef` `{prisma, clock}`, `createPrisma`,
