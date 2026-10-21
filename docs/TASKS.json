@@ -799,6 +799,18 @@
    "model": "opus",
    "commit": null,
    "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-8.md; tests listed there pass"
+  },
+  {
+   "id": "P8-T04",
+   "phase": 8,
+   "title": "Release legal check (user requested at end): dependency license audit (all MIT-compatible), full git-history secret scan, trademark/branding review (no Instantly marks or affiliation; RightNow.ai name search noted for user), lawful-use wording, contributor DCO/CONTRIBUTING, NOTICE for third-party licenses",
+   "status": "todo",
+   "deps": [
+    "P8-T03"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "License report committed (docs/LICENSES.md) with no incompatible deps; secret scan clean (or findings rotated + purged per user approval); README/branding reviewed; CONTRIBUTING with DCO; findings summarized for the user, who decides on lawyer review"
   }
  ]
 }
