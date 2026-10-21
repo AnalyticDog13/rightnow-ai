@@ -26,6 +26,7 @@ Checked 2026-10-19 with `npm view <pkg> version` (npm `latest` tag). Pin exact v
 | imapflow | 2.5.8 | IMAP IDLE, async API. |
 | nodemailer | 10.1.7 | SMTP send; also builds MIME for Gmail API raw send. |
 | mailparser | 3.10.0 | `simpleParser` for inbound/replies. |
+| html-to-text | 10.0.1 | Text part of campaign emails (core planner); same version mailparser pulls in. `@types/html-to-text` 9.0.4 (API unchanged in 10). |
 | smtp-server (dev) | 3.20.2 | In-process SMTP test server (D11); `@types/smtp-server` 3.5.13. |
 | hoodiecrow-imap (dev) | 3.3.1 | In-process scriptable IMAP test server (D11); young, see spike and `imap-real` CI job (GreenMail container). |
 | recharts | 3.10.1 | v3; client components only. |

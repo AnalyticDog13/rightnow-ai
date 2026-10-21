@@ -12,10 +12,12 @@
   "dependencies": {
     "@rightnow/db": "0.1.0",
     "@rightnow/providers": "0.1.0",
+    "html-to-text": "10.0.1",
     "papaparse": "5.7.0",
     "zod": "4.6.7"
   },
   "devDependencies": {
+    "@types/html-to-text": "9.0.4",
     "@types/papaparse": "5.5.2"
   }
 }

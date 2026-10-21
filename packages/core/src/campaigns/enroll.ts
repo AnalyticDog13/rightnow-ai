@@ -3,6 +3,8 @@ import { audit } from "../audit";
 import type { Clock } from "../clock";
 import { leadQuery, leadWhere, type LeadQuery } from "../leads/service";
 import { suppressedEmails } from "../leads/suppression";
+import { withTxRetry } from "../dispatch";
+import { enterSubsequence, subsequenceUsed } from "../planner";
 import { editHooks, openInOtherLive } from "./hooks";
 import { CampaignError, liveCampaign } from "./service";
 
@@ -226,9 +228,9 @@ export async function resumeCampaignLead(prisma: Db, ws: string, actorId: Actor,
 }
 
 /**
- * CampaignLead side of entering a subsequence (C2). One transaction: the row moves to the subsequence's first step
- * (due after `preDelayMinutes`) and the main sequence's open rows are cancelled via `editHooks.cancelOpenRows`.
- * T10b wraps this as `enterSubsequence` and must keep both in one transaction.
+ * Manual entry into a subsequence (C2), through `enterSubsequence` in one transaction: the main sequence's open rows
+ * are cancelled and the lead moves to the subsequence's first step (due after `preDelayMinutes`). 409 when the lead
+ * is already in it, or a step of it already went out to this lead (re-entry rule).
  */
 export async function moveToSubsequence(
   prisma: Db,
@@ -238,32 +240,27 @@ export async function moveToSubsequence(
   id: string,
   subsequenceId: string,
 ) {
-  return prisma.$transaction(async (tx) => {
-    const cl = await liveCl(tx, ws, id);
-    if (![...OPEN, "COMPLETED"].includes(cl.state))
-      throw new CampaignError(409, "lead_not_movable");
-    const sub = await tx.subsequence.findFirst({
-      where: { id: subsequenceId, campaignId: cl.campaignId, active: true },
-      include: { steps: { where: { deletedAt: null }, orderBy: { order: "asc" }, take: 1 } },
-    });
-    if (!sub) throw new CampaignError(404, "Not found");
-    if (!sub.steps[0]) throw new CampaignError(400, "subsequence_has_no_steps");
-    const r = await tx.campaignLead.updateMany({
-      where: { id, state: cl.state }, // not overwriting a concurrent pause or stop
-      data: {
-        subsequenceId,
-        state: cl.state === "PAUSED" ? "PAUSED" : "ACTIVE",
-        stopReason: null,
-        completedAt: null,
-        currentStepId: sub.steps[0].id,
-        nextDueAt: new Date(clock.now().getTime() + sub.preDelayMinutes * 60_000),
-      },
-    });
-    if (!r.count) throw new CampaignError(409, "lead_not_movable");
-    await editHooks.cancelOpenRows(tx, [id]);
-    await audited(tx, ws, actorId, cl, "move_to_subsequence");
-    return tx.campaignLead.findUniqueOrThrow({ where: { id } });
-  });
+  return withTxRetry(() =>
+    prisma.$transaction(async (tx) => {
+      const cl = await liveCl(tx, ws, id);
+      if (![...OPEN, "COMPLETED"].includes(cl.state))
+        throw new CampaignError(409, "lead_not_movable");
+      const sub = await tx.subsequence.findFirst({
+        where: { id: subsequenceId, campaignId: cl.campaignId, active: true },
+        include: { steps: { where: { deletedAt: null }, take: 1 } },
+      });
+      if (!sub) throw new CampaignError(404, "Not found");
+      if (!sub.steps[0]) throw new CampaignError(400, "subsequence_has_no_steps");
+      if (cl.subsequenceId === subsequenceId)
+        throw new CampaignError(409, "already_in_subsequence");
+      if (await subsequenceUsed(tx, id, subsequenceId))
+        throw new CampaignError(409, "subsequence_already_entered");
+      if (!(await enterSubsequence(tx, clock, id, subsequenceId)))
+        throw new CampaignError(409, "lead_not_movable");
+      await audited(tx, ws, actorId, cl, "move_to_subsequence");
+      return tx.campaignLead.findUniqueOrThrow({ where: { id } });
+    }),
+  );
 }
 
 /** Leaves the subsequence and stops the lead (STOPPED MANUAL), cancelling its open rows. T10b routes this through skipStep. */

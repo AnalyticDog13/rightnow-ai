@@ -1,6 +1,9 @@
 import type { DelayUnit, Prisma, PrismaClient } from "@rightnow/db/client";
 import { z } from "zod";
 import { audit } from "../audit";
+import { systemClock } from "../clock";
+import { withTxRetry } from "../dispatch";
+import { recomputeDue, skipStep } from "../planner";
 import { TEMPLATE_VARIABLES, validateTemplate } from "../template";
 import { editHooks } from "./hooks";
 import { CampaignError, liveCampaign } from "./service";
@@ -173,13 +176,15 @@ export async function updateStep(
     await settle(tx, ws, s.campaignId, s.subsequenceId, false);
     const now = await tx.sequenceStep.findUniqueOrThrow({ where: { id: stepId } });
     // only a real change (after step 1 is forced to 0) re-plans rows, and only this step's
-    if (now.delayValue !== s.delayValue || now.delayUnit !== s.delayUnit)
+    if (now.delayValue !== s.delayValue || now.delayUnit !== s.delayUnit) {
       await editHooks.stepsChanged(tx, {
         workspaceId: ws,
         campaignId: s.campaignId,
         subsequenceId: s.subsequenceId,
         stepId,
       });
+      await recomputeDue(tx, stepId); // after the rows (D21: ScheduledMessage before CampaignLead)
+    }
     await done(tx, ws, actorId, s.campaignId, { step: stepId });
     return now;
   });
@@ -191,21 +196,40 @@ export async function updateStep(
  * leave a dangling pointer.
  */
 export async function deleteStep(prisma: Db, ws: string, actorId: Actor, stepId: string) {
-  await prisma.$transaction(async (tx) => {
-    const s = await stepOf(tx, ws, stepId);
-    await lock(tx, ws, s.campaignId);
-    const c = await liveCampaign(tx, ws, s.campaignId);
-    const soft =
-      c.status !== "DRAFT" ||
-      (await tx.campaignLead.count({ where: { currentStepId: stepId } })) > 0 ||
-      (await editHooks.stepReferenced(tx, stepId));
-    await editHooks.stepRemoved(tx, { workspaceId: ws, campaignId: s.campaignId, stepId });
-    if (soft)
-      await tx.sequenceStep.update({ where: { id: stepId }, data: { deletedAt: new Date() } });
-    else await tx.sequenceStep.delete({ where: { id: stepId } });
-    await settle(tx, ws, s.campaignId, s.subsequenceId, true);
-    await done(tx, ws, actorId, s.campaignId, { deletedStep: stepId });
+  // shortcut: one transaction moves every lead on the step (30 s budget); batch it if steps hold 10k+ waiting leads
+  await withTxRetry(() =>
+    prisma.$transaction(async (tx) => deleteStepTx(tx, ws, actorId, stepId), { timeout: 30_000 }),
+  );
+}
+
+async function deleteStepTx(tx: Tx, ws: string, actorId: Actor, stepId: string) {
+  const s = await stepOf(tx, ws, stepId);
+  await lock(tx, ws, s.campaignId);
+  const c = await liveCampaign(tx, ws, s.campaignId);
+  // a row whose outcome is open or unknown must be resolved first, or its lead could be moved under it
+  if (
+    await tx.scheduledMessage.count({
+      where: { stepId, status: { in: ["SENDING", "UNCERTAIN", "HELD"] } },
+    })
+  )
+    throw new CampaignError(409, "step_has_messages_in_flight");
+  const waiting = await tx.campaignLead.findMany({
+    where: { currentStepId: stepId, state: { in: ["QUEUED", "ACTIVE", "PAUSED"] } },
+    select: { id: true },
+    orderBy: { id: "asc" },
   });
+  const soft =
+    c.status !== "DRAFT" ||
+    (await tx.campaignLead.count({ where: { currentStepId: stepId } })) > 0 ||
+    (await editHooks.stepReferenced(tx, stepId));
+  await editHooks.stepRemoved(tx, { workspaceId: ws, campaignId: s.campaignId, stepId });
+  // C1: leads on the step move past it, keeping their due time (main step 1: the next step becomes step 1)
+  for (const cl of waiting) await skipStep(tx, systemClock, cl.id, stepId, { keepDue: true });
+  if (soft)
+    await tx.sequenceStep.update({ where: { id: stepId }, data: { deletedAt: new Date() } });
+  else await tx.sequenceStep.delete({ where: { id: stepId } });
+  await settle(tx, ws, s.campaignId, s.subsequenceId, true);
+  await done(tx, ws, actorId, s.campaignId, { deletedStep: stepId });
 }
 
 export async function reorderSteps(

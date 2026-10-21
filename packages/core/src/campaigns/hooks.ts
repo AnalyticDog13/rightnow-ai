@@ -1,4 +1,5 @@
 import { Prisma } from "@rightnow/db/client";
+import { rerenderScheduled } from "../planner";
 
 type Tx = Prisma.TransactionClient;
 
@@ -17,10 +18,12 @@ type Tx = Prisma.TransactionClient;
  *   - the step is live (SequenceStep.deletedAt IS NULL);
  *   - the variant exists and is active.
  * A subsequence move leaves the lead with a new currentStepId and subsequenceId, so the second check rejects the
- * old rows even when the hook skipped them. Entering a subsequence on a QUEUED lead leaves accountId null: the first
- * subsequence step needs a routing rule (T10b). Re-entering a subsequence hits the (campaignLeadId, stepId)
- * idempotency key (T10b must decide: reject or reuse). dueAt is recomputed from the previous step's sentAt, so a
- * shortened delay makes a row immediately due (the window and gap rules still apply).
+ * old rows even when the hook skipped them. Entering a subsequence on a QUEUED lead leaves accountId null: the planner
+ * routes any row of a lead without a sticky sender through pickAccount (and re-routes it like step 1), and the first
+ * SENT row makes its account sticky (planner.ts advanceLead). Re-entry vs the (campaignLeadId, stepId) key: entering
+ * is refused once any step of that subsequence has a non-revivable row (subsequenceUsed); a plainly cancelled row is
+ * revived in place by the planner's upsert. A delay change re-times the leads waiting on the step (recomputeDue)
+ * from the previous step's sentAt, so a shortened delay makes a row immediately due (window and gap rules still apply).
  *
  * STALE TEXT (Revision 3): a claimed row keeps its rendered text and is sent as rendered. Any path that puts a row
  * BACK to SCHEDULED later (T11 RETRY / RELEASED / stale-claim recovery) and the claim itself must re-run
@@ -52,7 +55,10 @@ export async function cancelRows(
 }
 
 export const editHooks = {
-  /** A variant's subject, body or `active` changed, or it was deleted: its SCHEDULED rows are re-planned. */
+  /**
+   * A variant's subject, body or `active` changed, or it was deleted. A live variant's SCHEDULED rows are re-rendered in
+   * place (T10b); a removed or deactivated one's are CANCELLED and the planner re-plans them with another variant.
+   */
   async variantChanged(
     tx: Tx,
     p: {
@@ -63,7 +69,10 @@ export const editHooks = {
       removed: boolean;
     },
   ): Promise<void> {
-    await cancelRows(tx, Prisma.sql`"variantId" = ${p.variantId}`);
+    const where = Prisma.sql`"variantId" = ${p.variantId}`;
+    const v = p.removed ? null : await tx.stepVariant.findUnique({ where: { id: p.variantId } });
+    if (v?.active) await rerenderScheduled(tx, where);
+    else await cancelRows(tx, where);
   },
   /** True when a ScheduledMessage references the step; deleteStep then soft-deletes it (M5, stepId is Restrict). */
   async stepReferenced(tx: Tx, stepId: string): Promise<boolean> {

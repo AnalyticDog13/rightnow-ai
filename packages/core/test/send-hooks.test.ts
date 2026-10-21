@@ -10,6 +10,7 @@ import { fixedClock } from "../src/clock";
 import { addBlocklist } from "../src/leads/blocklist";
 import { softDeleteLead } from "../src/leads/service";
 import { unsubscribeLead } from "../src/unsubscribe";
+import { testEnv } from "./accounts-fixture";
 import { planRow, seedCampaign } from "./campaign-fixture";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
@@ -17,6 +18,7 @@ const P = () => db.prisma;
 const T = new Date("2026-10-20T10:00:00Z");
 const clock = fixedClock(T);
 beforeAll(async () => {
+  testEnv(); // re-rendering a row builds its unsubscribe link from APP_URL / ENCRYPTION_KEY
   db = await createTestDb();
 });
 afterAll(() => db.drop());
@@ -72,7 +74,7 @@ describe("archive and delete (P3-T05 carry-forward)", () => {
 });
 
 describe("edit hooks (P3-T06 contract)", () => {
-  test("variant edit cancels its SCHEDULED rows only; deleting the variant keeps history with variantId null", async () => {
+  test("variant edit re-renders its SCHEDULED rows in place (T10b); deleting the variant cancels them and keeps history with variantId null", async () => {
     const s = await withRows(["SCHEDULED", "SENT", "SENDING"]);
     const v = s.steps[0]!.variant;
     await P().stepVariant.create({
@@ -81,8 +83,17 @@ describe("edit hooks (P3-T06 contract)", () => {
     await updateVariant(P(), s.ws, null, v.id, { weight: 3 }); // no text change: no hook
     expect(await s.statusOf()).toEqual(["SCHEDULED", "SENT", "SENDING"]);
     await updateVariant(P(), s.ws, null, v.id, { body: "changed" });
-    expect(await s.statusOf()).toEqual(["CANCELLED", "SENT", "SENDING"]);
+    expect(await s.statusOf()).toEqual(["SCHEDULED", "SENT", "SENDING"]);
+    const texts = await Promise.all(
+      s.rows.map(
+        async (r) =>
+          (await P().scheduledMessage.findUniqueOrThrow({ where: { id: r.id } })).renderedText,
+      ),
+    );
+    expect(texts[0]).toContain("changed");
+    expect(texts.slice(1)).toEqual(["Hello", "Hello"]); // SENT and claimed rows keep their text
     await deleteVariant(P(), s.ws, null, v.id);
+    expect(await s.statusOf()).toEqual(["CANCELLED", "SENT", "SENDING"]);
     const rows = await P().scheduledMessage.findMany({ where: { campaignId: s.campaign.id } });
     expect(rows).toHaveLength(3);
     expect(rows.every((r) => r.variantId === null)).toBe(true);

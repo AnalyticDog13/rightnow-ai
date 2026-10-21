@@ -6,6 +6,7 @@ import { audit } from "../audit";
 import type { Clock } from "../clock";
 import { companyDomainOf } from "./domain";
 import { editHooks, openInOtherLive, stopOpenCampaignLeads } from "../campaigns/hooks";
+import { enterSubsequence, leadStatusTrigger } from "../planner";
 import { hashValue, suppress, suppressedEmails } from "./suppression";
 
 type Db = PrismaClient;
@@ -119,20 +120,49 @@ export async function getLead(prisma: Db, ws: string, id: string) {
   return toApiLead(await liveLead(prisma, ws, id));
 }
 
-/** I9: the caller stores the interest; Not interested (-1) puts the address on the blocklist. T10b adds the CampaignLead effects. */
+/**
+ * I9, in the caller's transaction. -1: the address is suppressed, which stops the lead's open CampaignLeads and cancels
+ * their rows. 1..4: each open CampaignLead enters the campaign's first active subsequence whose LEAD_STATUS trigger
+ * lists the status and was activated before now (no-op when already in it); without one, or when re-entry is refused,
+ * it is COMPLETED (MANUAL) and its SCHEDULED rows are CANCELLED. Other values change nothing.
+ */
 export async function applyInterestChange(
   tx: Tx,
-  _clock: Clock,
+  clock: Clock,
   ws: string,
   leadId: string,
   interest: number | null,
 ) {
-  if (interest !== -1) return;
-  const l = await tx.lead.findFirst({
-    where: { id: leadId, workspaceId: ws },
-    select: { email: true },
+  if (interest === -1) {
+    const l = await tx.lead.findFirst({
+      where: { id: leadId, workspaceId: ws },
+      select: { email: true },
+    });
+    if (l) await suppress(tx, ws, [{ kind: "EMAIL", value: l.email }], "NOT_INTERESTED", "status");
+    return;
+  }
+  if (interest === null || interest < 1 || interest > 4) return;
+  const now = clock.now();
+  const open = ["QUEUED", "ACTIVE", "PAUSED"] as const;
+  const cls = await tx.campaignLead.findMany({
+    where: { workspaceId: ws, leadId, state: { in: [...open] } },
+    orderBy: { id: "asc" },
   });
-  if (l) await suppress(tx, ws, [{ kind: "EMAIL", value: l.email }], "NOT_INTERESTED", "status");
+  for (const cl of cls) {
+    const subs = await tx.subsequence.findMany({
+      where: { campaignId: cl.campaignId, active: true, activatedAt: { lt: now } },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    });
+    const sub = subs.find((s) => leadStatusTrigger(s.trigger, interest));
+    if (sub && cl.subsequenceId === sub.id) continue;
+    if (sub && (await enterSubsequence(tx, clock, cl.id, sub.id))) continue;
+    // D21: rows before the CampaignLead
+    await editHooks.cancelOpenRows(tx, [cl.id]);
+    await tx.campaignLead.updateMany({
+      where: { id: cl.id, state: { in: [...open] } },
+      data: { state: "COMPLETED", stopReason: "MANUAL", nextDueAt: null, completedAt: now },
+    });
+  }
 }
 
 export async function updateLead(
@@ -494,7 +524,8 @@ export async function bulkLeads(
             "NOT_INTERESTED",
             "status",
           );
-        }
+        } else if (v !== null && v >= 1 && v <= 4)
+          for (const id of found) await applyInterestChange(tx, clock, ws, id, v);
         await tx.lead.updateMany({
           where: base,
           data: { interestStatus: v, lastInterestChangeAt: clock.now() },
