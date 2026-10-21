@@ -22,7 +22,7 @@ import {
   renameList,
 } from "../src/leads/lists";
 import { createLead, gdprDeleteLead, listLeads } from "../src/leads/service";
-import { suppressedEmails } from "../src/leads/suppression";
+import { hashValue, suppressedEmails } from "../src/leads/suppression";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
 let ws: string;
@@ -230,6 +230,36 @@ describe("blocklist", () => {
     const clear = (await audits("blocklist.remove", w)).find((a) => a.actorId === "a1")!;
     expect(clear.meta).toMatchObject({ deleted: 1, hashes: [expect.any(String)] });
     expect((await blocked(w)).length).toBe(5);
+  });
+
+  test("D20: GDPR delete upgrades an existing suppression of the address to non-removable", async () => {
+    const w = await newWs("w-gdpr-up");
+    const made: [string, string][] = [];
+    for (const reason of ["MANUAL", "UNSUBSCRIBE", "HARD_BOUNCE", "COMPLAINT"] as const) {
+      const email = `${reason.toLowerCase()}@up.test`;
+      const lead = await mk(w, { email });
+      await db.prisma.suppression.create({
+        data: { workspaceId: w, kind: "EMAIL", value: email, valueHash: hashValue(email), reason },
+      });
+      await gdprDeleteLead(db.prisma, clock, w, lead);
+      made.push([reason, email]);
+    }
+    for (const [reason, email] of made) {
+      const row = await db.prisma.suppression.findFirstOrThrow({
+        where: { workspaceId: w, valueHash: hashValue(email) },
+      });
+      expect(row).toMatchObject({
+        value: null,
+        reason: reason === "COMPLAINT" ? "COMPLAINT" : "GDPR_ERASURE",
+      });
+      await expect(
+        removeBlocklist(db.prisma, w, "a", row.id, {
+          confirm: true,
+          resubscribeAttestation: { reason: "x", recipientConsent: true },
+        }),
+      ).rejects.toMatchObject({ status: 409, message: "suppression_protected" });
+    }
+    expect(await clearBlocklist(db.prisma, w, null, "DELETE ALL")).toEqual({ deleted: 0, kept: 4 });
   });
 
   test("D20: single removal rules per reason", async () => {

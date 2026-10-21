@@ -173,10 +173,12 @@ export function BulkBar({
         disabled={busy || !list || !fromListId || list === fromListId}
         title={fromListId ? undefined : "Filter by a list first to move leads out of it"}
         onClick={() =>
-          run(`Move to ${target?.name}`, `/api/v1/lead-lists/${fromListId}/move`, {
-            leadIds: ids,
-            toListId: list,
-          })
+          run(
+            `Move to ${target?.name}`,
+            `/api/v1/lead-lists/${fromListId}/move`,
+            { leadIds: ids, toListId: list },
+            (j) => `moved ${j.moved}, skipped ${j.skipped} (not in the source list).`,
+          )
         }
       >
         Move to list

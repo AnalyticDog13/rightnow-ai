@@ -259,7 +259,7 @@ describe("gdpr delete", () => {
     const s = await db.prisma.suppression.findFirstOrThrow({
       where: { workspaceId: ws, valueHash: sha("jo@acme.test") },
     });
-    expect(s).toMatchObject({ value: null, reason: "MANUAL" }); // an existing suppression keeps its reason
+    expect(s).toMatchObject({ value: null, reason: "GDPR_ERASURE" }); // D20: an existing suppression is upgraded
     expect(await isSuppressed(db.prisma, ws, "jo@acme.test")).toBe(true);
     await mk({ email: "jo@acme.test" });
     const g = (await audits("lead.gdpr_delete")).find(

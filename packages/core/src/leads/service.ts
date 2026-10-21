@@ -325,6 +325,16 @@ export async function gdprDeleteLead(
       where: { workspaceId: ws, kind: "EMAIL", valueHash: { in: hashes } },
       data: { value: null },
     });
+    // D20: an older row for the address (manual, unsubscribe, bounce...) becomes an erasure record too, so it cannot be removed under weaker rules; COMPLAINT is already protected
+    await tx.suppression.updateMany({
+      where: {
+        workspaceId: ws,
+        kind: "EMAIL",
+        valueHash: { in: hashes },
+        reason: { notIn: ["COMPLAINT", "GDPR_ERASURE"] },
+      },
+      data: { reason: "GDPR_ERASURE" },
+    });
     await tx.lead.deleteMany({ where: { workspaceId: ws, id: { in: ids } } });
     await audit(tx, { workspaceId: ws, actorId, at: clock.now() }, "lead.gdpr_delete", undefined, {
       hashes,
