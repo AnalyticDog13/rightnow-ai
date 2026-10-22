@@ -33,6 +33,9 @@ Details: `docs/RESUME_INSTRUCTIONS.md`.
   (`accounts/*`, `oauth.ts`, `rotate.ts`). Every `MailProvider` runs `runProviderContract` (`@rightnow/providers/contract`).
 - Mail credentials: `EmailAccount.credentialsEnc` is written ONLY through `setCredentials()` (clears the refresh lease,
   bumps `credentialGen`); connects create/revive rows ONLY through `openAccount()`. Never update `credentialsEnc` directly.
+  `Workspace.verifierConfigEnc` (email-verifier URL + API key) is written ONLY through `setVerifierSettings()`, is in
+  `ENCRYPTED_COLUMNS`, is never returned by any API (GET gives `hasApiKey`), and a changed host needs a new key.
+  `PUT /settings/verifier` is a session-only ADMIN route.
 - Error taxonomy (`packages/providers/src/errors.ts`): `AuthError` only for genuine auth failures (`invalid_grant`,
   `interaction_required`, a 401 that survives one refresh, explicit scope reasons, SMTP 530/534/535, IMAP auth failure
   that is not throttling). Unknown 4xx/403 on reads, token-endpoint 5xx, `invalid_client` → `TransientBeforeSendError`.

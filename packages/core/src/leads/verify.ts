@@ -17,6 +17,8 @@ const BATCH = 50; // per workspace per run
 const PARALLEL = 5;
 const TIMEOUT_MS = 10_000;
 const STUCK_MS = 30 * 60_000;
+const MAX_ATTEMPTS = 3;
+const BACKOFF_MIN = 2; // minutes per failed attempt
 const MAX_BODY = 64 * 1024;
 
 /** `null` = leave the lead's status unchanged. Cost of an external verifier is the user's (D38). */
@@ -105,6 +107,8 @@ export function httpVerifier(
         headers: { "content-type": "application/json", authorization: `Bearer ${cfg.apiKey}` },
         body: JSON.stringify({ email }),
       });
+      // 4xx = our config (bad key, wrong path), a failure the user must see; 5xx = the vendor has no answer
+      if (res.status >= 400 && res.status < 500) throw new Error(`http_${res.status}`);
       if (!res.ok) return null;
       const text = await readCapped(res);
       if (text === null) return null;
@@ -130,14 +134,22 @@ export async function queueVerify(
 ): Promise<{ queued: number }> {
   const now = clock.now();
   const queued =
-    await prisma.$executeRaw`UPDATE "Lead" SET "verifyPrevStatus" = "verificationStatus", "verificationStatus" = 'PENDING_JOB', "updatedAt" = ${now} WHERE "workspaceId" = ${ws} AND "deletedAt" IS NULL AND "verificationStatus" <> 'PENDING_JOB' AND "id" = ANY(${leadIds})`;
+    await prisma.$executeRaw`UPDATE "Lead" SET "verifyPrevStatus" = "verificationStatus", "verificationStatus" = 'PENDING_JOB', "verifyClaimedAt" = NULL, "verifyAttempts" = 0, "updatedAt" = ${now} WHERE "workspaceId" = ${ws} AND "deletedAt" IS NULL AND "verificationStatus" <> 'PENDING_JOB' AND "id" = ANY(${leadIds})`;
   await audit(prisma, { workspaceId: ws, actorId, at: now }, "lead.verify", undefined, { queued });
   return { queued };
 }
 
+const reasonOf = (e: unknown) =>
+  String((e as { code?: unknown } | null)?.code ?? (e as Error | null)?.name ?? "error").slice(
+    0,
+    60,
+  );
+
 /**
- * One cron run: restores rows stuck > 30 min, then verifies up to 50 PENDING_JOB leads per workspace. The claim
- * transaction only locks and reads; verifier calls happen outside it and each write is conditional on PENDING_JOB.
+ * One cron run: restores rows a run claimed and then stalled on for > 30 min, then verifies up to 50 queued leads per
+ * workspace. A queued lead nobody picked up yet waits however long the backlog is. The claim transaction only locks,
+ * reads and stamps `verifyClaimedAt`; verifier calls happen outside it and each write is conditional on PENDING_JOB.
+ * A verifier error keeps the lead queued and retries it with a growing delay; the third failure restores its status.
  */
 export async function runVerify(
   prisma: PrismaClient,
@@ -147,44 +159,79 @@ export async function runVerify(
   const out = { done: 0, changed: 0, restored: 0 };
   const now = clock.now();
   out.restored +=
-    await prisma.$executeRaw`UPDATE "Lead" SET "verificationStatus" = COALESCE("verifyPrevStatus", 'NOT_VERIFIED'), "verifyPrevStatus" = NULL, "updatedAt" = ${now} WHERE "verificationStatus" = 'PENDING_JOB' AND "updatedAt" < ${new Date(now.getTime() - STUCK_MS)}`;
+    await prisma.$executeRaw`UPDATE "Lead" SET "verificationStatus" = COALESCE("verifyPrevStatus", 'NOT_VERIFIED'), "verifyPrevStatus" = NULL, "verifyClaimedAt" = NULL, "verifyAttempts" = 0, "updatedAt" = ${now} WHERE "verificationStatus" = 'PENDING_JOB' AND "verifyClaimedAt" < ${new Date(now.getTime() - STUCK_MS)}`;
   const wss = await prisma.$queryRaw<
     { workspaceId: string }[]
-  >`SELECT DISTINCT "workspaceId" FROM "Lead" WHERE "verificationStatus" = 'PENDING_JOB'`;
+  >`SELECT DISTINCT "workspaceId" FROM "Lead" WHERE "verificationStatus" = 'PENDING_JOB' AND "verifyClaimedAt" IS NULL`;
   for (const { workspaceId: ws } of wss) {
     if (deps.signal?.aborted) break;
-    const batch = await prisma.$transaction(
-      (tx) =>
-        tx.$queryRaw<
-          { id: string; email: string; prev: VerificationStatus | null }[]
-        >`SELECT "id", "email", "verifyPrevStatus" AS prev FROM "Lead" WHERE "workspaceId" = ${ws} AND "verificationStatus" = 'PENDING_JOB' ORDER BY "updatedAt" LIMIT ${BATCH} FOR UPDATE SKIP LOCKED`,
-    );
+    const batch = await prisma.$transaction(async (tx) => {
+      const rows = await tx.$queryRaw<
+        { id: string; email: string; prev: VerificationStatus | null; attempts: number }[]
+      >`SELECT "id", "email", "verifyPrevStatus" AS prev, "verifyAttempts" AS attempts FROM "Lead" WHERE "workspaceId" = ${ws} AND "verificationStatus" = 'PENDING_JOB' AND "verifyClaimedAt" IS NULL AND ("verifyAttempts" = 0 OR "updatedAt" + make_interval(mins => "verifyAttempts" * ${BACKOFF_MIN}) <= ${now}) ORDER BY "updatedAt" LIMIT ${BATCH} FOR UPDATE SKIP LOCKED`;
+      await tx.lead.updateMany({
+        where: { id: { in: rows.map((r) => r.id) } },
+        data: { verifyClaimedAt: now },
+      });
+      return rows;
+    });
+    if (!batch.length) continue;
     let verifier: EmailVerifier | null = null;
+    let failure: string | null = null;
     try {
       verifier = await deps.verifierFor(ws);
-    } catch {
-      // a broken config restores the batch below (every lead gets a null result)
+    } catch (e) {
+      failure = reasonOf(e); // a broken config counts as a failure for every lead below
     }
+    let answered = 0;
     await mapLimit(batch, PARALLEL, async (l) => {
       let result: VerificationStatus | null = null;
-      try {
-        const t = AbortSignal.timeout(TIMEOUT_MS);
-        result = verifier
-          ? await verifier.verify(l.email, deps.signal ? AbortSignal.any([t, deps.signal]) : t)
-          : null;
-      } catch {
-        // an error is "no answer": the previous status comes back
-      }
-      const next = result ?? l.prev ?? "NOT_VERIFIED";
-      const w = await prisma.lead.updateMany({
-        where: { id: l.id, workspaceId: ws, verificationStatus: "PENDING_JOB" },
-        data: { verificationStatus: next, verifyPrevStatus: null },
-      });
+      let threw = !verifier;
+      if (verifier)
+        try {
+          const t = AbortSignal.timeout(TIMEOUT_MS);
+          result = await verifier.verify(
+            l.email,
+            deps.signal ? AbortSignal.any([t, deps.signal]) : t,
+          );
+          answered++;
+        } catch (e) {
+          threw = true;
+          failure ??= reasonOf(e);
+        }
       out.done++;
-      if (!w.count) return; // edited meanwhile: the edit wins
+      const guard = { id: l.id, workspaceId: ws, verificationStatus: "PENDING_JOB" as const };
+      if (threw && l.attempts + 1 < MAX_ATTEMPTS) {
+        await prisma.lead.updateMany({
+          where: guard,
+          data: { verifyClaimedAt: null, verifyAttempts: l.attempts + 1, updatedAt: now },
+        });
+        return;
+      }
+      const w = await prisma.lead.updateMany({
+        where: guard, // edited meanwhile: the edit wins
+        data: {
+          verificationStatus: result ?? l.prev ?? "NOT_VERIFIED",
+          verifyPrevStatus: null,
+          verifyClaimedAt: null,
+          verifyAttempts: 0,
+        },
+      });
+      if (!w.count) return;
       if (result === null) out.restored++;
       else if (result !== l.prev) out.changed++;
     });
+    if (failure) {
+      console.error(`lead-verify: workspace ${ws} verifier failed (${failure})`);
+      await prisma.workspace.update({
+        where: { id: ws },
+        data: { verifierLastError: failure, verifierLastErrorAt: now },
+      });
+    } else if (answered)
+      await prisma.workspace.updateMany({
+        where: { id: ws, verifierLastError: { not: null } },
+        data: { verifierLastError: null, verifierLastErrorAt: null },
+      });
   }
   return out;
 }
@@ -211,12 +258,20 @@ const readConfig = (enc: string | null): Config | null =>
 export async function getVerifierSettings(prisma: Db, ws: string) {
   const w = await prisma.workspace.findUniqueOrThrow({
     where: { id: ws },
-    select: { verifierKind: true, verifierConfigEnc: true },
+    select: {
+      verifierKind: true,
+      verifierConfigEnc: true,
+      verifierLastError: true,
+      verifierLastErrorAt: true,
+    },
   });
   const c = readConfig(w.verifierConfigEnc);
   return {
     kind: w.verifierKind,
     ...(c && { url: c.url, statusPath: c.statusPath, hasApiKey: true }),
+    ...(w.verifierLastError && {
+      lastError: { reason: w.verifierLastError, at: w.verifierLastErrorAt },
+    }),
   };
 }
 
@@ -236,7 +291,14 @@ export async function setVerifierSettings(
       })
     ).verifierConfigEnc,
   );
-  if (v.kind === "http" && !(v.apiKey ?? old?.apiKey))
+  // the stored key is never sent to a different host: a new host needs a new key
+  if (
+    v.kind === "http" &&
+    !(
+      v.apiKey ??
+      (old && new URL(old.url).origin === new URL(v.url).origin ? old.apiKey : undefined)
+    )
+  )
     throw new AccountError(400, "api_key_required");
   await prisma.$transaction(async (tx) => {
     await tx.workspace.update({

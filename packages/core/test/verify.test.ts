@@ -6,6 +6,7 @@ import { decrypt } from "../src/crypto";
 import { claimDue } from "../src/dispatch";
 import { createImport, runImport } from "../src/leads/import";
 import {
+  getVerifierSettings,
   httpVerifier,
   mxVerifier,
   queueVerify,
@@ -149,7 +150,7 @@ describe("queueVerify / runVerify", () => {
     ).toBe(2);
   });
 
-  test("runVerify writes results; null and a throw restore the previous status", async () => {
+  test("runVerify writes results; null restores the previous status; a throw keeps the lead queued", async () => {
     const ws = await mkWs();
     const L = {
       risky: await mkLead(ws, "risky@r.test", { verificationStatus: "RISKY" }),
@@ -173,9 +174,9 @@ describe("queueVerify / runVerify", () => {
           "good@r.test": "VERIFIED",
         }),
     });
-    expect(res).toEqual({ done: 4, changed: 2, restored: 2 });
+    expect(res).toEqual({ done: 4, changed: 2, restored: 1 });
     expect((await status(L.risky.id)).verificationStatus).toBe("RISKY");
-    expect((await status(L.invalid.id)).verificationStatus).toBe("INVALID");
+    expect((await status(L.invalid.id)).verificationStatus).toBe("PENDING_JOB"); // retried later, never mailed meanwhile
     expect(await status(L.bad.id)).toEqual({
       verificationStatus: "INVALID",
       verifyPrevStatus: null,
@@ -212,11 +213,15 @@ describe("queueVerify / runVerify", () => {
     ).toBe(2);
   });
 
-  test("a row PENDING_JOB for 31 minutes is restored without verifying", async () => {
+  test("a row claimed by a run and stalled for 31 minutes is restored without verifying", async () => {
     const ws = await mkWs();
     const l = await mkLead(ws, "stuck@s.test", { verificationStatus: "RISKY" });
     await queueVerify(db.prisma, clock, ws, "u", [l.id]);
-    const later = fixedClock(new Date(T.getTime() + 31 * 60_000));
+    await db.prisma.lead.update({
+      where: { id: l.id },
+      data: { verifyClaimedAt: new Date(T.getTime() - 5 * 60_000) },
+    });
+    const later = fixedClock(new Date(T.getTime() + 26 * 60_000 + 1000));
     const verify = vi.fn(async () => "INVALID" as const);
     const res = await runVerify(db.prisma, later, {
       verifierFor: async () => ({ kind: "mx", verify }),
@@ -226,7 +231,76 @@ describe("queueVerify / runVerify", () => {
     expect(res.restored).toBe(1);
   });
 
-  test("a verifierFor failure restores the whole batch", async () => {
+  test("a backlog bigger than one batch stays PENDING_JOB past 30 minutes; none reverts unverified", async () => {
+    const ws = await mkWs();
+    const ids: string[] = [];
+    for (let i = 0; i < 120; i++) ids.push((await mkLead(ws, `b${i}@b.test`)).id);
+    await queueVerify(db.prisma, clock, ws, "u", ids);
+    const ok: EmailVerifier = { kind: "mx", verify: async () => "VERIFIED" };
+    const verifierFor = async () => ok;
+    await runVerify(db.prisma, clock, { verifierFor });
+    const later = fixedClock(new Date(T.getTime() + 31 * 60_000));
+    const res = await runVerify(db.prisma, later, { verifierFor });
+    expect(res).toMatchObject({ done: 50, restored: 0 });
+    const by = await db.prisma.lead.groupBy({
+      by: ["verificationStatus"],
+      where: { workspaceId: ws },
+      _count: true,
+    });
+    expect(Object.fromEntries(by.map((r) => [r.verificationStatus, r._count]))).toEqual({
+      VERIFIED: 100,
+      PENDING_JOB: 20,
+    });
+  });
+
+  test("a failing verifier keeps leads PENDING_JOB with backoff, records a safe reason, and reverts after 3 attempts", async () => {
+    const ws = await mkWs();
+    await setVerifierSettings(db.prisma, clock, ws, "u", {
+      kind: "http",
+      url: "https://v.example.com/x",
+      apiKey: "k",
+      statusPath: "a",
+    });
+    const l = await mkLead(ws, "fail@f.test", { verificationStatus: "RISKY" });
+    await queueVerify(db.prisma, clock, ws, "u", [l.id]);
+    const boom: EmailVerifier = {
+      kind: "http",
+      verify: async () => {
+        throw Object.assign(new Error("body-with-secret-key"), { code: "ECONNRESET" });
+      },
+    };
+    const run = (c: ReturnType<typeof fixedClock>) =>
+      runVerify(db.prisma, c, { verifierFor: async () => boom });
+    const at = (min: number) => fixedClock(new Date(T.getTime() + min * 60_000));
+    const attempts = async () =>
+      (await db.prisma.lead.findUniqueOrThrow({ where: { id: l.id } })).verifyAttempts;
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    await run(at(0));
+    expect(await status(l.id)).toMatchObject({ verificationStatus: "PENDING_JOB" });
+    expect(await attempts()).toBe(1);
+    await run(at(1)); // backoff: not picked yet
+    expect(await attempts()).toBe(1);
+    await run(at(2));
+    expect(await attempts()).toBe(2);
+    expect(await status(l.id)).toMatchObject({ verificationStatus: "PENDING_JOB" });
+    await run(at(6));
+    expect(await status(l.id)).toEqual({ verificationStatus: "RISKY", verifyPrevStatus: null });
+    const s = await getVerifierSettings(db.prisma, ws);
+    expect(s.lastError).toMatchObject({ reason: "ECONNRESET" });
+    expect(JSON.stringify(s)).not.toContain("secret");
+    expect(err.mock.calls.flat().join(" ")).not.toContain("secret");
+    expect(err).toHaveBeenCalled();
+    err.mockRestore();
+    // a later success clears the recorded failure
+    const l2 = await mkLead(ws, "fine@f.test");
+    await queueVerify(db.prisma, at(7), ws, "u", [l2.id]);
+    await runVerify(db.prisma, at(7), {
+      verifierFor: async () => stub({ "fine@f.test": "VERIFIED" }),
+    });
+    expect((await getVerifierSettings(db.prisma, ws)).lastError).toBeUndefined();
+  });
+
+  test("a verifierFor failure keeps the batch queued for a retry", async () => {
     const ws = await mkWs();
     const l = await mkLead(ws, "cfg@s.test", { verificationStatus: "VERIFIED" });
     await queueVerify(db.prisma, clock, ws, "u", [l.id]);
@@ -235,7 +309,10 @@ describe("queueVerify / runVerify", () => {
         throw new Error("bad config");
       },
     });
-    expect((await status(l.id)).verificationStatus).toBe("VERIFIED");
+    expect((await status(l.id)).verificationStatus).toBe("PENDING_JOB");
+    expect((await getVerifierSettings(db.prisma, l.workspaceId)).lastError).toMatchObject({
+      reason: "Error",
+    });
   });
 });
 
@@ -266,6 +343,14 @@ describe("settings", () => {
     });
     const w2 = await db.prisma.workspace.findUniqueOrThrow({ where: { id: ws } });
     expect(JSON.parse(decrypt(w2.verifierConfigEnc!)).apiKey).toBe("secret-key");
+    // a new host needs a new key: the stored one is never reused against it
+    await expect(
+      setVerifierSettings(db.prisma, clock, ws, "u", {
+        kind: "http",
+        url: "https://other.example.com/y",
+        statusPath: "a.b",
+      }),
+    ).rejects.toThrow("api_key_required");
     for (const bad of [
       { kind: "http", url: "http://v.example.com", apiKey: "k", statusPath: "a" },
       { kind: "http", url: "https://v.example.com", apiKey: "k", statusPath: "a b" },

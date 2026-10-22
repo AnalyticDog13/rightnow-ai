@@ -44,6 +44,8 @@ model Workspace {
   healthSlowdownPct    Int                   @default(50) // 10-90 (D34)
   verifierKind         String                @default("mx") // "mx" | "http" (D38)
   verifierConfigEnc    String? // encrypted {url, apiKey, statusPath}
+  verifierLastError    String? // short reason code of the last verifier failure, never a body or key
+  verifierLastErrorAt  DateTime?
 }
 
 // better-auth tables. Roles are stored lowercase: owner | admin | member | viewer.
@@ -412,6 +414,8 @@ model Lead {
   interestStatus       Int?
   verificationStatus   VerificationStatus @default(NOT_VERIFIED)
   verifyPrevStatus     VerificationStatus? // D38: what PENDING_JOB restores when verification gives no answer
+  verifyClaimedAt      DateTime? // set when a run picks the lead up; only a claimed, stalled row is restored
+  verifyAttempts       Int                @default(0) // failed verifier calls, capped at 3
   espType              EspType            @default(IN_QUEUE)
   esg                  String?
   enrichmentStatus     EnrichmentStatus?
