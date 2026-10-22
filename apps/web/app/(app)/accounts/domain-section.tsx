@@ -115,14 +115,12 @@ export function DomainSection({ email, canEdit }: { email: string; canEdit: bool
                 )
               }
             >
-              Save selectors
+              Apply selectors
             </Button>
           </div>
         </div>
       )}
-      <p role="status" aria-live="polite">
-        {msg}
-      </p>
+      <p aria-live="polite">{msg}</p>
     </section>
   );
 }

@@ -224,6 +224,62 @@ describe("resolver faults", () => {
   });
 });
 
+describe("review fixes", () => {
+  test("one clean zone does not mask an unknown one", async () => {
+    const rep = await check({ [`${D}.dbl.spamhaus.org`]: ["127.255.255.254"] });
+    expect(rep.dnsbl.status).toBe("unknown");
+    expect(rep.dnsbl.reason).toContain("dbl.spamhaus.org");
+    expect(rep.dnsbl.listed).toEqual([]);
+  });
+  test("an IP-literal submission host is not resolved; its reversed IP is queried", async () => {
+    const r = fakeResolver(good({ "4.3.2.1.zen.spamhaus.org": ["127.0.0.2"] }));
+    const rep = await checkDomain(r, D, { ...smtp, smtpHosts: ["1.2.3.4"] });
+    expect(r.calls).not.toContain("A 1.2.3.4");
+    expect(rep.dnsbl.listed).toEqual([{ zone: "zen.spamhaus.org", target: "1.2.3.4" }]);
+  });
+  test("a submission host that cannot be resolved makes the blocklist check unknown", async () => {
+    const rep = await check(
+      { "smtp.x.test": dnsError("ETIMEOUT") },
+      { ...smtp, smtpHosts: ["smtp.x.test"] },
+    );
+    expect(rep.dnsbl.status).toBe("unknown");
+    expect(rep.dnsbl.reason).toContain("smtp.x.test");
+  });
+  test("a DMARC record without p= is not a pass", async () => {
+    const rep = await check({ [`_dmarc.${D}`]: [["v=DMARC1; rua=mailto:a@ex.test"]] });
+    expect(rep.dmarc).toMatchObject({
+      status: "warn",
+      reason: "DMARC record has no policy",
+      policy: null,
+    });
+  });
+  test("a null MX fails", async () => {
+    const rep = await check({ [`${D}/MX`]: { mx: [{ exchange: ".", priority: 0 }] } });
+    expect(rep.mx).toMatchObject({
+      status: "fail",
+      reason: "Domain accepts no mail (null MX)",
+      hosts: [],
+    });
+  });
+  test("an ed25519-only DKIM key has its own warning", async () => {
+    const rep = await check({
+      [`google._domainkey.${D}`]: [
+        ["v=DKIM1; k=ed25519; p=" + Buffer.alloc(32, 1).toString("base64")],
+      ],
+    });
+    expect(rep.dkim.status).toBe("warn");
+    expect(rep.dkim.reason).toBe("Only an ed25519 key found; Gmail and Microsoft verify RSA keys");
+  });
+  test("a resolver that never answers is cut off by the total deadline", async () => {
+    const hang = () => new Promise<never>(() => {});
+    const r = { resolveTxt: hang, resolveMx: hang, resolve4: hang, reverse: hang };
+    const rep = await checkDomain(r, D, { ...gm, smtpHosts: ["smtp.x.test"], deadlineMs: 50 });
+    expect(
+      [rep.spf, rep.dkim, rep.dmarc, rep.mx, rep.dnsbl, rep.ptr].map((c) => c!.status),
+    ).toEqual(Array(6).fill("unknown"));
+  });
+});
+
 describe("launch gate, DomainCheck and recheck", () => {
   let db: Awaited<ReturnType<typeof createTestDb>>;
   let ws: string;

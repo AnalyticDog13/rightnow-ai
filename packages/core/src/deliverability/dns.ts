@@ -163,18 +163,23 @@ function keyBits(p: string): number | null {
 async function checkDkim(r: DnsResolver, domain: string, custom: string[]) {
   const tried = [...new Set([...PROVIDER_SELECTORS, ...COMMON_SELECTORS, ...custom])];
   const res = await Promise.all(tried.map((s) => txt(r, `${s}._domainkey.${domain}`)));
+  let onlyEd = true;
   const selectors = tried.flatMap((selector, i) => {
-    const p = (Array.isArray(res[i]) ? (res[i] as string[]) : [])
-      .map((t) => /(?:^|;)\s*p=([A-Za-z0-9+/=\s]+)/.exec(t)?.[1]?.replace(/\s/g, ""))
-      .find(Boolean);
-    return p ? [{ selector, bits: keyBits(p) }] : [];
+    const recs = Array.isArray(res[i]) ? (res[i] as string[]) : [];
+    const rec = recs.find((t) => /(?:^|;)\s*p=[A-Za-z0-9+/=]/.test(t));
+    const p = rec && /(?:^|;)\s*p=([A-Za-z0-9+/=\s]+)/.exec(rec)?.[1]?.replace(/\s/g, "");
+    if (!p) return [];
+    if (!/(?:^|;)\s*k=ed25519/i.test(rec)) onlyEd = false;
+    return [{ selector, bits: keyBits(p) }];
   });
   const strong = selectors.find((s) => (s.bits ?? 0) >= 1024);
   const c: Check = strong
     ? ok(`DKIM key found (selector ${strong.selector}, ${strong.bits} bits)`)
     : selectors.length
       ? warn(
-          "DKIM key shorter than 1024 bits",
+          onlyEd
+            ? "Only an ed25519 key found; Gmail and Microsoft verify RSA keys"
+            : "DKIM key shorter than 1024 bits",
           "Generate a 2048-bit DKIM key in your mail provider and publish it.",
         )
       : res.includes(ERR)
@@ -202,10 +207,15 @@ async function checkDmarc(r: DnsResolver, domain: string) {
     const rec = (t ?? []).find((x) => /^v=DMARC1\b/i.test(x));
     if (rec) {
       const p = /(?:^|;)\s*p=(none|quarantine|reject)/i.exec(rec)?.[1]?.toLowerCase();
-      return {
-        ...ok(`DMARC record found (p=${p ?? "?"})`),
-        policy: (p ?? null) as DomainReport["dmarc"]["policy"],
-      };
+      return p
+        ? { ...ok(`DMARC record found (p=${p})`), policy: p as DomainReport["dmarc"]["policy"] }
+        : {
+            ...warn(
+              "DMARC record has no policy",
+              `Add p=none (or quarantine/reject) to the record at _dmarc.${domain}.`,
+            ),
+            policy: null,
+          };
     }
   }
   return {
@@ -222,7 +232,13 @@ async function checkDmarc(r: DnsResolver, domain: string) {
 async function checkMx(r: DnsResolver, domain: string) {
   const m = await look(() => r.resolveMx(domain));
   if (m === ERR) return { ...unknown(), hosts: [] as string[] };
-  const hosts = (m ?? []).sort((a, b) => a.priority - b.priority).map((x) => x.exchange);
+  const all = (m ?? []).sort((a, b) => a.priority - b.priority).map((x) => x.exchange);
+  const hosts = all.filter((h) => h !== "." && h !== "");
+  if (all.length && !hosts.length)
+    return {
+      ...fail("Domain accepts no mail (null MX)", "Replace the null MX with real mail servers."),
+      hosts,
+    };
   return {
     ...(hosts.length
       ? ok("MX records found")
@@ -244,19 +260,16 @@ async function listing(r: DnsResolver, name: string): Promise<"listed" | "clean"
   return a.some((x) => ipNum(x) >= LISTED_MIN && ipNum(x) <= LISTED_MAX) ? "listed" : "unknown";
 }
 const hostIps = async (r: DnsResolver, host: string): Promise<Look<string[]>> =>
-  /^d+.d+.d+.d+$/.test(host) ? [host] : look(() => r.resolve4(host));
+  /^\d+\.\d+\.\d+\.\d+$/.test(host) ? [host] : look(() => r.resolve4(host));
 
 async function checkDnsbl(r: DnsResolver, domain: string, smtpHosts: string[]) {
   const queries: { zone: string; name: string; target: string; host: boolean }[] = DOMAIN_ZONES.map(
-    (zone) => ({
-      zone,
-      name: `${domain}.${zone}`,
-      target: domain,
-      host: false,
-    }),
+    (zone) => ({ zone, name: `${domain}.${zone}`, target: domain, host: false }),
   );
+  const unchecked: string[] = [];
   for (const host of smtpHosts) {
     const ips = await hostIps(r, host);
+    if (ips === ERR) unchecked.push(`submission host ${host}`);
     for (const ip of Array.isArray(ips) ? ips : [])
       for (const zone of IP_ZONES)
         queries.push({
@@ -269,14 +282,15 @@ async function checkDnsbl(r: DnsResolver, domain: string, smtpHosts: string[]) {
   const res = await Promise.all(queries.map((q) => listing(r, q.name)));
   const hits = queries.filter((_, i) => res[i] === "listed");
   const listed = hits.map((q) => ({ zone: q.zone, target: q.target }));
+  unchecked.push(...queries.filter((_, i) => res[i] === "unknown").map((q) => q.zone));
   const c: Check = hits.length
     ? warn(
         `Listed on ${hits.map((q) => `${q.zone} (${q.host ? `submission host ${q.target}` : q.target})`).join("; ")}`,
         "Request delisting from the blocklist operator and fix the cause before sending.",
       )
-    : res.includes("clean") || !res.length
-      ? ok("Not listed on the DNS blocklists checked")
-      : unknown();
+    : unchecked.length
+      ? { ...unknown(), reason: `${UNREACHABLE}: ${[...new Set(unchecked)].join(", ")}` }
+      : ok("Not listed on the DNS blocklists checked");
   return { ...c, listed };
 }
 
@@ -313,18 +327,30 @@ const managedReport = (domain: string): DomainReport => ({
 export async function checkDomain(
   r: DnsResolver,
   domain: string,
-  o: { providers: AccountProvider[]; smtpHosts: string[]; selectors: string[] },
+  o: {
+    providers: AccountProvider[];
+    smtpHosts: string[];
+    selectors: string[];
+    /** Total time for all checks; whatever is still running becomes `unknown` (default 20 s). */
+    deadlineMs?: number;
+  },
 ): Promise<DomainReport> {
   domain = domain.toLowerCase();
   if (FREE_MAIL_DOMAINS.has(domain)) return managedReport(domain);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<"late">(
+    (res) => (timer = setTimeout(() => res("late"), o.deadlineMs ?? 20_000)),
+  );
+  const within = <T>(p: Promise<T>, fallback: T): Promise<T> =>
+    Promise.race([p, late]).then((v) => (v === "late" ? fallback : v));
   const [spf, dkim, dmarc, mx, dnsbl, ptr] = await Promise.all([
-    checkSpf(r, domain, o.providers),
-    checkDkim(r, domain, o.selectors),
-    checkDmarc(r, domain),
-    checkMx(r, domain),
-    checkDnsbl(r, domain, o.smtpHosts),
-    o.smtpHosts[0] ? checkPtr(r, o.smtpHosts[0]) : null,
-  ]);
+    within(checkSpf(r, domain, o.providers), { ...unknown(), record: null, lookups: 0 }),
+    within(checkDkim(r, domain, o.selectors), { ...unknown(), selectors: [] }),
+    within(checkDmarc(r, domain), { ...unknown(), policy: null }),
+    within(checkMx(r, domain), { ...unknown(), hosts: [] }),
+    within(checkDnsbl(r, domain, o.smtpHosts), { ...unknown(), listed: [] }),
+    o.smtpHosts[0] ? within(checkPtr(r, o.smtpHosts[0]), { ...unknown(), host: null }) : null,
+  ]).finally(() => clearTimeout(timer));
   return {
     domain,
     checkedAt: new Date().toISOString(),
