@@ -103,7 +103,7 @@ async function counts(db: Db, ids: string[], now: Date): Promise<Map<string, Cou
     FROM (SELECT DISTINCT ON ("accountId") id, "accountId" FROM "PlacementTest"
           WHERE "accountId" = ANY(${ids}::text[]) AND "finishedAt" IS NOT NULL
           ORDER BY "accountId", "finishedAt" DESC) t
-    JOIN "WarmupMessage" m ON m."placementTestId" = t.id
+    JOIN "WarmupMessage" m ON m."placementTestId" = t.id AND m.status <> 'FAILED'
     GROUP BY t."accountId"`;
   const placed = new Map(pl.map((x) => [x.id, { inbox: x.inbox, total: x.total }]));
   return new Map(

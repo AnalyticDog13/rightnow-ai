@@ -133,3 +133,17 @@ describe("placement-test routes", () => {
     expect((await list.GET(req("GET", undefined, key))).status).toBe(200);
   });
 });
+
+describe("account PATCH placementSeed", () => {
+  it("persists the opt-in and rejects a non-boolean", async () => {
+    const acct = await import("../app/api/v1/accounts/[id]/route");
+    const id = (await mk(workspaceId, "opt@acme3.io")).id;
+    const bad = await acct.PATCH(req("PATCH", { placementSeed: "yes" }), p(id));
+    expect(bad.status).toBe(400);
+    const ok = await acct.PATCH(req("PATCH", { placementSeed: true }), p(id));
+    expect(ok.status).toBe(200);
+    expect((await db.prisma.emailAccount.findUniqueOrThrow({ where: { id } })).placementSeed).toBe(
+      true,
+    );
+  });
+});

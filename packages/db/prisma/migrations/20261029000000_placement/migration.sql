@@ -21,3 +21,6 @@ CREATE INDEX "PlacementTest_accountId_finishedAt_idx" ON "PlacementTest"("accoun
 
 -- AddForeignKey
 ALTER TABLE "PlacementTest" ADD CONSTRAINT "PlacementTest_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "EmailAccount"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- CreateIndex
+CREATE INDEX "WarmupMessage_placementTestId_idx" ON "WarmupMessage"("placementTestId");

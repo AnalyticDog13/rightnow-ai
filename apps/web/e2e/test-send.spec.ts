@@ -17,17 +17,22 @@ test("send is disabled until authorized; success toast; the mailbox holds a mark
     r.continue({ postData: JSON.stringify({ loginHint: EMAIL }) }),
   );
   await page.goto("/accounts");
+  // the full-page OAuth fallback must finish its round trip (callback, redirect back to /accounts) before the drawer is opened
+  const back = page.waitForResponse((r) => r.url().includes("/api/v1/oauth/google/callback"));
   await page.getByRole("button", { name: "Connect Google" }).click();
+  await back;
+  await page.waitForURL((u) => u.pathname === "/accounts");
+  await page.waitForLoadState("load");
   const drawer = page.getByRole("dialog");
   const send = drawer.getByRole("button", { name: "Send test email" });
-  // the full-page OAuth fallback may still be navigating back to /accounts and detach the drawer: reopen it
+  // belt and braces: if a late refresh still detaches the drawer, reopen it and redo the whole sequence up to the click
   await expect(async () => {
     await page.getByRole("button", { name: `Limits for ${EMAIL}` }).click({ timeout: 5000 });
     await drawer.getByLabel("Send test email to").fill("target@dest.example", { timeout: 5000 });
+    await expect(send).toBeDisabled({ timeout: 2000 });
+    await drawer.getByLabel("I am authorized to send from this account").check({ timeout: 5000 });
+    await expect(send).toBeEnabled({ timeout: 2000 });
   }).toPass({ timeout: 60_000 });
-  await expect(send).toBeDisabled();
-  await drawer.getByLabel("I am authorized to send from this account").check();
-  await expect(send).toBeEnabled();
   await send.click();
   await expect(drawer.getByText("Test email sent.")).toBeVisible();
 

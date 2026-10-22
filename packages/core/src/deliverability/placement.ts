@@ -146,7 +146,7 @@ export async function startPlacementTest(
   // outside the transaction: a failed send is that seed's MISSING; an unknown outcome stays SENT and is located (never resent)
   const fail = (id: string, e: unknown) =>
     prisma.warmupMessage.updateMany({
-      where: { id, status: "SENDING" },
+      where: { id, status: { in: ["PLANNED", "SENDING"] } },
       data: { status: "FAILED", error: codeOf(e) },
     });
   let provider;
@@ -229,7 +229,10 @@ export async function placementReport(
       where: { placementTestId: id, workspaceId: ws },
       include: { to: { select: { email: true, provider: true } } },
     }),
-    prisma.emailAccount.findUnique({ where: { id: t.accountId }, select: { email: true } }),
+    prisma.emailAccount.findFirst({
+      where: { id: t.accountId, workspaceId: ws },
+      select: { email: true },
+    }),
   ]);
   const check = a
     ? await prisma.domainCheck.findUnique({

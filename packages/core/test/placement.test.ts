@@ -219,3 +219,90 @@ describe("placement test (D37)", () => {
     ).not.toBeNull();
   });
 });
+
+describe("placement test failure paths and scoping (fix round 1)", () => {
+  test("providerFor throwing fails every row at once: seeds MISSING, test finishes, no health penalty", async () => {
+    const w = await world();
+    const e = new Error("decrypt");
+    const { id } = await w.start(
+      { accountId: w.T.id },
+      {
+        ...w.deps,
+        providerFor: async () => {
+          throw e;
+        },
+      },
+    );
+    expect(
+      await P().warmupMessage.count({ where: { placementTestId: id, status: "FAILED" } }),
+    ).toBe(2);
+    expect((await placementReport(P(), w.ws, id)).seeds.map((x) => x.folder)).toEqual([
+      "MISSING",
+      "MISSING",
+    ]);
+    await w.tick();
+    expect(
+      (await P().placementTest.findUniqueOrThrow({ where: { id } })).finishedAt,
+    ).not.toBeNull();
+    expect((await healthInputs(P(), [w.T.id], w.clock.now())).get(w.T.id)!.placement).toBeNull();
+  });
+
+  test("failed sends are not placement misses in the health term", async () => {
+    const w = await world({ failM: true });
+    await w.start();
+    w.clock.advance(10 * MIN);
+    await w.tick();
+    expect((await healthInputs(P(), [w.T.id], w.clock.now())).get(w.T.id)!.placement).toEqual({
+      inbox: 1,
+      total: 1,
+    });
+  });
+
+  test("a seed that becomes unlocatable is MISSING after 24 h and the test finishes", async () => {
+    const w = await world();
+    const { id } = await w.start();
+    await P().emailAccount.update({
+      where: { id: w.M.id },
+      data: { lifecycle: "NEEDS_ATTENTION" },
+    });
+    w.clock.advance(10 * MIN);
+    await w.tick();
+    expect((await P().placementTest.findUniqueOrThrow({ where: { id } })).finishedAt).toBeNull();
+    expect((await placementReport(P(), w.ws, id)).seeds.map((x) => x.folder)).toEqual([
+      "INBOX",
+      "PENDING",
+    ]);
+    w.clock.advance(24 * 60 * MIN);
+    await w.tick();
+    expect((await placementReport(P(), w.ws, id)).seeds.map((x) => x.folder)).toEqual([
+      "INBOX",
+      "MISSING",
+    ]);
+    expect(
+      (await P().placementTest.findUniqueOrThrow({ where: { id } })).finishedAt,
+    ).not.toBeNull();
+  });
+
+  test("seeds of another workspace and NEEDS_ATTENTION seeds are skipped; a foreign variant is 404", async () => {
+    const w = await world();
+    const other = await world(); // its seeds live in another workspace
+    await P().emailAccount.update({
+      where: { id: w.G.id },
+      data: { lifecycle: "NEEDS_ATTENTION" },
+    });
+    const { id } = await w.start();
+    expect((await placementReport(P(), w.ws, id)).seeds.map((x) => x.accountId)).toEqual([w.M.id]);
+    expect(
+      await P().warmupMessage.count({ where: { toAccountId: { in: [other.G.id, other.M.id] } } }),
+    ).toBe(0);
+    const e = await rejects(w.start({ accountId: w.T.id, variantId: other.steps[0]!.variant.id }));
+    expect(e?.status).toBe(404);
+  });
+
+  test("placementReport does not resolve a test of another workspace", async () => {
+    const w = await world();
+    const other = await world();
+    const { id } = await w.start();
+    expect((await rejects(placementReport(P(), other.ws, id)))?.status).toBe(404);
+  });
+});

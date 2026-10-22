@@ -439,6 +439,16 @@ export async function warmupTick(
       if (e instanceof AuthError) await recordProviderError(prisma, clock, acct.id, e);
     }
   });
+  // a seed that could not be located within 24 h (disconnected, needs attention) is MISSING, so the test can finish
+  await prisma.warmupMessage.updateMany({
+    where: {
+      kind: "PLACEMENT",
+      status: "SENT",
+      landedFolder: null,
+      sentAt: { lte: ago(24 * 60 * MIN) },
+    },
+    data: { landedFolder: "MISSING", checkedAt: now },
+  });
   // a placement test is finished once every seed row has a folder or failed (D37)
   await prisma.$executeRaw`UPDATE "PlacementTest" t SET "finishedAt" = ${now}
     WHERE t."finishedAt" IS NULL AND NOT EXISTS (SELECT 1 FROM "WarmupMessage" m

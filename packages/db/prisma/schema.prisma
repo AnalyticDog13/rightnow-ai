@@ -1078,6 +1078,7 @@ model WarmupMessage {
   @@index([fromAccountId, sentAt])
   @@index([toAccountId, receivedAt])
   @@index([status, dueAt])
+  @@index([placementTestId])
 }
 
 // D37: one inbox-placement test of an account; its WarmupMessage rows (kind PLACEMENT, placementTestId) hold the per-seed result.
