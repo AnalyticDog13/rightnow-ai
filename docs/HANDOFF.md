@@ -1,7 +1,7 @@
 # Handoff
 
 **Phase:** 5 — Deliverability, warm-up, re-warm-up (branch `phase-5-deliverability`, created from `main` at 7c03dad)
-**Current task:** P5-T04 (placement tests) PAUSED mid-implementation — any uncommitted partial work in the tree is kept (do not discard). Resume: fresh finisher with task-04 brief/report + `.superpowers/sdd/phase-5/p5t04-partial.diff`, then task review. Done: P5-T01 8b65f8b, P5-T02 d48a2da, P5-T03 355ffb2. Ledger `.superpowers/sdd/phase-5/progress.md`.
+**Current task:** P5-T04 (placement tests) PAUSED in fix round 1 — implemented 795ba36 + 8d94c83 (CI green), review found 2 Important; fix commit 4444b7d pushed (CI was running at pause). Resume: check CI on 4444b7d, then scoped re-review (BASE 8d94c83, findings `.superpowers/sdd/phase-5/task-04-review.md`), then P5-T08. Done: P5-T01 8b65f8b, P5-T02 d48a2da, P5-T03 355ffb2. Ledger `.superpowers/sdd/phase-5/progress.md`.
 **Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 (approved). Done step plans: `docs/plans/phase-1.md` … `phase-4.md` (+ `phase-4-review.md`).
 **Tests:** ~1165 vitest + 20 Playwright green; CI `check`, `compose-smoke` (incl. Caddyfile validate), `imap-real` green.
 
