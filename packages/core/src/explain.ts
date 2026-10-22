@@ -155,7 +155,7 @@ export async function whyNotSending(
   );
   accountReason(
     "sync_pending",
-    "Waiting for inbox sync, available in a later release. Sending starts once an account's inbox has been synced.",
+    "These accounts are waiting for their next inbox sync. Sending resumes once a sync completes; see each account's sync status on the Email Accounts page.",
     live.filter((a) => o.sendable.includes(a.provider) && !usable.has(a.id)),
   );
 
@@ -165,7 +165,7 @@ export async function whyNotSending(
     if (!ok) {
       add(
         "company_stop_waiting_for_sync",
-        "Stop-company-on-reply is on, so no email is sent until every assigned account has a fresh inbox sync (available in a later release) and none needs attention.",
+        "Stop-company-on-reply is on, so no email is sent until every assigned account has completed its next inbox sync and none needs attention. See each account's sync status on the Email Accounts page.",
         { accountIds: ids(assigned.filter((a) => !a.deletedAt)) },
       );
       blocking.add("company_stop_waiting_for_sync");

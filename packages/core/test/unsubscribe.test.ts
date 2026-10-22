@@ -6,7 +6,6 @@ import { updateWorkspaceSettings } from "../src/settings";
 import {
   listUnsubscribeHeaders,
   signUnsubscribe,
-  suppressMailtoUnsubscribe,
   unsubscribeKeys,
   unsubscribeLead,
   unsubscribeUrl,
@@ -168,23 +167,6 @@ describe("unsubscribeLead", () => {
     expect(await rows("c@acme.test")).toHaveLength(0);
   });
 
-  test("mailto hook suppresses the sender and stops enrollments, case-insensitively", async () => {
-    const l = await lead("m@acme.test");
-    const [cl] = await enroll(l.id, 1);
-    expect(
-      await suppressMailtoUnsubscribe(db.prisma, clock, {
-        workspaceId: ws,
-        fromEmail: "M@Acme.test",
-        rfcMessageId: "<u1@x.test>",
-      }),
-    ).toBe("done");
-    expect(await rows("m@acme.test")).toHaveLength(1);
-    const after = await db.prisma.campaignLead.findUniqueOrThrow({ where: { id: cl!.id } });
-    expect(after).toMatchObject({ state: "STOPPED", stopReason: "UNSUBSCRIBED" });
-    expect(await db.prisma.event.findMany({ where: { leadId: l.id } })).toMatchObject([
-      { type: "UNSUBSCRIBE", dedupeKey: `UNSUBSCRIBE:${ws}:<u1@x.test>` },
-    ]);
-  });
 });
 
 describe("workspace settings", () => {

@@ -106,4 +106,4 @@ CI status (`gh` is not installed): `curl -s "https://api.github.com/repos/Analyt
 `docs/PRODUCT_SPEC.md` (requirements + Instantly parity checklist) · `docs/IMPLEMENTATION_PLAN.md` (approved plan) ·
 `docs/plans/` (per-phase step plans) · `docs/TASKS.json` · `docs/PROGRESS.md` · `docs/HANDOFF.md` ·
 `docs/DECISIONS.md` · `docs/REVIEW_LOG.md` · `docs/RESUME_INSTRUCTIONS.md` ·
-`docs/ops/` (LOCAL, VPS, GOOGLE_SETUP, MICROSOFT_SETUP, KEY_ROTATION, LIVE_VERIFICATION)
+`docs/ops/` (LOCAL, VPS, GOOGLE_SETUP, MICROSOFT_SETUP, KEY_ROTATION, LIVE_VERIFICATION, OFFLINE_RECOVERY)

@@ -191,37 +191,3 @@ export async function unsubscribeLead(
     }),
   );
 }
-
-/** An "unsubscribe" reply from `fromEmail` (message `rfcMessageId`) to a mailbox of the workspace; `applyInbound` does the same inside the ingest transaction. */
-export async function suppressMailtoUnsubscribe(
-  prisma: PrismaClient,
-  clock: Clock,
-  p: { workspaceId: string; fromEmail: string; rfcMessageId: string },
-): Promise<"done" | "already"> {
-  const email = p.fromEmail.trim().toLowerCase();
-  const leads = await prisma.lead.findMany({
-    where: { workspaceId: p.workspaceId, email },
-    select: { id: true },
-  });
-  return withTxRetry(() =>
-    prisma.$transaction(async (tx) => {
-      const r = await optOutTx(
-        tx,
-        clock,
-        p.workspaceId,
-        email,
-        leads.map((l) => l.id),
-        "mailto",
-      );
-      await recordEvent(tx, {
-        workspaceId: p.workspaceId,
-        type: "UNSUBSCRIBE",
-        occurredAt: clock.now(),
-        leadId: leads[0]?.id ?? null,
-        meta: { source: "mailto" },
-        dedupeKey: `UNSUBSCRIBE:${p.workspaceId}:${p.rfcMessageId}`,
-      });
-      return r;
-    }),
-  );
-}

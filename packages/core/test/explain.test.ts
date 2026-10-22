@@ -64,7 +64,8 @@ describe("whyNotSending", () => {
     expect(r.reasons).toEqual([
       expect.objectContaining({ code: "sync_pending", accountIds: [s.accounts[0]!.id] }),
     ]);
-    expect(r.reasons[0]!.message).toMatch(/waiting for inbox sync.*later release/i);
+    expect(r.reasons[0]!.message).toMatch(/waiting for their next inbox sync.*sync status/i);
+    expect(r.reasons[0]!.message).not.toMatch(/later release/i);
   });
 
   test("provider not verified", async () => {
@@ -183,6 +184,9 @@ describe("whyNotSending", () => {
     expect(r.sending).toBe(false);
     expect(r.reasons).toContainEqual(
       expect.objectContaining({ code: "company_stop_waiting_for_sync", blocking: true }),
+    );
+    expect(r.reasons.find((x) => x.code === "company_stop_waiting_for_sync")!.message).toMatch(
+      /^(?!.*later release).*next inbox sync.*sync status/i,
     );
     await P().campaign.update({
       where: { id: s.campaign.id },

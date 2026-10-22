@@ -32,12 +32,19 @@ history ids, Graph delta tokens, an IMAP UIDVALIDITY change), it runs a full rec
 
 - replies, including replies from another address of the lead or a colleague, and replies to a different mailbox of
   the workspace;
-- auto-replies (out of office pushes the follow-ups to the return date, at most 90 days);
+- auto-replies (out of office pushes the follow-ups to the return date, at most 90 days; an out-of-office without a
+  readable date pauses them for 7 days);
 - bounce notifications (DSNs): hard bounces suppress the address and stop the lead, soft and unknown ones are recorded;
 - unsubscribe requests sent by email: a reply saying "unsubscribe", or the `mailto:` List-Unsubscribe message, which
   goes to the sending mailbox itself;
 - messages sent from the mailbox by another client (shown in the inbox; they never count as campaign sends);
-- deletions, where the provider reports them in its change history.
+- deletions, where the provider reports them in its change history (an incremental sync only, see below).
+
+A message the sync cannot store fails that run, and the mailbox waits (it does not send while stale). If the same
+message fails three runs in a row, it is stored as a **placeholder**: sender, recipients, subject, date and threading
+headers only, without body or attachments. Its stop rules still run (a reply still stops the lead) and the sync moves
+on; the account's sync history (`SyncRun`) records `placeholder <code> msg=<id>`. The full message stays in the
+provider mailbox.
 
 ## Not reconstructed
 
@@ -49,6 +56,8 @@ history ids, Graph delta tokens, an IMAP UIDVALIDITY change), it runs a full rec
 - **Push notifications** from providers (there are none today; sync polls every `SYNC_POLL_SEC`).
 - **Replies filtered to spam/junk.** The sync reads INBOX and Sent only, so a reply the provider put in spam does not
   stop the lead and is not shown in the inbox.
+- **Deletions while the history was expired.** A full reconcile re-reads what is still there; it never marks a stored
+  message as deleted remotely, so mail deleted in the provider during that downtime still shows in the inbox.
 - **Mail older than the reconcile window.** After a downtime longer than the provider's history (and so a full
   reconcile), messages dated before `min(last successful sync − 2 days, now − 30 days)` are not re-read.
 
