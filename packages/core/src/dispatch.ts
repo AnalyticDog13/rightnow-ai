@@ -205,6 +205,11 @@ async function claimOne(
         await set({ status: "CANCELLED", error: "stale" });
         return "skip";
       }
+      if (lead.verificationStatus === "PENDING_JOB") {
+        // D38: verification in progress, the row waits (never cancelled or stopped)
+        await set({ dueAt: new Date(now.getTime() + 60_000) });
+        return "skip";
+      }
       if (
         lead.deletedAt ||
         lead.verificationStatus === "INVALID" ||

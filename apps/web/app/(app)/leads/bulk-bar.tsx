@@ -187,6 +187,15 @@ export function BulkBar({
       <Button
         variant="outline"
         disabled={busy}
+        onClick={() =>
+          run("Verify", "/api/v1/leads/verify", { ids }, (j) => `queued ${j.queued} for checking.`)
+        }
+      >
+        Verify
+      </Button>
+      <Button
+        variant="outline"
+        disabled={busy}
         onClick={() => {
           if (
             confirm(

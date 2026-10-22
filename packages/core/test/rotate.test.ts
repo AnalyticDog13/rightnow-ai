@@ -42,6 +42,7 @@ test("A to B re-encrypts, keeps nulls, is idempotent; a value under a third key 
   expect(await rotateColumns(db.prisma, ENCRYPTED_COLUMNS, A, B)).toEqual({
     "EmailAccount.credentialsEnc": 2,
     "OAuthSession.codeVerifierEnc": 1,
+    "Workspace.verifierConfigEnc": 0,
   });
   const acc = async (id: string) =>
     (await db.prisma.emailAccount.findUniqueOrThrow({ where: { id } })).credentialsEnc;
@@ -54,6 +55,7 @@ test("A to B re-encrypts, keeps nulls, is idempotent; a value under a third key 
   expect(await rotateColumns(db.prisma, ENCRYPTED_COLUMNS, A, B)).toEqual({
     "EmailAccount.credentialsEnc": 0,
     "OAuthSession.codeVerifierEnc": 0,
+    "Workspace.verifierConfigEnc": 0,
   });
 
   // two rows back on A plus one under a third key: the column is left exactly as it was
@@ -74,4 +76,14 @@ test("A to B re-encrypts, keeps nulls, is idempotent; a value under a third key 
   expect(err?.message).toContain("EmailAccount.credentialsEnc");
   expect(err?.message).toContain(bad.id);
   expect([await acc(a1.id), await acc(a2.id)]).toEqual(before);
+});
+
+test("Workspace.verifierConfigEnc is rotated", async () => {
+  const w = await db.prisma.workspace.create({
+    data: { name: "V", slug: "w-rot-ver", verifierConfigEnc: encrypt("{}", A) },
+  });
+  expect(ENCRYPTED_COLUMNS).toContainEqual({ model: "Workspace", field: "verifierConfigEnc" });
+  await rotateColumns(db.prisma, [{ model: "Workspace", field: "verifierConfigEnc" }], A, B);
+  const got = await db.prisma.workspace.findUniqueOrThrow({ where: { id: w.id } });
+  expect(decrypt(got.verifierConfigEnc!, B)).toBe("{}");
 });

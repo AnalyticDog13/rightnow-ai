@@ -6,6 +6,7 @@ import { campaignPlanJob } from "./campaign-plan";
 import { deliverabilityHealthJob } from "./deliverability-health";
 import { dnsCheckJob } from "./dns-check";
 import { leadImportJob } from "./lead-import";
+import { leadVerifyJob } from "./lead-verify";
 import { mailSyncJob } from "./mail-sync";
 import { sendRecoveryJob } from "./send-recovery";
 import { warmupTickJob } from "./warmup-tick";
@@ -15,6 +16,7 @@ export const jobs: JobDef[] = [
   accountsAutoResumeJob,
   accountsAutofixJob,
   leadImportJob,
+  leadVerifyJob,
   campaignPlanJob,
   campaignDispatchJob,
   sendRecoveryJob,

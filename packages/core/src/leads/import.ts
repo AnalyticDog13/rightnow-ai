@@ -27,6 +27,7 @@ export const importOptions = z.strictObject({
   skipIfInWorkspace: z.boolean().default(true),
   skipIfInList: z.boolean().default(false),
   skipIfInCampaign: z.boolean().default(false),
+  verifyOnImport: z.boolean().default(false),
 });
 export const LAWFUL_BASES = ["legitimate_interest", "consent", "contract", "other"] as const;
 export const mappingSchema = z.array(
@@ -158,6 +159,7 @@ function prepare(
   map: Mapping,
   job: { id: string; workspaceId: string; source: string; lawfulBasis: string },
   seen: Set<string>,
+  verify: boolean,
 ): Cand | string {
   const data: Record<string, string> = {};
   const custom: Record<string, string> = {};
@@ -186,6 +188,8 @@ function prepare(
       source: job.source,
       lawfulBasis: job.lawfulBasis,
       importJobId: job.id,
+      // D38: waits for the lead-verify job, so a running campaign cannot plan the lead first
+      ...(verify && { verificationStatus: "PENDING_JOB", verifyPrevStatus: "NOT_VERIFIED" }),
     },
   };
 }
@@ -343,7 +347,7 @@ export async function runImport(
     for (let i = 0; i < rows.length; i += BATCH) {
       const cands: Cand[] = [];
       for (const r of rows.slice(i, i + BATCH)) {
-        const c = prepare(r, map, job, seen);
+        const c = prepare(r, map, job, seen, opts.verifyOnImport);
         if (typeof c === "string") skipped[c] = (skipped[c] ?? 0) + 1;
         else cands.push(c);
       }
@@ -373,7 +377,11 @@ export async function runImport(
             espType: "IN_QUEUE",
             email: { endsWith: `@${d}` },
           },
-          data: { espType: r.esp, esg: r.esg, ...(r.invalid && { verificationStatus: "INVALID" }) },
+          data: {
+            espType: r.esp,
+            esg: r.esg,
+            ...(r.invalid && { verificationStatus: "INVALID", verifyPrevStatus: null }),
+          },
         });
         if (++done % 4 === 0)
           await progress(

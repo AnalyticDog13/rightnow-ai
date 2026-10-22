@@ -42,6 +42,8 @@ model Workspace {
   firstEmailTextOnly   Boolean               @default(false)
   bounceThresholdPct   Float                 @default(3) // 0.5-20 (D34)
   healthSlowdownPct    Int                   @default(50) // 10-90 (D34)
+  verifierKind         String                @default("mx") // "mx" | "http" (D38)
+  verifierConfigEnc    String? // encrypted {url, apiKey, statusPath}
 }
 
 // better-auth tables. Roles are stored lowercase: owner | admin | member | viewer.
@@ -409,6 +411,7 @@ model Lead {
   labels               String[]
   interestStatus       Int?
   verificationStatus   VerificationStatus @default(NOT_VERIFIED)
+  verifyPrevStatus     VerificationStatus? // D38: what PENDING_JOB restores when verification gives no answer
   espType              EspType            @default(IN_QUEUE)
   esg                  String?
   enrichmentStatus     EnrichmentStatus?

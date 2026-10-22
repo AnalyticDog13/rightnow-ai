@@ -110,6 +110,11 @@ export function LeadsTable({
     setTick((n) => n + 1);
   }
 
+  async function reverify(b: Bounced) {
+    const r = await call("/api/v1/leads/verify", "POST", { ids: [b.lead!.id] });
+    setNotice({ text: r.ok ? `Queued ${b.value} for checking.` : errorText(r), ok: r.ok });
+  }
+
   const ids = leads.map((l) => l.id);
   const allOn = ids.length > 0 && ids.every((id) => selected.has(id));
   const toggle = (id: string) =>
@@ -330,7 +335,17 @@ export function LeadsTable({
                     {b.source ? ` (${b.source})` : ""}
                   </td>
                   <td className="p-3">{b.createdAt.slice(0, 10)}</td>
-                  <td className="p-3">
+                  <td className="flex gap-2 p-3">
+                    {canEdit && b.lead && (
+                      <Button
+                        variant="outline"
+                        className="h-8 px-2 text-xs"
+                        aria-label={`Re-verify ${b.value}`}
+                        onClick={() => reverify(b)}
+                      >
+                        Re-verify
+                      </Button>
+                    )}
                     {isAdmin && (
                       <Button
                         variant="outline"

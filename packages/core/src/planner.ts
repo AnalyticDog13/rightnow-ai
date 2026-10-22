@@ -503,6 +503,7 @@ async function planCampaign(tx: Tx, campaignId: string, now: Date, o: PlanOpts) 
         await backOff(cl.id, "its current step was deleted");
         continue;
       }
+      if (lead.verificationStatus === "PENDING_JOB") continue; // D38: waits for the lead-verify job
       const stop = lead.deletedAt
         ? "SKIPPED"
         : blocked.has(lead.email)

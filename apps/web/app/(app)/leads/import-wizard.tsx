@@ -68,6 +68,7 @@ export function ImportWizard({ lists, onDone }: { lists: Named[]; onDone: () => 
   const [listId, setListId] = useState("");
   const [skipWs, setSkipWs] = useState(true);
   const [skipList, setSkipList] = useState(false);
+  const [verify, setVerify] = useState(false);
   const [source, setSource] = useState("");
   const [basis, setBasis] = useState("legitimate_interest");
   const [authorized, setAuthorized] = useState(false);
@@ -116,7 +117,9 @@ export function ImportWizard({ lists, onDone }: { lists: Named[]; onDone: () => 
     const r = await send("/api/v1/imports", file!, {
       options: {
         mapping,
-        options: { ...(listId && { listId }), skipIfInWorkspace: skipWs, skipIfInList: skipList },
+        options: { ...(listId && { listId }), skipIfInWorkspace: skipWs, skipIfInList: skipList,
+          verifyOnImport: verify,
+        },
         confirmedAuthorized: authorized,
         lawfulBasis: basis,
         ...(source.trim() && { source: source.trim() }),
@@ -294,6 +297,14 @@ export function ImportWizard({ lists, onDone }: { lists: Named[]; onDone: () => 
                 onChange={(e) => setSkipList(e.target.checked)}
               />
               Skip leads already in the chosen list
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={verify}
+                onChange={(e) => setVerify(e.target.checked)}
+              />
+              Verify new addresses after the import (campaigns wait for the result)
             </label>
             <div className="flex flex-col gap-1">
               <Label htmlFor="import-source">Source (optional)</Label>

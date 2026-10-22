@@ -1,0 +1,276 @@
+import dns from "node:dns";
+import type { PrismaClient, VerificationStatus } from "@rightnow/db/client";
+import { assertPublicHost, mapLimit } from "@rightnow/providers";
+import { z } from "zod";
+import { AccountError } from "../accounts/service";
+import { audit } from "../audit";
+import type { Clock } from "../clock";
+import { decrypt, encrypt } from "../crypto";
+import { DISPOSABLE_DOMAINS } from "./disposable";
+import type { ResolveMx } from "./esp";
+import { parseEmail } from "./validate";
+
+type Db = PrismaClient;
+type Actor = string | null | undefined;
+
+const BATCH = 50; // per workspace per run
+const PARALLEL = 5;
+const TIMEOUT_MS = 10_000;
+const STUCK_MS = 30 * 60_000;
+const MAX_BODY = 64 * 1024;
+
+/** `null` = leave the lead's status unchanged. Cost of an external verifier is the user's (D38). */
+export interface EmailVerifier {
+  readonly kind: "mx" | "http";
+  verify(email: string, signal: AbortSignal): Promise<VerificationStatus | null>;
+}
+
+const gone = new Set(["ENOTFOUND", "ENODATA"]);
+
+/** Rejects when `signal` aborts, so a hung lookup cannot hold a worker slot. */
+const abortable = <T>(p: Promise<T>, signal: AbortSignal) =>
+  Promise.race([
+    p,
+    new Promise<never>((_, rej) => {
+      const stop = () => rej(new Error("verification timed out"));
+      if (signal.aborted) stop();
+      else signal.addEventListener("abort", stop, { once: true });
+    }),
+  ]);
+
+/** Syntax, disposable list and MX only. An MX record proves nothing about the mailbox, so it never answers VERIFIED. */
+export function mxVerifier(resolveMx: ResolveMx): EmailVerifier {
+  return {
+    kind: "mx",
+    async verify(email, signal) {
+      const e = parseEmail(email);
+      if (!e) return "INVALID";
+      const domain = e.slice(e.lastIndexOf("@") + 1);
+      if (DISPOSABLE_DOMAINS.has(domain)) return "RISKY";
+      try {
+        const mx = await abortable(resolveMx(domain), signal);
+        return mx.length ? null : "INVALID";
+      } catch (err) {
+        return gone.has((err as { code?: string }).code ?? "") ? "INVALID" : null;
+      }
+    },
+  };
+}
+
+const MAPPED: Record<string, VerificationStatus> = {
+  valid: "VERIFIED",
+  invalid: "INVALID",
+  risky: "RISKY",
+  catch_all: "CATCH_ALL",
+  unknown: "NOT_VERIFIED",
+};
+
+async function readCapped(res: Response): Promise<string | null> {
+  const reader = res.body?.getReader();
+  if (!reader) return null;
+  const chunks: Uint8Array[] = [];
+  let n = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    n += value.length;
+    if (n > MAX_BODY) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+/**
+ * POSTs `{ email }` to the user's https URL. Private hosts are refused whatever MODE (M9).
+ * shortcut: DNS-rebinding window between the check and fetch, pin the IP when P7-T02 adds a pinned HTTP helper
+ */
+export function httpVerifier(
+  cfg: { url: string; apiKey: string; statusPath: string },
+  fetchFn: typeof fetch = fetch,
+  resolve?: (host: string) => Promise<string[]>,
+): EmailVerifier {
+  return {
+    kind: "http",
+    async verify(email, signal) {
+      const u = new URL(cfg.url);
+      if (u.protocol !== "https:") throw new Error("verifier url must be https");
+      await assertPublicHost(u.hostname, { mode: "vps", allowPrivate: false, resolve });
+      const res = await fetchFn(cfg.url, {
+        method: "POST",
+        redirect: "error",
+        signal,
+        headers: { "content-type": "application/json", authorization: `Bearer ${cfg.apiKey}` },
+        body: JSON.stringify({ email }),
+      });
+      if (!res.ok) return null;
+      const text = await readCapped(res);
+      if (text === null) return null;
+      let v: unknown;
+      try {
+        v = JSON.parse(text);
+      } catch {
+        return null;
+      }
+      for (const k of cfg.statusPath.split(".")) v = (v as Record<string, unknown> | null)?.[k];
+      return typeof v === "string" ? (MAPPED[v.toLowerCase()] ?? null) : null;
+    },
+  };
+}
+
+/** Marks the leads PENDING_JOB (the planner and claim wait for them) and remembers what to restore. Skips pending ones. */
+export async function queueVerify(
+  prisma: Db,
+  clock: Clock,
+  ws: string,
+  actorId: Actor,
+  leadIds: string[],
+): Promise<{ queued: number }> {
+  const now = clock.now();
+  const queued =
+    await prisma.$executeRaw`UPDATE "Lead" SET "verifyPrevStatus" = "verificationStatus", "verificationStatus" = 'PENDING_JOB', "updatedAt" = ${now} WHERE "workspaceId" = ${ws} AND "deletedAt" IS NULL AND "verificationStatus" <> 'PENDING_JOB' AND "id" = ANY(${leadIds})`;
+  await audit(prisma, { workspaceId: ws, actorId, at: now }, "lead.verify", undefined, { queued });
+  return { queued };
+}
+
+/**
+ * One cron run: restores rows stuck > 30 min, then verifies up to 50 PENDING_JOB leads per workspace. The claim
+ * transaction only locks and reads; verifier calls happen outside it and each write is conditional on PENDING_JOB.
+ */
+export async function runVerify(
+  prisma: PrismaClient,
+  clock: Clock,
+  deps: { verifierFor: (ws: string) => Promise<EmailVerifier>; signal?: AbortSignal },
+): Promise<{ done: number; changed: number; restored: number }> {
+  const out = { done: 0, changed: 0, restored: 0 };
+  const now = clock.now();
+  out.restored +=
+    await prisma.$executeRaw`UPDATE "Lead" SET "verificationStatus" = COALESCE("verifyPrevStatus", 'NOT_VERIFIED'), "verifyPrevStatus" = NULL, "updatedAt" = ${now} WHERE "verificationStatus" = 'PENDING_JOB' AND "updatedAt" < ${new Date(now.getTime() - STUCK_MS)}`;
+  const wss = await prisma.$queryRaw<
+    { workspaceId: string }[]
+  >`SELECT DISTINCT "workspaceId" FROM "Lead" WHERE "verificationStatus" = 'PENDING_JOB'`;
+  for (const { workspaceId: ws } of wss) {
+    if (deps.signal?.aborted) break;
+    const batch = await prisma.$transaction(
+      (tx) =>
+        tx.$queryRaw<
+          { id: string; email: string; prev: VerificationStatus | null }[]
+        >`SELECT "id", "email", "verifyPrevStatus" AS prev FROM "Lead" WHERE "workspaceId" = ${ws} AND "verificationStatus" = 'PENDING_JOB' ORDER BY "updatedAt" LIMIT ${BATCH} FOR UPDATE SKIP LOCKED`,
+    );
+    let verifier: EmailVerifier | null = null;
+    try {
+      verifier = await deps.verifierFor(ws);
+    } catch {
+      // a broken config restores the batch below (every lead gets a null result)
+    }
+    await mapLimit(batch, PARALLEL, async (l) => {
+      let result: VerificationStatus | null = null;
+      try {
+        const t = AbortSignal.timeout(TIMEOUT_MS);
+        result = verifier
+          ? await verifier.verify(l.email, deps.signal ? AbortSignal.any([t, deps.signal]) : t)
+          : null;
+      } catch {
+        // an error is "no answer": the previous status comes back
+      }
+      const next = result ?? l.prev ?? "NOT_VERIFIED";
+      const w = await prisma.lead.updateMany({
+        where: { id: l.id, workspaceId: ws, verificationStatus: "PENDING_JOB" },
+        data: { verificationStatus: next, verifyPrevStatus: null },
+      });
+      out.done++;
+      if (!w.count) return; // edited meanwhile: the edit wins
+      if (result === null) out.restored++;
+      else if (result !== l.prev) out.changed++;
+    });
+  }
+  return out;
+}
+
+const statusPath = z.string().regex(/^[A-Za-z0-9_.]{1,64}$/);
+export const verifierInput = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("mx") }),
+  z.strictObject({
+    kind: z.literal("http"),
+    url: z
+      .url()
+      .max(500)
+      .refine((u) => u.startsWith("https://"), "url must be https"),
+    apiKey: z.string().min(1).max(500).optional(), // omitted = keep the stored key
+    statusPath,
+  }),
+]);
+type Config = { url: string; apiKey: string; statusPath: string };
+
+const readConfig = (enc: string | null): Config | null =>
+  enc ? (JSON.parse(decrypt(enc)) as Config) : null;
+
+/** Never returns the apiKey. */
+export async function getVerifierSettings(prisma: Db, ws: string) {
+  const w = await prisma.workspace.findUniqueOrThrow({
+    where: { id: ws },
+    select: { verifierKind: true, verifierConfigEnc: true },
+  });
+  const c = readConfig(w.verifierConfigEnc);
+  return {
+    kind: w.verifierKind,
+    ...(c && { url: c.url, statusPath: c.statusPath, hasApiKey: true }),
+  };
+}
+
+export async function setVerifierSettings(
+  prisma: Db,
+  clock: Clock,
+  ws: string,
+  actorId: Actor,
+  input: unknown,
+) {
+  const v = verifierInput.parse(input);
+  const old = readConfig(
+    (
+      await prisma.workspace.findUniqueOrThrow({
+        where: { id: ws },
+        select: { verifierConfigEnc: true },
+      })
+    ).verifierConfigEnc,
+  );
+  if (v.kind === "http" && !(v.apiKey ?? old?.apiKey))
+    throw new AccountError(400, "api_key_required");
+  await prisma.$transaction(async (tx) => {
+    await tx.workspace.update({
+      where: { id: ws },
+      data:
+        v.kind === "mx"
+          ? { verifierKind: "mx" } // the stored config stays, so switching back needs no re-entry
+          : {
+              verifierKind: "http",
+              verifierConfigEnc: encrypt(
+                JSON.stringify({
+                  url: v.url,
+                  apiKey: v.apiKey ?? old!.apiKey,
+                  statusPath: v.statusPath,
+                }),
+              ),
+            },
+    });
+    await audit(tx, { workspaceId: ws, actorId, at: clock.now() }, "settings.verifier", ws, {
+      kind: v.kind,
+    });
+  });
+}
+
+/** The workspace's configured verifier (`mx` unless an http config is set). */
+export async function workspaceVerifier(
+  prisma: Db,
+  ws: string,
+  resolveMx: ResolveMx = (d) => dns.promises.resolveMx(d),
+): Promise<EmailVerifier> {
+  const w = await prisma.workspace.findUniqueOrThrow({
+    where: { id: ws },
+    select: { verifierKind: true, verifierConfigEnc: true },
+  });
+  const c = readConfig(w.verifierConfigEnc);
+  return w.verifierKind === "http" && c ? httpVerifier(c) : mxVerifier(resolveMx);
+}
