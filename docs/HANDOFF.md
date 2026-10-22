@@ -1,7 +1,7 @@
 # Handoff
 
 **Phase:** 4 — Incoming mail & tracking (branch `phase-4-inbox`, from `main` after the Phase 3 merge)
-**Current task:** Phase 4 gate (all tasks done): opus whole-branch review + ponytail-audit → one fix wave → full tests/e2e/CI → ff main. Ledger `.superpowers/sdd/phase-4/progress.md`.
+**Current task:** Phase 4 gate — fix wave DONE (ccc5139..44f768c, 14 items, 1161 tests + Playwright inbox green locally). NEXT: opus scoped re-review of the fix wave (package `.superpowers/sdd/phase-4/review-ccc5139..44f768c.diff`, list `gate-fix-wave.md`), check CI for 44f768c, then tick PRODUCT_SPEC, PROGRESS/HANDOFF/REVIEW_LOG, fast-forward main, push. Ledger `.superpowers/sdd/phase-4/progress.md`.
 **Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 (approved). Done step plans: `docs/plans/phase-1.md`, `phase-2.md`, `phase-3.md`.
 **Tests:** ~946 vitest + 19 Playwright (prod build) green; CI `check`, `compose-smoke`, `imap-real` green.
 
