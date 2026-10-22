@@ -513,12 +513,12 @@
    "id": "P4-T07",
    "phase": 4,
    "title": "Freshness gate + downtime simulation tests: cold boot and sleep-without-restart × 1/7/30 days with replies (incl. cross-mailbox company reply), bounces, unsubscribes; history expiry; `docs/ops/OFFLINE_RECOVERY.md` (non-reconstructable events)",
-   "status": "todo",
+   "status": "done",
    "deps": [
     "P4-T05"
    ],
    "model": "opus",
-   "commit": null,
+   "commit": "6cfbd26",
    "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-4.md; tests listed there pass"
   },
   {
