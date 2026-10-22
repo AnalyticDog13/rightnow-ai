@@ -18,11 +18,13 @@ test("send is disabled until authorized; success toast; the mailbox holds a mark
   );
   await page.goto("/accounts");
   await page.getByRole("button", { name: "Connect Google" }).click();
-  await page.getByRole("button", { name: `Limits for ${EMAIL}` }).click();
-
   const drawer = page.getByRole("dialog");
   const send = drawer.getByRole("button", { name: "Send test email" });
-  await drawer.getByLabel("Send test email to").fill("target@dest.example");
+  // the full-page OAuth fallback may still be navigating back to /accounts and detach the drawer: reopen it
+  await expect(async () => {
+    await page.getByRole("button", { name: `Limits for ${EMAIL}` }).click({ timeout: 5000 });
+    await drawer.getByLabel("Send test email to").fill("target@dest.example", { timeout: 5000 });
+  }).toPass({ timeout: 60_000 });
   await expect(send).toBeDisabled();
   await drawer.getByLabel("I am authorized to send from this account").check();
   await expect(send).toBeEnabled();
