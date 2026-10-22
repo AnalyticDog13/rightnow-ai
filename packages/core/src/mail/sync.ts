@@ -28,6 +28,8 @@ export type SyncDeps = {
   pageSize?: number;
   /** Checked between messages: the run stops as `more` without skipping anything. */
   signal?: AbortSignal;
+  /** Test-only: the warm-up reply draw (D36). */
+  random?: () => number;
 };
 export type SyncResult = "caught_up" | "more" | "failed" | "skipped";
 
@@ -111,11 +113,12 @@ export async function reconcileAccount(
       const m = sanitizeRemote(raw, start);
       const tag = `msg=${m.providerMessageId || m.rfcMessageId || syntheticMessageId(m)}`;
       try {
-        await ingestOne(prisma, clock, acct, m, historical, deps.aiClassify);
+        await ingestOne(prisma, clock, acct, m, historical, deps.aiClassify, { random: deps.random });
       } catch (e) {
         if (!(await failedTwice(tag))) throw new IngestFailed(`${codeOf(e)} ${tag}`);
         // 3rd run failing on it (PA #1): store the headers only, so the cursor moves and its stop rules still run
-        await ingestOne(prisma, clock, acct, { ...m, rfcMessageId: null, text: null, html: null, attachments: [] }, historical);
+        // the warm-up check still sees the original ids (a placeholder has no Message-ID to match)
+        await ingestOne(prisma, clock, acct, { ...m, rfcMessageId: null, text: null, html: null, attachments: [] }, historical, undefined, { random: deps.random, original: m });
         stats.note = `placeholder ${codeOf(e)} ${tag}`;
         console.error(`sync: account ${acct.id} stored a header-only placeholder (${stats.note})`);
       }
@@ -322,11 +325,12 @@ async function ingestOne(
   m: RemoteMessage,
   historical: boolean,
   ai?: AiClassifier,
+  o: { random?: () => number; original?: RemoteMessage } = {},
 ) {
   const direction = m.from.email.toLowerCase() === acct.email.toLowerCase() ? "OUT" : "IN";
   let c = classify(m, { now: m.date, direction });
   // warm-up / placement traffic (D36, Rev 2 I1) is stored nowhere else: before the AI hook, matching and stop rules
-  if (await prisma.$transaction((tx) => warmupReceipt(tx, clock, acct, m, c))) return;
+  if (await prisma.$transaction((tx) => warmupReceipt(tx, clock, acct, o.original ?? m, c, o.random))) return;
   const rfc = m.rfcMessageId ?? syntheticMessageId(m);
   const stored = () =>
     prisma.message.findUnique({

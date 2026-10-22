@@ -89,13 +89,13 @@ async function counts(db: Db, ids: string[], now: Date): Promise<Map<string, Cou
   // where the account's warm-up mail landed (D36), 14 d: measured by sync (INBOX) or one locate() (SPAM); bounces of
   // warm-up mail are stored on the WarmupMessage only, so they never reach hard% (they are not campaign sends)
   const w = await db.$queryRaw<{ id: string; inbox: number; spam: number }[]>`
-    SELECT "fromAccountId" AS id,
-      count(*) FILTER (WHERE "landedFolder" = 'INBOX')::int AS inbox,
-      count(*) FILTER (WHERE "landedFolder" = 'SPAM')::int AS spam
-    FROM "WarmupMessage"
-    WHERE "fromAccountId" = ANY(${ids}::text[]) AND kind <> 'PLACEMENT' AND status = 'SENT'
-      AND "sentAt" >= ${new Date(now.getTime() - 14 * 24 * H).toISOString()}::timestamp
-    GROUP BY "fromAccountId"`;
+    SELECT m."fromAccountId" AS id,
+      count(*) FILTER (WHERE m."landedFolder" = 'INBOX')::int AS inbox,
+      count(*) FILTER (WHERE m."landedFolder" = 'SPAM')::int AS spam
+    FROM "WarmupMessage" m JOIN "EmailAccount" a ON a.id = m."fromAccountId"
+    WHERE m."fromAccountId" = ANY(${ids}::text[]) AND m.kind <> 'PLACEMENT' AND m.status = 'SENT'
+      AND m."sentAt" >= GREATEST(${new Date(now.getTime() - 14 * 24 * H).toISOString()}::timestamp, a."healthResetAt")
+    GROUP BY m."fromAccountId"`;
   const warm = new Map(w.map((x) => [x.id, { inbox: x.inbox, spam: x.spam }]));
   return new Map(
     rows.map(({ id, syncErrors, ...r }) => [

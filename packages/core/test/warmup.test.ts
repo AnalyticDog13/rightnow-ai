@@ -6,13 +6,9 @@ import { createTestDb } from "@rightnow/db/test-db";
 import { buildMime, getFakeProvider, newMessageId } from "@rightnow/providers";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { fixedClock } from "../src/clock";
+import { updateWarmup } from "../src/deliverability/warmup-settings";
 import { healthInputs } from "../src/deliverability/health";
-import {
-  warmupState,
-  warmupStats,
-  warmupTarget,
-  warmupTick,
-} from "../src/deliverability/warmup";
+import { warmupState, warmupStats, warmupTarget, warmupTick } from "../src/deliverability/warmup";
 import { reconcileAccount, type SyncDeps } from "../src/mail/sync";
 import { seedCampaign } from "./campaign-fixture";
 
@@ -37,7 +33,12 @@ let n = 0;
 /** A workspace with an ACTIVE campaign (one lead) and `count` connected, warm-up-enabled mailboxes on different domains. */
 async function world(
   count: number,
-  o: { settings?: Omit<Partial<WarmupSettings>, "customCurve">[]; domains?: string[]; at?: Date } = {},
+  o: {
+    settings?: Omit<Partial<WarmupSettings>, "customCurve">[];
+    domains?: string[];
+    at?: Date;
+    random?: () => number;
+  } = {},
 ) {
   const tag = `${++n}`;
   const s = await seedCampaign(P(), {
@@ -72,12 +73,24 @@ async function world(
   const clock = fixedClock(o.at ?? TUE_8);
   const tick = () => warmupTick(P(), clock, { providerFor, env: FAKE });
   const sync = async (...who: EmailAccount[]) => {
-    for (const a of who) await reconcileAccount(P(), clock, a.id, syncDeps);
+    for (const a of who)
+      await reconcileAccount(P(), clock, a.id, { ...syncDeps, random: o.random });
   };
   await sync(...accts); // cursors first: later mail arrives as changes
-  return { ...s, accts, clock, tick, sync, lead: s.leads[0]!, A: accts[0]!, B: accts[1]!, C: accts[2]! };
+  return {
+    ...s,
+    accts,
+    clock,
+    tick,
+    sync,
+    lead: s.leads[0]!,
+    A: accts[0]!,
+    B: accts[1]!,
+    C: accts[2]!,
+  };
 }
-const rows = (where: object) => P().warmupMessage.findMany({ where, orderBy: { createdAt: "asc" } });
+const rows = (where: object) =>
+  P().warmupMessage.findMany({ where, orderBy: { createdAt: "asc" } });
 const set = (accountId: string) => P().warmupSettings.findUniqueOrThrow({ where: { accountId } });
 
 const base = (o: Partial<WarmupSettings> = {}) =>
@@ -116,7 +129,11 @@ describe("warmupTarget", () => {
       warmupTarget(base({ dailyLimit: 30, slowWarmup: false }), acct({ providerCap: 100 }), day(0)),
     ).toBe(10);
     expect(
-      warmupTarget(base({ dailyLimit: 50, slowWarmup: false }), acct({ providerCap: 5000 }), day(0)),
+      warmupTarget(
+        base({ dailyLimit: 50, slowWarmup: false }),
+        acct({ providerCap: 5000 }),
+        day(0),
+      ),
     ).toBe(50);
   });
 });
@@ -135,8 +152,12 @@ describe("warmupTick", () => {
     expect(a1).toHaveLength(1);
     expect(a1[0]).toMatchObject({ toAccountId: C.id, kind: "SEND", status: "SENT" }); // the other domain
     expect((await rows({ fromAccountId: B.id }))[0]!.toAccountId).toBe(C.id);
-    expect((await set(A.id)).nextAt!.getTime() - w.clock.now().getTime()).toBeGreaterThanOrEqual(600_000);
-    expect((await P().emailAccount.findUniqueOrThrow({ where: { id: A.id } })).lastWarmupAt).toEqual(w.clock.now());
+    expect((await set(A.id)).nextAt!.getTime() - w.clock.now().getTime()).toBeGreaterThanOrEqual(
+      600_000,
+    );
+    expect(
+      (await P().emailAccount.findUniqueOrThrow({ where: { id: A.id } })).lastWarmupAt,
+    ).toEqual(w.clock.now());
 
     w.clock.advance(5 * MIN); // 600 s spacing
     expect((await w.tick()).sent).toBe(0);
@@ -168,10 +189,14 @@ describe("warmupTick", () => {
     expect(await P().thread.count({ where: { workspaceId: w.ws } })).toBe(0);
     expect(await P().message.count({ where: { workspaceId: w.ws } })).toBe(0);
     expect(await P().event.count({ where: { workspaceId: w.ws } })).toBe(0);
-    expect(await P().lead.findUniqueOrThrow({ where: { id: w.lead.lead.id } })).toMatchObject({ replies: 0 });
-    expect(await P().campaignLead.findUniqueOrThrow({ where: { id: w.lead.cl.id } })).toMatchObject({
-      state: "ACTIVE",
+    expect(await P().lead.findUniqueOrThrow({ where: { id: w.lead.lead.id } })).toMatchObject({
+      replies: 0,
     });
+    expect(await P().campaignLead.findUniqueOrThrow({ where: { id: w.lead.cl.id } })).toMatchObject(
+      {
+        state: "ACTIVE",
+      },
+    );
     for (const r of await rows({ kind: "SEND", workspaceId: w.ws })) {
       expect(r.receivedAt).not.toBeNull();
       expect(r.landedFolder).toBe("INBOX");
@@ -214,9 +239,11 @@ describe("warmupTick", () => {
     expect(await P().thread.count({ where: { workspaceId: w.ws } })).toBe(0);
     expect(await P().message.count({ where: { workspaceId: w.ws } })).toBe(0);
     expect(await P().event.count({ where: { workspaceId: w.ws } })).toBe(0);
-    expect(await P().campaignLead.findUniqueOrThrow({ where: { id: w.lead.cl.id } })).toMatchObject({
-      state: "ACTIVE",
-    });
+    expect(await P().campaignLead.findUniqueOrThrow({ where: { id: w.lead.cl.id } })).toMatchObject(
+      {
+        state: "ACTIVE",
+      },
+    );
   });
 
   test("I1b: a 5.1.1 DSN for a warm-up message touches nothing of the campaign", async () => {
@@ -283,10 +310,14 @@ describe("warmupTick", () => {
     expect(await P().suppression.count({ where: { workspaceId: w.ws } })).toBe(0);
     expect(await P().event.count({ where: { workspaceId: w.ws } })).toBe(0);
     expect(await P().message.count({ where: { workspaceId: w.ws } })).toBe(0);
-    expect(await P().campaignLead.findUniqueOrThrow({ where: { id: w.lead.cl.id } })).toMatchObject({
-      state: "ACTIVE",
-    });
-    expect((await P().warmupMessage.findUniqueOrThrow({ where: { id: warm.id } })).error).toBe("bounced");
+    expect(await P().campaignLead.findUniqueOrThrow({ where: { id: w.lead.cl.id } })).toMatchObject(
+      {
+        state: "ACTIVE",
+      },
+    );
+    expect((await P().warmupMessage.findUniqueOrThrow({ where: { id: warm.id } })).error).toBe(
+      "bounced",
+    );
     expect(sm.id).toBeTruthy();
   });
 
@@ -314,12 +345,135 @@ describe("warmupTick", () => {
     expect(sent!.subject).toBe(`Re: ${parent.subject}`);
     await w.sync(A, B);
     expect(await rows({ kind: "REPLY", workspaceId: w.ws })).toHaveLength(2);
-    expect((await P().warmupMessage.findUniqueOrThrow({ where: { id: toB.id } })).receivedAt).not.toBeNull();
+    expect(
+      (await P().warmupMessage.findUniqueOrThrow({ where: { id: toB.id } })).receivedAt,
+    ).not.toBeNull();
 
     const z = await world(2); // replyRatePct 0
     await z.tick();
     await z.sync(z.A, z.B);
     expect(await rows({ kind: "REPLY", workspaceId: z.ws })).toHaveLength(0);
+  });
+
+  test("replies wait their turn: three due Monday 08:00 all go out by 08:30; a stale PLANNED reply expires after 24 h", async () => {
+    const mon = new Date("2026-10-26T08:00:00Z");
+    const w = await world(2, { at: mon });
+    const { A, B } = w;
+    const mk = (i: number, extra: object) => ({
+      workspaceId: w.ws,
+      toAccountId: A.id,
+      fromAccountId: B.id,
+      kind: "REPLY" as const,
+      subject: "Re: x",
+      dueAt: mon,
+      rfcMessageId: `<r${i}-${n}@x.test>`,
+      ...extra,
+    });
+    for (let i = 0; i < 3; i++) {
+      const parent = await P().warmupMessage.create({
+        data: {
+          workspaceId: w.ws,
+          fromAccountId: A.id,
+          toAccountId: B.id,
+          kind: "SEND",
+          status: "SENT",
+          subject: "p",
+          dueAt: mon,
+          sentAt: new Date(mon.getTime() - 3 * 3600_000),
+          receivedAt: new Date(mon.getTime() - 2 * 3600_000),
+          rfcMessageId: `<p${i}-${n}@x.test>`,
+        },
+      });
+      await P().warmupMessage.create({ data: mk(i, { parentId: parent.id }) });
+    }
+    for (let i = 0; i < 6; i++) {
+      await w.tick();
+      w.clock.advance(5 * MIN);
+    }
+    const replies = await rows({ kind: "REPLY", fromAccountId: B.id });
+    expect(replies.map((r) => r.status)).toEqual(["SENT", "SENT", "SENT"]);
+
+    const old = await P().warmupMessage.create({
+      data: mk(9, {
+        dueAt: new Date(w.clock.now().getTime() - 25 * 3600_000),
+        parentId: replies[0]!.parentId,
+      }),
+    });
+    await w.tick();
+    expect(await P().warmupMessage.findUniqueOrThrow({ where: { id: old.id } })).toMatchObject({
+      status: "FAILED",
+      error: "expired",
+    });
+  });
+
+  test("the reply decision uses the injected random against replyRatePct", async () => {
+    const run = async (r: number) => {
+      const w = await world(2, {
+        settings: [{ replyRatePct: 30 }, { replyRatePct: 30 }],
+        random: () => r,
+      });
+      await w.tick();
+      await w.sync(w.A, w.B);
+      return (await rows({ kind: "REPLY", workspaceId: w.ws })).length;
+    };
+    expect(await run(0.29)).toBe(2);
+    expect(await run(0.3)).toBe(0);
+  });
+
+  test("a send with an unknown outcome counts toward today's total", async () => {
+    const w = await world(2, { settings: [{ dailyLimit: 1 }, { enabled: false }] });
+    const { A } = w;
+    expect((await w.tick()).sent).toBe(0); // no enabled peer: nothing sent
+    await P().warmupSettings.update({
+      where: { accountId: w.B.id },
+      data: { enabled: true, dailyLimit: 1 },
+    });
+    fake(A).failNext("api_5xx");
+    await w.tick();
+    expect(await rows({ fromAccountId: A.id })).toMatchObject([
+      { status: "SENT", error: "ambiguous_send" },
+    ]);
+    w.clock.advance(30 * MIN);
+    await w.tick();
+    expect(await rows({ fromAccountId: A.id })).toHaveLength(1);
+  });
+
+  test("re-enabling warm-up restarts the ramp", async () => {
+    const w = await world(2);
+    const a = await P().emailAccount.findUniqueOrThrow({ where: { id: w.A.id } });
+    const o = { clock: fixedClock(new Date("2026-11-20T08:00:00Z")) };
+    await updateWarmup(P(), a, { enabled: false }, o);
+    expect((await set(a.id)).startedAt).toEqual(TUE_8); // disabling keeps it
+    await updateWarmup(P(), a, { enabled: true }, o);
+    expect((await set(a.id)).startedAt).toEqual(o.clock.now());
+  });
+
+  test("the spam share counts only mail sent after a health reset", async () => {
+    const w = await world(2);
+    const { A, B } = w;
+    const at = w.clock.now();
+    const mkRow = (i: number, sentAt: Date) =>
+      P().warmupMessage.create({
+        data: {
+          workspaceId: w.ws,
+          fromAccountId: A.id,
+          toAccountId: B.id,
+          kind: "SEND",
+          status: "SENT",
+          subject: "s",
+          dueAt: sentAt,
+          sentAt,
+          landedFolder: "SPAM",
+          rfcMessageId: `<h${i}-${n}@x.test>`,
+        },
+      });
+    await mkRow(1, new Date(at.getTime() - 2 * DAY));
+    await mkRow(2, new Date(at.getTime() - DAY / 2));
+    await P().emailAccount.update({
+      where: { id: A.id },
+      data: { healthResetAt: new Date(at.getTime() - DAY) },
+    });
+    expect((await healthInputs(P(), [A.id], at)).get(A.id)!.warmup).toEqual({ inbox: 0, spam: 1 });
   });
 
   test("M11: a reply waits for the replier's window and weekdays", async () => {
@@ -355,16 +509,24 @@ describe("warmupTick", () => {
       checkedAt: w.clock.now(),
     });
     expect(await fake(B).locate(toB.rfcMessageId)).toMatchObject({ folder: "SPAM" }); // not moved
-    expect((await healthInputs(P(), [A.id], w.clock.now())).get(A.id)!.warmup).toEqual({ inbox: 0, spam: 1 });
+    expect((await healthInputs(P(), [A.id], w.clock.now())).get(A.id)!.warmup).toEqual({
+      inbox: 0,
+      spam: 1,
+    });
     // the peer's message to A landed in the inbox and was seen by sync
-    expect((await healthInputs(P(), [B.id], w.clock.now())).get(B.id)!.warmup).toEqual({ inbox: 1, spam: 0 });
+    expect((await healthInputs(P(), [B.id], w.clock.now())).get(B.id)!.warmup).toEqual({
+      inbox: 1,
+      spam: 0,
+    });
     // the file for the located message is missing: MISSING
     await P().warmupMessage.update({
       where: { id: toB.id },
       data: { landedFolder: null, checkedAt: null, rfcMessageId: "<gone@x.test>" },
     });
     await w.tick();
-    expect((await P().warmupMessage.findUniqueOrThrow({ where: { id: toB.id } })).landedFolder).toBe("MISSING");
+    expect(
+      (await P().warmupMessage.findUniqueOrThrow({ where: { id: toB.id } })).landedFolder,
+    ).toBe("MISSING");
   });
 
   test("honest content", async () => {
@@ -457,7 +619,13 @@ describe("warmupState", () => {
   const ok = ["SMTP" as const];
   test("mapping", () => {
     const a = (o: Partial<EmailAccount> = {}) =>
-      ({ provider: "SMTP", status: "CONNECTED", lifecycle: "ACTIVE", deletedAt: null, ...o }) as EmailAccount;
+      ({
+        provider: "SMTP",
+        status: "CONNECTED",
+        lifecycle: "ACTIVE",
+        deletedAt: null,
+        ...o,
+      }) as EmailAccount;
     expect(warmupState(a(), null, 3, ok)).toBe("PAUSED");
     expect(warmupState(a(), { enabled: false } as WarmupSettings, 3, ok)).toBe("PAUSED");
     expect(warmupState(a({ lifecycle: "NEEDS_ATTENTION" }), S, 3, ok)).toBe("PROVIDER_BLOCKED");
@@ -479,7 +647,15 @@ describe("warmupStats", () => {
     const st = await warmupStats(P(), w.ws, w.A.id, 30, w.clock.now());
     expect(st).toHaveLength(30);
     expect(st.at(-1)).toMatchObject({ day: "2026-10-20", sent: 2, replied: 1, received: 1 });
-    expect(st[0]).toEqual({ day: "2026-09-21", sent: 0, received: 0, replied: 0, inbox: 0, spam: 0, missing: 0 });
+    expect(st[0]).toEqual({
+      day: "2026-09-21",
+      sent: 0,
+      received: 0,
+      replied: 0,
+      inbox: 0,
+      spam: 0,
+      missing: 0,
+    });
     await w.sync(w.A, w.B);
     const b = await warmupStats(P(), w.ws, w.B.id, 30, w.clock.now());
     expect(b.at(-1)).toMatchObject({ sent: 1, received: 2, replied: 0 });

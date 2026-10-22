@@ -7,17 +7,22 @@ import {
   type WarmupMessage,
   type WarmupSettings,
 } from "@rightnow/db/client";
-import { AuthError, mapLimit, newMessageId, type RemoteMessage } from "@rightnow/providers";
-import { z } from "zod";
+import {
+  AmbiguousSendError,
+  AuthError,
+  mapLimit,
+  newMessageId,
+  type RemoteMessage,
+} from "@rightnow/providers";
 import { dayKey } from "../accounts/daykey";
 import { recordProviderError } from "../accounts/health";
-import { audit } from "../audit";
 import type { Clock } from "../clock";
 import { sendableProviders } from "../dispatch";
 import { getEnv, type Env } from "../env";
 import type { Classification } from "../mail/classify";
 import { codeOf } from "../mail/ingest";
 import type { SyncDeps } from "../mail/sync";
+import { WARMUP_DEFAULTS } from "./warmup-settings";
 import { isInWindow, localMidnightUtc, nextWindowStart, type Window } from "../schedule";
 
 type Db = PrismaClient | Prisma.TransactionClient;
@@ -52,17 +57,6 @@ const BODY =
 const HEADERS = { "X-RightNow-Warmup": "1", "Auto-Submitted": "auto-generated" };
 const FROM_HOUR = 8;
 const TO_HOUR = 20;
-
-export const WARMUP_DEFAULTS = {
-  enabled: false,
-  dailyLimit: 10,
-  slowWarmup: true,
-  startVolume: 1,
-  increasePerDay: 1,
-  customCurve: null,
-  replyRatePct: 30,
-  weekdaysOnly: false,
-} as const;
 
 const window = (timezone: string, weekdaysOnly: boolean): Window => ({
   timezone,
@@ -151,6 +145,7 @@ export async function warmupReceipt(
   acct: Pick<EmailAccount, "id" | "workspaceId">,
   m: Pick<RemoteMessage, "rfcMessageId" | "inReplyTo" | "references" | "folder">,
   c: Classification,
+  random: () => number = Math.random,
 ): Promise<boolean> {
   const orig = c.kind === "BOUNCE" || c.kind === "COMPLAINT" ? c.originalMessageId : null;
   const ids = [...new Set([m.rfcMessageId, m.inReplyTo, ...m.references, orig])].filter(
@@ -187,7 +182,7 @@ export async function warmupReceipt(
     where: { id: acct.id },
     select: { email: true, timezone: true },
   });
-  if (!s?.enabled || !a || !(Math.random() < s.replyRatePct / 100)) return true;
+  if (!s?.enabled || !a || !(random() < s.replyRatePct / 100)) return true;
   await tx.warmupMessage.create({
     data: {
       workspaceId: acct.workspaceId,
@@ -219,7 +214,8 @@ export async function warmupTick(
   clock: Clock,
   deps: {
     providerFor: SyncDeps["providerFor"];
-    env?: Pick<Env, "MAIL_PROVIDER_FAKE">;
+    random?: () => number; // the plan's slot; the reply draw is made on receipt, see SyncDeps.random
+    env?: Pick<Env, "MAIL_PROVIDER_FAKE">; // tests: the D17 gate without a ProviderVerification row
     signal?: AbortSignal;
   },
 ): Promise<{ sent: number; replied: number; located: number }> {
@@ -228,13 +224,14 @@ export async function warmupTick(
   const sendable = await sendableProviders(prisma, deps.env ?? getEnv());
   const ago = (ms: number) => new Date(now.getTime() - ms);
 
-  // (1) crashed mid-send: never resent
+  // (1) crashed mid-send: never resent. A PLANNED reply may wait (target, spacing, weekend): it only expires after a day
   await prisma.warmupMessage.updateMany({
-    where: {
-      status: { in: ["PLANNED", "SENDING"] },
-      OR: [{ sentAt: { lt: ago(ABANDON_MS) } }, { sentAt: null, dueAt: { lt: ago(ABANDON_MS) } }],
-    },
+    where: { status: "SENDING", sentAt: { lt: ago(ABANDON_MS) } },
     data: { status: "FAILED", error: "abandoned" },
+  });
+  await prisma.warmupMessage.updateMany({
+    where: { status: "PLANNED", dueAt: { lt: ago(DAY) } },
+    data: { status: "FAILED", error: "expired" },
   });
 
   const live: Live[] = await prisma.warmupSettings.findMany({
@@ -266,12 +263,25 @@ export async function warmupTick(
         { signal: deps.signal },
       );
     } catch (e) {
+      // may have gone out: keep it SENT (counts today, receipt and locate still match it), never resent
+      const maybeSent = e instanceof AmbiguousSendError;
+      if (!maybeSent) {
+        await prisma.warmupMessage.updateMany({
+          where: { id: row.id, status: "SENDING" },
+          data: { status: "FAILED", error: codeOf(e) },
+        });
+        if (e instanceof AuthError) await recordProviderError(prisma, clock, from.id, e);
+        return false;
+      }
       await prisma.warmupMessage.updateMany({
         where: { id: row.id, status: "SENDING" },
-        data: { status: "FAILED", error: codeOf(e) },
+        data: { status: "SENT", sentAt: clock.now(), error: "ambiguous_send" },
       });
-      if (e instanceof AuthError) await recordProviderError(prisma, clock, from.id, e);
-      return false;
+      await prisma.emailAccount.updateMany({
+        where: { id: from.id },
+        data: { lastWarmupAt: clock.now() },
+      });
+      return true;
     }
     const at = clock.now();
     await prisma.warmupMessage.updateMany({
@@ -484,79 +494,6 @@ export async function warmupStats(
     }
   }
   return [...out.values()];
-}
-
-// ---- settings --------------------------------------------------------------
-
-export const warmupPatchSchema = z.strictObject({
-  enabled: z.boolean().optional(),
-  dailyLimit: z.number().int().min(1).max(50).optional(),
-  slowWarmup: z.boolean().optional(),
-  startVolume: z.number().int().min(1).max(50).optional(),
-  increasePerDay: z.number().int().min(0).max(4).optional(),
-  customCurve: z
-    .array(
-      z.strictObject({
-        day: z.number().int().min(0).max(3650),
-        volume: z.number().int().min(0).max(50),
-      }),
-    )
-    .max(90)
-    .refine((c) => c.every((e, i) => i === 0 || e.day > c[i - 1]!.day), "days must increase")
-    .nullable()
-    .optional(),
-  replyRatePct: z.number().int().min(0).max(100).optional(),
-  weekdaysOnly: z.boolean().optional(),
-  filterTag: z
-    .string()
-    .regex(/^[A-Za-z0-9-]{3,24}$/)
-    .optional(),
-});
-export type WarmupPatch = z.infer<typeof warmupPatchSchema>;
-
-/** Creates the settings row on first use (filterTag `rn-` + 6 hex) or merges the patch; audits `account.warmup_update`. */
-export async function updateWarmup(
-  prisma: PrismaClient,
-  a: EmailAccount,
-  patch: WarmupPatch,
-  o: { clock: Clock; actorId?: string | null },
-): Promise<{ settings: WarmupSettings; warnings: string[] }> {
-  const now = o.clock.now();
-  const { customCurve, ...rest } = patch;
-  const data = {
-    ...rest,
-    ...(customCurve !== undefined && { customCurve: customCurve ?? Prisma.DbNull }),
-  };
-  const settings = await prisma.$transaction(async (tx) => {
-    const cur = await tx.warmupSettings.findUnique({ where: { accountId: a.id } });
-    const row = await tx.warmupSettings.upsert({
-      where: { accountId: a.id },
-      create: {
-        ...data,
-        accountId: a.id,
-        workspaceId: a.workspaceId,
-        filterTag: patch.filterTag ?? `rn-${randomBytes(3).toString("hex")}`,
-        startedAt: patch.enabled ? now : null,
-      },
-      update: { ...data, ...(patch.enabled && !cur?.startedAt && { startedAt: now }) },
-    });
-    await audit(
-      tx,
-      { workspaceId: a.workspaceId, actorId: o.actorId, at: now },
-      "account.warmup_update",
-      a.id,
-      {
-        fields: Object.keys(patch),
-      },
-    );
-    return row;
-  });
-  const young = now.getTime() - a.createdAt.getTime() < 14 * DAY;
-  return {
-    settings,
-    warnings:
-      settings.enabled && !settings.slowWarmup && young ? ["slow_warmup_off_new_account"] : [],
-  };
 }
 
 /** Settings (defaults when none), the PS-WARM-10 state, and the number of usable peers. */

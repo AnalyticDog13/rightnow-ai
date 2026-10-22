@@ -22,6 +22,7 @@ export * from "./accounts/live-verify";
 export * from "./deliverability/dns";
 export * from "./deliverability/health";
 export * from "./deliverability/warmup";
+export * from "./deliverability/warmup-settings";
 export * from "./leads/domain";
 export * from "./leads/suppression";
 export * from "./leads/service";

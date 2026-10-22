@@ -156,6 +156,9 @@ export function WarmupSection({ accountId, canEdit }: { accountId: string; canEd
             mail out of spam or marks it &quot;not spam&quot;.
           </li>
           <li>
+            It never spins or randomises message content to evade filters.
+          </li>
+          <li>
             It never mails addresses outside your opted-in mailboxes and never joins a third-party
             pool.
           </li>

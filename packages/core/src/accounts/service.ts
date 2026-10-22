@@ -10,6 +10,7 @@ import { z } from "zod";
 import { audit } from "../audit";
 import { type Clock, systemClock } from "../clock";
 import type { DnsResolver } from "../deliverability/dns";
+import { updateWarmup } from "../deliverability/warmup-settings";
 import { getEnv } from "../env";
 import { applyLimits, type LimitWarning } from "./caps";
 import { unwrapPrevious } from "./status";
@@ -342,10 +343,7 @@ export async function bulkApply(prisma: Db, ws: string, input: unknown, o: Opts 
       else if (action === "resume") await resumeAccount(prisma, ws, id, o);
       else if (action === "delete") await softDeleteAccount(prisma, ws, id, o);
       else if (action === "warmup_enable" || action === "warmup_disable")
-        // lazy: warmup.ts reaches dispatch, which imports this module (cycle)
-        await (
-          await import("../deliverability/warmup")
-        ).updateWarmup(
+        await updateWarmup(
           prisma,
           await live(prisma, ws, id),
           { enabled: action === "warmup_enable" },
