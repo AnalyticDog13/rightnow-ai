@@ -1,7 +1,7 @@
 # Handoff
 
 **Phase:** 5 — Deliverability, warm-up, re-warm-up (branch `phase-5-deliverability`, created from `main` at 7c03dad)
-**Current task:** Phase 5 plan being drafted (`docs/plans/phase-5.md`, opus); then independent opus plan review → Revision 2 → execute (ledger `.superpowers/sdd/phase-5/`).
+**Current task:** P5-T01 (DNS checks). Plan + Revision 2 approved (8e79d34). Ledger `.superpowers/sdd/phase-5/progress.md`.
 **Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 (approved). Done step plans: `docs/plans/phase-1.md` … `phase-4.md` (+ `phase-4-review.md`).
 **Tests:** ~1165 vitest + 20 Playwright green; CI `check`, `compose-smoke` (incl. Caddyfile validate), `imap-real` green.
 
