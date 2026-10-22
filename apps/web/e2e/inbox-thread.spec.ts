@@ -8,22 +8,25 @@ import { ensureSession, STATE } from "./session";
 test.use({ storageState: STATE });
 test.beforeAll(async ({ playwright, baseURL }) => ensureSession(playwright, baseURL!));
 
-const ACCOUNT = "inbox@e2e-inbox.test";
-const LEAD = "ann@e2e-inbox.io";
+// Addresses carry the retry number: the Fake mailbox files persist, so a retry must not re-import the failed attempt's mail.
+let ACCOUNT = "";
+let LEAD = "";
 const REMOTE = "https://tracker.e2e-remote.test";
 const db = () => createPrisma(process.env.E2E_DATABASE_URL!, 2);
 
 test.afterAll(async () => {
   const prisma = db();
-  const acct = await prisma.emailAccount.findFirst({ where: { email: ACCOUNT } });
-  if (acct) {
-    await prisma.note.deleteMany({ where: { thread: { accountId: acct.id } } });
-    await prisma.thread.deleteMany({ where: { accountId: acct.id } });
-    await prisma.event.deleteMany({ where: { accountId: acct.id } });
-  }
+  const accounts = await prisma.emailAccount.findMany({
+    where: { email: { endsWith: "@e2e-inbox.test" } },
+    select: { id: true },
+  });
+  const accountId = { in: accounts.map((a) => a.id) };
+  await prisma.note.deleteMany({ where: { thread: { accountId } } });
+  await prisma.thread.deleteMany({ where: { accountId } });
+  await prisma.event.deleteMany({ where: { accountId } });
   await prisma.campaign.deleteMany({ where: { name: "E2E inbox" } });
-  await prisma.lead.deleteMany({ where: { email: LEAD } });
-  await prisma.emailAccount.deleteMany({ where: { email: ACCOUNT } });
+  await prisma.lead.deleteMany({ where: { email: { endsWith: "@e2e-inbox.io" } } });
+  await prisma.emailAccount.deleteMany({ where: { id: accountId } });
   await prisma.$disconnect();
 });
 
@@ -37,6 +40,9 @@ const sync = async (page: Page) => {
 test("thread, reply with attachment, inert rendering, notes, bulk unread, reminder", async ({
   page,
 }) => {
+  const n = test.info().retry;
+  ACCOUNT = `inbox${n}@e2e-inbox.test`;
+  LEAD = `ann${n}@e2e-inbox.io`;
   const prisma = db();
   const ws = (await prisma.workspace.findFirstOrThrow()).id;
   const account = await prisma.emailAccount.create({
@@ -205,13 +211,25 @@ test("thread, reply with attachment, inert rendering, notes, bulk unread, remind
 
   // notes survive a reload
   await conv.getByLabel("New note").fill("Call her on Friday");
+  // wait for the save and look in the notes list: the textarea's own text also matches getByText, and reloading
+  // before the POST finishes (cold route compile in next dev) dropped the note
+  const saved = page.waitForResponse(
+    (r) => r.url().endsWith("/api/v1/inbox/notes") && r.request().method() === "POST",
+  );
   await conv.getByRole("button", { name: "Add note" }).click();
-  await expect(conv.getByText("Call her on Friday")).toBeVisible();
+  expect((await saved).status()).toBe(200);
+  const noteItem = () =>
+    page
+      .getByRole("complementary", { name: "Lead" })
+      .getByRole("listitem")
+      .filter({ hasText: "Call her on Friday" });
+  await expect(noteItem()).toBeVisible();
   await page.reload();
   await page.getByRole("button", { name: /Quick question/ }).click();
-  await expect(page.getByText("Call her on Friday")).toBeVisible();
+  await expect(noteItem()).toBeVisible();
 
-  // reminder puts the thread in Reminders
+  // reminder puts the thread in Reminders; the thread loads twice in next dev (StrictMode) and each load resets the field
+  await page.waitForLoadState("networkidle");
   await page.getByLabel("Reminder", { exact: true }).fill("2030-01-01T09:00");
   await page.getByRole("button", { name: "Set reminder" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Reminder set" })).toBeVisible();
