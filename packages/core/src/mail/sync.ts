@@ -13,7 +13,7 @@ import { recordProviderError } from "../accounts/health";
 import type { Clock } from "../clock";
 import { withTxRetry } from "../dispatch";
 import { classify, type AiClassifier } from "./classify";
-import { ingestMessage, sanitizeRemote, syntheticMessageId } from "./ingest";
+import { codeOf, ingestMessage, sanitizeRemote, syntheticMessageId } from "./ingest";
 import { applyInbound } from "./stoprules";
 
 export type SyncDeps = {
@@ -51,12 +51,13 @@ const DAY = 86_400_000;
 
 class LeaseLost extends Error {}
 class Stopped extends Error {}
+/** An ingest failure; `code` names the message ("<code> msg=<id>") so repeated failures on it can be counted. */
+class IngestFailed extends Error {
+  constructor(readonly code: string) {
+    super(code);
+  }
+}
 
-/** Error code for SyncRun / lastError: a provider code or the error's class name, never a message or body. */
-const codeOf = (e: unknown) => {
-  const c = (e as { code?: unknown } | null)?.code;
-  return typeof c === "string" ? c : e instanceof Error ? e.name : "unknown";
-};
 
 /**
  * One sync run of a mailbox under a row lease (`syncLeaseId`, 10 min, renewed after every page). Branch order (C1):
@@ -99,15 +100,35 @@ export async function reconcileAccount(
     });
     if (!r.count) throw new LeaseLost();
   };
-  const stats = { mode: "INCREMENTAL" as SyncMode, fetched: 0 };
+  const stats = { mode: "INCREMENTAL" as SyncMode, fetched: 0, note: null as string | null };
   const limit = deps.pageSize ? { limit: deps.pageSize } : {};
 
   const ingestAll = async (msgs: RemoteMessage[], historical: boolean) => {
-    for (const m of msgs) {
+    for (const raw of msgs) {
       if (deps.signal?.aborted) throw new Stopped();
-      await ingestOne(prisma, clock, acct, sanitizeRemote(m, start), historical, deps.aiClassify);
+      const m = sanitizeRemote(raw, start);
+      const tag = `msg=${m.providerMessageId || m.rfcMessageId || syntheticMessageId(m)}`;
+      try {
+        await ingestOne(prisma, clock, acct, m, historical, deps.aiClassify);
+      } catch (e) {
+        if (!(await failedTwice(tag))) throw new IngestFailed(`${codeOf(e)} ${tag}`);
+        // 3rd run failing on it (PA #1): store the headers only, so the cursor moves and its stop rules still run
+        await ingestOne(prisma, clock, acct, { ...m, text: null, html: null, attachments: [] }, historical);
+        stats.note = `placeholder ${codeOf(e)} ${tag}`;
+        console.error(`sync: account ${acct.id} stored a header-only placeholder (${stats.note})`);
+      }
       stats.fetched++;
     }
+  };
+  /** The last two runs of this mailbox both failed on this message. */
+  const failedTwice = async (tag: string) => {
+    const runs = await prisma.syncRun.findMany({
+      where: { accountId },
+      orderBy: [{ startedAt: "desc" }, { id: "desc" }],
+      take: 2,
+      select: { error: true },
+    });
+    return runs.length === 2 && runs.every((r) => r.error?.endsWith(` ${tag}`));
   };
 
   /** Pulls pages; `done` carries the watermark and, after an import, the cursor to keep. */
@@ -228,7 +249,7 @@ export async function reconcileAccount(
       startedAt: start,
       finishedAt: clock.now(),
       fetched: stats.fetched,
-      error,
+      error: error ?? stats.note,
     },
   });
   await prisma.$executeRaw`
@@ -368,7 +389,7 @@ export async function syncDue(
       else if (r !== "skipped") out.synced++;
     } catch (e) {
       out.failed++;
-      console.error(`syncDue: account ${id}`, e);
+      console.error(`syncDue: account ${id} (${codeOf(e)})`);
     }
   });
   return out;

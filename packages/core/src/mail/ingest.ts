@@ -25,6 +25,12 @@ export function syntheticMessageId(
 
 const lower = (a: { email: string }) => a.email.toLowerCase();
 
+/** Error code for logs, SyncRun and lastError: a provider/Prisma code or the class name, never a message or body. */
+export const codeOf = (e: unknown) => {
+  const c = (e as { code?: unknown } | null)?.code;
+  return typeof c === "string" ? c : e instanceof Error ? e.name : "unknown";
+};
+
 const strip = <T>(v: T): T =>
   (typeof v === "string"
     ? v.replaceAll("\u0000", "")
@@ -34,13 +40,33 @@ const strip = <T>(v: T): T =>
         ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, strip(x)]))
         : v) as T;
 
+/** RFC 5322 line limit. */
+const LINE = 998;
+
 /**
  * Makes a provider message storable, so one hostile mail cannot block a mailbox's sync (and its sending) forever:
- * NUL bytes (Postgres refuses them in text) are removed from every string, and an invalid date becomes `fallback`.
+ * NUL bytes (Postgres refuses them in text) are removed from every string, an invalid date becomes `fallback`, and
+ * values that would overflow a btree index entry are dropped (ids over the RFC line limit) or clipped (FR I1).
  */
 export function sanitizeRemote(m: RemoteMessage, fallback: Date): RemoteMessage {
   const c = strip(m);
-  return Number.isNaN(c.date.getTime()) ? { ...c, date: fallback } : c;
+  const id = (v: string | null) => (v && v.length <= LINE ? v : null);
+  const addr = (a: RemoteMessage["from"]) => ({
+    ...a,
+    email: a.email.slice(0, 320),
+    ...(a.name != null && { name: a.name.slice(0, LINE) }),
+  });
+  return {
+    ...c,
+    rfcMessageId: id(c.rfcMessageId),
+    inReplyTo: id(c.inReplyTo),
+    references: c.references.filter((r) => r.length <= LINE),
+    from: addr(c.from),
+    to: c.to.map(addr),
+    cc: c.cc.map(addr),
+    subject: c.subject.slice(0, LINE),
+    date: Number.isNaN(c.date.getTime()) ? fallback : c.date,
+  };
 }
 
 /**
@@ -250,6 +276,6 @@ export async function recordOutboundMessage(
       ingestMessage(tx, sm.account, remote, { kind: "OUTBOUND" }, { historical: true }),
     );
   } catch (e) {
-    console.error(`recordOutboundMessage: row ${scheduledMessageId}`, e);
+    console.error(`recordOutboundMessage: row ${scheduledMessageId} (${codeOf(e)})`);
   }
 }

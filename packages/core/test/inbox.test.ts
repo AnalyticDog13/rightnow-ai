@@ -328,16 +328,26 @@ describe("state changes", () => {
         "status",
       );
     });
-    const r = await updateThread(P(), ws, "u1", t.id, {
+    // FR M3 / D20: a MEMBER (or API key) changes the category, but only an ADMIN lifts the suppression
+    const m = await thread(ws, a, { leadId: l.id, category: "NOT_INTERESTED", categorySource: "RULE" });
+    expect(await updateThread(P(), ws, "u2", m.id, { category: "NEUTRAL" })).toMatchObject({
       category: "NEUTRAL",
-      reminderAt: "2026-11-01T00:00:00Z",
     });
+    expect(await isSuppressed(P(), ws, l.email)).toBe(true);
+    const r = await updateThread(
+      P(),
+      ws,
+      "u1",
+      t.id,
+      { category: "NEUTRAL", reminderAt: "2026-11-01T00:00:00Z" },
+      { admin: true },
+    );
     expect(r).toMatchObject({ category: "NEUTRAL", categorySource: "USER" });
     expect(r.reminderAt?.toISOString()).toBe("2026-11-01T00:00:00.000Z");
     expect(await isSuppressed(P(), ws, l.email)).toBe(false);
     expect(await isSuppressed(P(), ws, "other@x.test")).toBe(true);
     const log = await P().auditLog.findFirstOrThrow({
-      where: { workspaceId: ws, action: "inbox.category_override" },
+      where: { workspaceId: ws, action: "inbox.category_override", actorId: "u1" },
     });
     expect(log.meta).toEqual({ from: "NOT_INTERESTED", to: "NEUTRAL", previousSource: "RULE" });
     // a USER-sourced category created no suppression, so changing it lifts none

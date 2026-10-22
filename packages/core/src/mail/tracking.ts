@@ -115,7 +115,8 @@ async function record(
       });
       if (!fresh || machine) return;
       const st = await tx.campaignLead.findUnique({ where: { id: m.campaignLeadId } });
-      if (st && st.state !== "STOPPED")
+      // like a reply (subCl): never a STOPPED enrolment, nor one the user PAUSED
+      if (st && ["QUEUED", "ACTIVE", "COMPLETED"].includes(st.state))
         await enterActivitySubsequence(
           tx,
           now,
@@ -129,7 +130,7 @@ async function record(
       });
       const eng = (lead?.lastEngagement ?? {}) as Prisma.JsonObject;
       await tx.lead.updateMany({
-        where: { id: leadId, workspaceId: m.workspaceId },
+        where: { id: leadId, workspaceId: m.workspaceId, deletedAt: null },
         data: open
           ? {
               opens: { increment: 1 },

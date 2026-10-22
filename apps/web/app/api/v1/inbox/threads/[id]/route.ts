@@ -11,7 +11,12 @@ export const GET = route({ auth: "session-or-apikey", scope: "inbox:read" }, (c)
 
 export const PATCH = route(
   { auth: "session-or-apikey", scope: "inbox:write", body: threadPatch },
-  (c) => run(() => updateThread(prisma, c.workspaceId, c.userId, c.params.id!, c.body)),
+  (c) =>
+    run(() =>
+      updateThread(prisma, c.workspaceId, c.userId, c.params.id!, c.body, {
+        admin: c.role === "ADMIN" || c.role === "OWNER",
+      }),
+    ),
 );
 
 /** Local only: the provider mailbox is not touched. */

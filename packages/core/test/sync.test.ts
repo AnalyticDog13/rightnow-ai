@@ -1,9 +1,15 @@
+import { randomBytes } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { EmailAccount } from "@rightnow/db/client";
 import { createTestDb } from "@rightnow/db/test-db";
-import { getFakeProvider, newMessageId, type MailProvider } from "@rightnow/providers";
+import {
+  getFakeProvider,
+  newMessageId,
+  type MailProvider,
+  type RemoteMessage,
+} from "@rightnow/providers";
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { fixedClock } from "../src/clock";
 import { reconcileAccount, syncDue, type SyncDeps } from "../src/mail/sync";
@@ -378,6 +384,91 @@ describe("reconcileAccount", () => {
       (await P().message.findFirstOrThrow({ where: { accountId: A.id, fromEmail: "nan@x.test" } }))
         .sentAt,
     ).toEqual(start);
+  });
+
+  /** Wraps the Fake so `edit` rewrites the incremental messages matching `pick`. */
+  const rewrite = (
+    A: EmailAccount,
+    pick: (m: RemoteMessage) => boolean,
+    edit: (m: RemoteMessage) => RemoteMessage,
+  ) =>
+    wrap(A, {
+      async listChangesSince(c, o) {
+        const r = await fake(A).listChangesSince(c, o);
+        return r.expired ? r : { ...r, messages: r.messages.map((m) => (pick(m) ? edit(m) : m)) };
+      },
+    });
+  // base64 of random bytes: incompressible, so it overflows a btree index entry (FR I1)
+  const junk = (chars: number) => randomBytes(chars).toString("base64").slice(0, chars);
+
+  test("FR I1: oversized identifiers are dropped or clipped, so the message syncs", async () => {
+    const { A, leads } = await setup();
+    const clock = fixedClock(T);
+    await run(clock, A);
+    await reply(A, leads[0]!.lead.email);
+    const longAddr = `${junk(400)}@x.test`;
+    const p = rewrite(
+      A,
+      () => true,
+      (m) => ({
+        ...m,
+        rfcMessageId: `<${junk(5000)}@x.test>`,
+        inReplyTo: `<${junk(5000)}@x.test>`,
+        references: [`<${junk(5000)}@x.test>`, "<ok@x.test>"],
+        from: { email: m.from.email, name: junk(5000) },
+        to: [...m.to, { email: longAddr }],
+        cc: [{ email: longAddr }],
+        subject: junk(5000),
+      }),
+    );
+    clock.advance(60_000);
+    expect(await run(clock, A, deps({ providerFor: async () => p }))).toBe("caught_up");
+    const m = await P().message.findFirstOrThrow({ where: { accountId: A.id, direction: "IN" } });
+    expect(m).toMatchObject({ synthetic: true, inReplyTo: null, references: ["<ok@x.test>"] });
+    expect(m.fromName!.length).toBe(998);
+    expect(m.subject.length).toBe(998);
+    expect(m.to[1]!.length).toBe(320);
+    expect(m.cc[0]!.length).toBe(320);
+  });
+
+  test("PA #1: a message that always fails is stored as a header-only placeholder on its 3rd failed run", async () => {
+    const { A, leads } = await setup();
+    const clock = fixedClock(T);
+    await run(clock, A);
+    await reply(A, leads[0]!.lead.email);
+    // an Int overflow Prisma refuses: only the full ingest carries attachments
+    const p = rewrite(
+      A,
+      (m) => m.from.email === leads[0]!.lead.email,
+      (m) => ({
+        ...m,
+        attachments: [{ filename: "a.pdf", contentType: "application/pdf", size: 2 ** 40, content: null }],
+      }),
+    );
+    const d = deps({ providerFor: async () => p });
+    quiet();
+    for (let i = 0; i < 2; i++) {
+      clock.advance(60_000);
+      expect(await run(clock, A, d)).toBe("failed");
+    }
+    expect(await messages(A.id)).toBe(0);
+    clock.advance(60_000);
+    const third = clock.now();
+    expect(await run(clock, A, d)).toBe("caught_up");
+    const m = await P().message.findFirstOrThrow({ where: { accountId: A.id }, include: { attachments: true } });
+    expect(m).toMatchObject({ text: null, html: null, attachments: [], fromEmail: leads[0]!.lead.email });
+    expect(m.rfcMessageId).not.toContain("synthetic");
+    expect(
+      await P().campaignLead.findUniqueOrThrow({ where: { id: leads[0]!.cl.id } }),
+    ).toMatchObject({ state: "STOPPED", stopReason: "REPLIED" });
+    expect((await acct(A.id)).lastSyncCompletedAt).toEqual(third);
+    const runs = await P().syncRun.findMany({
+      where: { accountId: A.id },
+      orderBy: { startedAt: "desc" },
+      take: 3,
+    });
+    expect(runs[0]!.error).toMatch(/^placeholder \S+ msg=/);
+    expect(runs[1]!.error).toMatch(/ msg=/);
   });
 
   test("the AI classifier is not asked again for a message already stored", async () => {

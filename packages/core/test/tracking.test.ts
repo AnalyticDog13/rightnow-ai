@@ -253,4 +253,28 @@ describe("db", () => {
       expect(cl).toMatchObject({ subsequenceId: sub.id, currentStepId: step.id });
     },
   );
+
+  test("a user-PAUSED enrolment never enters a subsequence; a soft-deleted lead's counters stay", async () => {
+    const { s, m, leadId } = await sentRow();
+    const sub = await P().subsequence.create({
+      data: {
+        campaignId: s.campaign.id,
+        name: "s",
+        trigger: { kind: "ACTIVITY", activity: "opened" },
+        activatedAt: new Date(0),
+      },
+    });
+    await P().sequenceStep.create({
+      data: { campaignId: s.campaign.id, subsequenceId: sub.id, order: 1, delayValue: 0 },
+    });
+    await P().campaignLead.update({
+      where: { id: s.leads[0]!.cl.id },
+      data: { state: "PAUSED", stopReason: "MANUAL" },
+    });
+    await P().lead.update({ where: { id: leadId }, data: { deletedAt: T } });
+    await recordOpen(P(), at(3600_000), { m: m.id }, "Mozilla/5.0");
+    const cl = await P().campaignLead.findUniqueOrThrow({ where: { id: s.leads[0]!.cl.id } });
+    expect(cl).toMatchObject({ state: "PAUSED", subsequenceId: null });
+    expect(await lead(leadId)).toMatchObject({ opens: 0, lastOpenAt: null });
+  });
 });

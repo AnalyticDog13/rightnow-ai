@@ -110,6 +110,16 @@
     "category": "OUT_OF_OFFICE",
     "oooUntil": "2026-07-14T00:00:00.000Z"
   },
+  "ooo-en-month-first-year-future.eml": {
+    "kind": "AUTO_REPLY",
+    "category": "OUT_OF_OFFICE",
+    "oooUntil": "2028-03-03T00:00:00.000Z"
+  },
+  "ooo-en-month-first-year-past.eml": {
+    "kind": "AUTO_REPLY",
+    "category": "OUT_OF_OFFICE",
+    "oooUntil": null
+  },
   "ooo-en-no-date.eml": {
     "kind": "AUTO_REPLY",
     "category": "OUT_OF_OFFICE",

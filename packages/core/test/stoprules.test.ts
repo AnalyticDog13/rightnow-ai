@@ -598,7 +598,7 @@ describe("unsubscribe and bounces", () => {
     expect(await events(s.ws)).toMatchObject([{ type: "BOUNCE_UNKNOWN", leadId: h.lead.id }]);
   });
 
-  test("I2: a DSN for the cc suppresses the cc only; M15: a hard bounce without target suppresses the recipient", async () => {
+  test("I2: a DSN for the cc suppresses the cc only; PA #4: a hard bounce without a send of ours suppresses nothing", async () => {
     const s = await setup();
     const A = s.accounts[0]!;
     const e = await enrol(s, "ann@acme.test", { cc: ["cc@other.test"] });
@@ -626,13 +626,24 @@ describe("unsubscribe and bounces", () => {
         }),
       ),
     );
-    expect((await suppressions(s.ws)).map((x) => x.value)).toEqual([
-      "cc@other.test",
-      "stranger@else.test",
-    ]);
+    // a recipient we never mailed, even on a DSN naming our own send, is not suppressed
+    await receive(
+      A,
+      await parse(
+        dsn({
+          to: A.email,
+          recipient: "victim@else.test",
+          status: "5.1.1",
+          diag: "550 5.1.1 user unknown",
+          orig: e.rfc,
+        }),
+      ),
+    );
+    expect((await suppressions(s.ws)).map((x) => x.value)).toEqual(["cc@other.test"]);
     expect(await events(s.ws)).toMatchObject([
       { type: "BOUNCE_HARD", leadId: e.lead.id, meta: { recipient: "cc@other.test" } },
-      { type: "BOUNCE_HARD", leadId: null },
+      { type: "BOUNCE_HARD", leadId: null, meta: { recipient: "stranger@else.test" } },
+      { type: "BOUNCE_HARD", leadId: e.lead.id, meta: { recipient: "victim@else.test" } },
     ]);
   });
 });
@@ -686,6 +697,25 @@ describe("against the send claim", () => {
     expect(await cl(e.cl.id)).toMatchObject({ state: "STOPPED", stopReason: "REPLIED" });
     expect(await cl(other.cl.id)).toMatchObject({ state: "STOPPED", stopReason: "REPLIED" });
     expect((await row(other.step2.id)).status).toBe("CANCELLED");
+    expect((await lead(e.lead.id)).emailsSent).toBe(1);
+  });
+
+  test("FR M6: a bounce of an UNCERTAIN send settles it SENT, so Release cannot send it twice", async () => {
+    const s = await setup();
+    const A = s.accounts[0]!;
+    const e = await enrol(s, "full@race.test", { due: at(-60_000) });
+    const [c] = await claimDue(P(), clock, claimOpts);
+    fake(A).failNext("api_5xx");
+    expect(await sendClaimed(P(), clock, deps, c!)).toBe("UNCERTAIN");
+    const rfc = (await row(e.step2.id)).rfcMessageId!;
+    await receive(
+      A,
+      await parse(
+        dsn({ to: A.email, recipient: e.lead.email, status: "4.2.2", diag: "452 4.2.2 Mailbox full", orig: rfc }),
+      ),
+    );
+    expect(await row(e.step2.id)).toMatchObject({ status: "SENT" });
+    expect(await reserved(A.id)).toEqual([[1, 0]]);
     expect((await lead(e.lead.id)).emailsSent).toBe(1);
   });
 

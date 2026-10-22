@@ -54,6 +54,29 @@ describe("stripQuoted", () => {
   });
 });
 
+describe("hostile input (FR C1)", () => {
+  const MB2 = 2 * 1024 * 1024;
+  const msg = (from: string, subject: string, text: string) => ({
+    from: { email: from },
+    subject,
+    text,
+    html: null,
+    headers: {},
+    attachments: [],
+  });
+  it.each([
+    ["mailer-daemon, a@ + word chars", msg("mailer-daemon@x.test", "Undeliverable", `a@${"a".repeat(MB2)}`)],
+    ["mailer-daemon, dotted labels", msg("postmaster@x.test", "failure notice", `x@${"a.".repeat(MB2 / 2)}`)],
+    ["reply, whitespace run before unsubscribe", msg("p@x.test", "Re: hi", `${" ".repeat(MB2)}unsubscribe`)],
+    ["reply, header-like lines", msg("p@x.test", "Re: hi", "From: a\n".repeat(MB2 / 8))],
+    ["ooo, keyword run", msg("p@x.test", "Out of office", "back ".repeat(MB2 / 5))],
+  ])("a 2 MB body classifies in < 100 ms: %s", (_, m) => {
+    const t = performance.now();
+    classify(m, { now: new Date("2026-06-15T12:00:00Z"), direction: "IN" });
+    expect(performance.now() - t).toBeLessThan(100);
+  });
+});
+
 it("INTEREST_OF follows PS-INBOX-19", () => {
   expect(INTEREST_OF).toEqual({
     INTERESTED: 1,

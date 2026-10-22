@@ -37,9 +37,12 @@ const hdr = (m: ClassifyInput, name: string) => m.headers[name]?.[0]?.trim() ?? 
 const partText = (m: ClassifyInput, type: string) =>
   m.attachments
     .filter((a) => a.contentType.toLowerCase().startsWith(type) && a.content)
-    .map((a) => a.content!.toString("utf8"))
+    .map((a) => a.content!.subarray(0, MAX_TEXT).toString("utf8"))
     .join("\n");
-const EMAIL = /[\w.+'-]+@[\w-]+(?:\.[\w-]+)+/g;
+// bounded quantifiers: an unbounded run here is quadratic on a long word (FR C1)
+const EMAIL = /[\w.+'-]{1,64}@[\w-]{1,63}(?:\.[\w-]{1,63}){1,8}/g;
+/** Classifier regexes see only the head of the text (DSN fields and a reply's intent sit at the top). */
+const MAX_TEXT = 64 * 1024;
 
 function classifyBounce(m: ClassifyInput, text: string): Classification | null {
   const local = m.from.email.toLowerCase().split("@")[0];
@@ -146,7 +149,7 @@ function oooDate(g: RegExpMatchArray, now: Date): Date | null {
     if (Number(g[8]) <= 12) return null;
     [mo, d, y] = [n(7), n(8), n(9)];
   } else if (g[10]) [d, mo, y] = [n(10), monthOf(g[11]!), n(12)];
-  else [mo, d, y] = [monthOf(g[13]!), n(14), n(16)];
+  else [mo, d, y] = [monthOf(g[13]!), n(14), n(15)];
   if (!mo || !d || mo > 12 || d > 31) return null;
   const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
   let t = new Date(Date.UTC(y ?? now.getUTCFullYear(), mo - 1, d));
@@ -209,9 +212,10 @@ export function classify(
   o: { now: Date; direction: "IN" | "OUT" },
 ): Classification {
   if (o.direction === "OUT") return { kind: "OUTBOUND" };
-  const bounce = classifyBounce(m, m.text ?? "");
+  const text = (m.text ?? "").slice(0, MAX_TEXT);
+  const bounce = classifyBounce(m, text);
   if (bounce) return bounce;
-  const body = stripQuoted(m.text ?? "");
+  const body = stripQuoted(text);
   if (isAutoReply(m)) {
     const ooo = OOO_WORDS.test(`${m.subject}\n${body}`);
     return {

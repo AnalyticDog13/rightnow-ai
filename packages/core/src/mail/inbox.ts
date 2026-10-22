@@ -243,8 +243,18 @@ export const threadPatch = z.strictObject({
   reminderAt: z.coerce.date().nullable().optional(),
 });
 
-/** PS-INBOX-19: a category set by the user is final (`categorySource "USER"`) and audited as the feedback log. */
-export async function updateThread(db: Db, ws: string, actorId: Actor, id: string, input: unknown) {
+/**
+ * PS-INBOX-19: a category set by the user is final (`categorySource "USER"`) and audited as the feedback log. Lifting
+ * the NOT_INTERESTED suppression it implies needs `admin` (D20); a MEMBER or API key changes the category only.
+ */
+export async function updateThread(
+  db: Db,
+  ws: string,
+  actorId: Actor,
+  id: string,
+  input: unknown,
+  o: { admin?: boolean } = {},
+) {
   const p = threadPatch.parse(input);
   return db.$transaction(async (tx) => {
     const t = await tx.thread.findFirst({ where: { id, workspaceId: ws, deletedAt: null } });
@@ -252,6 +262,7 @@ export async function updateThread(db: Db, ws: string, actorId: Actor, id: strin
     if (p.category && p.category !== t.category) {
       // I9: undoing a classifier's NOT_INTERESTED also lifts the suppression that status created
       if (
+        o.admin &&
         t.category === "NOT_INTERESTED" &&
         (t.categorySource === "RULE" || t.categorySource === "AI") &&
         t.leadId

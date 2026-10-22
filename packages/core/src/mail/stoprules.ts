@@ -1,4 +1,4 @@
-import { Prisma, type EventType, type Message } from "@rightnow/db/client";
+import { Prisma, type EventType, type Message, type ScheduledMessage } from "@rightnow/db/client";
 import { stopOpenCampaignLeads } from "../campaigns/hooks";
 import { OPEN_STATES } from "../campaigns/lead-status";
 import type { Clock } from "../clock";
@@ -51,7 +51,7 @@ export async function applyInbound(
   const now = clock.now();
   const type: EventType = c.kind === "BOUNCE" ? `BOUNCE_${c.bounceType}` : c.kind;
   const dedupeKey = `${type}:${ws}:${m.rfcMessageId}`;
-  if (c.kind === "BOUNCE") return bounce(tx, now, ws, m, c, match, type, dedupeKey);
+  if (c.kind === "BOUNCE") return bounce(tx, clock, ws, m, c, match, type, dedupeKey);
   const fresh = !(await tx.event.findUnique({ where: { dedupeKey }, select: { id: true } }));
 
   // a deleted lead's enrolments are already stopped: nothing is revived or counted for it
@@ -73,14 +73,7 @@ export async function applyInbound(
 
   // M17: an answer proves an UNCERTAIN/HELD send went out, so a later Release cannot send it twice. The row is locked
   // now (D21: ScheduledMessage first) and settled after the stops, so every CampaignLead lock precedes usage/Lead.
-  const settle =
-    sm?.rfcMessageId && (sm.status === "UNCERTAIN" || sm.status === "HELD")
-      ? (
-          await tx.$queryRaw<{ id: string }[]>`
-            SELECT id FROM "ScheduledMessage" WHERE id = ${sm.id} AND status::text IN ('UNCERTAIN', 'HELD')
-            FOR UPDATE`
-        ).length > 0
-      : false;
+  const settle = await lockUnsettled(tx, sm);
   // a lead the user PAUSED is stopped by a reply but never re-activated by a subsequence
   const subCl =
     c.kind === "REPLY" && fresh && lead && match.campaignLeadId
@@ -141,22 +134,7 @@ export async function applyInbound(
   if (c.kind === "UNSUBSCRIBE") await optOutTx(tx, clock, ws, m.fromEmail, leadIds, "mailto");
   if (interest === -1 && lead) await applyInterestChange(tx, clock, ws, lead.id, -1); // suppresses only
 
-  if (settle && sm?.rfcMessageId)
-    await acceptTx(
-      tx,
-      clock,
-      {
-        ...refOf(sm),
-        id: sm.id,
-        campaignLeadId: sm.campaignLeadId,
-        stepId: sm.stepId,
-        claimToken: sm.claimToken ?? "", // acceptTx stores "" as null
-        claimedAt: sm.claimedAt ?? now,
-        rfcMessageId: sm.rfcMessageId,
-      },
-      { rfcMessageId: sm.rfcMessageId },
-      sm.claimedAt && sm.claimedAt <= m.sentAt ? sm.claimedAt : m.sentAt,
-    );
+  if (settle && sm) await settleSent(tx, clock, sm, m.sentAt);
 
   if (fresh && lead) {
     const newer = !lead.lastReplyAt || m.sentAt > lead.lastReplyAt;
@@ -214,6 +192,33 @@ export async function applyInbound(
       meta: { from: null, to: interest, source: "reply" },
       dedupeKey: `interest:${lead.id}:${now.getTime()}`,
     });
+}
+
+/** M17: locks an UNCERTAIN/HELD send that an inbound message proves went out (D21: ScheduledMessage first). */
+async function lockUnsettled(tx: Tx, sm: ScheduledMessage | null): Promise<boolean> {
+  if (!sm?.rfcMessageId || (sm.status !== "UNCERTAIN" && sm.status !== "HELD")) return false;
+  const r = await tx.$queryRaw<{ id: string }[]>`
+    SELECT id FROM "ScheduledMessage" WHERE id = ${sm.id} AND status::text IN ('UNCERTAIN', 'HELD') FOR UPDATE`;
+  return r.length > 0;
+}
+
+/** Settles a row `lockUnsettled` holds as SENT, so a later Release cannot send it twice. Call after the stops. */
+async function settleSent(tx: Tx, clock: Clock, sm: ScheduledMessage, at: Date) {
+  await acceptTx(
+    tx,
+    clock,
+    {
+      ...refOf(sm),
+      id: sm.id,
+      campaignLeadId: sm.campaignLeadId,
+      stepId: sm.stepId,
+      claimToken: sm.claimToken ?? "", // acceptTx stores "" as null
+      claimedAt: sm.claimedAt ?? clock.now(),
+      rfcMessageId: sm.rfcMessageId!,
+    },
+    { rfcMessageId: sm.rfcMessageId! },
+    sm.claimedAt && sm.claimedAt <= at ? sm.claimedAt : at,
+  );
 }
 
 /**
@@ -319,11 +324,13 @@ async function pushFollowUps(
 /**
  * D27 + I2: the target is the original send (by its Message-ID, else the newest SENT row from this mailbox to the
  * recipient within 14 days). Only HARD suppresses; it stops the lead (BOUNCED) only when the DSN names the lead, or names
- * nobody and the lead was the only recipient. Otherwise the named recipient alone is suppressed (M15: also without a target).
+ * nobody and the lead was the only recipient. Otherwise a named cc/bcc of that send alone is suppressed. A DSN without a
+ * target, or naming someone that send never went to, is recorded only (PA #4: the From of a DSN is not authenticated).
+ * A DSN of an UNCERTAIN/HELD send proves it went out and settles it SENT, like a reply (M17).
  */
 async function bounce(
   tx: Tx,
-  now: Date,
+  clock: Clock,
   ws: string,
   m: Message,
   c: Extract<Classification, { kind: "BOUNCE" }>,
@@ -331,22 +338,16 @@ async function bounce(
   type: EventType,
   dedupeKey: string,
 ) {
+  const now = clock.now();
   const recipient = c.recipient?.trim().toLowerCase() || null;
-  const select = {
-    id: true,
-    campaignId: true,
-    campaignLeadId: true,
-    stepId: true,
-    variantId: true,
-    cc: true,
-    bcc: true,
+  const include = {
     campaignLead: { select: { leadId: true, lead: { select: { email: true } } } },
   } as const;
   const sm =
     (c.originalMessageId
       ? await tx.scheduledMessage.findFirst({
           where: { workspaceId: ws, rfcMessageId: c.originalMessageId },
-          select,
+          include,
         })
       : null) ??
     (recipient
@@ -363,9 +364,10 @@ async function bounce(
             ],
           },
           orderBy: [{ sentAt: "desc" }, { id: "desc" }],
-          select,
+          include,
         })
       : null);
+  const settle = await lockUnsettled(tx, sm);
   const leadEmail = sm?.campaignLead.lead.email.toLowerCase();
   const isLead = !!sm && (recipient ? recipient === leadEmail : !sm.cc.length && !sm.bcc.length);
   if (c.bounceType === "HARD") {
@@ -374,9 +376,11 @@ async function bounce(
       await stopOpenCampaignLeads(tx, ws, [sm.campaignLead.leadId], "BOUNCED", now, {
         id: sm.campaignLeadId,
       });
-    const addr = isLead ? leadEmail : recipient;
+    const copied = !!recipient && !!sm && [...sm.cc, ...sm.bcc].some((x) => x.toLowerCase() === recipient);
+    const addr = isLead ? leadEmail : copied ? recipient : null;
     if (addr) await suppress(tx, ws, [{ kind: "EMAIL", value: addr }], "HARD_BOUNCE", "dsn");
   }
+  if (settle && sm) await settleSent(tx, clock, sm, m.sentAt);
   await recordEvent(tx, {
     workspaceId: ws,
     type,
