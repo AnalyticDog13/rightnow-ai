@@ -439,6 +439,10 @@ export async function warmupTick(
       if (e instanceof AuthError) await recordProviderError(prisma, clock, acct.id, e);
     }
   });
+  // a placement test is finished once every seed row has a folder or failed (D37)
+  await prisma.$executeRaw`UPDATE "PlacementTest" t SET "finishedAt" = ${now}
+    WHERE t."finishedAt" IS NULL AND NOT EXISTS (SELECT 1 FROM "WarmupMessage" m
+      WHERE m."placementTestId" = t.id AND m.status <> 'FAILED' AND m."landedFolder" IS NULL)`;
   return out;
 }
 

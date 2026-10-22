@@ -97,6 +97,15 @@ async function counts(db: Db, ids: string[], now: Date): Promise<Map<string, Cou
       AND m."sentAt" >= GREATEST(${new Date(now.getTime() - 14 * 24 * H).toISOString()}::timestamp, a."healthResetAt")
     GROUP BY m."fromAccountId"`;
   const warm = new Map(w.map((x) => [x.id, { inbox: x.inbox, spam: x.spam }]));
+  // the latest finished placement test of each account (D37): seeds whose mail reached INBOX out of all seeds
+  const pl = await db.$queryRaw<{ id: string; inbox: number; total: number }[]>`
+    SELECT t."accountId" AS id, count(*) FILTER (WHERE m."landedFolder" = 'INBOX')::int AS inbox, count(*)::int AS total
+    FROM (SELECT DISTINCT ON ("accountId") id, "accountId" FROM "PlacementTest"
+          WHERE "accountId" = ANY(${ids}::text[]) AND "finishedAt" IS NOT NULL
+          ORDER BY "accountId", "finishedAt" DESC) t
+    JOIN "WarmupMessage" m ON m."placementTestId" = t.id
+    GROUP BY t."accountId"`;
+  const placed = new Map(pl.map((x) => [x.id, { inbox: x.inbox, total: x.total }]));
   return new Map(
     rows.map(({ id, syncErrors, ...r }) => [
       id,
@@ -104,7 +113,7 @@ async function counts(db: Db, ids: string[], now: Date): Promise<Map<string, Cou
         ...r,
         syncFailing: syncErrors >= SYNC_FAILING_AT,
         warmup: warm.get(id) ?? null,
-        placement: null, // T04 fills this
+        placement: placed.get(id) ?? null,
       },
     ]),
   );

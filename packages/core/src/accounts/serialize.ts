@@ -43,6 +43,7 @@ const PUBLIC = [
   "trackingDomain",
   "trackingDomainStatus",
   "appendToSent",
+  "placementSeed",
   "createdAt",
   "deletedAt",
 ] as const satisfies readonly (keyof EmailAccount)[];

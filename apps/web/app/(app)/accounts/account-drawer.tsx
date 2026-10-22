@@ -32,6 +32,7 @@ const FIELDS: { k: keyof ApiAccount; label: string; kind: Kind }[] = [
 const BOOLS: { k: keyof ApiAccount; label: string }[] = [
   { k: "slowRamp", label: "Slow ramp-up" },
   { k: "appendToSent", label: "Save sent mail in the Sent folder" },
+  { k: "placementSeed", label: "Use as an inbox placement seed" },
 ];
 const REASON: Record<string, string> = {
   provider_cap: "half of the provider's daily cap",
@@ -50,6 +51,7 @@ const toForm = (a: ApiAccount) => ({
   tags: a.tags.join(", "),
   slowRamp: a.slowRamp,
   appendToSent: a.appendToSent,
+  placementSeed: a.placementSeed,
 });
 type Form = ReturnType<typeof toForm>;
 

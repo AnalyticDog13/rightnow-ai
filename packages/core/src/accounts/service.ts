@@ -164,6 +164,7 @@ export const patchSchema = z
     historyImportDays: z.number().int().min(0).max(365),
     providerCap: z.number().int().min(1).max(1_000_000),
     appendToSent: z.boolean(),
+    placementSeed: z.boolean(),
     trackingDomain: z
       .string()
       .trim()
