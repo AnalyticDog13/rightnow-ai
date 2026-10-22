@@ -501,12 +501,12 @@
    "id": "P4-T06",
    "phase": 4,
    "title": "Inbox API: threads, filters, saved views, search, read/unread, category override, labels, notes, reminders, attach-to-lead, macros, reply/forward (threaded) with attachments",
-   "status": "todo",
+   "status": "done",
    "deps": [
     "P4-T05"
    ],
    "model": "sonnet",
-   "commit": null,
+   "commit": "6497e29",
    "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-4.md; tests listed there pass"
   },
   {

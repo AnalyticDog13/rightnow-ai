@@ -1,7 +1,7 @@
 # Handoff
 
 **Phase:** 4 — Incoming mail & tracking (branch `phase-4-inbox`, from `main` after the Phase 3 merge)
-**Current task:** P4-T06 (inbox API) + P4-T07 (downtime sims) in parallel. Done: T01–T05. Ledger `.superpowers/sdd/phase-4/progress.md`.
+**Current task:** P4-T08 (inbox UI). Done: T01–T07. Then phase gate. Ledger `.superpowers/sdd/phase-4/progress.md`.
 **Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 (approved). Done step plans: `docs/plans/phase-1.md`, `phase-2.md`, `phase-3.md`.
 **Tests:** ~946 vitest + 19 Playwright (prod build) green; CI `check`, `compose-smoke`, `imap-real` green.
 
