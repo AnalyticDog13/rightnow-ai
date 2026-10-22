@@ -525,12 +525,12 @@
    "id": "P4-T08",
    "phase": 4,
    "title": "Unified inbox UI (sanitized HTML, attachments, compose, lead panel, views, macros)",
-   "status": "todo",
+   "status": "done",
    "deps": [
     "P4-T06"
    ],
    "model": "sonnet",
-   "commit": null,
+   "commit": "f6c4df6",
    "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-4.md; tests listed there pass"
   },
   {
