@@ -561,12 +561,12 @@
    "id": "P5-T03",
    "phase": 5,
    "title": "Warm-up engine (opt-in peer pool, custom curve, reply rate, weekdays-only, peer tag, `WarmupProvider` interface for external services, separate storage, no spam-folder manipulation)",
-   "status": "todo",
+   "status": "done",
    "deps": [
     "P5-T02"
    ],
    "model": "sonnet",
-   "commit": null,
+   "commit": "355ffb2",
    "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-5.md; tests listed there pass"
   },
   {
