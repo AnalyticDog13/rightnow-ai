@@ -446,6 +446,16 @@ describe("fix round 1", () => {
     expect((await res(id)).status).toBe("ACTIVE");
   });
 
+  test("gate N-3: a COMPLETED campaign whose end date passed does not resume (409 campaign_ended)", async () => {
+    const { id } = await ready();
+    await P().campaign.update({
+      where: { id },
+      data: { status: "COMPLETED", endAt: clock.now() },
+    });
+    await expect(res(id)).rejects.toMatchObject({ status: 409, message: "campaign_ended" });
+    expect((await getCampaign(P(), ws, id)).status).toBe("COMPLETED");
+  });
+
   test("relaunch of ACTIVE reports current warnings; resume re-validates", async () => {
     const { id } = await ready();
     await launch(id);

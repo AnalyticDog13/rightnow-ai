@@ -58,3 +58,4 @@ export * from "./mail/ingest";
 export * from "./mail/inbox";
 export * from "./mail/tracking";
 export * from "./mail/stoprules";
+export * from "./mail/sync";

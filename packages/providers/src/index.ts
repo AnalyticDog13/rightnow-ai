@@ -3,6 +3,7 @@ export * from "./errors";
 export * from "./retry-after";
 export * from "./mime";
 export * from "./net";
+export { mapLimit } from "./map-limit";
 export { FakeProvider } from "./fake/provider";
 export { FakeOAuthClient } from "./fake/oauth";
 export { GoogleOAuth, GOOGLE_SCOPES } from "./gmail/oauth";

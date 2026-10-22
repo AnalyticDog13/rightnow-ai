@@ -245,14 +245,71 @@ describe("sync", () => {
     expect(c.messages[0]).toMatchObject({ folder: "INBOX", providerMessageId: id });
   });
 
-  test("a message moved out of the Inbox is not reported as removed; a deleted one is", async () => {
+  test('@removed {reason:"changed"} (moved out of the Inbox) and "deleted" are both in removed', async () => {
     const { g, p } = fake();
     const a = inboxMsg(g, "<a@x>");
     const b = inboxMsg(g, "<b@x>");
     const cursor = await p.currentCursor();
     g.move(a.id, "deleteditems");
     g.remove(b.id);
-    expect((await changes(p, cursor)).removed).toEqual([b.id]);
+    expect((await changes(p, cursor)).removed.sort()).toEqual([a.id, b.id].sort());
+  });
+
+  test("a delta page stops at the byte cap and resumes after the last message returned (I-9)", async () => {
+    const g = createFakeGraph();
+    const p = new GraphProvider({
+      address: "me@rn.test",
+      store: g.store,
+      oauth: oauth(g.fetch),
+      fetch: g.fetch,
+      maxPageBytes: 1,
+    });
+    let cursor = await p.currentCursor();
+    for (let i = 0; i < 6; i++) inboxMsg(g, `<m${i}@x>`);
+    const seen: string[] = [];
+    const more: boolean[] = [];
+    for (let i = 0; i < 5; i++) {
+      const c = await changes(p, cursor);
+      seen.push(...c.messages.map((m) => m.rfcMessageId!));
+      more.push(c.hasMore);
+      cursor = c.cursor;
+      if (!c.hasMore) break;
+    }
+    expect(more[0]).toBe(true);
+    expect(seen).toHaveLength(6);
+    expect(new Set(seen).size).toBe(6);
+    expect(more.at(-1)).toBe(false);
+  });
+
+  test("an invalid delta link (400) is expired, never a thrown error (I-7)", async () => {
+    const fetch = createFixtureFetch([
+      {
+        method: "GET",
+        url: /delta/,
+        respond: async () => json(400, { error: { code: "BadRequest" } }),
+      },
+    ]);
+    const r = await make(fetch).listChangesSince({
+      kind: "graph",
+      inbox: `${G}/me/mailFolders/inbox/messages/delta?$skiptoken=stale`,
+      sent: `${G}/me/mailFolders/sentitems/messages/delta?$deltatoken=1`,
+    });
+    expect(r).toEqual({ expired: true });
+  });
+
+  test("RemoteMessage.headers carries content-type (bounce detection reads multipart/report)", async () => {
+    const { g, p } = fake();
+    const cursor = await p.currentCursor();
+    g.add(
+      Buffer.from(
+        "From: postmaster@x.test\r\nTo: me@rn.test\r\nSubject: fail\r\nMessage-ID: <d@x>\r\n" +
+          'MIME-Version: 1.0\r\nContent-Type: multipart/report; report-type=delivery-status; boundary="B"\r\n\r\n' +
+          "--B\r\nContent-Type: text/plain\r\n\r\nno\r\n--B--\r\n",
+      ),
+      "inbox",
+    );
+    const c = await changes(p, cursor);
+    expect(c.messages[0]!.headers["content-type"]?.[0]).toMatch(/^multipart\/report/);
   });
 
   test("3-page delta with limit 2 returns each message once and stores the nextLink between pages", async () => {
@@ -313,7 +370,7 @@ describe("sync", () => {
     expect(u.searchParams.get("$filter")).toBe("receivedDateTime ge 2026-01-01T11:55:00.000Z");
   });
 
-  test("delta fixture shapes: nextLink pending, then deltaLink; only deleted ids are removed", async () => {
+  test("delta fixture shapes: nextLink pending, then deltaLink; deleted and changed ids are removed", async () => {
     const { pages } = fx("delta-pages") as { pages: Record<string, string>[] };
     const raw = Buffer.from(
       "From: x@x.test\r\nTo: me@rn.test\r\nSubject: s\r\nMessage-ID: <a@x>\r\n\r\nb\r\n",
@@ -343,7 +400,7 @@ describe("sync", () => {
     expect(c1.cursor).toMatchObject({ kind: "graph", inbox: pages[0]!["@odata.nextLink"] });
     const c2 = await changes(p, c1.cursor, 10);
     expect(c2.hasMore).toBe(false);
-    expect(c2.removed).toEqual([]);
+    expect(c2.removed).toEqual(["AAMkA3"]); // "changed": moved out of the folder
     expect(c2.cursor).toMatchObject({ inbox: pages[1]!["@odata.deltaLink"] });
   });
 

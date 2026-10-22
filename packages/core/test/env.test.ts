@@ -77,4 +77,12 @@ describe("mail provider env", () => {
       parseEnv({ ...good, SEND_LEASE_SEC: "60", MAIL_PROVIDER_FAKE: "1" }).SEND_LEASE_SEC,
     ).toBe(60);
   });
+  test("SYNC_POLL_SEC defaults to 120 and must leave two polls + 60 s inside SYNC_MAX_STALENESS_SEC (M10)", () => {
+    expect(parseEnv(good).SYNC_POLL_SEC).toBe(120);
+    expect(
+      parseEnv({ ...good, SYNC_POLL_SEC: "60", SYNC_MAX_STALENESS_SEC: "180" }).SYNC_POLL_SEC,
+    ).toBe(60);
+    expect(() => parseEnv({ ...good, SYNC_POLL_SEC: "121" })).toThrow(/SYNC_POLL_SEC/);
+    expect(() => parseEnv({ ...good, SYNC_MAX_STALENESS_SEC: "200" })).toThrow(/SYNC_POLL_SEC/);
+  });
 });

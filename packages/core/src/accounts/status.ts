@@ -13,6 +13,7 @@ export type DisplayStatus =
 
 const BY_KIND = {
   CONNECTION: "CONNECTION_ERROR",
+  SYNC: "CONNECTION_ERROR", // P4-T05: the mailbox cannot be read, so it does not send either
   SOFT_BOUNCE: "SOFT_BOUNCE_ERROR",
   SENDING: "SENDING_ERROR",
 } as const;

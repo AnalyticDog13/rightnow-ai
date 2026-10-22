@@ -1,5 +1,5 @@
 import { AuthError, PermanentSendError, ProviderError } from "../errors";
-import { mapLimit } from "../map-limit";
+import { DEFAULT_PAGE_BYTES, mapLimit, readCapped } from "../map-limit";
 import { buildMime, parseRaw } from "../mime";
 import type {
   Changes,
@@ -37,6 +37,7 @@ export class GmailProvider implements MailProvider {
   private http: GmailHttp;
   private store: CredentialStore<OAuthCreds>;
   private oauth: OAuthClient;
+  private maxPageBytes: number;
 
   constructor(o: {
     address: string;
@@ -44,10 +45,12 @@ export class GmailProvider implements MailProvider {
     oauth: OAuthClient;
     fetch?: typeof fetch;
     clock?: Clock;
+    maxPageBytes?: number; // default 20 MB; tests
   }) {
     this.address = o.address.toLowerCase();
     this.store = o.store;
     this.oauth = o.oauth;
+    this.maxPageBytes = o.maxPageBytes ?? DEFAULT_PAGE_BYTES;
     this.http = new GmailHttp(o.store, o.oauth, o);
   }
 
@@ -85,12 +88,13 @@ export class GmailProvider implements MailProvider {
     });
     if (!m?.raw) return null; // deleted since it was listed
     const labels = m.labelIds ?? [];
-    const msg = await parseRaw(Buffer.from(m.raw, "base64url"), {
+    const raw = Buffer.from(m.raw, "base64url");
+    const msg = await parseRaw(raw, {
       providerMessageId: m.id,
       ...(m.threadId ? { providerThreadId: m.threadId } : {}),
       folder: folder ?? (labels.includes("SENT") ? "SENT" : "INBOX"),
     });
-    return { msg, labels };
+    return { msg, labels, bytes: raw.length };
   }
 
   /** Searches all mail incl. spam and trash (review ruling): a user who trashed the Sent copy must not cause a resend. */
@@ -145,6 +149,7 @@ export class GmailProvider implements MailProvider {
         pageToken: cursor.pageToken,
       },
       ok404: true,
+      ok400: true, // I-7: an invalid or stale pageToken / startHistoryId
     });
     if (!h) return { expired: true };
     const added = new Set<string>();
@@ -168,9 +173,20 @@ export class GmailProvider implements MailProvider {
       }
       for (const { message: g } of rec.messagesDeleted ?? []) removed.add(g.id);
     }
-    const messages = (await mapLimit([...added], CONCURRENCY, (id) => this.fetchRaw(id))).filter(
-      present,
+    const done = new Set(cursor.done);
+    const ids = [...added].filter((id) => !done.has(id));
+    const { messages, consumed } = await readCapped(ids, CONCURRENCY, this.maxPageBytes, (id) =>
+      this.getRaw(id),
     );
+    if (consumed.length < ids.length)
+      // the byte cap cut this page short: read it again next time, skipping what was returned
+      return {
+        expired: false,
+        messages,
+        removed: [...removed],
+        cursor: { ...cursor, done: [...done, ...consumed] },
+        hasMore: true,
+      };
     return {
       expired: false,
       messages,

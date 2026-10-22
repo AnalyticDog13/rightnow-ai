@@ -22,6 +22,8 @@ export type CallOpts = {
   send?: boolean;
   /** 404 resolves to null instead of throwing. */
   ok404?: boolean;
+  /** 400 resolves to null too (history: an invalid page token or start id means expired). */
+  ok400?: boolean;
   signal?: AbortSignal;
 };
 
@@ -40,7 +42,7 @@ export class GmailHttp {
 
   private refresh = (c: OAuthCreds) => this.store.refresh(c, (x) => this.oauth.refresh(x));
 
-  async call<T>(path: string, o: CallOpts & { ok404: true }): Promise<T | null>;
+  async call<T>(path: string, o: CallOpts & ({ ok404: true } | { ok400: true })): Promise<T | null>;
   async call<T>(path: string, o?: CallOpts): Promise<T>;
   async call<T>(path: string, o: CallOpts = {}): Promise<T | null> {
     let creds = await this.store.get();
@@ -82,7 +84,8 @@ export class GmailHttp {
 
   private async handle<T>(res: Response, o: CallOpts): Promise<T | null> {
     if (res.ok) return (await res.json().catch(() => ({}))) as T;
-    if (res.status === 404 && o.ok404) return (void res.body?.cancel().catch(() => {}), null);
+    if ((res.status === 404 && o.ok404) || (res.status === 400 && o.ok400))
+      return (void res.body?.cancel().catch(() => {}), null);
     const body = (await res.json().catch(() => ({}))) as {
       error?: { errors?: { reason?: string }[]; status?: string };
     };

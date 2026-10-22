@@ -1,4 +1,5 @@
-import type { EmailAccount } from "@rightnow/db/client";
+import type { EmailAccount, Prisma } from "@rightnow/db/client";
+import type { SyncProgress } from "../mail/sync";
 import { effectiveAllowance } from "../quota";
 import { displayStatus, type DisplayStatus } from "./status";
 
@@ -50,6 +51,15 @@ export type ApiAccount = Pick<EmailAccount, (typeof PUBLIC)[number]> & {
   sentToday: number;
   reservedToday: number;
   remainingToday: number;
+  /** PS-ACC-31 / PS-SYNC-07: the import position (page token, cursor) and the lease stay private. */
+  sync: {
+    state: EmailAccount["syncState"];
+    lastCompletedAt: Date | null;
+    lagSec: number | null;
+    errors: number;
+    progress: Pick<SyncProgress, "mode" | "folder" | "fetched" | "since"> | null;
+    lastError: Prisma.JsonValue | null;
+  };
 };
 
 /** PS-ACC-07: the only shape of an account any API returns; credentials, cursor and lease never leave the server. `usageToday` is today's usage row for the account's timezone. */
@@ -62,11 +72,22 @@ export function toApiAccount(
     EmailAccount,
     (typeof PUBLIC)[number]
   >;
+  const p = a.syncProgress as SyncProgress | null;
   return {
     ...picked,
     displayStatus: displayStatus(a, now),
     sentToday: usageToday.sent,
     reservedToday: usageToday.reserved,
     remainingToday: Math.max(0, effectiveAllowance(a, now) - usageToday.sent - usageToday.reserved),
+    sync: {
+      state: a.syncState,
+      lastCompletedAt: a.lastSyncCompletedAt,
+      lagSec: a.lastSyncCompletedAt
+        ? Math.max(0, Math.floor((now.getTime() - a.lastSyncCompletedAt.getTime()) / 1000))
+        : null,
+      errors: a.syncErrors,
+      progress: p && { mode: p.mode, folder: p.folder, fetched: p.fetched, since: p.since },
+      lastError: (a.lastError as { kind?: string } | null)?.kind === "SYNC" ? a.lastError : null,
+    },
   };
 }

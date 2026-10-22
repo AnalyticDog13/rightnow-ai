@@ -427,6 +427,50 @@ describe("sendClaimed: errors", () => {
     expect(await acct(A.id)).toMatchObject({ lifecycle: "ACTIVE", consecutivePermanentErrors: 0 });
   });
 
+  test("gate N-1: lead_rejected_partial is FAILED with its usage committed (the Cc copy left), never retried", async () => {
+    const clock = fixedClock(T);
+    const s = await seedCampaign(P(), { at: T, rows: 2, accounts: [{}] });
+    const A = s.accounts[0]!;
+    const partial = (scope: "unknown" | "recipient") => () =>
+      new PermanentSendError("lead_rejected_partial", undefined, {
+        scope,
+        countsTowardPause: scope === "recipient",
+      });
+    const c = await claim(clock);
+    expect(
+      await sendClaimed(
+        P(),
+        clock,
+        deps({ providerFor: (a) => throwing(a, partial("unknown")) }),
+        c,
+      ),
+    ).toBe("FAILED");
+    expect(await row(c.id)).toMatchObject({ status: "FAILED", error: "lead_rejected_partial" });
+    expect(await usage(A.id)).toEqual([[1, 0]]);
+    expect(await P().campaignDailyUsage.findMany()).toMatchObject([{ sent: 1, reserved: 0 }]);
+    expect(await P().workspaceDailyUsage.findMany()).toMatchObject([{ sent: 1, reserved: 0 }]);
+    expect(
+      await P().campaignLead.findUniqueOrThrow({ where: { id: c.campaignLeadId } }),
+    ).toMatchObject({ state: "PAUSED" });
+    expect(await acct(A.id)).toMatchObject({ lifecycle: "ACTIVE", consecutivePermanentErrors: 0 });
+
+    const c2 = await claim(clock);
+    expect(
+      await sendClaimed(
+        P(),
+        clock,
+        deps({ providerFor: (a) => throwing(a, partial("recipient")) }),
+        c2,
+      ),
+    ).toBe("FAILED");
+    expect(await usage(A.id)).toEqual([[2, 0]]);
+    expect(
+      await P().campaignLead.findUniqueOrThrow({ where: { id: c2.campaignLeadId } }),
+    ).toMatchObject({ state: "STOPPED", stopReason: "BOUNCED" });
+    expect(await P().suppression.count()).toBe(1);
+    expect(await P().scheduledMessage.count({ where: { status: "SCHEDULED" } })).toBe(0);
+  });
+
   test("AuthError → account NEEDS_ATTENTION, row SCHEDULED, reserved 0; a user pause wins", async () => {
     const clock = fixedClock(T);
     const s = await seedCampaign(P(), { at: T, rows: 2, accounts: [{}, {}] });

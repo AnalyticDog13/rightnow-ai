@@ -259,6 +259,12 @@ model EmailAccount {
   syncState                  SyncState           @default(IDLE)
   syncCursor                 Json?
   lastSyncCompletedAt        DateTime?
+  // P4-T05 sync: a row lease (it must outlive network calls), so no advisory lock
+  syncLeaseId                String?
+  syncLeaseUntil             DateTime?
+  lastSyncAttemptAt          DateTime?
+  syncErrors                 Int                 @default(0)
+  syncProgress               Json? // {mode, folder, pageToken, since, cursor, startedAt, fetched} during HISTORICAL/FULL; null when idle
   healthScore                Int?
   trackingDomain             String?
   trackingDomainStatus       CnameStatus         @default(UNVERIFIED)

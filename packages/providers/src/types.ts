@@ -47,8 +47,9 @@ export type RemoteMessage = {
   }[]; // content null + truncated above 25 MB
 };
 export type SyncCursor =
-  | { kind: "gmail"; historyId: string; pageToken?: string } // pageToken = resume inside the same startHistoryId
-  | { kind: "graph"; inbox: string; sent: string } // each is an @odata.deltaLink, or the @odata.nextLink while a page is pending
+  // `done`: ids already returned from the page the cursor points at, when the ~20 MB cap cut that page short (I-9)
+  | { kind: "gmail"; historyId: string; pageToken?: string; done?: string[] } // pageToken = resume inside the same startHistoryId
+  | { kind: "graph"; inbox: string; sent: string; done?: string[] } // each is an @odata.deltaLink, or the @odata.nextLink while a page is pending
   | {
       kind: "imap";
       folders: Record<

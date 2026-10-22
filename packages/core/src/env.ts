@@ -15,6 +15,8 @@ export const envSchema = z.object({
   APP_URL: z.url(),
   DB_POOL_MAX: z.coerce.number().int().positive().default(10),
   SYNC_MAX_STALENESS_SEC: z.coerce.number().int().positive().default(300),
+  // Mailbox poll interval (D31: IMAP IDLE / push are not built; polling is the fallback)
+  SYNC_POLL_SEC: z.coerce.number().int().positive().default(120),
   // Claim lease: a SENDING row older than this becomes UNCERTAIN (send-recovery); >= 300 s unless MAIL_PROVIDER_FAKE=1,
   // because the SMTP Sent append and an OAuth refresh run outside the 60 s send timeout
   SEND_LEASE_SEC: z.coerce.number().int().positive().default(600),
@@ -48,6 +50,9 @@ export function parseEnv<T extends z.ZodType = typeof envSchema>(
     lines.push("  MAIL_PROVIDER_FAKE: must not be set when MODE=vps");
   if (Number(source.SEND_LEASE_SEC ?? 600) < 300 && source.MAIL_PROVIDER_FAKE !== "1")
     lines.push("  SEND_LEASE_SEC: must be at least 300 unless MAIL_PROVIDER_FAKE=1");
+  // M10: a mailbox must be able to miss one poll and still be fresh, or sending stalls between polls
+  if (2 * Number(source.SYNC_POLL_SEC || 120) + 60 > Number(source.SYNC_MAX_STALENESS_SEC || 300))
+    lines.push("  SYNC_POLL_SEC: 2 x SYNC_POLL_SEC + 60 must not exceed SYNC_MAX_STALENESS_SEC");
   if (r.success && lines.length === 0) return r.data;
   throw new Error(`Invalid environment:\n${lines.join("\n")}`);
 }

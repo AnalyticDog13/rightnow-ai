@@ -234,6 +234,7 @@ export function AccountDrawer({
       <p role="alert" className="min-h-5 text-sm text-destructive">
         {error}
       </p>
+      <SyncStatus sync={account.sync} />
       {canEdit && (
         <section
           aria-label="Connection"
@@ -316,5 +317,39 @@ export function AccountDrawer({
         </section>
       )}
     </dialog>
+  );
+}
+
+const SYNC_STATE = { IDLE: "Up to date", SYNCING: "Syncing", FAILED: "Last sync failed" } as const;
+
+/** PS-ACC-31: sync state, lag and import progress. A mailbox that has not synced recently does not send. */
+function SyncStatus({ sync }: { sync: ApiAccount["sync"] }) {
+  const err = sync.lastError as { code?: string } | null;
+  return (
+    <section
+      aria-label="Sync"
+      className="mt-4 flex flex-col gap-1 border-t border-border pt-4 text-sm"
+    >
+      <h3 className="font-medium">Sync</h3>
+      <p>
+        {SYNC_STATE[sync.state]}
+        {sync.lastCompletedAt
+          ? ` · last completed ${new Date(sync.lastCompletedAt).toLocaleString()} (${sync.lagSec} s ago)`
+          : " · never completed: campaigns do not send from this account yet"}
+      </p>
+      {sync.progress && (
+        <p>
+          {sync.progress.mode === "HISTORICAL" ? "Importing history" : "Full re-sync"} since{" "}
+          {new Date(sync.progress.since).toLocaleDateString()}: {sync.progress.fetched} messages (
+          {sync.progress.folder === "INBOX" ? "Inbox" : "Sent"})
+        </p>
+      )}
+      {sync.errors > 0 && (
+        <p className="text-destructive">
+          {sync.errors} failed sync{sync.errors === 1 ? "" : "s"} in a row
+          {err?.code ? ` (${err.code})` : ""}
+        </p>
+      )}
+    </section>
   );
 }

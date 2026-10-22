@@ -119,6 +119,8 @@ async function settle(
   data: Prisma.ScheduledMessageUpdateManyMutationInput,
   o: {
     release: boolean;
+    /** Instead of releasing: the reservation becomes sent (N-1, a Cc/Bcc copy left the account). */
+    commit?: boolean;
     lead?: (tx: Tx) => Promise<unknown>;
     account?: (tx: Tx) => Promise<unknown>;
   },
@@ -135,6 +137,7 @@ async function settle(
         await o.lead(tx);
       }
       if (o.release) await releaseUsage(tx, c);
+      else if (o.commit) await commitUsage(tx, c);
       await o.account?.(tx);
       if (data.status === "FAILED")
         await sendEvent(tx, "SEND_FAILED", c, new Date(), { error: String(data.error ?? "") });
@@ -367,6 +370,9 @@ async function failed(
       "AUTH",
     );
   if (e instanceof PermanentSendError) {
+    // N-1: the lead was refused but a Cc/Bcc copy went out, so the usage stays counted
+    const partial = e.code === "lead_rejected_partial";
+    const usage = { release: !partial, commit: partial };
     if (e.scope === "account")
       return done(
         await settle(
@@ -384,7 +390,7 @@ async function failed(
           c,
           { status: "FAILED", error: e.code, ...keep },
           {
-            release: true,
+            ...usage,
             lead: async (tx) => {
               // BOUNCED first: suppress() stamps SUPPRESSED on whatever is still open
               await tx.campaignLead.updateMany({
@@ -414,7 +420,7 @@ async function failed(
         c,
         { status: "FAILED", error: e.code, ...keep },
         {
-          release: true,
+          ...usage,
           lead: (tx) => pauseLead(tx, c.campaignLeadId),
           account: (tx) => recordProviderError(tx, clock, c.accountId, e),
         },

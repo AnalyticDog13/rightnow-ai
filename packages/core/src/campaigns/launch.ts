@@ -88,6 +88,10 @@ async function activate(
   const active = kind === "launch" && c.status === "ACTIVE";
   if (!active && !(FROM[kind] as readonly string[]).includes(c.status))
     throw new CampaignError(409, `cannot_${kind}_${c.status.toLowerCase()}`);
+  if (c.status === "COMPLETED" && c.endAt && c.endAt <= clock.now())
+    throw new CampaignError(409, "campaign_ended", {
+      message: "This campaign's end date has passed. Change the end date to resume it.",
+    });
 
   const [w, schedules, links] = await Promise.all([
     prisma.workspace.findUniqueOrThrow({ where: { id: ws } }),

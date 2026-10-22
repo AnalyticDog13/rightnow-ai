@@ -5,7 +5,7 @@ import {
   ProviderError,
   TransientBeforeSendError,
 } from "../errors";
-import { mapLimit } from "../map-limit";
+import { DEFAULT_PAGE_BYTES, mapLimit, readCapped } from "../map-limit";
 import { buildMime, parseRaw } from "../mime";
 import type {
   Changes,
@@ -51,6 +51,7 @@ export class GraphProvider implements MailProvider {
   private store: CredentialStore<OAuthCreds>;
   private clock: Clock;
   private sentFolderId?: string;
+  private maxPageBytes: number;
 
   constructor(o: {
     address: string;
@@ -58,8 +59,10 @@ export class GraphProvider implements MailProvider {
     oauth: OAuthClient;
     fetch?: typeof fetch;
     clock?: Clock;
+    maxPageBytes?: number; // default 20 MB; tests
   }) {
     this.address = o.address.toLowerCase();
+    this.maxPageBytes = o.maxPageBytes ?? DEFAULT_PAGE_BYTES;
     this.store = o.store;
     this.clock = o.clock ?? { now: () => new Date() };
     this.http = new GraphHttp(o.store, o.oauth, o);
@@ -108,11 +111,17 @@ export class GraphProvider implements MailProvider {
   }
 
   private async read(id: string, folder: Folder): Promise<RemoteMessage | null> {
+    return (await this.readSized(id, folder))?.msg ?? null;
+  }
+
+  private async readSized(id: string, folder: Folder) {
     const raw = await this.http.call<Buffer>(`/me/messages/${encodeURIComponent(id)}/$value`, {
       as: "buffer",
       nullOn: [404],
     });
-    return raw ? parseRaw(raw, { providerMessageId: id, folder }) : null;
+    return raw
+      ? { msg: await parseRaw(raw, { providerMessageId: id, folder }), bytes: raw.length }
+      : null;
   }
 
   private byRfcId(path: string, rfcMessageId: string) {
@@ -194,8 +203,9 @@ export class GraphProvider implements MailProvider {
     assertGraphUrl(cursor.sent);
     let budget = opts.limit ?? 200;
     let hasMore = false;
-    const next: Cursor = { ...cursor };
-    const found: { id: string; folder: Folder }[] = [];
+    const next: Cursor = { kind: "graph", inbox: cursor.inbox, sent: cursor.sent };
+    const done = new Set(cursor.done);
+    const messages: RemoteMessage[] = [];
     const removed = new Set<string>();
     for (const [folder, key] of FOLDERS) {
       if (budget <= 0) {
@@ -204,24 +214,30 @@ export class GraphProvider implements MailProvider {
       }
       const page = await this.http.call<GPage>(cursor[key], {
         pageSize: budget,
-        nullOn: [410],
+        nullOn: [400, 410], // I-7: an invalid or expired delta / skip token
       });
       if (!page) return { expired: true };
+      const found: string[] = [];
       for (const g of page.value ?? []) {
-        // moved out of the folder ("changed") is not a deletion: the message lives on elsewhere
-        const rm = g["@removed"];
-        if (!rm) found.push({ id: g.id, folder });
-        else if (rm.reason === "deleted") removed.add(g.id);
+        // "deleted", or "changed": moved out of the folder (to Deleted Items, Junk, an archive)
+        if (g["@removed"]) removed.add(g.id);
+        else if (!done.has(g.id)) found.push(g.id);
       }
       budget -= page.value?.length ?? 0;
       const link = page["@odata.nextLink"] ?? page["@odata.deltaLink"];
       if (!link) throw new TransientBeforeSendError("delta page without a link");
+      const r = await readCapped(found, CONCURRENCY, this.maxPageBytes, (id) =>
+        this.readSized(id, folder),
+      );
+      messages.push(...r.messages);
+      if (r.consumed.length < found.length) {
+        // the byte cap cut this page short: read it again next time, skipping what was returned
+        next.done = [...done, ...r.consumed];
+        return { expired: false, messages, removed: [...removed], cursor: next, hasMore: true };
+      }
       next[key] = link;
       if (page["@odata.nextLink"]) hasMore = true;
     }
-    const messages = (await mapLimit(found, CONCURRENCY, (f) => this.read(f.id, f.folder))).filter(
-      present,
-    );
     return { expired: false, messages, removed: [...removed], cursor: next, hasMore };
   }
 

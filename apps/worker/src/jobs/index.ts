@@ -4,6 +4,7 @@ import { accountsAutofixJob } from "./accounts-autofix";
 import { campaignDispatchJob } from "./campaign-dispatch";
 import { campaignPlanJob } from "./campaign-plan";
 import { leadImportJob } from "./lead-import";
+import { mailSyncJob } from "./mail-sync";
 import { sendRecoveryJob } from "./send-recovery";
 
 // Later phases register their jobs here.
@@ -14,4 +15,5 @@ export const jobs: JobDef[] = [
   campaignPlanJob,
   campaignDispatchJob,
   sendRecoveryJob,
+  mailSyncJob,
 ];

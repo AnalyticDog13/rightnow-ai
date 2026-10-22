@@ -231,7 +231,7 @@ describe("send and Sent copy", () => {
       .send({ ...mime, cc: [{ email: "cc@rn.test" }] })
       .catch((x: unknown) => x);
     expect(e).toBeInstanceOf(PermanentSendError);
-    expect(e).toMatchObject({ scope: "recipient" });
+    expect(e).toMatchObject({ code: "lead_rejected_partial", scope: "recipient" });
     // a refused Cc alone does not fail the lead's send
     const ok = await start({
       smtp: {
@@ -245,6 +245,27 @@ describe("send and Sent copy", () => {
       ok.provider().send({ ...mime, cc: [{ email: "cc@rn.test" }] }),
     ).resolves.toMatchObject({
       rfcMessageId: "<s1@rn.test>",
+    });
+  });
+
+  it("gate N-1: the lead's RCPT refused 450 while a Cc is accepted is lead_rejected_partial, never transient", async () => {
+    const s = await start({
+      smtp: {
+        onRcptTo(a, _s, cb) {
+          if (a.address !== "to@rn.test") return cb();
+          cb(Object.assign(new Error("4.2.1 Mailbox busy"), { responseCode: 450 }));
+        },
+      },
+    });
+    const e = await s
+      .provider()
+      .send({ ...mime, cc: [{ email: "cc@rn.test" }] })
+      .catch((x: unknown) => x);
+    expect(e).toBeInstanceOf(PermanentSendError);
+    expect(e).toMatchObject({
+      code: "lead_rejected_partial",
+      scope: "unknown",
+      countsTowardPause: false,
     });
   });
 

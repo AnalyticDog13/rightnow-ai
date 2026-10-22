@@ -47,3 +47,45 @@ test("toApiAccount never exposes credentials, cursor or lease", async () => {
     expect(json).not.toContain(s);
   expect(JSON.parse(json)).toMatchObject({ id: a.id, email: "a@example.com", status: "CONNECTED" });
 });
+
+test("sync block: state, lag, errors and import progress, without the cursor, page token or lease", async () => {
+  const a = await seedAccount(db.prisma, "x", "sync@example.com");
+  const now = new Date("2026-10-20T10:00:00Z");
+  const full = await db.prisma.emailAccount.update({
+    where: { id: a.id },
+    data: {
+      syncState: "SYNCING",
+      lastSyncCompletedAt: new Date(now.getTime() - 90_000),
+      syncErrors: 2,
+      syncLeaseId: "sync-lease-x",
+      syncProgress: {
+        mode: "HISTORICAL",
+        folder: "INBOX",
+        pageToken: "page-token-x",
+        since: "2026-09-20T10:00:00.000Z",
+        cursor: { kind: "fake", epoch: 1, seq: 2 },
+        startedAt: now.toISOString(),
+        fetched: 40,
+      },
+      lastError: { kind: "SYNC", code: "TransientBeforeSendError" },
+    },
+  });
+  const v = toApiAccount(full, { sent: 0, reserved: 0 }, now);
+  expect(v.sync).toEqual({
+    state: "SYNCING",
+    lastCompletedAt: full.lastSyncCompletedAt,
+    lagSec: 90,
+    errors: 2,
+    progress: {
+      mode: "HISTORICAL",
+      folder: "INBOX",
+      fetched: 40,
+      since: "2026-09-20T10:00:00.000Z",
+    },
+    lastError: { kind: "SYNC", code: "TransientBeforeSendError" },
+  });
+  expect(v.displayStatus).toBe("CONNECTION_ERROR");
+  const json = JSON.stringify(v);
+  for (const s of ["page-token-x", "sync-lease-x", "epoch", "syncLease", "syncProgress"])
+    expect(json).not.toContain(s);
+});

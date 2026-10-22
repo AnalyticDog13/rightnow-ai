@@ -354,6 +354,67 @@ describe("sync", () => {
     expect(await p.listChangesSince({ kind: "gmail", historyId: "1" })).toEqual({ expired: true });
   });
 
+  test("an invalid history pageToken (400) is expired, never a thrown error (I-7)", async () => {
+    const { p } = setup([
+      { method: "GET", url: /history\?/, respond: async () => json(400, errors.invalidArgument) },
+    ]);
+    expect(await p.listChangesSince({ kind: "gmail", historyId: "1", pageToken: "stale" })).toEqual(
+      { expired: true },
+    );
+  });
+
+  test("a history page stops at the byte cap and resumes after the last message returned (I-9)", async () => {
+    const g = createFakeGmail();
+    const p = new GmailProvider({
+      address: "me@rn.test",
+      store: g.store,
+      oauth: new GoogleOAuth({ clientId: "c", clientSecret: "s", fetch: g.fetch }),
+      fetch: g.fetch,
+      maxPageBytes: 1,
+    });
+    let cursor = await p.currentCursor();
+    for (let i = 0; i < 10; i++)
+      g.add(g.simple({ from: "x@rn.test", to: "me@rn.test", subject: `m${i}`, id: `<m${i}@x>` }), [
+        "INBOX",
+      ]);
+    const seen: string[] = [];
+    const more: boolean[] = [];
+    for (let i = 0; i < 5; i++) {
+      const c = await p.listChangesSince(cursor);
+      if (c.expired) throw new Error("expired");
+      seen.push(...c.messages.map((m) => m.rfcMessageId!));
+      more.push(c.hasMore);
+      cursor = c.cursor;
+      if (!c.hasMore) break;
+    }
+    expect(more[0]).toBe(true);
+    expect(seen).toHaveLength(10);
+    expect(new Set(seen).size).toBe(10);
+    expect(more.at(-1)).toBe(false);
+  });
+
+  test("RemoteMessage.headers carries content-type (bounce detection reads multipart/report)", async () => {
+    const g = createFakeGmail();
+    const p = new GmailProvider({
+      address: "me@rn.test",
+      store: g.store,
+      oauth: new GoogleOAuth({ clientId: "c", clientSecret: "s", fetch: g.fetch }),
+      fetch: g.fetch,
+    });
+    const cursor = await p.currentCursor();
+    g.add(
+      Buffer.from(
+        "From: mailer-daemon@x.test\r\nTo: me@rn.test\r\nSubject: fail\r\nMessage-ID: <d@x>\r\n" +
+          'MIME-Version: 1.0\r\nContent-Type: multipart/report; report-type=delivery-status; boundary="B"\r\n\r\n' +
+          "--B\r\nContent-Type: text/plain\r\n\r\nno\r\n--B--\r\n",
+      ),
+      ["INBOX"],
+    );
+    const c = await p.listChangesSince(cursor);
+    if (c.expired) throw new Error("expired");
+    expect(c.messages[0]!.headers["content-type"]?.[0]).toMatch(/^multipart\/report/);
+  });
+
   test("currentCursor reads the profile historyId", async () => {
     const { p } = setup([profile({ emailAddress: "me@rn.test", historyId: "777" })]);
     expect(await p.currentCursor()).toEqual({ kind: "gmail", historyId: "777" });

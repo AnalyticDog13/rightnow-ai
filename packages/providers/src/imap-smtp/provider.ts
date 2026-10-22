@@ -109,6 +109,15 @@ class SmtpFailure extends Error {
   }
 }
 
+/** Gate N-1: the lead's RCPT reply decides the scope (recipient only for 5.1.x / 5.2.1); a 4xx says nothing about the mailbox. */
+function leadRejectedPartial(r: { response?: string; responseCode?: number }) {
+  const [, cls, det] = /^\d{3}[ -]+5\.(\d{1,3})\.(\d{1,3})(?![.\d])/.exec(r.response ?? "") ?? [];
+  return new PermanentSendError("lead_rejected_partial", undefined, {
+    scope: cls === "1" || (cls === "2" && det === "1") ? "recipient" : "unknown",
+    countsTowardPause: !((r.responseCode ?? 0) >= 400 && (r.responseCode ?? 0) < 500),
+  });
+}
+
 export class ImapSmtpProvider implements MailProvider {
   readonly kind = "SMTP" as const;
   readonly address: string;
@@ -202,10 +211,12 @@ export class ImapSmtpProvider implements MailProvider {
         c.login({ user: s.username, pass: s.password }, (e2) => {
           if (e2) return end(e2);
           if (!msg) return end();
-          // gate M-3 (D25): a refused To with an accepted Cc is still a failure for the lead, never a send
-          c.send({ from: msg.from, to: msg.to }, body, (e3, info) =>
-            end(e3 ?? info?.rejectedErrors?.find((r) => msg.lead.includes(r.recipient ?? ""))),
-          );
+          // gates M-3/N-1 (D25): a refused To with an accepted Cc is a failure for the lead, never a send, and never
+          // retried (the Cc copy already left); without `e3` someone was accepted
+          c.send({ from: msg.from, to: msg.to }, body, (e3, info) => {
+            const r = info?.rejectedErrors?.find((x) => msg.lead.includes(x.recipient ?? ""));
+            end(e3 ?? (r && leadRejectedPartial(r)));
+          });
         });
       });
     });
@@ -440,7 +451,7 @@ export class ImapSmtpProvider implements MailProvider {
         const uv = String((c.mailbox as { uidValidity: bigint }).uidValidity);
         const [tokenUv, after] = (q.pageToken ?? `${uv}:0`).split(":");
         if (tokenUv !== uv)
-          throw new TransientBeforeSendError("mailbox changed, restart the import");
+          throw new PermanentSendError("page_token_invalid"); // the mailbox changed: the caller restarts the import (M11)
         // SINCE compares calendar dates in the server's zone, so ask for one day earlier and filter by the exact instant.
         const day = new Date(q.since.getTime() - 86_400_000);
         const found =

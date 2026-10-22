@@ -44,6 +44,7 @@ export class FakeProvider implements MailProvider {
   private readonly file: string;
   private readonly host?: string;
   private pending: { k: FailKind; retryAfterSec: number }[] = [];
+  private pendingReads: FailKind[] = [];
   private revoked = false;
 
   constructor(address: string, o: { dir?: string; kind?: ProviderKind; host?: string } = {}) {
@@ -114,12 +115,14 @@ export class FakeProvider implements MailProvider {
   }
 
   async currentCursor(): Promise<SyncCursor> {
+    this.readFailure();
     const b = await readMailbox(this.file);
     return { kind: "fake", epoch: b.epoch, seq: b.seq };
   }
 
   async listChangesSince(cursor: SyncCursor, opts: { limit?: number } = {}): Promise<Changes> {
     if (cursor.kind !== "fake") throw new ProviderError("not a fake cursor");
+    this.readFailure();
     const box = await readMailbox(this.file);
     if (cursor.epoch !== box.epoch) return { expired: true };
     const synced = (f: FakeFolder) => f === "INBOX" || f === "SENT";
@@ -145,7 +148,9 @@ export class FakeProvider implements MailProvider {
   }
 
   async listMessages(q: { since: Date; folder: Folder; pageToken?: string; limit?: number }) {
+    this.readFailure();
     const after = q.pageToken ? Number(q.pageToken) : 0;
+    if (!Number.isInteger(after)) throw new PermanentSendError("page_token_invalid");
     const all = (await readMailbox(this.file)).entries.filter(
       (e) => e.folder === q.folder && e.seq > after && new Date(e.date) >= q.since,
     );
@@ -177,12 +182,18 @@ export class FakeProvider implements MailProvider {
   /** Drops queued failures and the revoked state (a reconnect with new credentials, P2-T04). */
   clearFailures(): void {
     this.pending = [];
+    this.pendingReads = [];
     this.revoked = false;
   }
 
   /** `retryAfterSec` only matters for rate_limit (default 7). */
   failNext(k: FailKind, retryAfterSec = 7): void {
     this.pending.push({ k, retryAfterSec });
+  }
+
+  /** Fails the next read (`currentCursor`, `listChangesSince`, `listMessages`): auth_revoked → AuthError, rate_limit → RateLimitedError, anything else transient. */
+  failNextRead(k: FailKind): void {
+    this.pendingReads.push(k);
   }
 
   async receiveInbound(m: {
@@ -217,7 +228,13 @@ export class FakeProvider implements MailProvider {
     await updateMailbox(
       this.file,
       (box) =>
-        void this.add(box, folder, raw, p.rfcMessageId ?? "", this.threadOf(box, p.inReplyTo ?? undefined)),
+        void this.add(
+          box,
+          folder,
+          raw,
+          p.rfcMessageId ?? "",
+          this.threadOf(box, p.inReplyTo ?? undefined),
+        ),
     );
     return { rfcMessageId: p.rfcMessageId };
   }
@@ -301,6 +318,13 @@ export class FakeProvider implements MailProvider {
   }
 
   // ---- internals ----------------------------------------------------------
+
+  private readFailure(): void {
+    const k = this.pendingReads.shift();
+    if (k === "auth_revoked") throw new AuthError("invalid_grant");
+    if (k === "rate_limit") throw new RateLimitedError(7);
+    if (k) throw new TransientBeforeSendError(k);
+  }
 
   private takeFailure(): { k: FailKind; retryAfterSec?: number } | undefined {
     if (this.revoked) return { k: "auth_revoked" };
