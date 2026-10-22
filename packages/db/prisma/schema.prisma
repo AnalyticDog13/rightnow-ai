@@ -33,6 +33,7 @@ model Workspace {
   notes                Note[]
   macros               Macro[]
   inboxViews           InboxView[]
+  domainChecks         DomainCheck[]
   timezone             String                @default("UTC")
   physicalAddress      String?
   dailyCap             Int? // null = no workspace cap
@@ -973,4 +974,18 @@ model InboxView {
   createdAt   DateTime  @default(now())
 
   @@unique([workspaceId, name])
+}
+
+// Latest DNS check per sending domain (D35); selectors are the user's extra DKIM selectors.
+model DomainCheck {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  domain      String
+  checkedAt   DateTime
+  level       String // ok | warn | block
+  report      Json
+  selectors   String[]
+
+  @@unique([workspaceId, domain])
 }

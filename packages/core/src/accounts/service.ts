@@ -9,6 +9,7 @@ import type { MailProvider } from "@rightnow/providers";
 import { z } from "zod";
 import { audit } from "../audit";
 import { type Clock, systemClock } from "../clock";
+import type { DnsResolver } from "../deliverability/dns";
 import { getEnv } from "../env";
 import { applyLimits, type LimitWarning } from "./caps";
 import { setCredentials } from "./credentials";
@@ -35,6 +36,8 @@ export type Opts = {
   /** Tests inject a stub; the default builds the real provider (or the Fake under MAIL_PROVIDER_FAKE). */
   providerFor?: (a: EmailAccount) => MailProvider;
   resolveCname?: CnameResolver;
+  /** DNS checks in diagnostics; omitted = skipped. */
+  resolver?: DnsResolver;
 };
 type Db = PrismaClient;
 const RECONNECT = "reconnect or mark as fixed first";

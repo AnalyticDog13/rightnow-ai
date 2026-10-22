@@ -8,6 +8,7 @@ import { Label } from "../../../components/ui/label";
 import { call, errorText } from "./api-client";
 import { ConnectMenu, type Provider } from "./connect-menu";
 import { ConnectSmtp } from "./connect-smtp";
+import { DomainSection } from "./domain-section";
 import { isNumeric } from "./numeric";
 
 type Kind = "text" | "number" | "minutes" | "nullable";
@@ -235,6 +236,7 @@ export function AccountDrawer({
         {error}
       </p>
       <SyncStatus sync={account.sync} />
+      <DomainSection email={account.email} canEdit={canEdit} />
       {canEdit && (
         <section
           aria-label="Connection"

@@ -8,7 +8,12 @@ import { CampaignError, liveCampaign } from "./service";
 import { lockEnrollment } from "./hooks";
 import { OPEN_STATES_SQL } from "./lead-status";
 
-export type DnsFinding = { domain: string; level: "ok" | "warn" | "block"; reason: string };
+export type DnsFinding = {
+  domain: string;
+  level: "ok" | "warn" | "block";
+  reason: string;
+  fix?: string;
+};
 export type LaunchIssue = {
   code: string;
   level: "block" | "warn";
@@ -165,10 +170,11 @@ async function activate(
   const domains = [...new Set(usable.map((a) => a.email.split("@")[1]!))];
   const dns = deps.dnsGate && domains.length ? await deps.dnsGate(domains) : [];
   for (const f of dns.filter((f) => f.level === "block"))
-    issues.push(block("dns_block", f.reason, { domain: f.domain }));
+    issues.push(block("dns_block", f.reason, { domain: f.domain, fix: f.fix }));
   const dnsWarn = dns.filter((f) => f.level === "warn");
   if (!opts.overrideDnsWarnings)
-    for (const f of dnsWarn) issues.push(block("dns_warn", f.reason, { domain: f.domain }));
+    for (const f of dnsWarn)
+      issues.push(block("dns_warn", f.reason, { domain: f.domain, fix: f.fix }));
 
   if (issues.length) throw new CampaignError(422, "launch_blocked", { issues });
 

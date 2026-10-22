@@ -2,6 +2,7 @@ import { Prisma, type PrismaClient } from "@rightnow/db/client";
 import { AuthError, type Diagnostics } from "@rightnow/providers";
 import { audit } from "../audit";
 import { systemClock } from "../clock";
+import { accountDns, type DomainReport } from "../deliverability/dns";
 import { AccountError, live, mutate, providerOf, type Opts } from "./service";
 
 /** Error codes that only a new grant or new credentials can fix: never auto-fixed. */
@@ -29,7 +30,7 @@ export async function runDiagnostics(
   ws: string,
   id: string,
   o: Opts = {},
-): Promise<Diagnostics & { dns: null }> {
+): Promise<Diagnostics & { dns: DomainReport | null }> {
   const a = await live(prisma, ws, id);
   if (!a.credentialsEnc) throw new AccountError(409, "reconnect first");
   let d: Diagnostics;
@@ -89,7 +90,8 @@ export async function runDiagnostics(
       });
     });
   }
-  return { ...d, dns: null };
+  // DNS is informational: it never changes the account status. No resolver (tests, callers that skip it) = no DNS section.
+  return { ...d, dns: o.resolver ? await accountDns(prisma, o.resolver, ws, a) : null };
 }
 
 /** 409 with the diagnostics as body while the connection checks still fail. A user pause stays. */

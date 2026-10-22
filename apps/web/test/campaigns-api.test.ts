@@ -1,9 +1,20 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createTestDb } from "@rightnow/db/test-db";
 import { createFirstOwner } from "../lib/setup";
+
+// The D17 test launches with the Fake switched off, which turns the DNS gate on: answer it from memory (no network).
+vi.mock("../lib/dns", async () => {
+  const { fakeResolver } = await import("../../../packages/core/test/dns-fixture");
+  return {
+    resolver: fakeResolver({
+      "send.test/TXT": [["v=spf1 ip4:1.2.3.4 -all"]],
+      "send.test/MX": { mx: [{ exchange: "mx.send.test", priority: 1 }] },
+    }),
+  };
+});
 
 const TOKEN = "t".repeat(20);
 const PASSWORD = "correct horse battery";
@@ -260,9 +271,9 @@ describe("campaign routes", () => {
     await P.campaignLead.create({ data: { workspaceId, campaignId: c.id, leadId: lead.id } });
     const { resetWebEnvCache } = await import("../lib/env");
     const codes = async () =>
-      (await json(await launch.POST(req("POST", "/x", {}), p(c.id)))).warnings.map(
-        (w: { code: string }) => w.code,
-      );
+      (
+        await json(await launch.POST(req("POST", "/x", { overrideDnsWarnings: true }), p(c.id)))
+      ).warnings.map((w: { code: string }) => w.code);
     delete process.env.MAIL_PROVIDER_FAKE;
     resetWebEnvCache();
     try {

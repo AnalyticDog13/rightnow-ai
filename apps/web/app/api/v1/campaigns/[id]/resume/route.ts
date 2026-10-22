@@ -18,7 +18,7 @@ export const POST = route(
       resumeCampaign(
         prisma,
         systemClock,
-        await launchDeps(),
+        await launchDeps(c.workspaceId),
         c.workspaceId,
         c.params.id!,
         c.userId,
