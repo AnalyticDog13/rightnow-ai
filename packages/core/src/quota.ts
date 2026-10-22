@@ -19,9 +19,10 @@ export function effectiveAllowance(
     | "rampStartedAt"
     | "createdAt"
     | "timezone"
-  >,
+  > &
+    Partial<Pick<EmailAccount, "healthCap">>,
   now: Date,
-  ctx: { rewarmAllowance?: number | null; healthThrottle?: number | null } = {},
+  ctx: { rewarmAllowance?: number | null } = {},
 ): number {
   const ramp = a.slowRamp
     ? a.rampStartVolume +
@@ -40,7 +41,7 @@ export function effectiveAllowance(
     a.dailyLimit,
     maxDailyLimit(a.providerCap),
     ctx.rewarmAllowance,
-    ctx.healthThrottle,
+    a.healthCap, // D34 health throttle (evaluateHealth)
   ];
   return Math.max(0, Math.min(...terms.filter((t): t is number => typeof t === "number")));
 }

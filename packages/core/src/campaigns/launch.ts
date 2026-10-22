@@ -200,9 +200,14 @@ async function activate(
           ),
         ],
       });
+    // conditional on the status read: leaving BOUNCE_PROTECT restarts its counts (D34, Rev 2 I3)
     const r = await tx.campaign.updateMany({
-      where: { id, workspaceId: ws, deletedAt: null, status: { in: [...FROM[kind]] } },
-      data: { status: "ACTIVE", launchedAt: c.launchedAt ?? now },
+      where: { id, workspaceId: ws, deletedAt: null, status: c.status },
+      data: {
+        status: "ACTIVE",
+        launchedAt: c.launchedAt ?? now,
+        ...(c.status === "BOUNCE_PROTECT" && { bounceProtectResetAt: now }),
+      },
     });
     if (r.count !== 1) throw new CampaignError(409, "status_changed");
     const a = { workspaceId: ws, actorId, at: now };

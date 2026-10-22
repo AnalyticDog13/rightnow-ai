@@ -471,6 +471,42 @@ describe("sendClaimed: errors", () => {
     expect(await P().scheduledMessage.count({ where: { status: "SCHEDULED" } })).toBe(0);
   });
 
+  test("P3-T11a: a Gmail recipient rejection on a row with cc is unknown scope (nobody suppressed, no strike)", async () => {
+    const clock = fixedClock(T);
+    const gmail = { provider: "GMAIL" as const, capTier: "GMAIL_WORKSPACE" as const };
+    const s = await seedCampaign(P(), {
+      at: T,
+      rows: 1,
+      accounts: [gmail],
+      campaign: { cc: ["cc@x.test"] },
+    });
+    const A = s.accounts[0]!;
+    const c = await claim(clock);
+    fake(A).failNext("permanent_rejected");
+    expect(await sendClaimed(P(), clock, deps(), c)).toBe("FAILED");
+    expect(
+      await P().campaignLead.findUniqueOrThrow({ where: { id: c.campaignLeadId } }),
+    ).toMatchObject({ state: "PAUSED", stopReason: "SEND_FAILED" });
+    expect(await P().suppression.count()).toBe(0);
+    expect(await acct(A.id)).toMatchObject({ lifecycle: "ACTIVE", consecutivePermanentErrors: 0 });
+    expect(await P().event.findMany({ where: { scheduledMessageId: c.id } })).toMatchObject([
+      { type: "SEND_FAILED", meta: { error: "permanent_rejected", scope: "unknown" } },
+    ]);
+
+    // without cc the provider's recipient scope stands: BOUNCED and suppressed, as before
+    const s2 = await seedCampaign(P(), { at: T, rows: 1, accounts: [gmail] });
+    const c2 = await claim(clock);
+    fake(s2.accounts[0]!).failNext("permanent_rejected");
+    expect(await sendClaimed(P(), clock, deps(), c2)).toBe("FAILED");
+    expect(
+      await P().campaignLead.findUniqueOrThrow({ where: { id: c2.campaignLeadId } }),
+    ).toMatchObject({ state: "STOPPED", stopReason: "BOUNCED" });
+    expect(await P().suppression.count()).toBe(1);
+    expect(await P().event.findMany({ where: { scheduledMessageId: c2.id } })).toMatchObject([
+      { type: "SEND_FAILED", meta: { error: "permanent_rejected", scope: "recipient" } },
+    ]);
+  });
+
   test("AuthError → account NEEDS_ATTENTION, row SCHEDULED, reserved 0; a user pause wins", async () => {
     const clock = fixedClock(T);
     const s = await seedCampaign(P(), { at: T, rows: 2, accounts: [{}, {}] });
@@ -1061,7 +1097,7 @@ describe("review round 1", () => {
 });
 
 describe("deleted sticky account (P3-T10b re-review)", () => {
-  test("a lead whose sticky account was deleted is paused SEND_FAILED, its open row cancelled, and not re-selected", async () => {
+  test("a lead whose sticky account was deleted is paused ACCOUNT_UNASSIGNED, its open row cancelled, and not re-selected", async () => {
     const clock = fixedClock(T);
     const s = await seedCampaign(P(), { at: T, rows: 1, steps: 3, accounts: [{}, {}] });
     const c = await claim(clock);
@@ -1087,7 +1123,7 @@ describe("deleted sticky account (P3-T10b re-review)", () => {
     await plan();
     expect(await P().campaignLead.findUniqueOrThrow({ where: { id: clId } })).toMatchObject({
       state: "PAUSED",
-      stopReason: "SEND_FAILED",
+      stopReason: "ACCOUNT_UNASSIGNED",
       accountId: c.accountId,
     });
     expect((await row(step2.id)).status).toBe("CANCELLED");
@@ -1122,7 +1158,7 @@ describe("deleted sticky account (P3-T10b re-review)", () => {
     await plan();
     expect(await P().campaignLead.findUniqueOrThrow({ where: { id: clId } })).toMatchObject({
       state: "PAUSED",
-      stopReason: "SEND_FAILED",
+      stopReason: "ACCOUNT_UNASSIGNED",
     });
     expect((await row(step2.id)).status).toBe("CANCELLED");
     const why = await whyNotSending(P(), clock, s.ws, s.campaign.id, {

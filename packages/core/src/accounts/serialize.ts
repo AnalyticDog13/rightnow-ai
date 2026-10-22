@@ -48,6 +48,8 @@ const PUBLIC = [
 ] as const satisfies readonly (keyof EmailAccount)[];
 export type ApiAccount = Pick<EmailAccount, (typeof PUBLIC)[number]> & {
   displayStatus: DisplayStatus;
+  /** D34: an internal indicator, not a reputation guarantee. `cap` is the health throttle on the daily allowance. */
+  health: { score: number | null; cap: number | null; capAt: Date | null };
   sentToday: number;
   reservedToday: number;
   remainingToday: number;
@@ -76,6 +78,7 @@ export function toApiAccount(
   return {
     ...picked,
     displayStatus: displayStatus(a, now),
+    health: { score: a.healthScore, cap: a.healthCap, capAt: a.healthCapAt },
     sentToday: usageToday.sent,
     reservedToday: usageToday.reserved,
     remainingToday: Math.max(0, effectiveAllowance(a, now) - usageToday.sent - usageToday.reserved),

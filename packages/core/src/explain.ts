@@ -26,7 +26,8 @@ export type ReasonCode =
   | "held_messages"
   | "leads_suppressed"
   | "leads_paused"
-  | "sticky_account_unassigned";
+  | "sticky_account_unassigned"
+  | "account_throttled";
 export type Reason = {
   code: ReasonCode;
   message: string;
@@ -44,6 +45,7 @@ const INFO = new Set<ReasonCode>([
   "leads_suppressed",
   "leads_paused",
   "sticky_account_unassigned",
+  "account_throttled",
 ]);
 const STATUS: Record<string, [ReasonCode, string] | undefined> = {
   DRAFT: ["draft", "This campaign is a draft. Launch it to start sending."],
@@ -232,23 +234,25 @@ export async function whyNotSending(
   if (suppressed)
     add("leads_suppressed", `${suppressed} lead(s) were stopped because they are suppressed.`);
   if (pausedLeads) add("leads_paused", `${pausedLeads} lead(s) are paused.`);
-  // D23 / gate I-3: follow-ups only go out from the lead's first sender; housekeeping paused these leads
+  // D23 / gate I-3: follow-ups only go out from the lead's first sender; housekeeping paused these leads (D39 N-2)
   const sticky = await db.campaignLead.groupBy({
     by: ["accountId"],
-    where: {
-      campaignId,
-      state: "PAUSED",
-      stopReason: "SEND_FAILED",
-      accountId: { notIn: assigned.filter((a) => !a.deletedAt).map((a) => a.id) },
-    },
+    where: { campaignId, state: "PAUSED", stopReason: "ACCOUNT_UNASSIGNED" },
     _count: true,
   });
   const orphans = sticky.flatMap((g) => (g.accountId ? [{ id: g.accountId, n: g._count }] : []));
   if (orphans.length)
     add(
       "sticky_account_unassigned",
-      `${orphans.reduce((t, g) => t + g.n, 0)} lead(s) are paused because the mailbox that sent their first email was removed from this campaign or deleted. Assign or reconnect it, then resume those leads.`,
+      `${orphans.reduce((t, g) => t + g.n, 0)} lead(s) are paused because the mailbox that sent their first email was removed from this campaign or deleted. They resume on their own once it is assigned again.`,
       { accountIds: ids(orphans) },
+    );
+  const throttled = live.filter((a) => a.healthCap !== null);
+  if (throttled.length)
+    add(
+      "account_throttled",
+      "These accounts are sending fewer emails for now because of bounces, provider errors or a DNS problem. The limit doubles every 24 hours once they are clean. Health is an internal indicator, not a reputation guarantee.",
+      { accountIds: ids(throttled) },
     );
 
   const ALWAYS = new Set<ReasonCode>(["not_started", "outside_window", "no_physical_address"]);

@@ -40,6 +40,8 @@ model Workspace {
   perCompanyDailyLimit Int?
   disableOpenTracking  Boolean               @default(false)
   firstEmailTextOnly   Boolean               @default(false)
+  bounceThresholdPct   Float                 @default(3) // 0.5-20 (D34)
+  healthSlowdownPct    Int                   @default(50) // 10-90 (D34)
 }
 
 // better-auth tables. Roles are stored lowercase: owner | admin | member | viewer.
@@ -276,6 +278,11 @@ model EmailAccount {
   createdAt                  DateTime            @default(now())
   deletedAt                  DateTime?
   consecutivePermanentErrors Int                 @default(0)
+  // D34 health throttle: the allowance term, when it last changed (set, doubled or lifted), and the last manual resume
+  healthCap                  Int?
+  healthCapAt                DateTime?
+  healthResetAt              DateTime?
+  healthSnapshots            HealthSnapshot[]
   dailyUsage                 AccountDailyUsage[]
   campaigns                  CampaignAccount[]
   scheduledMessages          ScheduledMessage[]
@@ -548,6 +555,7 @@ model Campaign {
   abAutoOptimize        Boolean              @default(false)
   abWinnerMetric        String?
   launchedAt            DateTime?
+  bounceProtectResetAt  DateTime? // D34: BounceProtect counts only sends after the last resume out of it
   createdAt             DateTime             @default(now())
   updatedAt             DateTime             @updatedAt
   deletedAt             DateTime?
@@ -607,6 +615,8 @@ enum StopReason {
   SKIPPED
   MANUAL
   SEND_FAILED
+  ACCOUNT_UNASSIGNED
+  COMPLAINED
 }
 
 model Subsequence {
@@ -777,6 +787,7 @@ enum MessageKind {
   UNSUBSCRIBE
   OUTBOUND
   OTHER
+  COMPLAINT
 }
 
 enum ReplyCategory {
@@ -809,6 +820,7 @@ enum EventType {
   OPEN
   CLICK
   INTEREST_CHANGED
+  COMPLAINT
 }
 
 enum SyncMode {
@@ -819,11 +831,11 @@ enum SyncMode {
 
 // Threads are per mailbox. leadId/campaignId/campaignLeadId carry no FK: GDPR erasure deletes them explicitly.
 model Thread {
-  id               String        @id @default(cuid())
+  id               String         @id @default(cuid())
   workspaceId      String
-  workspace        Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace        Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   accountId        String
-  account          EmailAccount  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account          EmailAccount   @relation(fields: [accountId], references: [id], onDelete: Cascade)
   providerThreadId String?
   subject          String
   leadId           String?
@@ -832,14 +844,14 @@ model Thread {
   lastMessageAt    DateTime
   lastInboundAt    DateTime?
   lastInboundKind  MessageKind?
-  isRead           Boolean       @default(true)
+  isRead           Boolean        @default(true)
   category         ReplyCategory?
   categorySource   String? // RULE | AI | USER
   reminderAt       DateTime?
-  hasAttachment    Boolean       @default(false)
+  hasAttachment    Boolean        @default(false)
   replyLeaseUntil  DateTime? // D29: an inbox reply is in flight until then (one per thread)
   deletedAt        DateTime?
-  createdAt        DateTime      @default(now())
+  createdAt        DateTime       @default(now())
   messages         Message[]
   notes            Note[]
 
@@ -988,4 +1000,14 @@ model DomainCheck {
   selectors   String[]
 
   @@unique([workspaceId, domain])
+}
+
+// D34: one health score per account and local day (the trend); EmailAccount.healthScore holds the current one.
+model HealthSnapshot {
+  accountId String
+  account   EmailAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  day       DateTime     @db.Date
+  score     Int
+
+  @@id([accountId, day])
 }

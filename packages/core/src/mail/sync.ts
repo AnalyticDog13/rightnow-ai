@@ -218,15 +218,18 @@ export async function reconcileAccount(
     if (out.done) {
       const w = out.watermark.toISOString();
       const cursor = out.cursor ? JSON.stringify(out.cursor) : null;
-      // a caught-up run also clears a SYNC escalation (I3)
+      // a caught-up run also clears a SYNC escalation (I3), restoring the error it covered (D39); CONNECTED unless that
+      // restored error is a connection problem
       const n = await prisma.$executeRaw`
         UPDATE "EmailAccount" SET
           "lastSyncCompletedAt" = GREATEST(COALESCE("lastSyncCompletedAt", ${w}::timestamp), ${w}::timestamp),
           "syncCursor" = COALESCE(${cursor}::jsonb, "syncCursor"),
           "syncProgress" = NULL, "syncErrors" = 0, "syncState" = 'IDLE',
           "syncLeaseId" = NULL, "syncLeaseUntil" = NULL,
-          status = CASE WHEN "lastError"->>'kind' = 'SYNC' THEN 'CONNECTED'::"AccountStatus" ELSE status END,
-          "lastError" = CASE WHEN "lastError"->>'kind' = 'SYNC' THEN NULL ELSE "lastError" END
+          status = CASE WHEN "lastError"->>'kind' = 'SYNC'
+            AND "lastError"->'previous'->>'kind' IS DISTINCT FROM 'CONNECTION'
+            THEN 'CONNECTED'::"AccountStatus" ELSE status END,
+          "lastError" = CASE WHEN "lastError"->>'kind' = 'SYNC' THEN "lastError"->'previous' ELSE "lastError" END
         WHERE id = ${accountId} AND "syncLeaseId" = ${lease}`;
       if (!n) throw new LeaseLost();
       result = "caught_up";
@@ -287,18 +290,19 @@ async function fail(
   }
   // sending is already blocked by staleness; escalation only makes the failure visible
   const n = acct.syncErrors + 1; // only the lease holder writes syncErrors
-  await prisma.emailAccount.updateMany({
-    where: own,
-    data: {
-      ...done,
-      syncErrors: n,
-      ...(n >= ESCALATE_AT && {
-        status: "ERROR",
-        lastError: { kind: "SYNC", code, message: `mailbox sync failed ${n} times in a row` },
-        lastErrorAt: clock.now(),
-      }),
-    },
-  });
+  if (n < ESCALATE_AT) {
+    await prisma.emailAccount.updateMany({ where: own, data: { ...done, syncErrors: n } });
+    return;
+  }
+  // D39: an earlier non-SYNC error (e.g. SENDING) is kept as `previous`, read in the same statement, never overwritten
+  const error = { kind: "SYNC", code, message: `mailbox sync failed ${n} times in a row` };
+  await prisma.$executeRaw`
+    UPDATE "EmailAccount" SET "syncState" = 'FAILED', "syncLeaseId" = NULL, "syncLeaseUntil" = NULL,
+      "syncErrors" = ${n}::int, status = 'ERROR', "lastErrorAt" = ${clock.now().toISOString()}::timestamp,
+      "lastError" = ${JSON.stringify(error)}::jsonb || (SELECT CASE WHEN p IS NULL OR p = 'null' THEN '{}'::jsonb
+        ELSE jsonb_build_object('previous', p) END
+        FROM (SELECT CASE WHEN "lastError"->>'kind' = 'SYNC' THEN "lastError"->'previous' ELSE "lastError" END) x(p))
+    WHERE id = ${acct.id} AND "syncLeaseId" = ${lease}`;
 }
 
 /** classify (+ the AI hook for an uncertain reply, outside any transaction), then ingest + stop rules in ONE transaction. */

@@ -47,8 +47,9 @@ export type ThreadFilter = z.output<typeof threadFilterSchema>;
 const sql = Prisma.sql;
 const liveLead = sql`EXISTS (SELECT 1 FROM "Lead" l WHERE l.id = t."leadId" AND l."deletedAt" IS NULL)`;
 const sentByUs = sql`EXISTS (SELECT 1 FROM "Message" m WHERE m."threadId" = t.id AND m.direction = 'OUT')`;
-// PS-INBOX-16: a bounce, a stranger and a deleted lead all land in Others
-const PRIMARY = sql`t."lastInboundAt" IS NOT NULL AND t."lastInboundKind" IS DISTINCT FROM 'BOUNCE' AND ${liveLead}`;
+// PS-INBOX-16: a bounce or complaint report, a stranger and a deleted lead all land in Others
+const PRIMARY = sql`t."lastInboundAt" IS NOT NULL AND t."lastInboundKind" IS DISTINCT FROM 'BOUNCE'
+  AND t."lastInboundKind" IS DISTINCT FROM 'COMPLAINT' AND ${liveLead}`;
 const OTHERS = sql`t."lastInboundAt" IS NOT NULL AND NOT (${PRIMARY})`;
 const VIEW_SQL = {
   primary: PRIMARY,

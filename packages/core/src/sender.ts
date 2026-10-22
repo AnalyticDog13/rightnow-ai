@@ -7,6 +7,7 @@ import {
   TransientBeforeSendError,
   buildMime,
   type MailProvider,
+  type PermanentScope,
   type OutboundMime,
   type SendResult,
 } from "@rightnow/providers";
@@ -123,6 +124,8 @@ async function settle(
     commit?: boolean;
     lead?: (tx: Tx) => Promise<unknown>;
     account?: (tx: Tx) => Promise<unknown>;
+    /** A FAILED settle's SEND_FAILED event: its time and, for a provider failure, its D18 scope (D34 health). */
+    failed?: { at: Date; scope?: PermanentScope };
   },
 ): Promise<boolean> {
   return withTxRetry(() =>
@@ -139,8 +142,11 @@ async function settle(
       if (o.release) await releaseUsage(tx, c);
       else if (o.commit) await commitUsage(tx, c);
       await o.account?.(tx);
-      if (data.status === "FAILED")
-        await sendEvent(tx, "SEND_FAILED", c, new Date(), { error: String(data.error ?? "") });
+      if (o.failed)
+        await sendEvent(tx, "SEND_FAILED", c, o.failed.at, {
+          error: String(data.error ?? ""),
+          ...(o.failed.scope && { scope: o.failed.scope }),
+        });
       return true;
     }, TX),
   );
@@ -168,7 +174,7 @@ export async function sendClaimed(
     }
     res = await provider.send(pre.mime, { signal: AbortSignal.timeout(SEND_TIMEOUT_MS) });
   } catch (e) {
-    return failed(db, clock, deps, c, pre.leadEmail, e);
+    return failed(db, clock, deps, c, pre, e);
   }
   return recordAccepted(db, clock, c, res);
 }
@@ -179,7 +185,9 @@ async function precheck(
   clock: Clock,
   deps: SenderDeps,
   c: Claimed,
-): Promise<SendOutcome | { account: EmailAccount; mime: OutboundMime; leadEmail: string }> {
+): Promise<
+  SendOutcome | { account: EmailAccount; mime: OutboundMime; leadEmail: string; copied: boolean }
+> {
   const now = clock.now();
   const m = await db.scheduledMessage.findUnique({ where: { id: c.id } });
   // whoever changed the token (late accept, recovery) owns the reservation now: never release it from here
@@ -298,11 +306,12 @@ async function precheck(
       db,
       c,
       { status: "FAILED", error: "mime_invalid" },
-      { release: true, lead: (tx) => pauseLead(tx, cl.id) },
+      // our own data is at fault, not the provider: no scope, so it never counts against the account's health
+      { release: true, lead: (tx) => pauseLead(tx, cl.id), failed: { at: now } },
     );
     return ok ? "FAILED" : "LOST";
   }
-  return { account: a, mime, leadEmail: lead.email };
+  return { account: a, mime, leadEmail: lead.email, copied: m.cc.length + m.bcc.length > 0 };
 }
 
 /** The error table (brief steps 5-10). Every write is conditional on our claim; the Graph draft id is kept as a hint. */
@@ -311,10 +320,26 @@ async function failed(
   clock: Clock,
   deps: SenderDeps,
   c: Claimed,
-  leadEmail: string,
+  pre: { account: EmailAccount; leadEmail: string; copied: boolean },
   e: unknown,
 ): Promise<SendOutcome> {
+  // P3-T11a: Gmail and Graph refuse the whole message without saying which address failed, so with Cc/Bcc a
+  // "recipient" rejection may be about a copy: treat it as unknown scope (lead paused, nobody suppressed, no strike)
+  if (
+    e instanceof PermanentSendError &&
+    e.scope === "recipient" &&
+    pre.copied &&
+    pre.account.provider !== "SMTP"
+  ) {
+    const unknown = new PermanentSendError(e.code, e.detail, {
+      scope: "unknown",
+      countsTowardPause: false,
+    });
+    unknown.providerMessageId = e.providerMessageId;
+    return failed(db, clock, deps, c, pre, unknown);
+  }
   const now = clock.now();
+  const leadEmail = pre.leadEmail;
   const hint = e instanceof ProviderError && e.providerMessageId;
   const keep = hint ? { providerMessageId: hint } : {};
   const done = (ok: boolean, out: SendOutcome) => (ok ? out : "LOST");
@@ -334,7 +359,12 @@ async function failed(
           db,
           c,
           { status: "FAILED", error: "max_attempts", attempts, ...keep },
-          { release: true, lead: (tx) => pauseLead(tx, c.campaignLeadId), account: push },
+          {
+            release: true,
+            lead: (tx) => pauseLead(tx, c.campaignLeadId),
+            account: push,
+            failed: { at: now, scope: "unknown" },
+          },
         ),
         "FAILED",
       );
@@ -391,6 +421,7 @@ async function failed(
           { status: "FAILED", error: e.code, ...keep },
           {
             ...usage,
+            failed: { at: now, scope: "recipient" },
             lead: async (tx) => {
               // BOUNCED first: suppress() stamps SUPPRESSED on whatever is still open
               await tx.campaignLead.updateMany({
@@ -423,6 +454,7 @@ async function failed(
           ...usage,
           lead: (tx) => pauseLead(tx, c.campaignLeadId),
           account: (tx) => recordProviderError(tx, clock, c.accountId, e),
+          failed: { at: now, scope: e.scope },
         },
       ),
       "FAILED",

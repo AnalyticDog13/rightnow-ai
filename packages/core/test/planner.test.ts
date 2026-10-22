@@ -132,6 +132,42 @@ describe("planDue: routing", () => {
     expect(step2).toMatchObject({ accountId: a!.id, status: "SCHEDULED" });
   });
 
+  test("N-2: an unassigned sticky account pauses its leads ACCOUNT_UNASSIGNED; re-assigning resumes them", async () => {
+    const s = await seedCampaign(P(), { at: T, leads: 2, steps: 2, accounts: [{}, {}] });
+    const [a] = s.accounts;
+    await onFollowUp(s, 0, a!.id);
+    // lead 1 was paused by a send failure of its own: never touched by the reversal
+    await onFollowUp(s, 1, a!.id);
+    await P().campaignLead.update({
+      where: { id: s.leads[1]!.cl.id },
+      data: { state: "PAUSED", stopReason: "SEND_FAILED" },
+    });
+    await P().campaignAccount.deleteMany({ where: { accountId: a!.id } });
+    await plan();
+    expect(await clOf(s.leads[0]!.cl.id)).toMatchObject({
+      state: "PAUSED",
+      stopReason: "ACCOUNT_UNASSIGNED",
+    });
+    expect(await P().scheduledMessage.count({ where: { status: "SCHEDULED" } })).toBe(0);
+
+    await P().campaignAccount.create({ data: { campaignId: s.campaign.id, accountId: a!.id } });
+    await plan();
+    expect(await clOf(s.leads[0]!.cl.id)).toMatchObject({
+      state: "ACTIVE",
+      stopReason: null,
+      nextDueAt: T,
+    });
+    expect(
+      await P().scheduledMessage.findFirst({
+        where: { campaignLeadId: s.leads[0]!.cl.id, stepId: s.steps[1]!.id },
+      }),
+    ).toMatchObject({ status: "SCHEDULED", accountId: a!.id });
+    expect(await clOf(s.leads[1]!.cl.id)).toMatchObject({
+      state: "PAUSED",
+      stopReason: "SEND_FAILED",
+    });
+  });
+
   test("step-1 re-route on ineligible account", async () => {
     const s = await seedCampaign(P(), {
       at: T,

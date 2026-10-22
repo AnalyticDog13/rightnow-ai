@@ -14,6 +14,9 @@ const patch = z.strictObject({
   perCompanyDailyLimit: z.number().int().min(1).max(1_000_000).nullable().optional(),
   disableOpenTracking: z.boolean().optional(),
   firstEmailTextOnly: z.boolean().optional(),
+  // D34: account pause / BounceProtect line (hard bounce %) and the health throttle (% of the allowance kept)
+  bounceThresholdPct: z.number().min(0.5).max(20).optional(),
+  healthSlowdownPct: z.number().int().min(10).max(90).optional(),
 });
 const SELECT = {
   timezone: true,
@@ -22,6 +25,8 @@ const SELECT = {
   perCompanyDailyLimit: true,
   disableOpenTracking: true,
   firstEmailTextOnly: true,
+  bounceThresholdPct: true,
+  healthSlowdownPct: true,
 } as const;
 
 export async function getWorkspaceSettings(prisma: PrismaClient, ws: string) {

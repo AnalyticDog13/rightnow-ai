@@ -1,0 +1,32 @@
+From: staff@hotmail.com
+To: fbl@rn.test
+Subject: complaint about message from 192.0.2.10
+Date: Mon, 15 Jun 2026 11:00:00 +0000
+Message-ID: <jmrp-1@hotmail.com>
+MIME-Version: 1.0
+Content-Type: multipart/report; report-type="feedback-report"; boundary="JMRP"
+
+--JMRP
+Content-Type: text/plain
+
+This is a Junk Mail Reporting Program (JMRP) report.
+
+--JMRP
+Content-Type: message/feedback-report
+
+Feedback-Type: abuse
+User-Agent: Hotmail FBL
+Version: 1
+Original-Rcpt-To: someone@outlook.com
+Arrival-Date: Mon, 15 Jun 2026 09:30:00 +0000
+Source-IP: 192.0.2.10
+
+--JMRP
+Content-Type: text/rfc822-headers
+
+From: Sender <sender@rn.test>
+To: someone@outlook.com
+Subject: Quick question
+Message-ID: <orig-2@rn.test>
+
+--JMRP--

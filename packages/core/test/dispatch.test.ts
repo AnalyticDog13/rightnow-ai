@@ -417,6 +417,48 @@ describe("claimDue: gates", () => {
     expect(await row(r.id)).toMatchObject({ status: "SCHEDULED", accountId: A });
   });
 
+  test("M-6: a step-1 row whose account no longer matches the campaign's tags is cancelled stale; a follow-up stays sticky", async () => {
+    const s = await seedCampaign(P(), {
+      at: T,
+      rows: 1,
+      leads: 2,
+      steps: 2,
+      accounts: [{ tags: ["red"] }],
+      campaign: { accountTags: ["red"] },
+    });
+    const [A] = s.accounts.map((a) => a.id) as [string];
+    const cl2 = s.leads[1]!.cl;
+    await P().campaignLead.update({
+      where: { id: cl2.id },
+      data: { currentStepId: s.steps[1]!.id, accountId: A },
+    });
+    const follow = await planRow(P(), {
+      workspaceId: s.ws,
+      campaignId: s.campaign.id,
+      campaignLeadId: cl2.id,
+      stepId: s.steps[1]!.id,
+      variantId: s.steps[1]!.variant.id,
+      accountId: A,
+      dueAt: T,
+    });
+    await P().campaign.update({ where: { id: s.campaign.id }, data: { accountTags: ["blue"] } });
+    const got = await claimDue(P(), fixedClock(T), opts());
+    expect(got.map((c) => c.id)).toEqual([follow.id]);
+    expect(await row(s.rows[0]!.id)).toMatchObject({ status: "CANCELLED", error: "stale" });
+    expect((await usage(A)).map((u) => [u.sent, u.reserved])).toEqual([[0, 1]]);
+
+    // ESP routing works the same way: a do_not_send rule for this sender blocks a step-1 row
+    const s2 = await seedCampaign(P(), {
+      at: T,
+      rows: 1,
+      campaign: {
+        espRoutingRules: [{ action: "do_not_send", senderEsp: "other", recipientEsp: "all" }],
+      },
+    });
+    expect(await claimDue(P(), fixedClock(T), opts())).toEqual([]);
+    expect(await row(s2.rows[0]!.id)).toMatchObject({ status: "CANCELLED", error: "stale" });
+  });
+
   test("row for a step that is not current is not claimed (C2); QUEUED claims only main step 1", async () => {
     const s = await seedCampaign(P(), { at: T, leads: 2, steps: 2 });
     const sub = await P().subsequence.create({
@@ -677,6 +719,17 @@ describe("claimDue: gates", () => {
       state: "PAUSED",
       stopReason: "SEND_FAILED",
     });
+    // M4: the failed claim counts as a provider error of unknown scope, dated by the injected clock
+    expect(
+      await P().event.findMany({ where: { scheduledMessageId: w1.rows[0]!.id } }),
+    ).toMatchObject([
+      {
+        type: "SEND_FAILED",
+        occurredAt: clock.now(),
+        accountId: w1.accounts[0]!.id,
+        meta: { scope: "unknown" },
+      },
+    ]);
   });
 
   test("a pause that commits while the claim waits on the CampaignLead lock wins (no SENDING, no reservation)", async () => {
@@ -838,7 +891,7 @@ describe("quota helpers", () => {
   };
   test("effectiveAllowance", () => {
     expect(effectiveAllowance(acct, T)).toBe(20);
-    expect(effectiveAllowance(acct, T, { healthThrottle: 7 })).toBe(7);
+    expect(effectiveAllowance({ ...acct, healthCap: 7 }, T)).toBe(7);
     expect(effectiveAllowance(acct, T, { rewarmAllowance: 4 })).toBe(4);
     expect(effectiveAllowance({ ...acct, dailyLimit: 10 }, T, { rewarmAllowance: null })).toBe(10);
   });

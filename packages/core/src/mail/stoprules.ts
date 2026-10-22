@@ -51,7 +51,8 @@ export async function applyInbound(
   const now = clock.now();
   const type: EventType = c.kind === "BOUNCE" ? `BOUNCE_${c.bounceType}` : c.kind;
   const dedupeKey = `${type}:${ws}:${m.rfcMessageId}`;
-  if (c.kind === "BOUNCE") return bounce(tx, clock, ws, m, c, match, type, dedupeKey);
+  if (c.kind === "BOUNCE" || c.kind === "COMPLAINT")
+    return bounce(tx, clock, ws, m, c, match, type, dedupeKey);
   const fresh = !(await tx.event.findUnique({ where: { dedupeKey }, select: { id: true } }));
 
   // a deleted lead's enrolments are already stopped: nothing is revived or counted for it
@@ -327,13 +328,15 @@ async function pushFollowUps(
  * nobody and the lead was the only recipient. Otherwise a named cc/bcc of that send alone is suppressed. A DSN without a
  * target, or naming someone that send never went to, is recorded only (PA #4: the From of a DSN is not authenticated).
  * A DSN of an UNCERTAIN/HELD send proves it went out and settles it SENT, like a reply (M17).
+ * An ARF complaint (D34) finds its target the same way; with one it stops every open enrolment of the lead COMPLAINED
+ * and suppresses the address (COMPLAINT); without one only the Event is recorded.
  */
 async function bounce(
   tx: Tx,
   clock: Clock,
   ws: string,
   m: Message,
-  c: Extract<Classification, { kind: "BOUNCE" }>,
+  c: Extract<Classification, { kind: "BOUNCE" | "COMPLAINT" }>,
   match: Match,
   type: EventType,
   dedupeKey: string,
@@ -370,15 +373,30 @@ async function bounce(
   const settle = await lockUnsettled(tx, sm);
   const leadEmail = sm?.campaignLead.lead.email.toLowerCase();
   const isLead = !!sm && (recipient ? recipient === leadEmail : !sm.cc.length && !sm.bcc.length);
-  if (c.bounceType === "HARD") {
-    // stopReason before suppress(), which would stamp SUPPRESSED on whatever is still open
+  const complaint = c.kind === "COMPLAINT";
+  if (complaint || c.bounceType === "HARD") {
+    // stopReason before suppress(), which would stamp SUPPRESSED on whatever is still open. A complaint is about all
+    // our mail, so every open enrolment of the lead stops COMPLAINED; a bounce only the one that bounced.
     if (isLead)
-      await stopOpenCampaignLeads(tx, ws, [sm.campaignLead.leadId], "BOUNCED", now, {
-        id: sm.campaignLeadId,
-      });
-    const copied = !!recipient && !!sm && [...sm.cc, ...sm.bcc].some((x) => x.toLowerCase() === recipient);
+      await stopOpenCampaignLeads(
+        tx,
+        ws,
+        [sm.campaignLead.leadId],
+        complaint ? "COMPLAINED" : "BOUNCED",
+        now,
+        complaint ? {} : { id: sm.campaignLeadId },
+      );
+    const copied =
+      !!recipient && !!sm && [...sm.cc, ...sm.bcc].some((x) => x.toLowerCase() === recipient);
     const addr = isLead ? leadEmail : copied ? recipient : null;
-    if (addr) await suppress(tx, ws, [{ kind: "EMAIL", value: addr }], "HARD_BOUNCE", "dsn");
+    if (addr)
+      await suppress(
+        tx,
+        ws,
+        [{ kind: "EMAIL", value: addr }],
+        complaint ? "COMPLAINT" : "HARD_BOUNCE",
+        complaint ? "arf" : "dsn",
+      );
   }
   if (settle && sm) await settleSent(tx, clock, sm, m.sentAt);
   await recordEvent(tx, {
@@ -392,7 +410,7 @@ async function bounce(
     variantId: sm?.variantId ?? null,
     scheduledMessageId: sm?.id ?? null,
     messageId: m.id,
-    meta: { status: c.status, recipient, reason: c.reason },
+    meta: c.kind === "BOUNCE" ? { status: c.status, recipient, reason: c.reason } : { recipient },
     dedupeKey,
   });
 }

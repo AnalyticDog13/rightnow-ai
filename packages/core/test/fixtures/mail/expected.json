@@ -279,5 +279,15 @@
     "kind": "AUTO_REPLY",
     "category": "OUT_OF_OFFICE",
     "oooUntil": null
+  },
+  "arf-yahoo.eml": {
+    "kind": "COMPLAINT",
+    "recipient": "complainer@yahoo.com",
+    "originalMessageId": "<orig-1@rn.test>"
+  },
+  "arf-microsoft.eml": {
+    "kind": "COMPLAINT",
+    "recipient": "someone@outlook.com",
+    "originalMessageId": "<orig-2@rn.test>"
   }
 }

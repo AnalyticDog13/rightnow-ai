@@ -3,6 +3,7 @@ import { accountsAutoResumeJob } from "./accounts-auto-resume";
 import { accountsAutofixJob } from "./accounts-autofix";
 import { campaignDispatchJob } from "./campaign-dispatch";
 import { campaignPlanJob } from "./campaign-plan";
+import { deliverabilityHealthJob } from "./deliverability-health";
 import { dnsCheckJob } from "./dns-check";
 import { leadImportJob } from "./lead-import";
 import { mailSyncJob } from "./mail-sync";
@@ -18,4 +19,5 @@ export const jobs: JobDef[] = [
   sendRecoveryJob,
   mailSyncJob,
   dnsCheckJob,
+  deliverabilityHealthJob,
 ];

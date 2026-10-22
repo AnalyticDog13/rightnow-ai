@@ -18,6 +18,7 @@ export type Classification =
       reason: string;
     }
   | { kind: "AUTO_REPLY"; category: "OUT_OF_OFFICE" | "AUTOMATED"; oooUntil: Date | null }
+  | { kind: "COMPLAINT"; recipient: string | null; originalMessageId: string | null }
   | { kind: "UNSUBSCRIBE" }
   | { kind: "REPLY"; category: ReplyCategory; source: "RULE" | "AI" }
   | { kind: "OUTBOUND" };
@@ -43,6 +44,21 @@ const partText = (m: ClassifyInput, type: string) =>
 const EMAIL = /[\w.+'-]{1,64}@[\w-]{1,63}(?:\.[\w-]{1,63}){1,8}/g;
 /** Classifier regexes see only the head of the text (DSN fields and a reply's intent sit at the top). */
 const MAX_TEXT = 64 * 1024;
+
+/** An ARF feedback report (RFC 5965): the complainer and the Message-ID of our original, when the report carries them. */
+function classifyComplaint(m: ClassifyInput): Classification | null {
+  const ct = hdr(m, "content-type") ?? "";
+  if (!/multipart\/report/i.test(ct) || !/feedback-report/i.test(ct)) return null;
+  const report = partText(m, "message/feedback-report");
+  const orig = `${partText(m, "text/rfc822-headers")}
+${partText(m, "message/rfc822")}`;
+  const rcpt = /^Original-Rcpt-To:\s*<?([^>\s]+)>?/im.exec(report)?.[1]?.toLowerCase() ?? null;
+  return {
+    kind: "COMPLAINT",
+    recipient: rcpt,
+    originalMessageId: /^message-id:\s*(<[^>]+>)/im.exec(orig)?.[1] ?? null,
+  };
+}
 
 function classifyBounce(m: ClassifyInput, text: string): Classification | null {
   const local = m.from.email.toLowerCase().split("@")[0];
@@ -212,6 +228,8 @@ export function classify(
   o: { now: Date; direction: "IN" | "OUT" },
 ): Classification {
   if (o.direction === "OUT") return { kind: "OUTBOUND" };
+  const complaint = classifyComplaint(m);
+  if (complaint) return complaint;
   const text = (m.text ?? "").slice(0, MAX_TEXT);
   const bounce = classifyBounce(m, text);
   if (bounce) return bounce;

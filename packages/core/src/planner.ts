@@ -340,6 +340,7 @@ export async function planDue(db: PrismaClient, clock: Clock, o: PlanOpts): Prom
         );
         continue;
       }
+      await withTxRetry(() => db.$transaction((tx) => reviveUnassigned(tx, c.id, now)));
       if ((!c.startAt || c.startAt <= now) && isInWindow(windowsOf(c.schedules), now)) {
         const r = await withTxRetry(() =>
           db.$transaction((tx) => planCampaign(tx, c.id, now, o), { timeout: PLAN_TX_MS }),
@@ -707,22 +708,20 @@ async function endCampaign(tx: Tx, campaignId: string, now: Date) {
  * C2/I1: SCHEDULED rows that are not their lead's current step, or whose lead finished, are CANCELLED. A non-evergreen
  * campaign with no open lead and no open row is COMPLETED (one conditional statement).
  *
- * Deleted or unassigned sticky sender (P3-T10b re-review, gate I-3, D23): a follow-up must come from the lead's step-1
- * mailbox, so it is never re-routed. The lead is PAUSED SEND_FAILED (reversible: reconnect or re-assign the mailbox,
- * then resume the lead; the explainer lists it) and its SCHEDULED rows are CANCELLED, so neither the planner nor the
- * claim looks at it again every tick.
+ * Deleted or unassigned sticky sender (P3-T10b re-review, gate I-3, D23, D39 N-2): a follow-up must come from the
+ * lead's step-1 mailbox, so it is never re-routed. The lead is PAUSED ACCOUNT_UNASSIGNED (the explainer lists it;
+ * `reviveUnassigned` reverses it once the mailbox is live and assigned again) and its SCHEDULED rows are CANCELLED, so
+ * neither the planner nor the claim looks at it again every tick.
  */
 async function housekeep(tx: Tx, campaignId: string, now: Date) {
   const orphaned = Prisma.sql`cl."campaignId" = ${campaignId} AND cl.state IN ('QUEUED', 'ACTIVE')
-    AND cl."accountId" IS NOT NULL
-    AND NOT EXISTS (SELECT 1 FROM "EmailAccount" a JOIN "CampaignAccount" ca ON ca."accountId" = a.id
-      WHERE a.id = cl."accountId" AND a."deletedAt" IS NULL AND ca."campaignId" = cl."campaignId")`;
+    AND cl."accountId" IS NOT NULL AND NOT ${stickyLive}`;
   await cancelRows(
     tx,
     Prisma.sql`"campaignId" = ${campaignId} AND EXISTS (SELECT 1 FROM "CampaignLead" cl
       WHERE cl.id = "ScheduledMessage"."campaignLeadId" AND ${orphaned})`,
   );
-  await tx.$executeRaw`UPDATE "CampaignLead" cl SET state = 'PAUSED', "stopReason" = 'SEND_FAILED'
+  await tx.$executeRaw`UPDATE "CampaignLead" cl SET state = 'PAUSED', "stopReason" = 'ACCOUNT_UNASSIGNED'
     WHERE ${orphaned}`;
   await cancelRows(
     tx,
@@ -736,6 +735,18 @@ async function housekeep(tx: Tx, campaignId: string, now: Date) {
       AND NOT EXISTS (SELECT 1 FROM "CampaignLead" WHERE "campaignId" = c.id AND state = ANY(${OPEN_STATES_SQL}))
       AND NOT EXISTS (SELECT 1 FROM "ScheduledMessage" WHERE "campaignId" = c.id
         AND status IN ('SCHEDULED', 'SENDING', 'UNCERTAIN', 'HELD'))`;
+}
+
+/** The lead's sticky account (alias `cl`) is live and assigned to its campaign. */
+const stickyLive = Prisma.sql`EXISTS (SELECT 1 FROM "EmailAccount" a JOIN "CampaignAccount" ca ON ca."accountId" = a.id
+      WHERE a.id = cl."accountId" AND a."deletedAt" IS NULL AND ca."campaignId" = cl."campaignId")`;
+
+/** D39 N-2: housekeeping's own pause ends once the sticky account is back; the lead is due now (planned this tick). */
+function reviveUnassigned(tx: Tx, campaignId: string, now: Date) {
+  return tx.$executeRaw`UPDATE "CampaignLead" cl SET state = 'ACTIVE', "stopReason" = NULL,
+      "nextDueAt" = ${now.toISOString()}::timestamp
+    WHERE cl."campaignId" = ${campaignId} AND cl.state = 'PAUSED' AND cl."stopReason" = 'ACCOUNT_UNASSIGNED'
+      AND ${stickyLive}`;
 }
 
 // --- sequence movement ----------------------------------------------------------------------------------------------

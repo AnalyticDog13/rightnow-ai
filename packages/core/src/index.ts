@@ -20,6 +20,7 @@ export * from "./accounts/smtp-connect";
 export * from "./accounts/test-send";
 export * from "./accounts/live-verify";
 export * from "./deliverability/dns";
+export * from "./deliverability/health";
 export * from "./leads/domain";
 export * from "./leads/suppression";
 export * from "./leads/service";

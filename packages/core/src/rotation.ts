@@ -29,6 +29,10 @@ export function routeAllowed(rules: EspRule[], account: AccountProvider, leadEsp
   return !send.length || send.some(hit);
 }
 
+/** The campaign's account-tag restriction (empty = any account). */
+export const tagsAllowed = (c: Pick<Campaign, "accountTags">, a: Pick<EmailAccount, "tags">) =>
+  !c.accountTags.length || a.tags.some((t) => c.accountTags.includes(t));
+
 /**
  * Units already spoken for today, per account, in two grouped queries whatever the number of accounts:
  * sent + reserved on the account's local day, and SCHEDULED rows (1 + cc + bcc each) due before its next local midnight.
@@ -64,7 +68,7 @@ export const remainingToday = (
   c: { used: number; scheduled: number },
   now: Date,
 ) =>
-  // shortcut: no re-warm / health ctx, as the claim; add both here and in the claim together, upgrade in P5-T05/T06
+  // shortcut: no re-warm ctx, as the claim; add it here and in the claim together, upgrade in P5-T05/T06
   effectiveAllowance(a, now) - c.used - c.scheduled;
 
 /**
@@ -94,11 +98,7 @@ export async function pickAccount(
   const rules = (c.espRoutingRules ?? []) as EspRule[];
   const accounts = (
     await db.emailAccount.findMany({ where: { id: { in: ids.map((r) => r.id) } } })
-  ).filter(
-    (a) =>
-      (!c.accountTags.length || a.tags.some((t) => c.accountTags.includes(t))) &&
-      routeAllowed(rules, a.provider, p.leadEsp),
-  );
+  ).filter((a) => tagsAllowed(c, a) && routeAllowed(rules, a.provider, p.leadEsp));
   const committed = await committedToday(db, accounts, now);
   const ranked = accounts.flatMap((a) => {
     const k = committed.get(a.id)!;

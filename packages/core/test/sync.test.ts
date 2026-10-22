@@ -268,6 +268,30 @@ describe("reconcileAccount", () => {
     });
   });
 
+  test("escalation keeps an earlier SENDING lastError as previous; a caught-up run restores it", async () => {
+    const { A } = await setup();
+    const clock = fixedClock(T);
+    await run(clock, A);
+    const sending = { kind: "SENDING", code: "smtp_5xx", message: "permanent send error" };
+    await P().emailAccount.update({ where: { id: A.id }, data: { lastError: sending } });
+    quiet();
+    for (let i = 1; i <= 6; i++) {
+      fake(A).failNextRead("token_5xx");
+      clock.advance(60_000);
+      expect(await run(clock, A)).toBe("failed");
+    }
+    // a sixth failure re-escalates without nesting SYNC inside SYNC
+    expect((await acct(A.id)).lastError).toEqual({
+      kind: "SYNC",
+      code: "TransientBeforeSendError",
+      message: "mailbox sync failed 6 times in a row",
+      previous: sending,
+    });
+    clock.advance(60_000);
+    expect(await run(clock, A)).toBe("caught_up");
+    expect(await acct(A.id)).toMatchObject({ status: "CONNECTED", lastError: sending });
+  });
+
   test("AuthError → NEEDS_ATTENTION; syncDue then leaves the account alone", async () => {
     const { A } = await setup();
     const clock = fixedClock(T);

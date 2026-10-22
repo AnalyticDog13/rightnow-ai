@@ -646,6 +646,73 @@ describe("unsubscribe and bounces", () => {
       { type: "BOUNCE_HARD", leadId: e.lead.id, meta: { recipient: "victim@else.test" } },
     ]);
   });
+
+  const arf = (o: { to: string; recipient: string; orig: string }) =>
+    Buffer.from(
+      [
+        "From: Yahoo! Mail AntiSpam Feedback <feedback@arf.mail.yahoo.com>",
+        `To: ${o.to}`,
+        "Subject: FW: Quick question",
+        `Date: ${T.toUTCString()}`,
+        `Message-ID: <arf-${++n}-${randomBytes(3).toString("hex")}@yahoo.test>`,
+        "MIME-Version: 1.0",
+        'Content-Type: multipart/report; report-type=feedback-report; boundary="B1"',
+        "",
+        "--B1",
+        "Content-Type: text/plain",
+        "",
+        "This is an email abuse report.",
+        "",
+        "--B1",
+        "Content-Type: message/feedback-report",
+        "",
+        "Feedback-Type: abuse",
+        `Original-Rcpt-To: <${o.recipient}>`,
+        "",
+        "--B1",
+        "Content-Type: text/rfc822-headers",
+        "",
+        `From: ${o.to}`,
+        `To: ${o.recipient}`,
+        "Subject: Quick question",
+        `Message-ID: ${o.orig}`,
+        "",
+        "--B1--",
+        "",
+      ].join("\r\n"),
+    );
+
+  test("complaint suppresses and stops", async () => {
+    const s = await setup();
+    const s2 = await setup({}, s.ws);
+    const A = s.accounts[0]!;
+    const e = await enrol(s, "angry@acme.test");
+    const other = await enrol(s2, "", { leadId: e.lead.id });
+    await receive(A, await parse(arf({ to: A.email, recipient: e.lead.email, orig: e.rfc })));
+    for (const id of [e.cl.id, other.cl.id])
+      expect(await cl(id)).toMatchObject({ state: "STOPPED", stopReason: "COMPLAINED" });
+    expect((await row(e.step2.id)).status).toBe("CANCELLED");
+    expect(await suppressions(s.ws)).toMatchObject([
+      { value: e.lead.email, reason: "COMPLAINT", source: "arf" },
+    ]);
+    expect(await events(s.ws)).toMatchObject([
+      { type: "COMPLAINT", leadId: e.lead.id, scheduledMessageId: e.step1.id, accountId: A.id },
+    ]);
+
+    // an ARF for a Message-ID we never sent: the event only (the From of a report is not authenticated)
+    const s3 = await setup();
+    const B = s3.accounts[0]!;
+    const x = await enrol(s3, "calm@beta.test");
+    await receive(
+      B,
+      await parse(
+        arf({ to: B.email, recipient: "stranger@else.test", orig: "<unknown-1@else.test>" }),
+      ),
+    );
+    expect((await cl(x.cl.id)).state).toBe("ACTIVE");
+    expect(await suppressions(s3.ws)).toEqual([]);
+    expect(await events(s3.ws)).toMatchObject([{ type: "COMPLAINT", leadId: null }]);
+  });
 });
 
 describe("against the send claim", () => {

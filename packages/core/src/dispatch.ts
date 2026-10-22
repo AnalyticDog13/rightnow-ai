@@ -3,9 +3,12 @@ import { Prisma, type AccountProvider, type PrismaClient } from "@rightnow/db/cl
 import { newMessageId } from "@rightnow/providers";
 import type { Clock } from "./clock";
 import { stopLead } from "./campaigns/hooks";
+import type { EspRule } from "./campaigns/schema";
 import { isSuppressed } from "./leads/suppression";
+import { recordEvent } from "./mail/events";
 import { priorSubject, renderForLead, renderProblem } from "./planner";
 import { effectiveAllowance, type UsageRef } from "./quota";
+import { routeAllowed, tagsAllowed } from "./rotation";
 import { dayKey, isInWindow, nextWindowStart, startOfNextDay, type Window } from "./schedule";
 import { templateVariables } from "./template";
 import type { RenderEnv } from "./unsubscribe";
@@ -191,7 +194,12 @@ async function claimOne(
         !(cl.state === "ACTIVE" || (cl.state === "QUEUED" && step1)) ||
         cl.currentStepId !== m.stepId ||
         step.deletedAt ||
-        !variant?.active
+        !variant?.active ||
+        // D39 M-6: a step-1 row follows the campaign's current tags and ESP rules (the planner re-routes it);
+        // follow-ups stay with the lead's first sender (D23)
+        (step1 &&
+          (!tagsAllowed(c, a) ||
+            !routeAllowed(c.espRoutingRules as EspRule[], a.provider, lead.espType)))
       ) {
         // uncertainAt stays NULL, so the planner may re-plan the lead's current step
         await set({ status: "CANCELLED", error: "stale" });
@@ -407,9 +415,24 @@ async function isolate(db: PrismaClient, now: Date, id: string, e: unknown) {
       const m = await tx.scheduledMessage.findUniqueOrThrow({ where: { id } });
       if (m.claimErrors < MAX_CLAIM_ERRORS) return;
       await tx.scheduledMessage.updateMany({ where: mine, data: { status: "FAILED" } });
+      const cl = await tx.campaignLead.findUniqueOrThrow({ where: { id: m.campaignLeadId } });
       await tx.campaignLead.updateMany({
-        where: { id: m.campaignLeadId, state: { in: ["QUEUED", "ACTIVE"] } },
+        where: { id: cl.id, state: { in: ["QUEUED", "ACTIVE"] } },
         data: { state: "PAUSED", stopReason: "SEND_FAILED" },
+      });
+      // M4: counted as a provider error of unknown scope (D34 health); the Event is the leaf write
+      await recordEvent(tx, {
+        workspaceId: m.workspaceId,
+        type: "SEND_FAILED",
+        occurredAt: now,
+        leadId: cl.leadId,
+        campaignId: m.campaignId,
+        accountId: m.accountId,
+        stepId: m.stepId,
+        variantId: m.variantId,
+        scheduledMessageId: m.id,
+        meta: { error, scope: "unknown" },
+        dedupeKey: `fail:${m.id}`,
       });
     }),
   );

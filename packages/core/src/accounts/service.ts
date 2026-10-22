@@ -1,9 +1,9 @@
-import type {
-  AccountProvider,
-  AccountStatus,
-  EmailAccount,
+import {
   Prisma,
-  PrismaClient,
+  type AccountProvider,
+  type AccountStatus,
+  type EmailAccount,
+  type PrismaClient,
 } from "@rightnow/db/client";
 import type { MailProvider } from "@rightnow/providers";
 import { z } from "zod";
@@ -232,12 +232,21 @@ export async function resumeAccount(prisma: Db, ws: string, id: string, o: Opts 
   if (a.lifecycle === "NEEDS_ATTENTION") throw new AccountError(409, RECONNECT);
   if (a.status === "DISCONNECTED") throw new AccountError(409, "reconnect first");
   if (a.lifecycle !== "PAUSED") return (await getAccount(prisma, ws, id, o))!;
+  // D34 / Rev 2 I3, M3: health rates restart from now, so the bounces behind a health pause do not pause it again
+  // shortcut: T05 moves this into returnToService for every path back into service
+  const softBounce = (a.lastError as { kind?: string } | null)?.kind === "SOFT_BOUNCE";
   return mutate(
     prisma,
     ws,
     id,
     o,
-    { lifecycle: "ACTIVE", pausedUntil: null, consecutivePermanentErrors: 0 },
+    {
+      lifecycle: "ACTIVE",
+      pausedUntil: null,
+      consecutivePermanentErrors: 0,
+      healthResetAt: now(o),
+      ...(softBounce && { lastError: Prisma.DbNull }),
+    },
     "account.resume",
   );
 }

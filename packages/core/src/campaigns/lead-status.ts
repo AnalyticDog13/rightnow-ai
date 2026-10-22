@@ -18,6 +18,8 @@ export const OPEN_STATES_SQL = Prisma.sql`${[...OPEN_STATES]}::text[]::"Campaign
 
 const DONE: StopReason[] = ["REPLIED", "AUTO_REPLIED", "COMPANY_REPLIED", "MANUAL"];
 const SKIPPED: StopReason[] = ["SUPPRESSED", "SKIPPED", "SEND_FAILED"];
+// M3: a spam complaint reads like an unsubscribe (the lead asked, in effect, for no more mail)
+const UNSUBSCRIBED: StopReason[] = ["UNSUBSCRIBED", "COMPLAINED"];
 
 /** PS-LEAD-18 display status of one CampaignLead. */
 export function campaignLeadStatus(
@@ -26,7 +28,7 @@ export function campaignLeadStatus(
   if (cl.state === "QUEUED" || cl.state === "ACTIVE") return "Active";
   if (cl.state === "PAUSED") return "Paused";
   if (cl.stopReason === "BOUNCED") return "Bounced";
-  if (cl.stopReason === "UNSUBSCRIBED") return "Unsubscribed";
+  if (cl.stopReason && UNSUBSCRIBED.includes(cl.stopReason)) return "Unsubscribed";
   if (cl.stopReason && SKIPPED.includes(cl.stopReason)) return "Skipped";
   return "Completed"; // COMPLETED, or STOPPED by a reply / manually / with no reason
 }
@@ -36,7 +38,7 @@ const WHERE: Record<CampaignLeadStatus, Prisma.CampaignLeadWhereInput> = {
   Active: { state: { in: ["QUEUED", "ACTIVE"] } },
   Paused: { state: "PAUSED" },
   Bounced: { state: "STOPPED", stopReason: "BOUNCED" },
-  Unsubscribed: { state: "STOPPED", stopReason: "UNSUBSCRIBED" },
+  Unsubscribed: { state: "STOPPED", stopReason: { in: UNSUBSCRIBED } },
   Skipped: { state: "STOPPED", stopReason: { in: SKIPPED } },
   Completed: {
     OR: [
