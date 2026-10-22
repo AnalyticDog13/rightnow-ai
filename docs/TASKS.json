@@ -549,12 +549,12 @@
    "id": "P5-T02",
    "phase": 5,
    "title": "Health score, automatic slowdown/pause, BounceProtect campaign status, ACCOUNTS_UNHEALTHY",
-   "status": "todo",
+   "status": "done",
    "deps": [
     "P5-T01"
    ],
    "model": "opus",
-   "commit": null,
+   "commit": "d48a2da",
    "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-5.md; tests listed there pass; from Phase 3 gate M-6: claim re-checks ESP routing rules / account tags; from P3-T11a: a rejection caused by a cc address must not suppress the lead; gate re-review N-2: a mailbox unassigned from a campaign pauses its follow-up leads with no bulk/automatic resume when it is re-assigned — add bulk resume or auto-resume on re-assign"
   },
   {
