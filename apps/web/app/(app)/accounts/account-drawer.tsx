@@ -10,6 +10,7 @@ import { ConnectMenu, type Provider } from "./connect-menu";
 import { ConnectSmtp } from "./connect-smtp";
 import { DomainSection } from "./domain-section";
 import { isNumeric } from "./numeric";
+import { WarmupSection } from "./warmup-section";
 
 type Kind = "text" | "number" | "minutes" | "nullable";
 // Gaps are stored in seconds and shown in minutes (PS-ACC-13).
@@ -237,6 +238,7 @@ export function AccountDrawer({
       </p>
       <SyncStatus sync={account.sync} />
       <DomainSection email={account.email} canEdit={canEdit} />
+      <WarmupSection accountId={account.id} canEdit={canEdit} />
       {canEdit && (
         <section
           aria-label="Connection"

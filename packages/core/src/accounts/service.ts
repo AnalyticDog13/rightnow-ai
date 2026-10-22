@@ -309,6 +309,8 @@ const ACTIONS = [
   "add_tags",
   "remove_tags",
   "delete",
+  "warmup_enable",
+  "warmup_disable",
 ] as const;
 export const bulkSchema = z.strictObject({
   ids: z.array(z.string().min(1)).min(1).max(200),
@@ -339,6 +341,16 @@ export async function bulkApply(prisma: Db, ws: string, input: unknown, o: Opts 
       if (action === "pause") await pauseAccount(prisma, ws, id, v as Date | undefined, o);
       else if (action === "resume") await resumeAccount(prisma, ws, id, o);
       else if (action === "delete") await softDeleteAccount(prisma, ws, id, o);
+      else if (action === "warmup_enable" || action === "warmup_disable")
+        // lazy: warmup.ts reaches dispatch, which imports this module (cycle)
+        await (
+          await import("../deliverability/warmup")
+        ).updateWarmup(
+          prisma,
+          await live(prisma, ws, id),
+          { enabled: action === "warmup_enable" },
+          { clock: o.clock ?? systemClock, actorId: o.actorId },
+        );
       else if (action in field)
         warnings = (
           await updateAccount(prisma, ws, id, { [field[action as keyof typeof field]]: v }, o)

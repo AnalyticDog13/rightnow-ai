@@ -41,6 +41,7 @@ const ADDRESS = /^[a-z0-9._%+-]+@[a-z0-9.-]+$/;
 export class FakeProvider implements MailProvider {
   readonly kind: ProviderKind;
   readonly address: string;
+  private readonly dir: string;
   private readonly file: string;
   private readonly host?: string;
   private pending: { k: FailKind; retryAfterSec: number }[] = [];
@@ -53,7 +54,8 @@ export class FakeProvider implements MailProvider {
       throw new Error(`invalid fake mailbox address`);
     this.kind = o.kind ?? "GMAIL";
     this.host = o.host;
-    this.file = join(o.dir ?? fakeMailDir(), `${this.address}.json`);
+    this.dir = o.dir ?? fakeMailDir();
+    this.file = join(this.dir, `${this.address}.json`);
   }
 
   // ---- MailProvider -------------------------------------------------------
@@ -87,6 +89,7 @@ export class FakeProvider implements MailProvider {
         mime.threadId ?? this.threadOf(box, mime.inReplyTo),
       ),
     );
+    await this.deliver(mime, raw);
     if (fail === "api_5xx" || fail === "timeout_after_write") throw new AmbiguousSendError(fail);
     // restart E2E: the sent copy exists, but the result arrives late (the worker can be killed meanwhile)
     const hang = Number(process.env.FAKE_SEND_HANG_MS ?? 0);
@@ -178,6 +181,14 @@ export class FakeProvider implements MailProvider {
   async revoke(): Promise<void> {}
 
   // ---- controls (tests and the e2e harness) -------------------------------
+
+  /** Makes this mailbox a delivery target of other fake mailboxes' `send`; mail from `spamFrom` lands in SPAM (and stays there). */
+  async enableDelivery(o: { spamFrom?: string[] } = {}): Promise<void> {
+    await updateMailbox(this.file, (box) => {
+      box.deliver = true;
+      box.spamFrom = (o.spamFrom ?? []).map((x) => x.toLowerCase());
+    });
+  }
 
   /** Drops queued failures and the revoked state (a reconnect with new credentials, P2-T04). */
   clearFailures(): void {
@@ -331,6 +342,22 @@ export class FakeProvider implements MailProvider {
     const f = this.pending.shift();
     if (f?.k === "auth_revoked") this.revoked = true;
     return f;
+  }
+
+  /** A copy in every recipient's mailbox that exists with `deliver: true` (INBOX, or SPAM for a `spamFrom` sender). */
+  private async deliver(mime: OutboundMime, raw: Buffer): Promise<void> {
+    const sender = this.address;
+    for (const r of [...mime.to, ...(mime.cc ?? []), ...(mime.bcc ?? [])]) {
+      const to = r.email.toLowerCase();
+      if (!ADDRESS.test(to) || to.includes("..") || to === sender) continue;
+      const file = join(this.dir, `${to}.json`);
+      if (!(await readMailbox(file)).deliver) continue;
+      await updateMailbox(file, (box) => {
+        if (!box.deliver) return;
+        const folder = box.spamFrom?.includes(sender) ? "SPAM" : "INBOX";
+        this.add(box, folder, raw, mime.messageId, this.threadOf(box, mime.inReplyTo));
+      });
+    }
   }
 
   private threadOf(box: FakeMailbox, inReplyTo?: string): string | undefined {

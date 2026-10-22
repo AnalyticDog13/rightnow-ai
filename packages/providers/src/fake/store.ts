@@ -17,6 +17,9 @@ export type FakeMailbox = {
   seq: number;
   entries: FakeEntry[];
   removed: { seq: number; id: string; folder: FakeFolder }[];
+  /** enableDelivery: `send` from other fake mailboxes lands here; mail from `spamFrom` addresses lands in SPAM. */
+  deliver?: boolean;
+  spamFrom?: string[];
 };
 
 export const fakeMailDir = () => process.env.FAKE_MAIL_DIR || join(tmpdir(), "rightnow-fake-mail");

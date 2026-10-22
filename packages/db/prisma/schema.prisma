@@ -282,6 +282,11 @@ model EmailAccount {
   healthCap                  Int?
   healthCapAt                DateTime?
   healthResetAt              DateTime?
+  // D36: display-only (idle time counts campaign sends, Rev 2 I6)
+  lastWarmupAt               DateTime?
+  warmupSettings             WarmupSettings?
+  warmupSent                 WarmupMessage[]     @relation("WarmupFrom")
+  warmupReceived             WarmupMessage[]     @relation("WarmupTo")
   healthSnapshots            HealthSnapshot[]
   dailyUsage                 AccountDailyUsage[]
   campaigns                  CampaignAccount[]
@@ -1010,4 +1015,65 @@ model HealthSnapshot {
   score     Int
 
   @@id([accountId, day])
+}
+
+enum WarmupKind {
+  SEND
+  REPLY
+  PLACEMENT
+}
+
+enum WarmupStatus {
+  PLANNED
+  SENDING
+  SENT
+  FAILED
+}
+
+// D36: cooperative warm-up between mailboxes of one workspace whose owner enabled it on both ends.
+model WarmupSettings {
+  accountId      String       @id
+  account        EmailAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  workspaceId    String
+  enabled        Boolean      @default(false)
+  dailyLimit     Int          @default(10)
+  slowWarmup     Boolean      @default(true)
+  startVolume    Int          @default(1)
+  increasePerDay Int          @default(1)
+  customCurve    Json? // [{day, volume}], at most 90 entries
+  replyRatePct   Int          @default(30)
+  weekdaysOnly   Boolean      @default(false)
+  filterTag      String
+  startedAt      DateTime?
+  nextAt         DateTime?
+  updatedAt      DateTime     @updatedAt
+
+  @@index([workspaceId])
+}
+
+// D36 / D37: warm-up and placement traffic lives only here, never in Thread / Message / Event.
+model WarmupMessage {
+  id              String       @id @default(cuid())
+  workspaceId     String
+  fromAccountId   String
+  from            EmailAccount @relation("WarmupFrom", fields: [fromAccountId], references: [id], onDelete: Cascade)
+  toAccountId     String
+  to              EmailAccount @relation("WarmupTo", fields: [toAccountId], references: [id], onDelete: Cascade)
+  kind            WarmupKind
+  status          WarmupStatus @default(PLANNED)
+  rfcMessageId    String       @unique
+  subject         String
+  parentId        String?
+  placementTestId String?
+  dueAt           DateTime
+  sentAt          DateTime? // while SENDING: when the send was claimed
+  receivedAt      DateTime?
+  landedFolder    String? // INBOX | SPAM | OTHER | MISSING
+  checkedAt       DateTime?
+  error           String?
+  createdAt       DateTime     @default(now())
+
+  @@index([fromAccountId, sentAt])
+  @@index([toAccountId, receivedAt])
+  @@index([status, dueAt])
 }

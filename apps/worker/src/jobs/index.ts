@@ -8,6 +8,7 @@ import { dnsCheckJob } from "./dns-check";
 import { leadImportJob } from "./lead-import";
 import { mailSyncJob } from "./mail-sync";
 import { sendRecoveryJob } from "./send-recovery";
+import { warmupTickJob } from "./warmup-tick";
 
 // Later phases register their jobs here.
 export const jobs: JobDef[] = [
@@ -20,4 +21,5 @@ export const jobs: JobDef[] = [
   mailSyncJob,
   dnsCheckJob,
   deliverabilityHealthJob,
+  warmupTickJob,
 ];

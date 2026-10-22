@@ -13,6 +13,7 @@ import { recordProviderError } from "../accounts/health";
 import { unwrapPrevious } from "../accounts/status";
 import type { Clock } from "../clock";
 import { withTxRetry } from "../dispatch";
+import { warmupReceipt } from "../deliverability/warmup";
 import { classify, type AiClassifier } from "./classify";
 import { codeOf, ingestMessage, sanitizeRemote, syntheticMessageId } from "./ingest";
 import { applyInbound } from "./stoprules";
@@ -324,6 +325,8 @@ async function ingestOne(
 ) {
   const direction = m.from.email.toLowerCase() === acct.email.toLowerCase() ? "OUT" : "IN";
   let c = classify(m, { now: m.date, direction });
+  // warm-up / placement traffic (D36, Rev 2 I1) is stored nowhere else: before the AI hook, matching and stop rules
+  if (await prisma.$transaction((tx) => warmupReceipt(tx, clock, acct, m, c))) return;
   const rfc = m.rfcMessageId ?? syntheticMessageId(m);
   const stored = () =>
     prisma.message.findUnique({

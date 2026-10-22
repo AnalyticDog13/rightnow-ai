@@ -96,6 +96,12 @@ export function BulkBar({
       <Button variant="outline" disabled={busy} onClick={() => run("resume")}>
         Resume
       </Button>
+      <Button variant="outline" disabled={busy} onClick={() => run("warmup_enable")}>
+        Enable warm-up
+      </Button>
+      <Button variant="outline" disabled={busy} onClick={() => run("warmup_disable")}>
+        Disable warm-up
+      </Button>
       <select
         aria-label="Bulk setting"
         className="h-10 rounded-md border border-border bg-card px-3 text-sm"
