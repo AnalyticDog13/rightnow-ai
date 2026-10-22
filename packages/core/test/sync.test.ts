@@ -11,7 +11,9 @@ import {
   type RemoteMessage,
 } from "@rightnow/providers";
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
+import { resumeAccount } from "../src/accounts/service";
 import { fixedClock } from "../src/clock";
+import { evaluateHealth } from "../src/deliverability/health";
 import { reconcileAccount, syncDue, type SyncDeps } from "../src/mail/sync";
 import { seedCampaign } from "./campaign-fixture";
 
@@ -290,6 +292,77 @@ describe("reconcileAccount", () => {
     clock.advance(60_000);
     expect(await run(clock, A)).toBe("caught_up");
     expect(await acct(A.id)).toMatchObject({ status: "CONNECTED", lastError: sending });
+  });
+
+  test("a health pause and a SYNC escalation nest either way; resume and a caught-up run leave no stale error", async () => {
+    quiet();
+    const bounces = (A: EmailAccount, at: Date) =>
+      P().event.createMany({
+        data: [...Array(104).keys()].map((i) => ({
+          workspaceId: A.workspaceId,
+          type: i < 100 ? ("ACCEPTED" as const) : ("BOUNCE_HARD" as const),
+          occurredAt: at,
+          accountId: A.id,
+          scheduledMessageId: `sm-${A.id}-${i}`,
+          dedupeKey: `h:${A.id}:${i}`,
+        })),
+      });
+    const failSync = async (clock: ReturnType<typeof fixedClock>, A: EmailAccount) => {
+      for (let i = 0; i < 5; i++) {
+        fake(A).failNextRead("token_5xx");
+        clock.advance(60_000);
+        await run(clock, A);
+      }
+    };
+    const sync = { kind: "SYNC", code: "TransientBeforeSendError" };
+    const soft = { kind: "SOFT_BOUNCE", code: "bounce_rate" };
+
+    // SYNC first, then the health pause: SOFT_BOUNCE over SYNC; resume shows the SYNC again; a caught-up run clears it
+    const { A, ws } = await setup();
+    const clock = fixedClock(T);
+    await run(clock, A);
+    await failSync(clock, A);
+    await bounces(A, clock.now());
+    await evaluateHealth(P(), clock);
+    expect(await acct(A.id)).toMatchObject({
+      lifecycle: "PAUSED",
+      status: "ERROR",
+      lastError: { ...soft, previous: sync },
+    });
+    await resumeAccount(P(), ws, A.id, { clock });
+    expect(await acct(A.id)).toMatchObject({ lifecycle: "ACTIVE", status: "ERROR", lastError: sync });
+    clock.advance(60_000);
+    expect(await run(clock, A)).toBe("caught_up");
+    expect(await acct(A.id)).toMatchObject({ status: "CONNECTED", lastError: null });
+
+    // the same, but the sync recovers while the account is paused
+    const B = (await setup()).A;
+    const c2 = fixedClock(T);
+    await run(c2, B);
+    await failSync(c2, B);
+    await bounces(B, c2.now());
+    await evaluateHealth(P(), c2);
+    c2.advance(60_000);
+    expect(await run(c2, B)).toBe("caught_up");
+    const b = await acct(B.id);
+    expect(b).toMatchObject({ lifecycle: "PAUSED", status: "CONNECTED" });
+    expect(b.lastError).toEqual(expect.not.objectContaining({ previous: expect.anything() }));
+
+    // health pause first, then SYNC: SYNC over SOFT_BOUNCE; resume drops the SOFT_BOUNCE beneath it
+    const C = (await setup()).A;
+    const c3 = fixedClock(T);
+    await run(c3, C);
+    await bounces(C, c3.now());
+    await evaluateHealth(P(), c3);
+    await failSync(c3, C);
+    expect(await acct(C.id)).toMatchObject({ lastError: { ...sync, previous: soft } });
+    await resumeAccount(P(), (await acct(C.id)).workspaceId, C.id, { clock: c3 });
+    const c = await acct(C.id);
+    expect(c).toMatchObject({ lifecycle: "ACTIVE", lastError: sync });
+    expect(c.lastError).toEqual(expect.not.objectContaining({ previous: expect.anything() }));
+    c3.advance(60_000);
+    expect(await run(c3, C)).toBe("caught_up");
+    expect(await acct(C.id)).toMatchObject({ status: "CONNECTED", lastError: null });
   });
 
   test("AuthError → NEEDS_ATTENTION; syncDue then leaves the account alone", async () => {

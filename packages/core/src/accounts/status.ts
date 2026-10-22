@@ -1,4 +1,9 @@
-import type { EmailAccount } from "@rightnow/db/client";
+import { Prisma, type EmailAccount } from "@rightnow/db/client";
+
+/** SQL: `lastError` with its `previous` replaced by that error's own `previous` (dropped when there is none). */
+export const unwrapPrevious = Prisma.sql`CASE WHEN "lastError"->'previous'->'previous' IS NULL
+    THEN "lastError" - 'previous'
+    ELSE jsonb_set("lastError", '{previous}', "lastError"->'previous'->'previous') END`;
 
 export type DisplayStatus =
   | "ACTIVE"

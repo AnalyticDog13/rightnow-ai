@@ -12,6 +12,7 @@ import { companyDomainOf } from "../src/leads/domain";
 import { classify, type Classification } from "../src/mail/classify";
 import { ingestMessage } from "../src/mail/ingest";
 import { applyInbound } from "../src/mail/stoprules";
+import { healthInputs } from "../src/deliverability/health";
 import { releaseUsage } from "../src/quota";
 import { refOf, sendClaimed } from "../src/sender";
 import { unsubscribeKeys } from "../src/unsubscribe";
@@ -712,6 +713,17 @@ describe("unsubscribe and bounces", () => {
     expect((await cl(x.cl.id)).state).toBe("ACTIVE");
     expect(await suppressions(s3.ws)).toEqual([]);
     expect(await events(s3.ws)).toMatchObject([{ type: "COMPLAINT", leadId: null }]);
+  });
+
+  test("a complaint (or bounce) received by another mailbox counts against the account that sent the mail", async () => {
+    const s = await setup();
+    const [A, B] = s.accounts as [EmailAccount, EmailAccount];
+    const e = await enrol(s, "angry2@acme.test"); // sent from A
+    await receive(B, await parse(arf({ to: B.email, recipient: e.lead.email, orig: e.rfc })));
+    expect(await events(s.ws)).toMatchObject([{ type: "COMPLAINT", accountId: A.id }]);
+    const h = await healthInputs(P(), [A.id, B.id], T);
+    expect(h.get(A.id)).toMatchObject({ complaints30d: 1 });
+    expect(h.get(B.id)).toMatchObject({ complaints30d: 0 });
   });
 });
 

@@ -30,12 +30,15 @@ const camp = (id: string) => P().campaign.findUniqueOrThrow({ where: { id } });
 const audits = (action: string) =>
   P().auditLog.findMany({ where: { action }, orderBy: { createdAt: "asc" } });
 
-/** `n` events of `type` for an account (and campaign), at `at` (default an hour before T). */
+/**
+ * `n` events of `type` for an account (and campaign), at `at` (default an hour before T), each tied to a send of ours
+ * unless `untargeted` (a DSN or ARF that matched no send).
+ */
 async function events(
   a: Pick<EmailAccount, "id" | "workspaceId">,
   type: EventType,
   n: number,
-  o: { at?: Date; campaignId?: string; meta?: Prisma.InputJsonObject } = {},
+  o: { at?: Date; campaignId?: string; meta?: Prisma.InputJsonObject; untargeted?: boolean } = {},
 ) {
   await P().event.createMany({
     data: Array.from({ length: n }, () => ({
@@ -45,6 +48,7 @@ async function events(
       accountId: a.id,
       campaignId: o.campaignId ?? null,
       meta: o.meta ?? {},
+      scheduledMessageId: o.untargeted ? null : `sm-${randomBytes(4).toString("hex")}`,
       dedupeKey: `t:${randomBytes(8).toString("hex")}`,
     })),
   });
@@ -237,6 +241,38 @@ describe("evaluateHealth: accounts", () => {
     expect((await acct(A.id)).healthCap).toBeNull(); // 50 ≥ the allowance without health
   });
 
+  test("a re-warming account is paused too", async () => {
+    const s = await seedCampaign(P(), { at: T, accounts: [{ lifecycle: "REWARMING" }] });
+    const A = s.accounts[0]!;
+    await events(A, "ACCEPTED", 100);
+    await events(A, "BOUNCE_HARD", 4);
+    expect(await evaluateHealth(P(), fixedClock(T))).toMatchObject({ paused: 1 });
+    expect(await acct(A.id)).toMatchObject({
+      lifecycle: "PAUSED",
+      lastError: { kind: "SOFT_BOUNCE", code: "bounce_rate" },
+    });
+  });
+
+  test("untargeted DSNs and ARFs (no send of ours, unauthenticated From) change nothing", async () => {
+    const s = await seedCampaign(P(), { at: T, accounts: [{}] });
+    const A = s.accounts[0]!;
+    await events(A, "ACCEPTED", 1000);
+    await events(A, "BOUNCE_HARD", 40, { untargeted: true });
+    await events(A, "BOUNCE_SOFT", 40, { untargeted: true });
+    await events(A, "COMPLAINT", 5, { untargeted: true });
+    expect((await healthInputs(P(), [A.id], T)).get(A.id)).toMatchObject({
+      hard7d: 0,
+      soft7d: 0,
+      complaints30d: 0,
+    });
+    expect(await evaluateHealth(P(), fixedClock(T))).toMatchObject({ throttled: 0, paused: 0 });
+    expect(await acct(A.id)).toMatchObject({
+      lifecycle: "ACTIVE",
+      healthCap: null,
+      healthScore: 100,
+    });
+  });
+
   test("SOFT/UNKNOWN bounces and sync failures lower the score", async () => {
     const s = await seedCampaign(P(), { at: T, accounts: [{}, { syncErrors: 5 }] });
     const [A, B] = s.accounts as [EmailAccount, EmailAccount];
@@ -320,12 +356,25 @@ describe("evaluateHealth: campaigns", () => {
     expect((await camp(s.campaign.id)).status).toBe("ACCOUNTS_UNHEALTHY");
     expect((await camp(stale.campaign.id)).status).toBe("ACTIVE");
     expect(await audits("campaign.accounts_unhealthy")).toMatchObject([
-      { target: s.campaign.id, meta: { status: "ACCOUNTS_UNHEALTHY" } },
+      { target: s.campaign.id, meta: { status: "ACCOUNTS_UNHEALTHY", assigned: 2, sendable: 0 } },
     ]);
 
     await resumeAccount(P(), s.ws, s.accounts[0]!.id, { clock });
     clock.advance(5 * 60_000);
     expect(await evaluateHealth(P(), clock)).toMatchObject({ unhealthy: 0, recovered: 1 });
     expect((await camp(s.campaign.id)).status).toBe("ACTIVE");
+  });
+
+  test("a recovering campaign is checked by BounceProtect in the same run", async () => {
+    const s = await seedCampaign(P(), { at: T, campaign: { status: "ACCOUNTS_UNHEALTHY" } });
+    for (const a of s.accounts) {
+      await events(a, "ACCEPTED", 30, { campaignId: s.campaign.id });
+      await events(a, "BOUNCE_HARD", 2, { campaignId: s.campaign.id });
+    }
+    expect(await evaluateHealth(P(), fixedClock(T))).toMatchObject({
+      recovered: 1,
+      bounceProtected: 1,
+    });
+    expect((await camp(s.campaign.id)).status).toBe("BOUNCE_PROTECT");
   });
 });

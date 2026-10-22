@@ -405,7 +405,8 @@ async function bounce(
     occurredAt: m.sentAt,
     leadId: sm?.campaignLead.leadId ?? match.leadId,
     campaignId: sm?.campaignId ?? match.campaignId,
-    accountId: m.accountId,
+    // D34: health belongs to the mailbox that sent it, not to a feedback-loop or shared mailbox that received the report
+    accountId: sm?.accountId ?? m.accountId,
     stepId: sm?.stepId ?? null,
     variantId: sm?.variantId ?? null,
     scheduledMessageId: sm?.id ?? null,

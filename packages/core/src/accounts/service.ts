@@ -12,6 +12,7 @@ import { type Clock, systemClock } from "../clock";
 import type { DnsResolver } from "../deliverability/dns";
 import { getEnv } from "../env";
 import { applyLimits, type LimitWarning } from "./caps";
+import { unwrapPrevious } from "./status";
 import { setCredentials } from "./credentials";
 import { dayKey } from "./daykey";
 import { createProvider } from "./factory";
@@ -232,23 +233,26 @@ export async function resumeAccount(prisma: Db, ws: string, id: string, o: Opts 
   if (a.lifecycle === "NEEDS_ATTENTION") throw new AccountError(409, RECONNECT);
   if (a.status === "DISCONNECTED") throw new AccountError(409, "reconnect first");
   if (a.lifecycle !== "PAUSED") return (await getAccount(prisma, ws, id, o))!;
-  // D34 / Rev 2 I3, M3: health rates restart from now, so the bounces behind a health pause do not pause it again
+  // D34 / Rev 2 I3, M3: health rates restart from now, so the bounces behind a health pause do not pause it again,
+  // and the health pause's SOFT_BOUNCE goes, at the top (the error it covered comes back) or kept under a SYNC
   // shortcut: T05 moves this into returnToService for every path back into service
-  const softBounce = (a.lastError as { kind?: string } | null)?.kind === "SOFT_BOUNCE";
-  return mutate(
-    prisma,
-    ws,
-    id,
-    o,
-    {
-      lifecycle: "ACTIVE",
-      pausedUntil: null,
-      consecutivePermanentErrors: 0,
-      healthResetAt: now(o),
-      ...(softBounce && { lastError: Prisma.DbNull }),
-    },
-    "account.resume",
-  );
+  await prisma.$transaction(async (tx) => {
+    const r = await tx.emailAccount.updateMany({
+      where: { id, workspaceId: ws, deletedAt: null },
+      data: {
+        lifecycle: "ACTIVE",
+        pausedUntil: null,
+        consecutivePermanentErrors: 0,
+        healthResetAt: now(o),
+      },
+    });
+    if (!r.count) throw new AccountError(404, "Not found");
+    await tx.$executeRaw`UPDATE "EmailAccount" SET "lastError" = CASE
+        WHEN "lastError"->>'kind' = 'SOFT_BOUNCE' THEN "lastError"->'previous' ELSE ${unwrapPrevious} END
+      WHERE id = ${id} AND ("lastError"->>'kind' = 'SOFT_BOUNCE' OR "lastError"->'previous'->>'kind' = 'SOFT_BOUNCE')`;
+    await audit(tx, { workspaceId: ws, actorId: o.actorId }, "account.resume", id);
+  });
+  return (await getAccount(prisma, ws, id, o))!;
 }
 
 /** Disconnect and delete: revoke at the provider (best effort), then drop credentials through the lease-guarded store. */

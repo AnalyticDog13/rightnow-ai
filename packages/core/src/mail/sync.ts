@@ -10,6 +10,7 @@ import {
   type SyncCursor,
 } from "@rightnow/providers";
 import { recordProviderError } from "../accounts/health";
+import { unwrapPrevious } from "../accounts/status";
 import type { Clock } from "../clock";
 import { withTxRetry } from "../dispatch";
 import { classify, type AiClassifier } from "./classify";
@@ -219,17 +220,24 @@ export async function reconcileAccount(
       const w = out.watermark.toISOString();
       const cursor = out.cursor ? JSON.stringify(out.cursor) : null;
       // a caught-up run also clears a SYNC escalation (I3), restoring the error it covered (D39); CONNECTED unless that
-      // restored error is a connection problem
+      // restored error is a connection problem. A SYNC kept under a health pause (SOFT_BOUNCE) is dropped the same way.
       const n = await prisma.$executeRaw`
         UPDATE "EmailAccount" SET
           "lastSyncCompletedAt" = GREATEST(COALESCE("lastSyncCompletedAt", ${w}::timestamp), ${w}::timestamp),
           "syncCursor" = COALESCE(${cursor}::jsonb, "syncCursor"),
           "syncProgress" = NULL, "syncErrors" = 0, "syncState" = 'IDLE',
           "syncLeaseId" = NULL, "syncLeaseUntil" = NULL,
-          status = CASE WHEN "lastError"->>'kind' = 'SYNC'
-            AND "lastError"->'previous'->>'kind' IS DISTINCT FROM 'CONNECTION'
-            THEN 'CONNECTED'::"AccountStatus" ELSE status END,
-          "lastError" = CASE WHEN "lastError"->>'kind' = 'SYNC' THEN "lastError"->'previous' ELSE "lastError" END
+          status = CASE
+            WHEN "lastError"->>'kind' = 'SYNC'
+              AND "lastError"->'previous'->>'kind' IS DISTINCT FROM 'CONNECTION' THEN 'CONNECTED'::"AccountStatus"
+            WHEN "lastError"->>'kind' = 'SOFT_BOUNCE' AND "lastError"->'previous'->>'kind' = 'SYNC'
+              AND "lastError"->'previous'->'previous'->>'kind' IS DISTINCT FROM 'CONNECTION' THEN 'CONNECTED'::"AccountStatus"
+            ELSE status END,
+          "lastError" = CASE
+            WHEN "lastError"->>'kind' = 'SYNC' THEN "lastError"->'previous'
+            WHEN "lastError"->>'kind' = 'SOFT_BOUNCE' AND "lastError"->'previous'->>'kind' = 'SYNC'
+              THEN ${unwrapPrevious}
+            ELSE "lastError" END
         WHERE id = ${accountId} AND "syncLeaseId" = ${lease}`;
       if (!n) throw new LeaseLost();
       result = "caught_up";
