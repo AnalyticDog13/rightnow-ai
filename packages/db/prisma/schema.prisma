@@ -30,6 +30,9 @@ model Workspace {
   campaigns            Campaign[]
   scheduledMessages    ScheduledMessage[]
   threads              Thread[]
+  notes                Note[]
+  macros               Macro[]
+  inboxViews           InboxView[]
   timezone             String                @default("UTC")
   physicalAddress      String?
   dailyCap             Int? // null = no workspace cap
@@ -836,6 +839,7 @@ model Thread {
   deletedAt        DateTime?
   createdAt        DateTime      @default(now())
   messages         Message[]
+  notes            Note[]
 
   @@index([workspaceId, lastMessageAt])
   @@index([accountId, providerThreadId])
@@ -929,4 +933,41 @@ model SyncRun {
   error      String?
 
   @@index([accountId, startedAt])
+}
+
+// A note on a thread or on a lead (exactly one; CHECK in the migration). leadId carries no FK: GDPR erasure deletes it explicitly.
+model Note {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  threadId    String?
+  thread      Thread?   @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  leadId      String?
+  authorId    String? // null for an API key
+  body        String
+  createdAt   DateTime  @default(now())
+
+  @@index([workspaceId, threadId])
+  @@index([workspaceId, leadId])
+}
+
+model Macro {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name        String
+  body        String
+
+  @@unique([workspaceId, name])
+}
+
+model InboxView {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name        String
+  filters     Json
+  createdAt   DateTime  @default(now())
+
+  @@unique([workspaceId, name])
 }

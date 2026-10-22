@@ -410,7 +410,8 @@ export async function gdprDeleteLead(
       data: { reason: "GDPR_ERASURE" },
     });
     // Mail: the lead's threads (cascading messages and attachments), anything they sent, and their events' lead link
-    await tx.thread.deleteMany({ where: { workspaceId: ws, leadId: { in: ids } } });
+    await tx.thread.deleteMany({ where: { workspaceId: ws, leadId: { in: ids } } }); // cascades the threads' own notes
+    await tx.note.deleteMany({ where: { workspaceId: ws, leadId: { in: ids } } });
     await tx.message.deleteMany({
       where: {
         workspaceId: ws,
@@ -514,6 +515,7 @@ export async function mergeLeads(
       const repoint = { where: { workspaceId: ws, leadId: mergeId }, data: { leadId: keepId } };
       await tx.thread.updateMany(repoint);
       await tx.message.updateMany(repoint);
+      await tx.note.updateMany(repoint);
       await tx.event.updateMany(repoint);
       await tx.lead.update({
         where: { id: mergeId },

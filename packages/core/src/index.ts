@@ -56,6 +56,8 @@ export * from "./mail/match";
 export * from "./mail/classify";
 export * from "./mail/ingest";
 export * from "./mail/inbox";
+export * from "./mail/inbox-library";
+export * from "./mail/reply";
 export * from "./mail/tracking";
 export * from "./mail/stoprules";
 export * from "./mail/sync";

@@ -58,6 +58,7 @@ const LEAD_FIELDS = [
   "phone",
   "personalization",
 ] as const;
+export const RENDER_LEAD_FIELDS = LEAD_FIELDS;
 
 export type PlanOpts = {
   stalenessSec: number;

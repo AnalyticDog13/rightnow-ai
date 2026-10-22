@@ -1,0 +1,250 @@
+import type { PrismaClient } from "@rightnow/db/client";
+import {
+  AuthError,
+  PermanentSendError,
+  RateLimitedError,
+  TransientBeforeSendError,
+  buildMime,
+  newMessageId,
+  type OutboundMime,
+  type SendResult,
+} from "@rightnow/providers";
+import { convert } from "html-to-text";
+import { z } from "zod";
+import { recordProviderError } from "../accounts/health";
+import { dayKey } from "../accounts/daykey";
+import { maxDailyLimit } from "../accounts/factory";
+import { AccountError } from "../accounts/service";
+import { audit } from "../audit";
+import type { Clock } from "../clock";
+import { withTxRetry } from "../dispatch";
+import { suppressedEmails } from "../leads/suppression";
+import { parseEmail } from "../leads/validate";
+import { SEND_TIMEOUT_MS } from "../sender";
+import type { SyncDeps } from "./sync";
+
+type Db = PrismaClient;
+type Actor = string | null | undefined;
+type File = { filename: string; contentType: string; content: Buffer };
+
+export const MAX_ATTACHMENTS_BYTES = 20 * 1024 * 1024;
+const MS_ATTACHMENTS_BYTES = 3 * 1024 * 1024; // Graph MIME draft limit
+const UNCERTAIN =
+  "The reply may have been sent. Check the mailbox's Sent folder before trying again.";
+
+export const replyInput = z.strictObject({
+  threadId: z.string().min(1),
+  mode: z.enum(["reply", "reply_all", "forward"]),
+  to: z.array(z.string()).max(50).optional(),
+  cc: z.array(z.string()).max(50).optional(),
+  html: z.string().min(1).max(1_000_000),
+});
+export type ReplyInput = z.input<typeof replyInput> & { attachments?: File[] };
+
+const prefixed = (s: string, p: "Re" | "Fwd") =>
+  new RegExp(`^\\s*${p === "Re" ? "re" : "fwd?"}:`, "i").test(s) ? s : `${p}: ${s}`;
+
+/** Provider errors as the API reports them. Anything that may have reached the provider is never retried by us. */
+async function failure(db: Db, clock: Clock, accountId: string, e: unknown) {
+  if (e instanceof AuthError) {
+    await recordProviderError(db, clock, accountId, e);
+    return new AccountError(409, "account_needs_attention");
+  }
+  if (e instanceof PermanentSendError) return new AccountError(502, e.code);
+  if (e instanceof RateLimitedError) return new AccountError(502, "rate_limited");
+  if (e instanceof TransientBeforeSendError) return new AccountError(502, "provider_unavailable");
+  return new AccountError(502, "send_uncertain", { message: UNCERTAIN });
+}
+
+/**
+ * PS-INBOX-02/03: a reply, reply-all or forward from the inbox (D29). Not limited by the user's daily limit, but refused
+ * at half the provider cap; it adds one unit per recipient to today's `sent`, so campaign sends shrink to match. The
+ * provider call is outside any transaction; an unknown outcome stores nothing (sync imports the mail if it went out).
+ */
+export async function sendReply(
+  prisma: Db,
+  clock: Clock,
+  deps: { providerFor: SyncDeps["providerFor"] },
+  ws: string,
+  actor: Actor,
+  input: ReplyInput,
+): Promise<{ messageId: string }> {
+  const { attachments = [], ...rest } = input;
+  const r = replyInput.parse(rest);
+  const t = await prisma.thread.findFirst({
+    where: { id: r.threadId, workspaceId: ws, deletedAt: null },
+  });
+  const acct =
+    t &&
+    (await prisma.emailAccount.findFirst({
+      where: { id: t.accountId, workspaceId: ws, deletedAt: null },
+    }));
+  if (!t || !acct) throw new AccountError(404, "Not found");
+  if (acct.status !== "CONNECTED") throw new AccountError(409, "account_unavailable");
+  const msgs = await prisma.message.findMany({
+    where: { threadId: t.id },
+    orderBy: [{ sentAt: "desc" }, { id: "desc" }],
+  });
+  const last = msgs[0];
+  if (!last) throw new AccountError(404, "Not found");
+  const lastIn = msgs.find((m) => m.direction === "IN");
+
+  const me = acct.email.toLowerCase();
+  const list = (l: string[]) => {
+    const ok = l.map((x) => parseEmail(x));
+    if (ok.includes(null)) throw new AccountError(400, "invalid_recipient");
+    return [...new Set(ok as string[])].filter((x) => x !== me);
+  };
+  const base = lastIn ?? last;
+  const sender = lastIn ? lastIn.fromEmail : (last.to[0] ?? "");
+  const to = list(r.to ?? (r.mode === "forward" ? [] : [sender]));
+  if (!to.length)
+    throw new AccountError(400, r.mode === "forward" ? "to_required" : "no_recipient");
+  const cc = list(r.cc ?? (r.mode === "reply_all" ? [...base.to, ...base.cc] : [])).filter(
+    (x) => !to.includes(x),
+  );
+  const everyone = [...to, ...cc];
+  if ((await suppressedEmails(prisma, ws, everyone)).size)
+    throw new AccountError(409, "recipient_suppressed");
+
+  // D29 (M3): units are every recipient; refused when today's sent + reserved + units passes half the provider cap
+  const now = clock.now();
+  const units = everyone.length;
+  const day = new Date(`${dayKey(acct.timezone, now)}T00:00:00Z`);
+  const used = await prisma.accountDailyUsage.findUnique({
+    where: { accountId_day: { accountId: acct.id, day } },
+  });
+  if ((used?.sent ?? 0) + (used?.reserved ?? 0) + units > maxDailyLimit(acct.providerCap))
+    throw new AccountError(409, "provider_cap");
+
+  const original =
+    r.mode === "forward"
+      ? await prisma.attachment.findMany({ where: { messageId: base.id, data: { not: null } } })
+      : [];
+  const files: File[] = [
+    ...attachments,
+    ...original.map((a) => ({
+      filename: a.filename,
+      contentType: a.contentType,
+      content: Buffer.from(a.data!),
+    })),
+  ];
+  const bytes = files.reduce((n, f) => n + f.content.length, 0);
+  if (bytes > MAX_ATTACHMENTS_BYTES) throw new AccountError(413, "attachments_too_large");
+  if (acct.provider === "MICROSOFT" && bytes > MS_ATTACHMENTS_BYTES)
+    throw new AccountError(413, "attachments_too_large_for_provider");
+
+  const threadable = !last.synthetic;
+  const refs = threadable ? [...new Set([...last.references, last.rfcMessageId])] : [];
+  const mime: OutboundMime = {
+    from: { email: acct.email, name: acct.fromName },
+    to: to.map((email) => ({ email })),
+    cc: cc.map((email) => ({ email })),
+    ...(acct.replyTo ? { replyTo: { email: acct.replyTo } } : {}),
+    subject: prefixed(t.subject, r.mode === "forward" ? "Fwd" : "Re"),
+    html: r.html,
+    text: convert(r.html, { wordwrap: false }),
+    messageId: newMessageId(me.split("@")[1]!),
+    ...(threadable ? { inReplyTo: last.rfcMessageId, references: refs } : {}),
+    ...(t.providerThreadId ? { threadId: t.providerThreadId } : {}),
+    ...(files.length ? { attachments: files } : {}),
+  };
+  try {
+    await buildMime(mime);
+  } catch {
+    throw new AccountError(400, "invalid_message");
+  }
+
+  let res: SendResult;
+  try {
+    let provider;
+    try {
+      provider = await deps.providerFor(acct);
+    } catch {
+      throw new AccountError(502, "provider_unavailable"); // nothing was sent
+    }
+    res = await provider.send(mime, { signal: AbortSignal.timeout(SEND_TIMEOUT_MS) });
+  } catch (e) {
+    throw e instanceof AccountError ? e : await failure(prisma, clock, acct.id, e);
+  }
+
+  const rfc = res.rfcMessageId || mime.messageId;
+  const store = () =>
+    prisma.$transaction(async (tx) => {
+      // M16: the same (accountId, rfcMessageId) upsert as ingestMessage; sync may have imported the mail already
+      const have = await tx.message.findUnique({
+        where: { accountId_rfcMessageId: { accountId: acct.id, rfcMessageId: rfc } },
+        select: { id: true },
+      });
+      const id =
+        have?.id ??
+        (
+          await tx.message.create({
+            data: {
+              workspaceId: ws,
+              accountId: acct.id,
+              threadId: t.id,
+              providerMessageId: res.providerMessageId ?? null,
+              rfcMessageId: rfc,
+              inReplyTo: mime.inReplyTo ?? null,
+              references: refs,
+              direction: "OUT",
+              folder: "SENT",
+              fromEmail: me,
+              fromName: acct.fromName,
+              to,
+              cc,
+              subject: mime.subject,
+              text: mime.text,
+              html: r.html,
+              sentAt: now,
+              kind: "OUTBOUND",
+              leadId: t.leadId,
+              campaignId: t.campaignId,
+              attachments: {
+                create: files.map((f) => ({
+                  filename: f.filename,
+                  contentType: f.contentType,
+                  size: f.content.length,
+                  data: new Uint8Array(f.content),
+                })),
+              },
+            },
+            select: { id: true },
+          })
+        ).id;
+      await tx.thread.updateMany({
+        where: { id: t.id, lastMessageAt: { lt: now } },
+        data: { lastMessageAt: now },
+      });
+      await tx.thread.update({
+        where: { id: t.id },
+        data: { isRead: true, ...(files.length && { hasAttachment: true }) },
+      });
+      await tx.$executeRaw`INSERT INTO "AccountDailyUsage" ("accountId", day, sent, reserved) VALUES (${acct.id}, ${day}, ${units}, 0)
+        ON CONFLICT ("accountId", day) DO UPDATE SET sent = "AccountDailyUsage".sent + ${units}`;
+      if (t.leadId)
+        await tx.lead.updateMany({
+          where: {
+            id: t.leadId,
+            OR: [{ lastContactedAt: null }, { lastContactedAt: { lt: now } }],
+          },
+          data: { lastContactedAt: now },
+        });
+      const action = r.mode === "forward" ? "inbox.forward" : "inbox.reply";
+      await audit(tx, { workspaceId: ws, actorId: actor, at: now }, action, t.id, {
+        mode: r.mode,
+        recipients: units,
+        attachments: files.length,
+      });
+      return id;
+    });
+  let messageId: string;
+  try {
+    messageId = await withTxRetry(store);
+  } catch (e) {
+    if ((e as { code?: string } | null)?.code !== "P2002") throw e;
+    messageId = await withTxRetry(store); // lost the race with sync: the mail is stored now
+  }
+  return { messageId };
+}
