@@ -537,12 +537,12 @@
    "id": "P5-T01",
    "phase": 5,
    "title": "DNS checks (SPF incl. lookup count, DKIM selectors, DMARC, MX, DNSBL) + launch gate wiring",
-   "status": "todo",
+   "status": "done",
    "deps": [
     "P4-T08"
    ],
    "model": "sonnet",
-   "commit": null,
+   "commit": "8b65f8b",
    "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-5.md; tests listed there pass; from P3-T05: wire dnsGate into campaign launch route"
   },
   {
