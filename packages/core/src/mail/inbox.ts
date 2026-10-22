@@ -207,7 +207,11 @@ export async function updateThread(db: Db, ws: string, actorId: Actor, id: strin
     if (!t) throw notFound();
     if (p.category && p.category !== t.category) {
       // I9: undoing a classifier's NOT_INTERESTED also lifts the suppression that status created
-      if (t.category === "NOT_INTERESTED" && t.categorySource !== "USER" && t.leadId) {
+      if (
+        t.category === "NOT_INTERESTED" &&
+        (t.categorySource === "RULE" || t.categorySource === "AI") &&
+        t.leadId
+      ) {
         const lead = await tx.lead.findFirst({
           where: { id: t.leadId, workspaceId: ws },
           select: { email: true },
@@ -252,19 +256,13 @@ export async function deleteThread(db: Db, clock: Clock, ws: string, actorId: Ac
   });
 }
 
-/** Marks read every thread of the same lead (just this one when it has none). */
+/** PS-INBOX-23: marks this thread read, and only this one. */
 export async function readAll(db: Db, ws: string, id: string) {
-  const t = await db.thread.findFirst({ where: { id, workspaceId: ws, deletedAt: null } });
-  if (!t) throw notFound();
   const r = await db.thread.updateMany({
-    where: {
-      workspaceId: ws,
-      deletedAt: null,
-      isRead: false,
-      ...(t.leadId ? { leadId: t.leadId } : { id }),
-    },
+    where: { id, workspaceId: ws, deletedAt: null },
     data: { isRead: true },
   });
+  if (!r.count) throw notFound();
   return { updated: r.count };
 }
 

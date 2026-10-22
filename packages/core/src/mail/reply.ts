@@ -117,10 +117,24 @@ export async function sendReply(
   if ((used?.sent ?? 0) + (used?.reserved ?? 0) + units > maxDailyLimit(acct.providerCap))
     throw new AccountError(409, "provider_cap");
 
-  const original =
+  // sizes first (no `data`): the limits are checked before any attachment bytes are loaded
+  const originalMeta =
     r.mode === "forward"
-      ? await prisma.attachment.findMany({ where: { messageId: base.id, data: { not: null } } })
+      ? await prisma.attachment.findMany({
+          where: { messageId: base.id, data: { not: null } },
+          select: { id: true, size: true },
+        })
       : [];
+  const bytes =
+    attachments.reduce((n, f) => n + f.content.length, 0) +
+    originalMeta.reduce((n, a) => n + a.size, 0);
+  if (bytes > MAX_ATTACHMENTS_BYTES) throw new AccountError(413, "attachments_too_large");
+  if (acct.provider === "MICROSOFT" && bytes > MS_ATTACHMENTS_BYTES)
+    throw new AccountError(413, "attachments_too_large_for_provider");
+  // forward is the one sanctioned read of Attachment.data outside the download route
+  const original = originalMeta.length
+    ? await prisma.attachment.findMany({ where: { id: { in: originalMeta.map((a) => a.id) } } })
+    : [];
   const files: File[] = [
     ...attachments,
     ...original.map((a) => ({
@@ -129,10 +143,6 @@ export async function sendReply(
       content: Buffer.from(a.data!),
     })),
   ];
-  const bytes = files.reduce((n, f) => n + f.content.length, 0);
-  if (bytes > MAX_ATTACHMENTS_BYTES) throw new AccountError(413, "attachments_too_large");
-  if (acct.provider === "MICROSOFT" && bytes > MS_ATTACHMENTS_BYTES)
-    throw new AccountError(413, "attachments_too_large_for_provider");
 
   const threadable = !last.synthetic;
   const refs = threadable ? [...new Set([...last.references, last.rfcMessageId])] : [];
@@ -160,8 +170,9 @@ export async function sendReply(
     let provider;
     try {
       provider = await deps.providerFor(acct);
-    } catch {
-      throw new AccountError(502, "provider_unavailable"); // nothing was sent
+    } catch (e) {
+      // nothing was sent: an auth failure marks the mailbox, anything else is retryable
+      throw e instanceof AuthError ? e : new AccountError(502, "provider_unavailable");
     }
     res = await provider.send(mime, { signal: AbortSignal.timeout(SEND_TIMEOUT_MS) });
   } catch (e) {
@@ -243,8 +254,20 @@ export async function sendReply(
   try {
     messageId = await withTxRetry(store);
   } catch (e) {
-    if ((e as { code?: string } | null)?.code !== "P2002") throw e;
-    messageId = await withTxRetry(store); // lost the race with sync: the mail is stored now
+    try {
+      if ((e as { code?: string } | null)?.code !== "P2002") throw e;
+      messageId = await withTxRetry(store); // lost the race with sync: the mail is stored now
+    } catch (e2) {
+      // the provider accepted the mail: say so, never a plain 500 that invites a duplicate
+      console.error(
+        "sendReply: sent but not stored",
+        (e2 as { code?: string } | null)?.code ?? "unknown",
+      );
+      throw new AccountError(502, "sent_not_recorded", {
+        message:
+          "The reply was sent but could not be saved here. It will appear after the next mailbox sync - do not send it again.",
+      });
+    }
   }
   return { messageId };
 }

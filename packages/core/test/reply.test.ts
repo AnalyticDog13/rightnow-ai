@@ -8,6 +8,7 @@ import { getFakeProvider, parseRaw } from "@rightnow/providers";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { dayKey } from "../src/accounts/daykey";
 import { fixedClock } from "../src/clock";
+import { AuthError } from "@rightnow/providers";
 import { suppress } from "../src/leads/suppression";
 import { sendReply, type ReplyInput } from "../src/mail/reply";
 
@@ -270,6 +271,50 @@ describe("sendReply", () => {
     expect(await usage(s.a)).toBeNull();
     // sync imports what went out: the provider copy is a normal message the next ingest stores once
     expect(await getFakeProvider(s.a.email).sentRaw()).toHaveLength(1);
+  });
+
+  test("a storage failure after the provider accepted the mail is 502 sent_not_recorded", async () => {
+    const s = await setup();
+    const broken = new Proxy(P(), {
+      get: (t, k) =>
+        k === "$transaction"
+          ? async () => {
+              throw Object.assign(new Error("db down"), { code: "P1001" });
+            }
+          : Reflect.get(t, k),
+    });
+    await expect(sendReply(broken, clock, deps, s.ws, "u1", input(s))).rejects.toMatchObject({
+      status: 502,
+      message: "sent_not_recorded",
+      body: { message: expect.stringContaining("do not send it again") },
+    });
+    expect(await getFakeProvider(s.a.email).sentRaw()).toHaveLength(1);
+    expect(await P().message.count({ where: { threadId: s.t.id, direction: "OUT" } })).toBe(0);
+    expect(await usage(s.a)).toBeNull();
+  });
+
+  test("an AuthError from providerFor needs attention like one from send", async () => {
+    const s = await setup();
+    const auth = { providerFor: async () => Promise.reject(new AuthError("invalid_grant")) };
+    await expect(sendReply(P(), clock, auth, s.ws, "u1", input(s))).rejects.toMatchObject({
+      status: 409,
+      message: "account_needs_attention",
+    });
+    expect(await P().emailAccount.findUniqueOrThrow({ where: { id: s.a.id } })).toMatchObject({
+      lifecycle: "NEEDS_ATTENTION",
+    });
+  });
+
+  test("a forward over the provider limit is refused from the attachment sizes alone", async () => {
+    const s = await setup({ provider: "MICROSOFT", capTier: "MS365", providerCap: 5000 });
+    await P().attachment.updateMany({
+      where: { messageId: s.m.id },
+      data: { size: 4 * 1024 * 1024 },
+    });
+    await expect(
+      sendReply(P(), clock, deps, s.ws, "u1", input(s, { mode: "forward", to: ["x@y.test"] })),
+    ).rejects.toMatchObject({ status: 413, message: "attachments_too_large_for_provider" });
+    expect(await getFakeProvider(s.a.email).sentRaw()).toHaveLength(0);
   });
 
   test("provider failures: auth needs attention, others report the code only", async () => {

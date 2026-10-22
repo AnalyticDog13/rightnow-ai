@@ -256,8 +256,9 @@ describe("state changes", () => {
       total: 3,
       remindersDue: 1,
     });
-    expect(await readAll(P(), ws, p1.id)).toEqual({ updated: 2 });
-    expect(await unreadCount(P(), ws, T)).toMatchObject({ primary: 0, others: 1, total: 1 });
+    // PS-INBOX-23: only that thread, never the lead's other threads
+    expect(await readAll(P(), ws, p1.id)).toEqual({ updated: 1 });
+    expect(await unreadCount(P(), ws, T)).toMatchObject({ primary: 1, others: 1, total: 2 });
     await expect(readAll(P(), ws, "nope")).rejects.toMatchObject({ status: 404 });
   });
 
@@ -315,6 +316,10 @@ describe("state changes", () => {
     await updateThread(P(), ws, "u1", t.id, { category: "INTERESTED" });
     expect(await isSuppressed(P(), ws, l.email)).toBe(true);
     await expect(updateThread(P(), ws, "u1", t.id, { isRead: "x" })).rejects.toThrow();
+    // a NOT_INTERESTED with no recorded source was not made by a classifier: nothing is lifted
+    const u = await thread(ws, a, { leadId: l.id, category: "NOT_INTERESTED" });
+    await updateThread(P(), ws, "u1", u.id, { category: "NEUTRAL" });
+    expect(await isSuppressed(P(), ws, l.email)).toBe(true);
   });
 });
 
