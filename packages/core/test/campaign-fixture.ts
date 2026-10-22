@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import type { Prisma, PrismaClient } from "@rightnow/db/client";
+import type { EmailAccount, Prisma, PrismaClient } from "@rightnow/db/client";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 type Sched = { timezone: string; days: number; from: string; to: string };
@@ -49,6 +49,8 @@ export async function seedCampaign(
     workspaceId?: string;
     workspace?: Partial<Prisma.WorkspaceCreateInput>;
     accounts?: Partial<Prisma.EmailAccountUncheckedCreateInput>[];
+    /** Existing accounts to assign instead of creating new ones (two campaigns sharing mailboxes). */
+    useAccounts?: EmailAccount[];
     campaign?: Partial<Prisma.CampaignUncheckedCreateInput>;
     schedules?: Sched[];
     steps?: number;
@@ -64,26 +66,27 @@ export async function seedCampaign(
         data: { name: "W", slug: `w-${tag}`, physicalAddress: "1 Main St", ...opts.workspace },
       })
     ).id;
-  const accounts = [];
-  for (const [i, a] of (opts.accounts ?? [{}, {}]).entries())
-    accounts.push(
-      await prisma.emailAccount.create({
-        data: {
-          workspaceId: ws,
-          provider: "SMTP",
-          email: `s${i}-${tag}@send.test`,
-          fromName: "S",
-          firstName: "S",
-          lastName: "T",
-          capTier: "SMTP",
-          providerCap: 100,
-          dailyLimit: 5,
-          lastSyncCompletedAt: opts.at,
-          nextSendAt: new Date(0),
-          ...a,
-        },
-      }),
-    );
+  const accounts: EmailAccount[] = [...(opts.useAccounts ?? [])];
+  if (!opts.useAccounts)
+    for (const [i, a] of (opts.accounts ?? [{}, {}]).entries())
+      accounts.push(
+        await prisma.emailAccount.create({
+          data: {
+            workspaceId: ws,
+            provider: "SMTP",
+            email: `s${i}-${tag}@send.test`,
+            fromName: "S",
+            firstName: "S",
+            lastName: "T",
+            capTier: "SMTP",
+            providerCap: 100,
+            dailyLimit: 5,
+            lastSyncCompletedAt: opts.at,
+            nextSendAt: new Date(0),
+            ...a,
+          },
+        }),
+      );
   const campaign = await prisma.campaign.create({
     data: {
       workspaceId: ws,
