@@ -587,7 +587,6 @@
    "title": "Inactivity detection (`computeLifecycle`, thresholds 7/14/30/60, recommend/auto) run inside every reconcileAccount",
    "status": "todo",
    "deps": [
-    "P5-T04",
     "P5-T08"
    ],
    "model": "opus",
@@ -624,7 +623,7 @@
    "title": "Verification hooks (`EmailVerifier`, built-in MX check, one HTTP integration template; risky handling per campaign)",
    "status": "todo",
    "deps": [
-    "P5-T03"
+    "P5-T04"
    ],
    "model": "sonnet",
    "commit": null,
