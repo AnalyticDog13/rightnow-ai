@@ -113,7 +113,7 @@ export async function reconcileAccount(
       } catch (e) {
         if (!(await failedTwice(tag))) throw new IngestFailed(`${codeOf(e)} ${tag}`);
         // 3rd run failing on it (PA #1): store the headers only, so the cursor moves and its stop rules still run
-        await ingestOne(prisma, clock, acct, { ...m, text: null, html: null, attachments: [] }, historical);
+        await ingestOne(prisma, clock, acct, { ...m, rfcMessageId: null, text: null, html: null, attachments: [] }, historical);
         stats.note = `placeholder ${codeOf(e)} ${tag}`;
         console.error(`sync: account ${acct.id} stored a header-only placeholder (${stats.note})`);
       }

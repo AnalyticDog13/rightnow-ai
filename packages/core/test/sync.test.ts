@@ -431,6 +431,29 @@ describe("reconcileAccount", () => {
     expect(m.cc[0]!.length).toBe(320);
   });
 
+  test("a multibyte Message-ID over the index byte limit is stored synthetic; the reply still stops the lead", async () => {
+    const { A, leads } = await setup();
+    const clock = fixedClock(T);
+    await run(clock, A);
+    await reply(A, leads[0]!.lead.email);
+    const emoji = Array.from({ length: 990 }, () => String.fromCharCode(0x4e00 + Math.floor(Math.random() * 0x4000))).join(""); // 990 chars <= 998 but ~2970 random 3-byte bytes: over the btree limit even compressed
+    const p = rewrite(
+      A,
+      () => true,
+      (m) => ({ ...m, rfcMessageId: `<${emoji}>`, inReplyTo: `<${emoji}>`, references: [`<${emoji}>`] }),
+    );
+    clock.advance(60_000);
+    const at = clock.now();
+    expect(await run(clock, A, deps({ providerFor: async () => p }))).toBe("caught_up");
+    const m = await P().message.findFirstOrThrow({ where: { accountId: A.id, direction: "IN" } });
+    expect(m).toMatchObject({ synthetic: true, inReplyTo: null, references: [] });
+    expect(m.rfcMessageId).toContain("synthetic");
+    expect(
+      await P().campaignLead.findUniqueOrThrow({ where: { id: leads[0]!.cl.id } }),
+    ).toMatchObject({ state: "STOPPED", stopReason: "REPLIED" });
+    expect((await acct(A.id)).lastSyncCompletedAt).toEqual(at);
+  });
+
   test("PA #1: a message that always fails is stored as a header-only placeholder on its 3rd failed run", async () => {
     const { A, leads } = await setup();
     const clock = fixedClock(T);
@@ -457,7 +480,8 @@ describe("reconcileAccount", () => {
     expect(await run(clock, A, d)).toBe("caught_up");
     const m = await P().message.findFirstOrThrow({ where: { accountId: A.id }, include: { attachments: true } });
     expect(m).toMatchObject({ text: null, html: null, attachments: [], fromEmail: leads[0]!.lead.email });
-    expect(m.rfcMessageId).not.toContain("synthetic");
+    expect(m).toMatchObject({ synthetic: true });
+    expect(m.rfcMessageId).toContain("synthetic");
     expect(
       await P().campaignLead.findUniqueOrThrow({ where: { id: leads[0]!.cl.id } }),
     ).toMatchObject({ state: "STOPPED", stopReason: "REPLIED" });

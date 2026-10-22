@@ -43,6 +43,10 @@ const strip = <T>(v: T): T =>
 /** RFC 5322 line limit. */
 const LINE = 998;
 
+/** Clips to `n` bytes (fromEmail is indexed); a split trailing character becomes U+FFFD, still within `n`. */
+const clipBytes = (s: string, n: number) =>
+  Buffer.byteLength(s, "utf8") <= n ? s : Buffer.from(s, "utf8").subarray(0, n).toString("utf8");
+
 /**
  * Makes a provider message storable, so one hostile mail cannot block a mailbox's sync (and its sending) forever:
  * NUL bytes (Postgres refuses them in text) are removed from every string, an invalid date becomes `fallback`, and
@@ -50,17 +54,18 @@ const LINE = 998;
  */
 export function sanitizeRemote(m: RemoteMessage, fallback: Date): RemoteMessage {
   const c = strip(m);
-  const id = (v: string | null) => (v && v.length <= LINE ? v : null);
+  const fits = (v: string) => Buffer.byteLength(v, "utf8") <= LINE; // btree limits are in bytes
+  const id = (v: string | null) => (v && fits(v) ? v : null);
   const addr = (a: RemoteMessage["from"]) => ({
     ...a,
-    email: a.email.slice(0, 320),
+    email: clipBytes(a.email, 320),
     ...(a.name != null && { name: a.name.slice(0, LINE) }),
   });
   return {
     ...c,
     rfcMessageId: id(c.rfcMessageId),
     inReplyTo: id(c.inReplyTo),
-    references: c.references.filter((r) => r.length <= LINE),
+    references: c.references.filter(fits),
     from: addr(c.from),
     to: c.to.map(addr),
     cc: c.cc.map(addr),
