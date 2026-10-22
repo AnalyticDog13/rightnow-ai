@@ -88,7 +88,7 @@ Areas: UI, ACC, WARM, CAMP, SEQ, SEND, LEAD, INBOX, TRACK, CRM, ANALYTICS, AUTO,
 
 ### 3.3 Inbox synchronization
 See section 17 (SYNC) for requirements; account-level items:
-- [ ] PS-ACC-31: Historical import window per account (default 30 days, configurable) with progress indicator and dedupe — master §3.
+- [x] PS-ACC-31: Historical import window per account (default 30 days, configurable) with progress indicator and dedupe — master §3.
 
 ---
 
@@ -117,9 +117,9 @@ See section 17 (SYNC) for requirements; account-level items:
 - [x] PS-CAMP-16: Max new leads per day (`dailyMaxLeads`, integer >= 0): caps how many leads receive Step 1 daily — S1, S3 `daily_max_leads`.
 - [x] PS-CAMP-17: Prioritize new leads (default off: follow-ups go first) — S1, S3.
 - [x] PS-CAMP-18: Stop sending on reply (recommended on) — stops sequence for the replying lead only — S1.
-- [ ] PS-CAMP-19: Stop campaign for company on reply: when one lead at a company (same domain) replies, remaining leads at that domain become Completed; auto-replies do not trigger it — S1, S3 `stop_for_company`.
+- [x] PS-CAMP-19: Stop campaign for company on reply: when one lead at a company (same domain) replies, remaining leads at that domain become Completed; auto-replies do not trigger it — S1, S3 `stop_for_company`.
 - [ ] PS-CAMP-20: Stop on auto-reply (OOO etc.): off by default recommended when using out-of-office smart pause (resume date); when on, auto-reply stops the lead — S1, S3 `stop_on_auto_reply`.
-- [ ] PS-CAMP-21: Open tracking toggle and link tracking toggle per campaign; global org-level overrides (disable open tracking / always text-only first email) win over campaign settings — S1, S17.
+- [x] PS-CAMP-21: Open tracking toggle and link tracking toggle per campaign; global org-level overrides (disable open tracking / always text-only first email) win over campaign settings — S1, S17.
 - [x] PS-CAMP-22: Delivery optimization: send as text-only (all steps) and send first email as text-only; enabling text-only disables open tracking and strips images/HTML styling — S1, S3 `text_only`, `first_email_text_only`, S17.
 - [x] PS-CAMP-23: Provider matching (`matchLeadEsp`): prefer sender with same ESP as recipient (Gmail to Gmail, Outlook to Outlook); needs at least one matching account — S1, S3. ESP detection for lead stored in lead record (Google, Microsoft, Zoho, Yahoo, Yandex, Other) — S5 ESP codes.
 - [x] PS-CAMP-24: ESP routing rules: list of {action send|do_not_send, recipientEsp[all|google|outlook|other], senderEsp[all|google|outlook|other]} evaluated at account selection — S3 `provider_routing_rules`.
@@ -147,7 +147,7 @@ See section 17 (SYNC) for requirements; account-level items:
 - [ ] PS-SEQ-05: Variant assignment is balanced over campaign lifetime by default (new variants catch up); optional daily reset; assignment recorded per send — S20.
 - [x] PS-SEQ-06: Follow-up steps may reuse previous subject (empty subject = reply in same thread) — undocumented in fetched pages; RightNow: empty subject on step N>1 sends as threaded reply (In-Reply-To/References).
 - [x] PS-SEQ-07: Sequence stops for a lead on reply, unsubscribe, hard bounce, manual removal/status change to non-active, global blocklist hit — S1, S5 statuses; master §4.
-- [ ] PS-SEQ-08: Out-of-office handling: detect auto-reply, optionally pause the lead and resume sending after the OOO return date ("AI Smart Pause"/OOO Resume); resume date visible in lead details — S1, S14.
+- [x] PS-SEQ-08: Out-of-office handling: detect auto-reply, optionally pause the lead and resume sending after the OOO return date ("AI Smart Pause"/OOO Resume); resume date visible in lead details — S1, S14.
 - [x] PS-SEQ-09: Subsequences: separate mini-sequences attached to a campaign, triggered by (a) lead status/label (default or custom, multiple allowed), (b) activity: email opened, link clicked, campaign completed without reply, (c) reply keywords (semicolon-separated exact phrases) — S13.
 - [ ] PS-SEQ-10: Subsequence settings: pre-delay before step 1 (minutes/hours/days), inherits campaign schedule and daily limit by default (custom or "no limit"), optional ignore-account-limits (with warning; RightNow disallows it for warming/re-warming accounts), pause/resume, duplicate, analytics — S13, S3 `pre_delay`.
 - [x] PS-SEQ-11: Only leads labeled after the subsequence is active enter automatically; existing leads can be moved manually; lead has `subsequenceId`; a lead can be removed from a subsequence; sends occur within ~10 minutes of entry if schedule/limits allow — S13, S5, S23.
@@ -234,10 +234,10 @@ See section 17 (SYNC) for requirements; account-level items:
 - [x] PS-LEAD-16: Lead merge (two records into one, keeping history) — S23 "Merge two leads".
 - [x] PS-LEAD-17: Bulk actions: assign to users (round-robin option), move, delete, add to blocklist, change interest status, add/remove tag, export selected CSV — S14, S15, S23.
 - [x] PS-LEAD-18: Advanced lead filters: status, interest status, verification status, campaign, list, owner, "opened but no reply", last contacted, custom field contains — S17 ("Email opened, No reply" filter), S15, S23 (advanced filtering article exists).
-- [ ] PS-LEAD-19: Contact history timeline per lead: imports, sends (step/variant/account), opens, clicks, replies, status changes, notes, tasks, campaign attribution — master §7; Instantly "Lead activity" article exists (search result).
+- [ ] PS-LEAD-19: Contact history timeline per lead: imports, sends (step/variant/account), opens, clicks, replies, status changes, notes, tasks, campaign attribution — master §7; Instantly "Lead activity" article exists (search result). (imports, sends, opens, clicks, replies, bounces, unsubscribes, status changes done P3/P4; notes and tasks → P6)
 - [x] PS-LEAD-20: Blocklist entries: single `value` that is an email or a domain (`isDomain` derived); CRUD, bulk create/delete, CSV download, delete-all; checked at import, campaign scheduling and send time — S10, S23.
 - [x] PS-LEAD-21: Global suppression list: unsubscribes, hard bounces, complaints and manual blocks added automatically; durable, survives lead deletion; enforced across all campaigns/workspace — master §7, §12, §14.
-- [ ] PS-LEAD-22: Import and export of historical conversations from authorized accounts and association with leads by email match — master §7.
+- [ ] PS-LEAD-22: Import and export of historical conversations from authorized accounts and association with leads by email match — master §7. (sync imports conversations and matches leads by email done P4-T05; export of historical conversations → P7-T03)
 - [x] PS-LEAD-23: Conflict prevention: a lead active in campaign A is not enqueued by campaign B (configurable) — master §7.
 - [x] PS-LEAD-24: Lead owner assignment (`assignedTo`) used by CRM/inbox filters — S5, S15.
 - [x] PS-LEAD-25: Bounced-lead management view: filter bounced leads, reasons, option to remove/re-verify — Instantly "Managing Bounced Leads" article exists (search result).
@@ -247,47 +247,47 @@ See section 17 (SYNC) for requirements; account-level items:
 
 ## 9. Unified Inbox (master §8)
 
-- [ ] PS-INBOX-01: Unified list across all connected accounts, grouped into threads by RFC headers (Message-ID, In-Reply-To, References) with provider thread id as fallback — master §8.
-- [ ] PS-INBOX-02: Sidebar filters: lead status/label (default + custom), campaign, connected inbox, (AI agent n/a) — S14.
-- [ ] PS-INBOX-03: "More" views: Primary (replies from known leads), Unread only, Reminders only, Scheduled emails, Sent, Others (replies from non-leads or unmatched addresses) — S14.
-- [ ] PS-INBOX-04: Replies matched to the lead's most relevant campaign; if ambiguous, the most recently contacted campaign — S14.
-- [ ] PS-INBOX-05: "Attach lead" for replies from a different address/forward: link to the original lead and move to Primary — S14.
-- [ ] PS-INBOX-06: Quick filters: has attachment, unread, sent, received, last 7 days; keyword search plus advanced filters: from, to, subject, date, campaign id, read/unread, attachment; recent searches saved — S14.
-- [ ] PS-INBOX-07: Bulk action bar: mark read/unread, update lead status, add to blocklist, delete; select all on page/read/unread/none — S14.
-- [ ] PS-INBOX-08: Reply composer: Reply, Reply all (when CC), Forward, rich text, attachments, send from the original mailbox; reply sent through Gmail/Graph/SMTP and stored in thread — S14, S23 reply/forward endpoints.
-- [ ] PS-INBOX-09: Macros/snippets for replies (user-defined templates with variables) — S14 mentions macros as suggestion input.
-- [ ] PS-INBOX-10: Internal notes per conversation/lead visible only to workspace members — S14.
-- [ ] PS-INBOX-11: Follow-up reminder per conversation (date/time) with "Reminders only" view and notification — S14; Instantly also adds nudges when a reply may be needed (changelog, search result).
-- [ ] PS-INBOX-12: Actions: edit lead, set reminder, move to subsequence or other campaign, change interest status from thread header — S14.
-- [ ] PS-INBOX-13: Lead info panel: step and variant that triggered the thread, resume date for OOO, lead fields, campaign — S14.
-- [ ] PS-INBOX-14: Read/unread and delete in the inbox are one-way (local only; do not mutate the provider mailbox) — S14. RightNow default same; optional two-way read-state sync later.
-- [ ] PS-INBOX-15: Deleting a conversation keeps the lead in campaigns; deleting a lead / blocklisting offers: remove all same-domain leads, remove from all campaigns, block future outreach — S14.
-- [ ] PS-INBOX-16: Reply from deleted lead still shows under Others — S14.
-- [ ] PS-INBOX-17: Reply detection from headers and provider ids; bounces (DSN/NDR), auto-replies (Auto-Submitted, X-Autoreply, Precedence, OOO text), unsubscribe requests classified separately from genuine replies — master §8; Instantly separates auto-replies from replies in analytics (S9, S16).
-- [ ] PS-INBOX-18: Genuine reply immediately cancels pending steps of the lead (and company, if option on) via transactional job removal — master §8, S1.
-- [ ] PS-INBOX-19: Reply categories: interested, not interested, neutral, meeting requested, out of office, unsubscribe, automated response, uncertain; Instantly default labels: Interested, Meeting Booked, Meeting Completed, Won, OOO, Wrong Person, Not Interested, Lost, Neutral (S5, S6); manual correction always allowed and feeds feedback log — master §8.
-- [ ] PS-INBOX-20: Deterministic rule classifier (regex/keyword/headers) runs first; optional AI classifier on top ([optional]); thumbs feedback on AI tags — S14, S28.
-- [ ] PS-INBOX-21: Safe email rendering: sanitize HTML (no scripts, remote content blocked by default, link rewrite warnings), plain-text fallback — master §14.
-- [ ] PS-INBOX-22: Unread count API/badge — S23 count-unread.
-- [ ] PS-INBOX-23: Mark all in thread as read — S23.
-- [ ] PS-INBOX-24: Scheduled (queued) outgoing emails view for the lead, including next planned step and time — S14.
+- [x] PS-INBOX-01: Unified list across all connected accounts, grouped into threads by RFC headers (Message-ID, In-Reply-To, References) with provider thread id as fallback — master §8.
+- [x] PS-INBOX-02: Sidebar filters: lead status/label (default + custom), campaign, connected inbox, (AI agent n/a) — S14.
+- [x] PS-INBOX-03: "More" views: Primary (replies from known leads), Unread only, Reminders only, Scheduled emails, Sent, Others (replies from non-leads or unmatched addresses) — S14.
+- [x] PS-INBOX-04: Replies matched to the lead's most relevant campaign; if ambiguous, the most recently contacted campaign — S14.
+- [x] PS-INBOX-05: "Attach lead" for replies from a different address/forward: link to the original lead and move to Primary — S14.
+- [x] PS-INBOX-06: Quick filters: has attachment, unread, sent, received, last 7 days; keyword search plus advanced filters: from, to, subject, date, campaign id, read/unread, attachment; recent searches saved — S14.
+- [x] PS-INBOX-07: Bulk action bar: mark read/unread, update lead status, add to blocklist, delete; select all on page/read/unread/none — S14.
+- [ ] PS-INBOX-08: Reply composer: Reply, Reply all (when CC), Forward, rich text, attachments, send from the original mailbox; reply sent through Gmail/Graph/SMTP and stored in thread — S14, S23 reply/forward endpoints. (rich-text formatting → P7-T08; reply/reply-all/forward, attachments, send-from-original-mailbox done P4-T06/T08)
+- [x] PS-INBOX-09: Macros/snippets for replies (user-defined templates with variables) — S14 mentions macros as suggestion input.
+- [x] PS-INBOX-10: Internal notes per conversation/lead visible only to workspace members — S14.
+- [x] PS-INBOX-11: Follow-up reminder per conversation (date/time) with "Reminders only" view and notification — S14; Instantly also adds nudges when a reply may be needed (changelog, search result).
+- [x] PS-INBOX-12: Actions: edit lead, set reminder, move to subsequence or other campaign, change interest status from thread header — S14.
+- [x] PS-INBOX-13: Lead info panel: step and variant that triggered the thread, resume date for OOO, lead fields, campaign — S14.
+- [x] PS-INBOX-14: Read/unread and delete in the inbox are one-way (local only; do not mutate the provider mailbox) — S14. RightNow default same; optional two-way read-state sync later.
+- [x] PS-INBOX-15: Deleting a conversation keeps the lead in campaigns; deleting a lead / blocklisting offers: remove all same-domain leads, remove from all campaigns, block future outreach — S14.
+- [x] PS-INBOX-16: Reply from deleted lead still shows under Others — S14.
+- [x] PS-INBOX-17: Reply detection from headers and provider ids; bounces (DSN/NDR), auto-replies (Auto-Submitted, X-Autoreply, Precedence, OOO text), unsubscribe requests classified separately from genuine replies — master §8; Instantly separates auto-replies from replies in analytics (S9, S16).
+- [x] PS-INBOX-18: Genuine reply immediately cancels pending steps of the lead (and company, if option on) via transactional job removal — master §8, S1.
+- [ ] PS-INBOX-19: Reply categories: interested, not interested, neutral, meeting requested, out of office, unsubscribe, automated response, uncertain; Instantly default labels: Interested, Meeting Booked, Meeting Completed, Won, OOO, Wrong Person, Not Interested, Lost, Neutral (S5, S6); manual correction always allowed and feeds feedback log — master §8. (categories, manual correction and feedback log done P4-T02/T06; AI labels → P7-T05)
+- [ ] PS-INBOX-20: Deterministic rule classifier (regex/keyword/headers) runs first; optional AI classifier on top ([optional]); thumbs feedback on AI tags — S14, S28. (rule classifier and AI hook done P4-T02; AI classifier and thumbs feedback → P7-T05)
+- [ ] PS-INBOX-21: Safe email rendering: sanitize HTML (no scripts, remote content blocked by default, link rewrite warnings), plain-text fallback — master §14. (sanitized sandboxed rendering, remote content blocked, plain-text toggle done P4-T08 (D30); link-target warnings → P7-T08)
+- [x] PS-INBOX-22: Unread count API/badge — S23 count-unread.
+- [x] PS-INBOX-23: Mark all in thread as read — S23.
+- [x] PS-INBOX-24: Scheduled (queued) outgoing emails view for the lead, including next planned step and time — S14.
 
 ---
 
 ## 10. Email Analytics and Event Tracking (master §9)
 
-- [ ] PS-TRACK-01: Immutable event log with types: scheduled, send_attempt, provider_accepted, send_failed, bounce_hard, bounce_soft, unsubscribe, reply, auto_reply, open (estimated), click, positive_reply, negative_reply, meeting, opportunity, deal_won, deal_lost — master §9; Instantly webhook event types cover sent/opened/clicked/reply/auto-reply/bounce/unsub (S6).
-- [ ] PS-TRACK-02: Event dedupe via unique key (provider message id + event type + timestamp bucket) so repeated notifications do not double count — master §9.
-- [ ] PS-TRACK-03: [optional] Open tracking via 1x1 pixel served from the (custom) tracking domain; open rate denominator = leads who got step 1 ("sequences started"); text-only clients not counted — S17, S16.
-- [ ] PS-TRACK-04: Opens flagged as estimated; classify machine opens (known prefetch proxies, Apple Mail Privacy Protection, security scanners, opens within seconds of send) into a separate counter; UI shows "estimated" and never merges into engagement KPIs by default — master §9 (Instantly doc pages fetched do not describe bot/MPP filtering; undocumented).
-- [ ] PS-TRACK-05: [optional] Link click tracking by rewriting links through the tracking domain; unique and total clicks; clicks within seconds of delivery flagged as likely scanner — S1, S9.
-- [ ] PS-TRACK-06: Custom tracking domain per account, CNAME required, HTTPS cert provisioned (VPS mode) — S4, S17.
-- [ ] PS-TRACK-07: Disabling tracking (text-only/delivery optimization) removes pixel and link rewriting — S1, S17.
-- [ ] PS-TRACK-08: Hard vs soft bounce classification from SMTP codes and DSN (5.x.x hard, 4.x.x soft) plus reason text; unknown bucket — S21 (hard/soft/unknown).
-- [ ] PS-TRACK-09: Unsubscribe via link, List-Unsubscribe one-click POST, and reply-text detection; immediately suppress and complete lead (status Unsubscribed) — S1, S5.
+- [ ] PS-TRACK-01: Immutable event log with types: scheduled, send_attempt, provider_accepted, send_failed, bounce_hard, bounce_soft, unsubscribe, reply, auto_reply, open (estimated), click, positive_reply, negative_reply, meeting, opportunity, deal_won, deal_lost — master §9; Instantly webhook event types cover sent/opened/clicked/reply/auto-reply/bounce/unsub (S6). (event log done P4-T01; scheduled/send_attempt kept on ScheduledMessage, not Events (D31); meeting/opportunity/deal events → P6-T01)
+- [x] PS-TRACK-02: Event dedupe via unique key (provider message id + event type + timestamp bucket) so repeated notifications do not double count — master §9.
+- [x] PS-TRACK-03: [optional] Open tracking via 1x1 pixel served from the (custom) tracking domain; open rate denominator = leads who got step 1 ("sequences started"); text-only clients not counted — S17, S16.
+- [x] PS-TRACK-04: Opens flagged as estimated; classify machine opens (known prefetch proxies, Apple Mail Privacy Protection, security scanners, opens within seconds of send) into a separate counter; UI shows "estimated" and never merges into engagement KPIs by default — master §9 (Instantly doc pages fetched do not describe bot/MPP filtering; undocumented).
+- [x] PS-TRACK-05: [optional] Link click tracking by rewriting links through the tracking domain; unique and total clicks; clicks within seconds of delivery flagged as likely scanner — S1, S9.
+- [x] PS-TRACK-06: Custom tracking domain per account, CNAME required, HTTPS cert provisioned (VPS mode) — S4, S17.
+- [x] PS-TRACK-07: Disabling tracking (text-only/delivery optimization) removes pixel and link rewriting — S1, S17.
+- [x] PS-TRACK-08: Hard vs soft bounce classification from SMTP codes and DSN (5.x.x hard, 4.x.x soft) plus reason text; unknown bucket — S21 (hard/soft/unknown).
+- [x] PS-TRACK-09: Unsubscribe via link, List-Unsubscribe one-click POST, and reply-text detection; immediately suppress and complete lead (status Unsubscribed) — S1, S5.
 - [ ] PS-TRACK-10: Reports by campaign, sender account, step, variant, recipient segment (ESP, list, tag, custom field), and time period — master §9, S20.
 - [ ] PS-TRACK-11: Meetings, opportunities, won/lost, revenue events recorded from interest status changes and CRM updates — S11, S15.
-- [ ] PS-TRACK-12: All timestamps stored UTC; report bucketing UTC by default — S16.
+- [x] PS-TRACK-12: All timestamps stored UTC; report bucketing UTC by default — S16.
 - [ ] PS-TRACK-13: Webhook/provider push notifications (Gmail Pub/Sub, Graph subscriptions) are idempotent and verified — master §3/§9.
 
 ---
@@ -414,19 +414,19 @@ Instantly has no dedicated reactivation product: users lower limits manually, re
 
 ## 17. Offline Recovery and Inbox Synchronization (master §3 inbox sync + addendum)
 
-- [ ] PS-SYNC-01: Provider sync strategies: Gmail `history.list` + Pub/Sub watch (fallback polling), Microsoft Graph delta queries + change notifications (fallback polling), IMAP IDLE with UID/UIDVALIDITY tracking (fallback polling interval default 2–5 min) — master §3.
-- [ ] PS-SYNC-02: Persist per-account checkpoint (Gmail historyId, Graph deltaLink, IMAP UIDVALIDITY+last UID) and sync run log.
-- [ ] PS-SYNC-03: Incremental sync by default; when checkpoint expired/invalid (Gmail history too old, Graph delta token expired, UIDVALIDITY change) fall back to full reconciliation of a bounded window (default window = max(30 days, downtime + margin)).
-- [ ] PS-SYNC-04: Import both incoming and provider-sent messages (including mail sent outside RightNow) and match to campaign sends by Message-ID/headers to avoid duplicate records.
-- [ ] PS-SYNC-05: Dedupe by provider message id + RFC Message-ID; threading by headers; idempotent upserts.
-- [ ] PS-SYNC-06: Detect and apply while offline: replies, auto-replies, bounces (DSN), unsubscribes (incl. List-Unsubscribe mailto), manual deletions, state changes; update campaign/lead status, CRM, analytics.
-- [ ] PS-SYNC-07: Startup gate: on every process start, sending is blocked (global "sync-pending" flag per account and global) until reconciliation completes "sufficiently" (all accounts reached current checkpoint or are marked failed/excluded); UI shows progress.
-- [ ] PS-SYNC-08: After sync, recompute stale follow-ups: cancel steps for any lead with a reply/unsub/bounce discovered; reschedule remaining sends into the next valid windows.
-- [ ] PS-SYNC-09: Never burst-send an offline backlog: overdue sends are re-planned under normal gaps, daily quotas, schedule windows, and re-warm allowances.
-- [ ] PS-SYNC-10: Uncertain sends (job in `sending` at crash time) reconciled against the provider Sent folder before retrying; unresolved ones held for review, never auto-resent.
-- [ ] PS-SYNC-11: Mandatory automated tests simulating 1, 7, and 30 days of downtime, including expired history ids, replies/bounces during downtime, and verification of zero duplicate sends and zero missed follow-up cancellations.
-- [ ] PS-SYNC-12: Document events not reconstructable offline: tracking-pixel opens and link clicks that occur while no tracking endpoint is reachable, real-time webhook events, ephemeral provider notifications — see section 19.
-- [ ] PS-SYNC-13: Sync health shown per account (last success, lag, errors) and surfaced in account status — master §3.
+- [ ] PS-SYNC-01: Provider sync strategies: Gmail `history.list` + Pub/Sub watch (fallback polling), Microsoft Graph delta queries + change notifications (fallback polling), IMAP IDLE with UID/UIDVALIDITY tracking (fallback polling interval default 2–5 min) — master §3. (polling for Gmail/Graph/IMAP done P4-T05; Gmail watch, Graph subscriptions, IMAP IDLE → P7-T06 (D31))
+- [x] PS-SYNC-02: Persist per-account checkpoint (Gmail historyId, Graph deltaLink, IMAP UIDVALIDITY+last UID) and sync run log.
+- [x] PS-SYNC-03: Incremental sync by default; when checkpoint expired/invalid (Gmail history too old, Graph delta token expired, UIDVALIDITY change) fall back to full reconciliation of a bounded window (default window = max(30 days, downtime + margin)).
+- [x] PS-SYNC-04: Import both incoming and provider-sent messages (including mail sent outside RightNow) and match to campaign sends by Message-ID/headers to avoid duplicate records.
+- [x] PS-SYNC-05: Dedupe by provider message id + RFC Message-ID; threading by headers; idempotent upserts.
+- [x] PS-SYNC-06: Detect and apply while offline: replies, auto-replies, bounces (DSN), unsubscribes (incl. List-Unsubscribe mailto), manual deletions, state changes; update campaign/lead status, CRM, analytics.
+- [x] PS-SYNC-07: Startup gate: on every process start, sending is blocked (global "sync-pending" flag per account and global) until reconciliation completes "sufficiently" (all accounts reached current checkpoint or are marked failed/excluded); UI shows progress.
+- [x] PS-SYNC-08: After sync, recompute stale follow-ups: cancel steps for any lead with a reply/unsub/bounce discovered; reschedule remaining sends into the next valid windows.
+- [x] PS-SYNC-09: Never burst-send an offline backlog: overdue sends are re-planned under normal gaps, daily quotas, schedule windows, and re-warm allowances.
+- [x] PS-SYNC-10: Uncertain sends (job in `sending` at crash time) reconciled against the provider Sent folder before retrying; unresolved ones held for review, never auto-resent.
+- [x] PS-SYNC-11: Mandatory automated tests simulating 1, 7, and 30 days of downtime, including expired history ids, replies/bounces during downtime, and verification of zero duplicate sends and zero missed follow-up cancellations.
+- [x] PS-SYNC-12: Document events not reconstructable offline: tracking-pixel opens and link clicks that occur while no tracking endpoint is reachable, real-time webhook events, ephemeral provider notifications — see section 19.
+- [x] PS-SYNC-13: Sync health shown per account (last success, lag, errors) and surfaced in account status — master §3.
 
 ---
 
