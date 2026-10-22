@@ -836,6 +836,7 @@ model Thread {
   categorySource   String? // RULE | AI | USER
   reminderAt       DateTime?
   hasAttachment    Boolean       @default(false)
+  replyLeaseUntil  DateTime? // D29: an inbox reply is in flight until then (one per thread)
   deletedAt        DateTime?
   createdAt        DateTime      @default(now())
   messages         Message[]
@@ -898,6 +899,8 @@ model Attachment {
   size        Int
   data        Bytes?
   truncated   Boolean @default(false)
+
+  @@index([messageId])
 }
 
 model Event {

@@ -162,6 +162,16 @@ describe("views and filters", () => {
     expect(await listThreads(P(), ws)).toHaveLength(1); // default view is primary
   });
 
+  test("PA #6: the list carries a 200-char snippet of the last message, never its html or full text", async () => {
+    const { ws, a } = await world();
+    await thread(ws, a, { text: "x".repeat(5000) });
+    const [t] = await listThreads(P(), ws, { view: "all" });
+    const m = t!.messages[0]!;
+    expect(m.snippet).toBe("x".repeat(200));
+    expect(m).not.toHaveProperty("html");
+    expect(m).not.toHaveProperty("text");
+  });
+
   test("the scheduled view lists threads of leads with rows waiting", async () => {
     const s = await seedCampaign(P(), { at: T, rows: 2, accounts: [{}] });
     const [l1, l2] = s.leads;

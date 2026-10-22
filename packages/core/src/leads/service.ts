@@ -412,12 +412,29 @@ export async function gdprDeleteLead(
     // Mail: the lead's threads (cascading messages and attachments), anything they sent, and their events' lead link
     await tx.thread.deleteMany({ where: { workspaceId: ws, leadId: { in: ids } } }); // cascades the threads' own notes
     await tx.note.deleteMany({ where: { workspaceId: ws, leadId: { in: ids } } });
-    await tx.message.deleteMany({
-      where: {
-        workspaceId: ws,
-        OR: [{ fromEmail: { in: uniq(set.map((l) => l.email)) } }, { leadId: { in: ids } }],
-      },
-    });
+    // FR I2: also mail to the address (a cc, an "Others" thread from before the import), DSNs naming it, and threads left empty
+    const emails = uniq(set.map((l) => l.email.toLowerCase()));
+    const where = {
+      workspaceId: ws,
+      OR: [
+        { fromEmail: { in: emails } },
+        { leadId: { in: ids } },
+        { to: { hasSome: emails } },
+        { cc: { hasSome: emails } },
+        { bounceRecipient: { in: emails } },
+      ],
+    };
+    const threads = uniq((await tx.message.findMany({ where, select: { threadId: true } })).map((m) => m.threadId));
+    await tx.message.deleteMany({ where });
+    await tx.thread.deleteMany({ where: { id: { in: threads }, messages: { none: {} } } });
+    // events whose meta (a bounce recipient, a clicked URL) holds the address: deleted when the lead's, else redacted
+    const like = emails.flatMap((e) =>
+      [e, encodeURIComponent(e)].map((v) => `%${v.replace(/[\\%_]/g, "\\$&")}%`),
+    );
+    await tx.$executeRaw`DELETE FROM "Event" WHERE "workspaceId" = ${ws} AND "leadId" = ANY(${ids}::text[])
+      AND meta::text ILIKE ANY(${like}::text[])`;
+    await tx.$executeRaw`UPDATE "Event" SET meta = '{}' WHERE "workspaceId" = ${ws}
+      AND meta::text ILIKE ANY(${like}::text[])`;
     await tx.event.updateMany({
       where: { workspaceId: ws, leadId: { in: ids } },
       data: { leadId: null },

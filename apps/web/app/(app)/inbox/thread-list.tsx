@@ -158,7 +158,7 @@ export function ThreadList({
                   {t.subject}
                 </span>
                 <span className="truncate text-xs text-muted-foreground">
-                  {m?.text?.slice(0, 120)}
+                  {m?.snippet?.slice(0, 120)}
                 </span>
                 <span className="flex items-center gap-2 text-xs">
                   {!t.isRead && (

@@ -27,10 +27,13 @@ export type ThreadRow = {
   reminderAt: string | null;
   hasAttachment: boolean;
   lastMessageAt: string;
-  messages: Msg[]; // the list returns the latest message only
+  messages: (Pick<Msg, "id" | "direction" | "kind" | "fromEmail" | "fromName" | "sentAt"> & {
+    snippet: string | null;
+  })[]; // the list returns the latest message only, without its body
 };
 export type Note = { id: string; body: string; createdAt: string };
-export type Detail = ThreadRow & {
+export type Detail = Omit<ThreadRow, "messages"> & {
+  messages: Msg[];
   campaignLeadId: string | null;
   campaignId: string | null;
   leadId: string | null;

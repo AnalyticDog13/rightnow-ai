@@ -58,8 +58,10 @@ async function failure(db: Db, clock: Clock, accountId: string, e: unknown) {
 
 /**
  * PS-INBOX-02/03: a reply, reply-all or forward from the inbox (D29). Not limited by the user's daily limit, but refused
- * at half the provider cap; it adds one unit per recipient to today's `sent`, so campaign sends shrink to match. The
- * provider call is outside any transaction; an unknown outcome stores nothing (sync imports the mail if it went out).
+ * at half the provider cap; it reserves one unit per recipient before the provider call and moves them to today's
+ * `sent` on accept, so campaign sends shrink to match. One reply per thread is in flight at a time (409
+ * reply_in_progress). The provider call is outside any transaction; an unknown outcome stores nothing and keeps its
+ * units reserved (sync imports the mail if it went out).
  */
 export async function sendReply(
   prisma: Db,
@@ -107,15 +109,9 @@ export async function sendReply(
   if ((await suppressedEmails(prisma, ws, everyone)).size)
     throw new AccountError(409, "recipient_suppressed");
 
-  // D29 (M3): units are every recipient; refused when today's sent + reserved + units passes half the provider cap
   const now = clock.now();
   const units = everyone.length;
   const day = new Date(`${dayKey(acct.timezone, now)}T00:00:00Z`);
-  const used = await prisma.accountDailyUsage.findUnique({
-    where: { accountId_day: { accountId: acct.id, day } },
-  });
-  if ((used?.sent ?? 0) + (used?.reserved ?? 0) + units > maxDailyLimit(acct.providerCap))
-    throw new AccountError(409, "provider_cap");
 
   // sizes first (no `data`): the limits are checked before any attachment bytes are loaded
   const originalMeta =
@@ -165,109 +161,143 @@ export async function sendReply(
     throw new AccountError(400, "invalid_message");
   }
 
-  let res: SendResult;
-  try {
-    let provider;
-    try {
-      provider = await deps.providerFor(acct);
-    } catch (e) {
-      // nothing was sent: an auth failure marks the mailbox, anything else is retryable
-      throw e instanceof AuthError ? e : new AccountError(502, "provider_unavailable");
-    }
-    res = await provider.send(mime, { signal: AbortSignal.timeout(SEND_TIMEOUT_MS) });
-  } catch (e) {
-    throw e instanceof AccountError ? e : await failure(prisma, clock, acct.id, e);
-  }
-
-  const rfc = res.rfcMessageId || mime.messageId;
-  const store = () =>
-    prisma.$transaction(async (tx) => {
-      // M16: the same (accountId, rfcMessageId) upsert as ingestMessage; sync may have imported the mail already
-      const have = await tx.message.findUnique({
-        where: { accountId_rfcMessageId: { accountId: acct.id, rfcMessageId: rfc } },
-        select: { id: true },
-      });
-      const id =
-        have?.id ??
-        (
-          await tx.message.create({
-            data: {
-              workspaceId: ws,
-              accountId: acct.id,
-              threadId: t.id,
-              providerMessageId: res.providerMessageId ?? null,
-              rfcMessageId: rfc,
-              inReplyTo: mime.inReplyTo ?? null,
-              references: refs,
-              direction: "OUT",
-              folder: "SENT",
-              fromEmail: me,
-              fromName: acct.fromName,
-              to,
-              cc,
-              subject: mime.subject,
-              text: mime.text,
-              html: r.html,
-              sentAt: now,
-              kind: "OUTBOUND",
-              leadId: t.leadId,
-              campaignId: t.campaignId,
-              attachments: {
-                create: files.map((f) => ({
-                  filename: f.filename,
-                  contentType: f.contentType,
-                  size: f.content.length,
-                  data: new Uint8Array(f.content),
-                })),
-              },
-            },
-            select: { id: true },
-          })
-        ).id;
-      await tx.thread.updateMany({
-        where: { id: t.id, lastMessageAt: { lt: now } },
-        data: { lastMessageAt: now },
-      });
-      await tx.thread.update({
-        where: { id: t.id },
-        data: { isRead: true, ...(files.length && { hasAttachment: true }) },
-      });
-      await tx.$executeRaw`INSERT INTO "AccountDailyUsage" ("accountId", day, sent, reserved) VALUES (${acct.id}, ${day}, ${units}, 0)
-        ON CONFLICT ("accountId", day) DO UPDATE SET sent = "AccountDailyUsage".sent + ${units}`;
-      if (t.leadId)
-        await tx.lead.updateMany({
-          where: {
-            id: t.leadId,
-            OR: [{ lastContactedAt: null }, { lastContactedAt: { lt: now } }],
-          },
-          data: { lastContactedAt: now },
-        });
-      const action = r.mode === "forward" ? "inbox.forward" : "inbox.reply";
-      await audit(tx, { workspaceId: ws, actorId: actor, at: now }, action, t.id, {
-        mode: r.mode,
-        recipients: units,
-        attachments: files.length,
-      });
-      return id;
+  // D29: one reply in flight per thread (a lease, as the sync lease: no network call inside a transaction), and the
+  // units reserved before the provider call with the claim's guarded upsert: refused past half the provider cap (M3)
+  const lease = new Date(now.getTime() + SEND_TIMEOUT_MS + 60_000);
+  const cap = maxDailyLimit(acct.providerCap);
+  await prisma.$transaction(async (tx) => {
+    const got = await tx.thread.updateMany({
+      where: { id: t.id, OR: [{ replyLeaseUntil: null }, { replyLeaseUntil: { lt: now } }] },
+      data: { replyLeaseUntil: lease },
     });
-  let messageId: string;
-  try {
-    messageId = await withTxRetry(store);
-  } catch (e) {
+    if (!got.count) throw new AccountError(409, "reply_in_progress");
+    const ok = await tx.$queryRaw<unknown[]>`
+      INSERT INTO "AccountDailyUsage" ("accountId", day, sent, reserved)
+      SELECT ${acct.id}, ${day}, 0, ${units}::int WHERE ${units}::int <= ${cap}::int
+      ON CONFLICT ("accountId", day) DO UPDATE SET reserved = "AccountDailyUsage".reserved + ${units}::int
+      WHERE "AccountDailyUsage".sent + "AccountDailyUsage".reserved + ${units}::int <= ${cap}::int
+      RETURNING 1`;
+    if (!ok.length) throw new AccountError(409, "provider_cap");
+  });
+  /** reserved -= units, sent += `sent` (0 when nothing went out). */
+  const settle = (db: Pick<Db, "$executeRaw">, sent: number) =>
+    db.$executeRaw`UPDATE "AccountDailyUsage" SET reserved = GREATEST(reserved - ${units}::int, 0),
+      sent = sent + ${sent}::int WHERE "accountId" = ${acct.id} AND day = ${day}`;
+  const sendAndStore = async (): Promise<{ messageId: string }> => {
+    let res: SendResult;
     try {
-      if ((e as { code?: string } | null)?.code !== "P2002") throw e;
-      messageId = await withTxRetry(store); // lost the race with sync: the mail is stored now
-    } catch (e2) {
-      // the provider accepted the mail: say so, never a plain 500 that invites a duplicate
-      console.error(
-        "sendReply: sent but not stored",
-        (e2 as { code?: string } | null)?.code ?? "unknown",
-      );
-      throw new AccountError(502, "sent_not_recorded", {
-        message:
-          "The reply was sent but could not be saved here. It will appear after the next mailbox sync - do not send it again.",
-      });
+      let provider;
+      try {
+        provider = await deps.providerFor(acct);
+      } catch (e) {
+        // nothing was sent: an auth failure marks the mailbox, anything else is retryable
+        throw e instanceof AuthError ? e : new AccountError(502, "provider_unavailable");
+      }
+      res = await provider.send(mime, { signal: AbortSignal.timeout(SEND_TIMEOUT_MS) });
+    } catch (e) {
+      const err = e instanceof AccountError ? e : await failure(prisma, clock, acct.id, e);
+      // an unknown outcome keeps its units reserved (like UNCERTAIN); anything else did not send
+      // (a failed release only holds the units until the day ends: the provider's answer is what the user needs)
+      if (err.message !== "send_uncertain") await settle(prisma, 0).catch(() => {});
+      throw err;
     }
+
+    const rfc = res.rfcMessageId || mime.messageId;
+    const store = () =>
+      prisma.$transaction(async (tx) => {
+        // M16: the same (accountId, rfcMessageId) upsert as ingestMessage; sync may have imported the mail already
+        const have = await tx.message.findUnique({
+          where: { accountId_rfcMessageId: { accountId: acct.id, rfcMessageId: rfc } },
+          select: { id: true },
+        });
+        const id =
+          have?.id ??
+          (
+            await tx.message.create({
+              data: {
+                workspaceId: ws,
+                accountId: acct.id,
+                threadId: t.id,
+                providerMessageId: res.providerMessageId ?? null,
+                rfcMessageId: rfc,
+                inReplyTo: mime.inReplyTo ?? null,
+                references: refs,
+                direction: "OUT",
+                folder: "SENT",
+                fromEmail: me,
+                fromName: acct.fromName,
+                to,
+                cc,
+                subject: mime.subject,
+                text: mime.text,
+                html: r.html,
+                sentAt: now,
+                kind: "OUTBOUND",
+                leadId: t.leadId,
+                campaignId: t.campaignId,
+                attachments: {
+                  create: files.map((f) => ({
+                    filename: f.filename,
+                    contentType: f.contentType,
+                    size: f.content.length,
+                    data: new Uint8Array(f.content),
+                  })),
+                },
+              },
+              select: { id: true },
+            })
+          ).id;
+        await tx.thread.updateMany({
+          where: { id: t.id, lastMessageAt: { lt: now } },
+          data: { lastMessageAt: now },
+        });
+        await tx.thread.update({
+          where: { id: t.id },
+          data: { isRead: true, ...(files.length && { hasAttachment: true }) },
+        });
+        await settle(tx, units);
+        if (t.leadId)
+          await tx.lead.updateMany({
+            where: {
+              id: t.leadId,
+              OR: [{ lastContactedAt: null }, { lastContactedAt: { lt: now } }],
+            },
+            data: { lastContactedAt: now },
+          });
+        const action = r.mode === "forward" ? "inbox.forward" : "inbox.reply";
+        await audit(tx, { workspaceId: ws, actorId: actor, at: now }, action, t.id, {
+          mode: r.mode,
+          recipients: units,
+          attachments: files.length,
+        });
+        return id;
+      });
+    let messageId: string;
+    try {
+      messageId = await withTxRetry(store);
+    } catch (e) {
+      try {
+        if ((e as { code?: string } | null)?.code !== "P2002") throw e;
+        messageId = await withTxRetry(store); // lost the race with sync: the mail is stored now
+      } catch (e2) {
+        // the provider accepted the mail: say so, never a plain 500 that invites a duplicate
+        console.error(
+          "sendReply: sent but not stored",
+          (e2 as { code?: string } | null)?.code ?? "unknown",
+        );
+        throw new AccountError(502, "sent_not_recorded", {
+          message:
+            "The reply was sent but could not be saved here. It will appear after the next mailbox sync - do not send it again.",
+        });
+      }
+    }
+    return { messageId };
+  };
+  try {
+    return await sendAndStore();
+  } finally {
+    await prisma.thread
+      .updateMany({ where: { id: t.id, replyLeaseUntil: lease }, data: { replyLeaseUntil: null } })
+      .catch(() => {}); // the lease expires on its own
   }
-  return { messageId };
 }

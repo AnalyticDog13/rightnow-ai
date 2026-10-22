@@ -131,17 +131,33 @@ export async function listThreads(
 ) {
   const f = threadFilterSchema.parse(input);
   const ids = await threadIds(db, ws, f, f.limit);
+  // PA #6: the last message without its body; a 200-char snippet is cut in SQL, so no large text leaves the database
   const rows = await db.thread.findMany({
     where: { id: { in: ids }, workspaceId: ws },
     include: {
       messages: {
         orderBy: [{ sentAt: "desc" }, { id: "desc" }],
         take: 1,
-        include: { attachments: { select: ATTACHMENT_META } },
+        select: {
+          ...{ id: true, direction: true, kind: true, fromEmail: true, fromName: true, sentAt: true },
+          attachments: { select: ATTACHMENT_META },
+        },
       },
     },
   });
-  const byId = new Map(rows.map((r) => [r.id, r]));
+  const last = rows.flatMap((r) => r.messages.map((m) => m.id));
+  const snippets = new Map(
+    (
+      await db.$queryRaw<{ id: string; snippet: string | null }[]>`
+        SELECT id, left(text, 200) AS snippet FROM "Message" WHERE id = ANY(${last}::text[])`
+    ).map((r) => [r.id, r.snippet]),
+  );
+  const byId = new Map(
+    rows.map((r) => [
+      r.id,
+      { ...r, messages: r.messages.map((m) => ({ ...m, snippet: snippets.get(m.id) ?? null })) },
+    ]),
+  );
   return ids.flatMap((id) => byId.get(id) ?? []);
 }
 

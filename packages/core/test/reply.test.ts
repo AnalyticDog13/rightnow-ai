@@ -256,7 +256,71 @@ describe("sendReply", () => {
     expect(await getFakeProvider(s.a.email).sentRaw()).toHaveLength(0);
   });
 
-  test("an uncertain send is reported, nothing is stored and nothing is counted", async () => {
+  /** The Fake, with every send held for 200 ms so concurrent replies overlap. */
+  const slow = {
+    providerFor: async (a: EmailAccount) => {
+      const p = getFakeProvider(a.email);
+      return Object.assign(Object.create(p) as typeof p, {
+        send: async (...args: Parameters<typeof p.send>) => {
+          await new Promise((r) => setTimeout(r, 200));
+          return p.send(...args);
+        },
+      });
+    },
+  };
+
+  test("PA #5: two concurrent replies at cap - 1 on two threads: one is sent, one is 409 provider_cap", async () => {
+    const s = await setup();
+    const t2 = await P().thread.create({
+      data: { workspaceId: s.ws, accountId: s.a.id, subject: "Other", lastMessageAt: T },
+    });
+    await P().message.create({
+      data: {
+        workspaceId: s.ws,
+        accountId: s.a.id,
+        threadId: t2.id,
+        rfcMessageId: `<t2-${s.tag}@lead.test>`,
+        direction: "IN",
+        folder: "INBOX",
+        fromEmail: `other-${s.tag}@lead.test`,
+        to: [s.a.email],
+        subject: "Other",
+        sentAt: T,
+        kind: "REPLY",
+      },
+    });
+    await P().accountDailyUsage.create({
+      data: { accountId: s.a.id, day: today(s.a), sent: 49, reserved: 0 },
+    });
+    const r = await Promise.allSettled([
+      sendReply(P(), clock, slow, s.ws, "u1", input(s)),
+      sendReply(P(), clock, slow, s.ws, "u1", input({ t: t2 })),
+    ]);
+    expect(r.filter((x) => x.status === "fulfilled")).toHaveLength(1);
+    expect(r.find((x) => x.status === "rejected")).toMatchObject({
+      reason: { status: 409, message: "provider_cap" },
+    });
+    expect(await getFakeProvider(s.a.email).sentRaw()).toHaveLength(1);
+    expect(await usage(s.a)).toMatchObject({ sent: 50, reserved: 0 });
+  });
+
+  test("PA #5: two concurrent replies on one thread: one is sent, one is 409 reply_in_progress", async () => {
+    const s = await setup();
+    const r = await Promise.allSettled([
+      sendReply(P(), clock, slow, s.ws, "u1", input(s)),
+      sendReply(P(), clock, slow, s.ws, "u1", input(s)),
+    ]);
+    expect(r.filter((x) => x.status === "fulfilled")).toHaveLength(1);
+    expect(r.find((x) => x.status === "rejected")).toMatchObject({
+      reason: { status: 409, message: "reply_in_progress" },
+    });
+    expect(await getFakeProvider(s.a.email).sentRaw()).toHaveLength(1);
+    // the thread is free again once the reply is done
+    await sendReply(P(), clock, deps, s.ws, "u1", input(s));
+    expect(await usage(s.a)).toMatchObject({ sent: 2, reserved: 0 });
+  });
+
+  test("an uncertain send is reported, nothing is stored and its units stay reserved", async () => {
     const s = await setup();
     getFakeProvider(s.a.email).failNext("timeout_after_write");
     await expect(sendReply(P(), clock, deps, s.ws, "u1", input(s))).rejects.toMatchObject({
@@ -268,16 +332,18 @@ describe("sendReply", () => {
       },
     });
     expect(await P().message.count({ where: { threadId: s.t.id, direction: "OUT" } })).toBe(0);
-    expect(await usage(s.a)).toBeNull();
+    expect(await usage(s.a)).toMatchObject({ sent: 0, reserved: 1 }); // like an UNCERTAIN campaign send
     // sync imports what went out: the provider copy is a normal message the next ingest stores once
     expect(await getFakeProvider(s.a.email).sentRaw()).toHaveLength(1);
   });
 
   test("a storage failure after the provider accepted the mail is 502 sent_not_recorded", async () => {
     const s = await setup();
+    // the reservation before the send works; every transaction after it fails
+    let txs = 0;
     const broken = new Proxy(P(), {
       get: (t, k) =>
-        k === "$transaction"
+        k === "$transaction" && txs++ > 0
           ? async () => {
               throw Object.assign(new Error("db down"), { code: "P1001" });
             }
@@ -290,7 +356,7 @@ describe("sendReply", () => {
     });
     expect(await getFakeProvider(s.a.email).sentRaw()).toHaveLength(1);
     expect(await P().message.count({ where: { threadId: s.t.id, direction: "OUT" } })).toBe(0);
-    expect(await usage(s.a)).toBeNull();
+    expect(await usage(s.a)).toMatchObject({ sent: 0, reserved: 1 });
   });
 
   test("an AuthError from providerFor needs attention like one from send", async () => {
@@ -339,6 +405,8 @@ describe("sendReply", () => {
       message: "rate_limited",
     });
     expect(await P().message.count({ where: { threadId: u.t.id, direction: "OUT" } })).toBe(0);
+    // nothing went out: the reservations were released
+    expect(await usage(u.a)).toMatchObject({ sent: 0, reserved: 0 });
   });
 
   test("an account that is not connected, deleted or foreign refuses (409 / 404)", async () => {

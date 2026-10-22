@@ -404,6 +404,12 @@ describe("outbound messages", () => {
   });
 });
 
+test("PA #2: Attachment.messageId is indexed (list loads and cascade deletes)", async () => {
+  const r = await P().$queryRaw<{ indexdef: string }[]>`
+    SELECT indexdef FROM pg_indexes WHERE tablename = 'Attachment' AND indexname = 'Attachment_messageId_idx'`;
+  expect(r).toHaveLength(1);
+});
+
 describe("lead erasure and merge keep mail consistent (I11)", () => {
   test("gdprDeleteLead removes the lead's threads, messages, attachments and event links", async () => {
     const s = await sent();
@@ -438,6 +444,45 @@ describe("lead erasure and merge keep mail consistent (I11)", () => {
     expect(
       await P().event.findUniqueOrThrow({ where: { dedupeKey: `gdpr-${s.lead.id}` } }),
     ).toMatchObject({ leadId: null });
+  });
+
+  test("FR I2: gdprDeleteLead also removes the address from events, mail to it, DSNs naming it and empty threads", async () => {
+    const s = await sent();
+    const other = await P().lead.create({ data: { workspaceId: s.ws, email: "other@x.test" } });
+    const addr = s.lead.email;
+    // an inbox reply in an "Others" thread, cc'ing the lead before it was imported (leadId null)
+    const out = await ingest(
+      s.a,
+      msg({ from: { email: s.a.email }, to: [{ email: "x@y.test" }], cc: [{ email: addr }] }),
+    );
+    const dsnMsg = await ingest(
+      s.a,
+      msg({
+        from: { email: "mailer-daemon@mx.test" },
+        subject: "Undeliverable",
+        text: `Delivery failed.\nFinal-Recipient: rfc822; ${addr}\nStatus: 5.1.1\n`,
+        headers: {},
+      }),
+    );
+    const kept = await ingest(s.a, msg({ from: { email: "z@x.test" }, subject: "unrelated" }));
+    const ev = (dedupeKey: string, leadId: string | null, meta: object) =>
+      P().$transaction((tx) =>
+        recordEvent(tx, { workspaceId: s.ws, type: "CLICK", occurredAt: T, leadId, meta, dedupeKey }),
+      );
+    await ev(`click-${s.lead.id}`, s.lead.id, { url: `https://x.test/?e=${encodeURIComponent(addr)}` });
+    await ev(`bounce-${s.lead.id}`, other.id, { recipient: addr, status: "5.1.1" });
+    await ev(`plain-${s.lead.id}`, other.id, { url: "https://x.test/p" });
+    await gdprDeleteLead(P(), fixedClock(T), s.ws, s.lead.id);
+    expect(await P().message.count({ where: { id: { in: [out.messageId, dsnMsg.messageId] } } })).toBe(0);
+    expect(await P().thread.count({ where: { id: { in: [out.threadId, dsnMsg.threadId] } } })).toBe(0);
+    expect(await P().message.count({ where: { id: kept.messageId } })).toBe(1);
+    expect(await P().event.count({ where: { dedupeKey: `click-${s.lead.id}` } })).toBe(0);
+    expect(
+      await P().event.findUniqueOrThrow({ where: { dedupeKey: `bounce-${s.lead.id}` } }),
+    ).toMatchObject({ leadId: other.id, meta: {} });
+    expect(
+      await P().event.findUniqueOrThrow({ where: { dedupeKey: `plain-${s.lead.id}` } }),
+    ).toMatchObject({ meta: { url: "https://x.test/p" } });
   });
 
   test("mergeLeads re-points threads, messages and events", async () => {
