@@ -1,13 +1,13 @@
 # Handoff
 
-**Phase:** 4 — Incoming mail & tracking (branch `phase-4-inbox`, from `main` after the Phase 3 merge)
-**Current task:** Phase 4 gate — fix wave DONE (ccc5139..44f768c, 14 items, 1161 tests + Playwright inbox green locally). NEXT: opus scoped re-review of the fix wave (package `.superpowers/sdd/phase-4/review-ccc5139..44f768c.diff`, list `gate-fix-wave.md`), check CI for 44f768c, then tick PRODUCT_SPEC, PROGRESS/HANDOFF/REVIEW_LOG, fast-forward main, push. Ledger `.superpowers/sdd/phase-4/progress.md`.
-**Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 (approved). Done step plans: `docs/plans/phase-1.md`, `phase-2.md`, `phase-3.md`.
-**Tests:** ~946 vitest + 19 Playwright (prod build) green; CI `check`, `compose-smoke`, `imap-real` green.
+**Phase:** 5 — Deliverability, warm-up, re-warm-up (branch `phase-5-deliverability`, to be created from `main` after the Phase 4 merge)
+**Current task:** none started. Phase 4 merged to main (gate approved, CI green). Next: write `docs/plans/phase-5.md`.
+**Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 (approved). Done step plans: `docs/plans/phase-1.md` … `phase-4.md` (+ `phase-4-review.md`).
+**Tests:** ~1165 vitest + 20 Playwright green; CI `check`, `compose-smoke` (incl. Caddyfile validate), `imap-real` green.
 
 ## Next exact action
-Phase 4: execute `docs/plans/phase-4.md` (Revision 2 table at the end overrides the task text) with subagent-driven-development (new ledger `.superpowers/sdd/phase-4/`).
-Ordering constraint: P4-T05 (writes `lastSyncCompletedAt`, which enables real campaign sends per D16) lands only AFTER reply-stop (P4-T03), mailto-unsubscribe processing, and the N-1 Cc-retry fix (see TASKS.json P4-T05).
+Phase 5: create branch `phase-5-deliverability` from `main`, write the step plan `docs/plans/phase-5.md` from IMPLEMENTATION_PLAN Phase 5 + PRODUCT_SPEC (WARM, REWARM, deliverability) + TASKS.json carry-forwards, get an independent opus plan review, then execute with subagent-driven-development (new ledger `.superpowers/sdd/phase-5/`). Check CI after EVERY task commit.
+Carry-forwards from Phase 4 into P5: P5-T05 hooks `computeLifecycle` into `reconcileAccount` (after the caught-up write); P5-T06 extends `packages/core/test/e2e/downtime.test.ts` with the 30-day re-warm allowance; P5-T02 consumes SOFT/UNKNOWN bounce events and SYNC errors for health; sync escalation overwriting an earlier SENDING `lastError` (minor). Into P7: AI classifier (hook + lease renewal per message), push sync/IMAP IDLE, link-target warnings + rich-text compose, lead conversation export, inbox query-count/perf pass, near-copy cleanup.
 Existing dev DBs keep old pg-boss queue settings (recreate the pg-boss schema to pick up the new heartbeats).
 Known env issue: Windows vitest worker crash (exit 3221226505) recurs in random files; vitest 5 already uses forks; rerun affected files alone.
 

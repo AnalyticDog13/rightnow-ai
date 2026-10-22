@@ -238,3 +238,61 @@ Review: 0 Critical, 4 Important, 9 Minor; no duplicate/over-quota/outside-window
 - P4-T07 (6cfbd26): 1/7/30-day × cold-boot/sleep downtime suite (replies incl. cross-mailbox + company, DSN bounce, mailto unsubscribe, expired cursor, mid-flight UNCERTAIN, quota spreading, stale-account control campaign) + docs/ops/OFFLINE_RECOVERY.md. Found no bugs (mutation-checked). Opus review: approved, minors (doc accuracy) for the gate wave.
 - P4-T06 (cdfd496, 6497e29): inbox API (threads/views/search/bulk/unread/notes/macros/saved views/attach-lead/attachments, reply+forward with D29). Review: 1 Important (post-send storage failure → 500 invited resend) + read-all scoped to thread (ruling) fixed in 1 round; deviation: first pass without TDD RED.
 - P4-T08 (f6c4df6): unified inbox UI (sandboxed CSP message frame, cid→data, composer with attachments + macros picker, lead panel, views, bulk, notes, reminders, delete-lead dialog) + inbox-thread.spec.ts incl. inert-rendering. Review: approved; minors to gate wave.
+
+## 2026-10-22 · Phase 4 gate · opus whole-branch review + ponytail audit + opus scoped re-review → **Approved, merged**
+Final review: 1 Critical (bounce-classifier regex ReDoS froze the worker), 3 Important (oversized ids poison a mailbox, GDPR erase gaps, composer duplicate send), 9 Minor; audit 5 must / 9 should / 4 nice. One 14-item fix wave (2684bbc..44f768c): bounded regexes + 64 KB cap, id/address sanitizing, header-only placeholder after 3 failed runs, GDPR erase of all mail traces, composer send guards, no-target bounces never suppress, reply usage reservation + per-thread reply lease, Attachment index, list snippets, OOO year fix, tracking/category/bounce minors, stale copy, D28–D31, macro manage UI. Re-review: 14/14 addressed + 1 new Important (multibyte Message-ID vs byte index limit) fixed in 2eb4ade. CI had been red since P4-T08 (inbox e2e on Linux next-dev: spec matched the note textarea and reloaded before save; retries re-imported Fake mail) — fixed c69b96c; CI green. Deferred minors are in the Phase 4 ledger summary below and carried to P5–P7. Parity 171/316.
+
+### Phase 4 ledger summary (rulings and deferred minors; the SDD workspace is deleted after merge)
+- Ruling: T02 and T04 run as 2 parallel implementers — CLAUDE.md allows max 2 concurrent implementers on disjoint files and their file sets are disjoint — if wrong, a git index collision costs one re-commit (staging is by explicit path).
+- Ruling: task briefs come from brief.sh instead of scripts/task-brief (headings are "P4-TNN", not "Task N") — same content contract — if a brief misses a Revision row the reviewer gets the same brief, so the gap would surface at the final review.
+- Ruling: T02 minor 4 (OOO date edge cases incl. "feedback 12 July") goes into fix round 1 — same regexes being edited, and a false date pauses follow-ups — costs one slightly larger fix diff if wrong.
+- Ruling: T04 missing RED evidence is recorded as a process deviation, not re-done — rewriting tests to fail first would prove nothing about the existing code — cost if wrong: tests that never failed may assert too little (reviewer judged coverage adequate).
+- Ruling: T04 ⚠️ enterSubsequence→cancelOpenRows after CampaignLead lock is fine — cancelRows uses FOR UPDATE SKIP LOCKED, never waits (planner-exception pattern, D21) — cost if wrong: a deadlock retried by withTxRetry.
+- Ruling: T04 minor 2 (unsubscribe skip vs key rotation) folded into fix round 1 — one-line change in the file being edited — cost: slightly larger fix diff.
+- Ruling: T03 minors 1–3 (HELD claimToken "", empty phrase matches all, keyword reply revives user-PAUSED lead) + D26 note + 2 test assertions folded into fix round 1 — they are behaviour bugs in the same block — cost: larger fix diff.
+- Ruling: poison messages are sanitized (strip \u0000, invalid Date → provider internal date or syncStartedAt), not quarantined — keeps "never skipped silently" and needs no new product surface — cost if wrong: another unforeseen poison class still blocks a mailbox until escalation (visible as SYNC error).
+- Ruling: T05 minors 1 (AI hook re-call + timeout race), 5 (log code only — privacy), 6 (D24 lists) folded into fix round 1 — small, same files — cost: larger fix diff.
+- Ruling: read-all marks only the one thread (PS-INBOX-23 literal) — lead-wide marking silently hides other conversations — cost if wrong: user clicks once per thread.
+- Ruling: T06 missing TDD RED recorded as process deviation (2nd sonnet implementer to skip it); fix round must show RED — cost: none beyond review trust.
+- Ruling: T06 minors forward size-before-data, providerFor AuthError → recordProviderError, I9 undo condition folded into fix round 1 — small, same files, correctness/memory — cost: larger diff.
+- Ruling: poison messages → after 3 consecutive failed runs ingest a header-only placeholder (still stop-ruled) and move the cursor — supersedes the T05 sanitize-only ruling now that more poison classes exist — cost if wrong: a placeholder hides a body the user may want (visible as placeholder + SyncRun note).
+- Ruling: no-target bounce records the Event only, never suppresses (PA #4, reverses M15 part) — From is unauthenticated — cost: a real bounce for a never-mailed address goes unsuppressed (harmless: we never mail it).
+- Ruling: replies reserve usage before sending and allow one reply in flight per thread (advisory namespace 726005) — closes D29 overshoot + double-click — cost: a stuck in-flight marker must expire (fixer documents).
+- Ruling: thread category change lifts NOT_INTERESTED suppression only for ADMIN (D20) — cost: members must ask an admin.
+- Ruling: PS-INBOX-09 minimal macro manage dialog built now — spec item, small — cost: UI polish later.
+- Ruling: not fixed (by design/deferred): attachments in Postgres (master plan: backups include them); API-key forward to any address (spec feature, scoped key); lease renewal per message → P7-T05; query count, near-copies, test-only options, historical-read, search/unread polling → P7 polish.
+- Ruling: residual multibyte Message-ID is load-bearing (one hostile mail freezes a mailbox) → smallest change: byte-length id check + placeholder uses synthetic id; dispatched to a small sonnet fixer (no second full wave) — cost: none beyond one small commit.
+- Ruling: placeholder always uses a synthetic id — it can no longer self-match our own Sent copy (step 0) and two identical bodiless messages could collapse — accepted, rare; replies still thread via In-Reply-To — cost: an occasional outsideApp placeholder for one of our own sends.
+- Task 1: minor (deferred): dispatch.ts:409 claim-error FAILED writes no SEND_FAILED event
+- Task 1: minor (deferred): no cross-workspace isolation test for matchMessage
+- Task 1: minor (deferred): OUT copy without In-Reply-To may open a 2nd thread when recordOutboundMessage failed
+- Task 1: minor (deferred): SEND_FAILED uses new Date() not clock; extra findUnique per send
+- Task 1: minor (deferred): ingest repeats step-0 own-send lookup
+- Task 1: minor (deferred): no test that resolveUncertain writes OUT Message + ACCEPTED
+- Task 1: minor (deferred): Event has no FK to Workspace
+- Task 2: minor (deferred): corpus lacks ES/DE month names, x-auto-response-suppress OOF, x-autorespond cases
+- Task 4: minor (deferred): withTracking regex skips malformed href (safe); only &amp; decoded
+- Task 4: minor (deferred): tracking routes swallow DB errors without a log line
+- Task 4: minor (deferred): no sender test for APP_URL fallback; no check-route test for soft-deleted account
+- Task 4: minor (deferred): fix diff reformatted unrelated lines
+- Task 2: minor (deferred): ≥3 `Word:` lines rule can cut an all-key/value reply → UNCERTAIN (safe fallback)
+- Task 2: minor (deferred): UNSUB negation list only matches straight apostrophe (don’t)
+- Task 2: minor (deferred): recall drops (I'll pass on this; unsubscribe in long body) — deliberate precision trade
+- Task 3: minor (deferred): recipient-fallback bounce lookup ignores UNCERTAIN sends (note in D27 later)
+- Task 3: minor (deferred): INTEREST_CHANGED dedupe key collides under fixed clock (matches fixed names)
+- Task 3: minor (deferred): no concurrent twin-ingest test (decision 2 reasoned only)
+- Task 3: minor (deferred): acceptTx SENT-row token compare null vs "" could double creditSent if an UNCERTAIN row ever has a null token (no production path); fix with (m.claimToken ?? "") compare
+- Task 5: minor (deferred): no test for Stopped mid-page
+- Task 5: minor (deferred): AuthError on user-paused account retried every poll with no backoff
+- Task 5: minor (deferred): `more` accounts sort last in syncDue and may starve within the 50 s budget
+- Task 5: minor (deferred): syntheticMessageId hashes a fallback date → headerless+dateless message may re-ingest after FULL reconcile
+- Task 5: minor (deferred): Graph rn-cut token up to ~15 KB in syncProgress; readCapped checks after each chunk
+- Task 5: minor (deferred): hung-classifier test waits a real 10 s
+- Task 6: minor (deferred): D29 check doesn't reserve → concurrent replies can overshoot half-cap together (recorded in DECISIONS)
+- Task 6: minor (deferred): M16 reuse path drops uploaded attachments / keeps outsideApp from sync
+- Task 6: minor (deferred): attach-lead to a different lead leaves event on first lead; interest/lastEngagement not applied on attach path
+- Task 6: minor (deferred): filename* encoding leaves '()*; bulk blocklist can include mailer-daemon
+- Task 7: minor (deferred): ticks equal the 600 s gap so gap assertion only catches same-tick bursts; sticky-mailbox check compares against campaignLead.accountId; console filter hides all sync errors
+- Task 7: minor (watch): suite ~4–5 min; watch CI timing (quota.test timeout under parallel load)
+- Task 8: minor (deferred): fake sync route updateMany unscoped (test-only); no test for its 404 refusal; form text dropped in rendered view; no confirm on delete conversation; same-domain delete take=200 silently partial
+- Gate: minor (deferred): GDPR erase deletes inbound mail from other leads that cc'd the erased person (over-reach, defensible); ILIKE substring over-redacts other events' meta; bounce settleSent after suppress() (Suppression before usage vs D21, same as M17 path, withTxRetry covers); bounce loads full ScheduledMessage row; stoprules keyword/stripQuoted run on uncapped text (linear); providerFor refresh not covered by reply lease timeout
