@@ -553,7 +553,7 @@
    "deps": [
     "P5-T01"
    ],
-   "model": "sonnet",
+   "model": "opus",
    "commit": null,
    "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-5.md; tests listed there pass; from Phase 3 gate M-6: claim re-checks ESP routing rules / account tags; from P3-T11a: a rejection caused by a cc address must not suppress the lead; gate re-review N-2: a mailbox unassigned from a campaign pauses its follow-up leads with no bulk/automatic resume when it is re-assigned — add bulk resume or auto-resume on re-assign"
   },
@@ -587,9 +587,10 @@
    "title": "Inactivity detection (`computeLifecycle`, thresholds 7/14/30/60, recommend/auto) run inside every reconcileAccount",
    "status": "todo",
    "deps": [
-    "P5-T04"
+    "P5-T04",
+    "P5-T08"
    ],
-   "model": "sonnet",
+   "model": "opus",
    "commit": null,
    "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-5.md; tests listed there pass"
   },
@@ -601,7 +602,7 @@
    "deps": [
     "P5-T05"
    ],
-   "model": "sonnet",
+   "model": "opus",
    "commit": null,
    "acceptance": "five spec scenarios."
   },
@@ -623,7 +624,7 @@
    "title": "Verification hooks (`EmailVerifier`, built-in MX check, one HTTP integration template; risky handling per campaign)",
    "status": "todo",
    "deps": [
-    "P5-T07"
+    "P5-T03"
    ],
    "model": "sonnet",
    "commit": null,
