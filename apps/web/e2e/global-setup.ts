@@ -27,6 +27,7 @@ export default async function setup() {
     FAKE_MAIL_DIR: mkdtempSync(join(tmpdir(), "rn-e2e-mail-")),
   };
   process.env.E2E_DATABASE_URL = env.DATABASE_URL; // for specs that seed through @rightnow/db
+  process.env.FAKE_MAIL_DIR = env.FAKE_MAIL_DIR; // ...and deliver into the same Fake mailboxes the server reads
   const next = createRequire(import.meta.url).resolve("next/dist/bin/next");
   const server = spawn(
     process.execPath,

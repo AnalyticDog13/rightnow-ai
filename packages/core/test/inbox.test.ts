@@ -262,6 +262,38 @@ describe("state changes", () => {
     await expect(readAll(P(), ws, "nope")).rejects.toMatchObject({ status: 404 });
   });
 
+  test("getThread inlines small cid images as data URIs, drops the rest, and names the step and variant", async () => {
+    const s = await seedCampaign(P(), { at: T, rows: 1, accounts: [{}] });
+    const sm = s.rows[0]!;
+    const t = await thread(s.ws, s.accounts[0]!, { campaignId: s.campaign.id, out: true });
+    const m = await P().message.findFirstOrThrow({ where: { threadId: t.id } });
+    await P().message.update({
+      where: { id: m.id },
+      data: {
+        scheduledMessageId: sm.id,
+        html: '<img src="cid:logo.png"><img src="cid:big.png"><img src="cid:none.png">',
+      },
+    });
+    const file = (filename: string, bytes: number) =>
+      P().attachment.create({
+        data: {
+          messageId: m.id,
+          filename,
+          contentType: "image/png",
+          size: bytes,
+          data: Buffer.alloc(bytes, 1),
+        },
+      });
+    await file("logo.png", 3);
+    await file("big.png", 2 * 1024 * 1024);
+    const got = await getThread(P(), s.ws, t.id);
+    const html = got.messages[0]!.html!;
+    expect(html).toContain('src="data:image/png;base64,AQEB"');
+    expect(html.match(/about:blank/g)).toHaveLength(2);
+    expect(html).not.toContain("cid:");
+    expect(got.origin).toMatchObject({ step: { order: 1 }, variant: { label: "A" } });
+  });
+
   test("local delete hides the thread and the lead stays in its campaign", async () => {
     const s = await seedCampaign(P(), { at: T, rows: 1, accounts: [{}] });
     const l = s.leads[0]!;

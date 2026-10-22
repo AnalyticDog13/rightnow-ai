@@ -176,6 +176,17 @@ export async function getThread(db: Db, ws: string, id: string) {
         },
       })
     : null;
+  const first = t.messages.find((m) => m.scheduledMessageId);
+  const origin = first
+    ? await db.scheduledMessage.findFirst({
+        where: { id: first.scheduledMessageId!, workspaceId: ws },
+        select: {
+          step: { select: { order: true } },
+          variant: { select: { label: true } },
+          campaign: { select: { id: true, name: true } },
+        },
+      })
+    : null;
   const [leadNotes, scheduled] = t.leadId
     ? await Promise.all([
         db.note.findMany({
@@ -190,7 +201,40 @@ export async function getThread(db: Db, ws: string, id: string) {
         }),
       ])
     : [[], []];
-  return { ...t, lead, leadNotes, scheduled };
+  return { ...t, messages: await inlineCid(db, t.messages), lead, leadNotes, scheduled, origin };
+}
+
+const CID_IMAGE = /^image\/(png|jpe?g|gif|webp)$/i;
+const CID_MAX = 1024 * 1024;
+
+/**
+ * M4: `cid:` images become `data:` URIs from the stored attachment bytes (images up to 1 MB), anything else is dropped,
+ * so the sandboxed frame never needs a remote or cid fetch. shortcut: Content-ID is not stored, so `cid:x` matches the
+ * attachment filename `x`; add a contentId column if a sender uses opaque ids.
+ */
+async function inlineCid<M extends { id: string; html: string | null }>(db: Db, msgs: M[]) {
+  return Promise.all(
+    msgs.map(async (m) => {
+      if (!m.html || !/cid:/i.test(m.html)) return m;
+      const files = await db.attachment.findMany({
+        where: { messageId: m.id, size: { lte: CID_MAX }, data: { not: null } },
+      });
+      const html = m.html.replace(/cid:([^"'\s)>]+)/gi, (_, id: string) => {
+        const name = (() => {
+          try {
+            return decodeURIComponent(id);
+          } catch {
+            return id;
+          }
+        })();
+        const f = files.find((a) => a.filename === name && CID_IMAGE.test(a.contentType));
+        return f
+          ? `data:${f.contentType};base64,${Buffer.from(f.data!).toString("base64")}`
+          : "about:blank";
+      });
+      return { ...m, html };
+    }),
+  );
 }
 
 export const threadPatch = z.strictObject({

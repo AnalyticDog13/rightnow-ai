@@ -21,6 +21,21 @@ export function AppShell({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   useEffect(() => setOpen(false), [pathname]);
+  const [unread, setUnread] = useState(0);
+  useEffect(() => {
+    const load = () =>
+      fetch("/api/v1/inbox/unread-count")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((j: { primary?: number } | null) => j && setUnread(j.primary ?? 0))
+        .catch(() => {});
+    void load();
+    const t = setInterval(load, 60_000);
+    window.addEventListener("inbox:unread-changed", load);
+    return () => {
+      clearInterval(t);
+      window.removeEventListener("inbox:unread-changed", load);
+    };
+  }, []);
 
   async function signOut() {
     await authClient.signOut();
@@ -69,6 +84,14 @@ export function AppShell({
                   >
                     <Icon className="size-4" aria-hidden />
                     {label}
+                    {href === "/inbox" && unread > 0 && (
+                      <span
+                        aria-label={`${unread} unread`}
+                        className="ml-auto rounded-full bg-primary px-2 text-xs text-primary-foreground"
+                      >
+                        {unread}
+                      </span>
+                    )}
                   </Link>
                 </li>
               );
