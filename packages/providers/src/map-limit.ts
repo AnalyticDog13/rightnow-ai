@@ -1,3 +1,4 @@
+import { PermanentSendError } from "./errors";
 import type { RemoteMessage } from "./types";
 
 /** Maps with at most `n` calls in flight; results keep input order. */
@@ -43,4 +44,38 @@ export async function readCapped(
       }
   }
   return { messages, consumed: ids.slice(0, i) };
+}
+
+const CUT = "rn-cut:";
+
+/**
+ * A byte-capped `listMessages` page (I-9). When the cap cuts the provider's page short, the returned token is ours:
+ * the provider's token of that page (none = the first page) plus the ids already returned, so the next call reads
+ * the same page again and returns only the rest. A token we cannot parse is refused like a stale one (M11).
+ */
+export async function listCapped(
+  pageToken: string | undefined,
+  n: number,
+  maxBytes: number,
+  page: (token: string | undefined) => Promise<{ ids: string[]; next?: string }>,
+  read: (id: string) => Promise<{ msg: RemoteMessage; bytes: number } | null>,
+): Promise<{ messages: RemoteMessage[]; nextPageToken?: string }> {
+  let token = pageToken;
+  let done = new Set<string>();
+  if (pageToken?.startsWith(CUT))
+    try {
+      const x = JSON.parse(pageToken.slice(CUT.length)) as { t: string | null; d: string[] };
+      token = x.t ?? undefined;
+      done = new Set(x.d);
+    } catch {
+      throw new PermanentSendError("page_token_invalid");
+    }
+  const r = await page(token);
+  const ids = r.ids.filter((id) => !done.has(id));
+  const { messages, consumed } = await readCapped(ids, n, maxBytes, read);
+  const next =
+    consumed.length < ids.length
+      ? CUT + JSON.stringify({ t: token ?? null, d: [...done, ...consumed] })
+      : r.next;
+  return { messages, ...(next ? { nextPageToken: next } : {}) };
 }

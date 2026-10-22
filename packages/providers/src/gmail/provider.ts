@@ -1,5 +1,5 @@
 import { AuthError, PermanentSendError, ProviderError } from "../errors";
-import { DEFAULT_PAGE_BYTES, mapLimit, readCapped } from "../map-limit";
+import { DEFAULT_PAGE_BYTES, listCapped, readCapped } from "../map-limit";
 import { buildMime, parseRaw } from "../mime";
 import type {
   Changes,
@@ -29,7 +29,6 @@ type GHistory = {
   historyId?: string;
 };
 const CONCURRENCY = 8;
-const present = (m: RemoteMessage | null): m is RemoteMessage => m !== null;
 
 export class GmailProvider implements MailProvider {
   readonly kind = "GMAIL" as const;
@@ -75,10 +74,6 @@ export class GmailProvider implements MailProvider {
       query: { q: `rfc822msgid:${rfcMessageId.replace(/^<|>$/g, "")} in:anywhere`, maxResults: 1 },
     });
     return r.messages?.[0]?.id;
-  }
-
-  private async fetchRaw(id: string, folder?: Folder): Promise<RemoteMessage | null> {
-    return (await this.getRaw(id, folder))?.msg ?? null;
   }
 
   private async getRaw(id: string, folder?: Folder) {
@@ -200,21 +195,23 @@ export class GmailProvider implements MailProvider {
   }
 
   async listMessages(q: { since: Date; folder: Folder; pageToken?: string; limit?: number }) {
-    const r = await this.http.call<{ messages?: GMsg[]; nextPageToken?: string }>("messages", {
-      query: {
-        q: `after:${Math.floor(q.since.getTime() / 1000)}`,
-        labelIds: q.folder,
-        maxResults: q.limit ?? 100,
-        pageToken: q.pageToken,
+    return listCapped(
+      q.pageToken,
+      CONCURRENCY,
+      this.maxPageBytes,
+      async (pageToken) => {
+        const r = await this.http.call<{ messages?: GMsg[]; nextPageToken?: string }>("messages", {
+          query: {
+            q: `after:${Math.floor(q.since.getTime() / 1000)}`,
+            labelIds: q.folder,
+            maxResults: q.limit ?? 100,
+            pageToken,
+          },
+        });
+        return { ids: (r.messages ?? []).map((m) => m.id), next: r.nextPageToken };
       },
-    });
-    const msgs = await mapLimit(r.messages ?? [], CONCURRENCY, (m) =>
-      this.fetchRaw(m.id, q.folder),
+      (id) => this.getRaw(id, q.folder),
     );
-    return {
-      messages: msgs.filter(present),
-      ...(r.nextPageToken ? { nextPageToken: r.nextPageToken } : {}),
-    };
   }
 
   async diagnostics(): Promise<Diagnostics> {

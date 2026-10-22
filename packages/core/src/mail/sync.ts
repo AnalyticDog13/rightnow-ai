@@ -13,7 +13,7 @@ import { recordProviderError } from "../accounts/health";
 import type { Clock } from "../clock";
 import { withTxRetry } from "../dispatch";
 import { classify, type AiClassifier } from "./classify";
-import { ingestMessage } from "./ingest";
+import { ingestMessage, sanitizeRemote, syntheticMessageId } from "./ingest";
 import { applyInbound } from "./stoprules";
 
 export type SyncDeps = {
@@ -105,7 +105,7 @@ export async function reconcileAccount(
   const ingestAll = async (msgs: RemoteMessage[], historical: boolean) => {
     for (const m of msgs) {
       if (deps.signal?.aborted) throw new Stopped();
-      await ingestOne(prisma, clock, acct, m, historical, deps.aiClassify);
+      await ingestOne(prisma, clock, acct, sanitizeRemote(m, start), historical, deps.aiClassify);
       stats.fetched++;
     }
   };
@@ -291,8 +291,20 @@ async function ingestOne(
 ) {
   const direction = m.from.email.toLowerCase() === acct.email.toLowerCase() ? "OUT" : "IN";
   let c = classify(m, { now: m.date, direction });
-  if (ai && c.kind === "REPLY" && c.category === "UNCERTAIN") {
-    const category = await ai(m, AbortSignal.timeout(AI_TIMEOUT_MS)).catch(() => null);
+  const rfc = m.rfcMessageId ?? syntheticMessageId(m);
+  const stored = () =>
+    prisma.message.findUnique({
+      where: { accountId_rfcMessageId: { accountId: acct.id, rfcMessageId: rfc } },
+      select: { id: true },
+    });
+  if (ai && c.kind === "REPLY" && c.category === "UNCERTAIN" && !(await stored())) {
+    // raced, not trusted to honour the signal: a hung classifier must not hold the run
+    let timer: NodeJS.Timeout | undefined;
+    const category = await Promise.race([
+      ai(m, AbortSignal.timeout(AI_TIMEOUT_MS)).catch(() => null),
+      new Promise<null>((r) => (timer = setTimeout(() => r(null), AI_TIMEOUT_MS))),
+    ]);
+    clearTimeout(timer);
     if (category) c = { kind: "REPLY", category, source: "AI" };
   }
   // withTxRetry: a P2034 from a twin ingest in another mailbox reruns the whole transaction (D26 counters)
@@ -318,7 +330,9 @@ async function ingestOne(
       await once();
     }
   } catch (e) {
-    console.error(`sync: account ${acct.id} message ${m.providerMessageId} not ingested`, e);
+    console.error(
+      `sync: account ${acct.id} message ${m.providerMessageId} not ingested (${codeOf(e)})`,
+    );
     throw e;
   }
 }

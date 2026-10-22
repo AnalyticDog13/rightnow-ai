@@ -73,7 +73,7 @@ const NO_USER =
   /user unknown|no such user|unknown user|does not exist|mailbox (unavailable|not found)|invalid recipient|recipient (address )?rejected/i;
 
 /** D18/I6 scope of a 5xx reply, from the enhanced status code and the reply text (read here, never copied). */
-function smtpScope(r: Raw): {
+export function smtpScope(r: Raw): {
   scope: "recipient" | "account" | "unknown";
   countsTowardPause?: boolean;
 } {

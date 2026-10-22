@@ -248,6 +248,29 @@ describe("send and Sent copy", () => {
     });
   });
 
+  it.each([
+    ["550", "5.1.7 Sender address rejected", "unknown"], // sender-side (D18): never the lead's fault
+    ["550", "User unknown", "recipient"], // no enhanced code: the RCPT wording decides
+    ["550", "5.1.1 Blocked by policy (spamhaus)", "unknown"],
+  ] as const)(
+    "gate N-1: a partial rejection reuses the D18 scope rules (%s %s → %s)",
+    async (code, text, scope) => {
+      const s = await start({
+        smtp: {
+          onRcptTo(a, _s, cb) {
+            if (a.address !== "to@rn.test") return cb();
+            cb(Object.assign(new Error(text), { responseCode: Number(code) }));
+          },
+        },
+      });
+      const e = await s
+        .provider()
+        .send({ ...mime, cc: [{ email: "cc@rn.test" }] })
+        .catch((x: unknown) => x);
+      expect(e).toMatchObject({ code: "lead_rejected_partial", scope });
+    },
+  );
+
   it("gate N-1: the lead's RCPT refused 450 while a Cc is accepted is lead_rejected_partial, never transient", async () => {
     const s = await start({
       smtp: {

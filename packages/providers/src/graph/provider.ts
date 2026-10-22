@@ -5,7 +5,7 @@ import {
   ProviderError,
   TransientBeforeSendError,
 } from "../errors";
-import { DEFAULT_PAGE_BYTES, mapLimit, readCapped } from "../map-limit";
+import { DEFAULT_PAGE_BYTES, listCapped, readCapped } from "../map-limit";
 import { buildMime, parseRaw } from "../mime";
 import type {
   Changes,
@@ -41,7 +41,6 @@ const FOLDERS = [
   ["INBOX", "inbox"],
   ["SENT", "sent"],
 ] as const;
-const present = (m: RemoteMessage | null): m is RemoteMessage => m !== null;
 const msgs = `/me/mailFolders`;
 
 export class GraphProvider implements MailProvider {
@@ -242,21 +241,25 @@ export class GraphProvider implements MailProvider {
   }
 
   async listMessages(q: { since: Date; folder: Folder; pageToken?: string; limit?: number }) {
-    const r = q.pageToken
-      ? await this.http.call<GPage>(assertGraphUrl(q.pageToken))
-      : await this.http.call<GPage>(`${msgs}/${WELL_KNOWN[q.folder]}/messages`, {
-          query: {
-            $filter: `receivedDateTime ge ${q.since.toISOString()}`,
-            $orderby: "receivedDateTime asc",
-            $select: "id",
-            $top: q.limit ?? 100,
-          },
-        });
-    const out = await mapLimit(r.value ?? [], CONCURRENCY, (m) => this.read(m.id, q.folder));
-    return {
-      messages: out.filter(present),
-      ...(r["@odata.nextLink"] ? { nextPageToken: r["@odata.nextLink"] } : {}),
-    };
+    return listCapped(
+      q.pageToken,
+      CONCURRENCY,
+      this.maxPageBytes,
+      async (token) => {
+        const r = token
+          ? await this.http.call<GPage>(assertGraphUrl(token))
+          : await this.http.call<GPage>(`${msgs}/${WELL_KNOWN[q.folder]}/messages`, {
+              query: {
+                $filter: `receivedDateTime ge ${q.since.toISOString()}`,
+                $orderby: "receivedDateTime asc",
+                $select: "id",
+                $top: q.limit ?? 100,
+              },
+            });
+        return { ids: (r.value ?? []).map((m) => m.id), next: r["@odata.nextLink"] };
+      },
+      (id) => this.readSized(id, q.folder),
+    );
   }
 
   async diagnostics(): Promise<Diagnostics> {

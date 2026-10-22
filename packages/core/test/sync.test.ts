@@ -326,16 +326,10 @@ describe("reconcileAccount", () => {
     await run(clock, A);
     const cursor = (await acct(A.id)).syncCursor;
     await reply(A, "a@x.test");
-    const p = wrap(A, {
-      async listChangesSince(c, o) {
-        const r = await fake(A).listChangesSince(c, o);
-        if (r.expired) return r;
-        return { ...r, messages: r.messages.map((m) => ({ ...m, date: new Date(Number.NaN) })) };
-      },
-    });
+    vi.spyOn(P(), "$transaction").mockRejectedValueOnce(new Error("db down"));
     quiet();
     clock.advance(60_000);
-    expect(await run(clock, A, deps({ providerFor: async () => p }))).toBe("failed");
+    expect(await run(clock, A)).toBe("failed");
     expect(await acct(A.id)).toMatchObject({
       syncCursor: cursor,
       lastSyncCompletedAt: T,
@@ -346,6 +340,75 @@ describe("reconcileAccount", () => {
     expect(await run(clock, A)).toBe("caught_up");
     expect(await messages(A.id)).toBe(1);
   });
+
+  test("poison input is sanitized: NUL bytes are stripped, an invalid date becomes the run's start", async () => {
+    const { A, leads } = await setup();
+    const clock = fixedClock(T);
+    await run(clock, A);
+    await fake(A).receiveRaw(
+      Buffer.from(
+        `From: ${leads[0]!.lead.email}\r\nTo: ${A.email}\r\nSubject: Re: Hi\u0000there\r\n` +
+          `Date: not a date\r\nMessage-ID: <nul-${n}@x.test>\r\n\r\nSounds good\u0000, let's talk.\r\n`,
+      ),
+    );
+    await reply(A, "nan@x.test");
+    const p = wrap(A, {
+      async listChangesSince(c, o) {
+        const r = await fake(A).listChangesSince(c, o);
+        if (r.expired) return r;
+        const bad = (m: (typeof r.messages)[0]) => m.from.email === "nan@x.test";
+        return {
+          ...r,
+          messages: r.messages.map((m) => (bad(m) ? { ...m, date: new Date(Number.NaN) } : m)),
+        };
+      },
+    });
+    clock.advance(60_000);
+    const start = clock.now();
+    expect(await run(clock, A, deps({ providerFor: async () => p }))).toBe("caught_up");
+    const nul = await P().message.findFirstOrThrow({
+      where: { accountId: A.id, fromEmail: leads[0]!.lead.email },
+    });
+    expect(nul.subject).toBe("Re: Hithere");
+    expect(nul.text).not.toContain("\u0000");
+    expect(
+      await P().campaignLead.findUniqueOrThrow({ where: { id: leads[0]!.cl.id } }),
+    ).toMatchObject({ state: "STOPPED", stopReason: "REPLIED" });
+    expect(
+      (await P().message.findFirstOrThrow({ where: { accountId: A.id, fromEmail: "nan@x.test" } }))
+        .sentAt,
+    ).toEqual(start);
+  });
+
+  test("the AI classifier is not asked again for a message already stored", async () => {
+    const { A } = await setup();
+    const clock = fixedClock(T);
+    await run(clock, A);
+    await reply(A, "a@x.test", "Hmm.");
+    let calls = 0;
+    const aiClassify: SyncDeps["aiClassify"] = async () => (calls++, "INTERESTED");
+    clock.advance(60_000);
+    await run(clock, A, deps({ aiClassify }));
+    await fake(A).expireCursors(); // the FULL reconcile lists the same message again
+    clock.advance(60_000);
+    expect(await run(clock, A, deps({ aiClassify }))).toBe("caught_up");
+    expect(calls).toBe(1);
+  });
+
+  test("an AI classifier that ignores its abort signal is cut off at 10 s", async () => {
+    const { A } = await setup();
+    const clock = fixedClock(T);
+    await run(clock, A);
+    await reply(A, "a@x.test", "Hmm.");
+    const aiClassify: SyncDeps["aiClassify"] = () => new Promise(() => {}); // never settles
+    clock.advance(60_000);
+    const t0 = Date.now();
+    expect(await run(clock, A, deps({ aiClassify }))).toBe("caught_up");
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(9_900);
+    expect(await P().message.findFirstOrThrow({ where: { accountId: A.id } })).toMatchObject({
+      category: "UNCERTAIN",
+    });
+  }, 30_000);
 
   test("the AI classifier refines an UNCERTAIN reply; its failure is ignored", async () => {
     const { A } = await setup();

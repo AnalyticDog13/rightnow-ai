@@ -25,6 +25,24 @@ export function syntheticMessageId(
 
 const lower = (a: { email: string }) => a.email.toLowerCase();
 
+const strip = <T>(v: T): T =>
+  (typeof v === "string"
+    ? v.replaceAll("\u0000", "")
+    : Array.isArray(v)
+      ? v.map(strip)
+      : v && typeof v === "object" && !(v instanceof Date) && !Buffer.isBuffer(v)
+        ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, strip(x)]))
+        : v) as T;
+
+/**
+ * Makes a provider message storable, so one hostile mail cannot block a mailbox's sync (and its sending) forever:
+ * NUL bytes (Postgres refuses them in text) are removed from every string, and an invalid date becomes `fallback`.
+ */
+export function sanitizeRemote(m: RemoteMessage, fallback: Date): RemoteMessage {
+  const c = strip(m);
+  return Number.isNaN(c.date.getTime()) ? { ...c, date: fallback } : c;
+}
+
 /**
  * Stores one provider message and puts it in a thread (matchMessage). A message already stored for the mailbox
  * (a Gmail label re-report, a UIDVALIDITY resync) only gets its providerMessageId/folder updated. The caller runs the

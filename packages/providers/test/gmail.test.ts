@@ -363,6 +363,33 @@ describe("sync", () => {
     );
   });
 
+  test("a listMessages page stops at the byte cap; its token resumes with nothing skipped or repeated (I-9)", async () => {
+    const g = createFakeGmail();
+    const p = new GmailProvider({
+      address: "me@rn.test",
+      store: g.store,
+      oauth: new GoogleOAuth({ clientId: "c", clientSecret: "s", fetch: g.fetch }),
+      fetch: g.fetch,
+      maxPageBytes: 1,
+    });
+    for (let i = 0; i < 20; i++)
+      g.add(g.simple({ from: "x@rn.test", to: "me@rn.test", subject: `m${i}`, id: `<l${i}@x>` }), [
+        "INBOX",
+      ]);
+    const seen: string[] = [];
+    let pageToken: string | undefined;
+    let pages = 0;
+    do {
+      const r = await p.listMessages({ since: new Date(0), folder: "INBOX", pageToken, limit: 12 });
+      seen.push(...r.messages.map((m) => m.rfcMessageId!));
+      pageToken = r.nextPageToken;
+      pages++;
+    } while (pageToken && pages < 10);
+    expect(pages).toBeGreaterThan(2); // 12 + 8 ids, cut every 8 by the cap
+    expect(seen).toHaveLength(20);
+    expect(new Set(seen).size).toBe(20);
+  });
+
   test("a history page stops at the byte cap and resumes after the last message returned (I-9)", async () => {
     const g = createFakeGmail();
     const p = new GmailProvider({

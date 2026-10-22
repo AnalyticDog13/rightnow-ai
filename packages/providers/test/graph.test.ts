@@ -255,6 +255,30 @@ describe("sync", () => {
     expect((await changes(p, cursor)).removed.sort()).toEqual([a.id, b.id].sort());
   });
 
+  test("a listMessages page stops at the byte cap; its token resumes with nothing skipped or repeated (I-9)", async () => {
+    const g = createFakeGraph();
+    const p = new GraphProvider({
+      address: "me@rn.test",
+      store: g.store,
+      oauth: oauth(g.fetch),
+      fetch: g.fetch,
+      maxPageBytes: 1,
+    });
+    for (let i = 0; i < 10; i++) inboxMsg(g, `<l${i}@x>`);
+    const seen: string[] = [];
+    let pageToken: string | undefined;
+    let pages = 0;
+    do {
+      const r = await p.listMessages({ since: new Date(0), folder: "INBOX", pageToken, limit: 6 });
+      seen.push(...r.messages.map((m) => m.rfcMessageId!));
+      pageToken = r.nextPageToken;
+      pages++;
+    } while (pageToken && pages < 10);
+    expect(pages).toBeGreaterThan(2); // 6 + 4 ids, cut every 4 by the cap
+    expect(seen).toHaveLength(10);
+    expect(new Set(seen).size).toBe(10);
+  });
+
   test("a delta page stops at the byte cap and resumes after the last message returned (I-9)", async () => {
     const g = createFakeGraph();
     const p = new GraphProvider({
