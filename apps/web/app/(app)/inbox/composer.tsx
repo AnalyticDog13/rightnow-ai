@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { call } from "../accounts/api-client";
+import { MacrosDialog, type Macro } from "./macros-dialog";
 
 const esc = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -37,14 +38,13 @@ const MESSAGES: Record<string, string> = {
   no_recipient: "There is no recipient to reply to.",
   to_required: "Enter who to forward this to.",
   invalid_message: "The message could not be built. Nothing was sent.",
+  reply_in_progress: "A reply to this conversation is already being sent. Nothing was sent.",
 };
 /** Never retried automatically: an uncertain or unrecorded send is reported and left to the person. */
 const sendError = (j: Record<string, unknown>) =>
   j.error === "send_uncertain" || j.error === "sent_not_recorded"
     ? String(j.message)
     : (MESSAGES[String(j.error)] ?? String(j.error ?? "Something went wrong"));
-
-type Macro = { id: string; name: string };
 
 export function Composer({
   threadId,
@@ -62,11 +62,15 @@ export function Composer({
   const [macros, setMacros] = useState<Macro[]>([]);
   const [busy, setBusy] = useState(false);
   const [fileKey, setFileKey] = useState(0);
-  useEffect(() => {
-    void call("/api/v1/inbox/macros", "GET").then((r) =>
-      setMacros((r.json.macros as Macro[]) ?? []),
-    );
-  }, []);
+  // FR I3: after an unknown outcome Send stays off until the person chooses "Send anyway"
+  const [held, setHeld] = useState(false);
+  const [manage, setManage] = useState(false);
+  const loadMacros = async () => {
+    const r = await call("/api/v1/inbox/macros", "GET");
+    setMacros((r.json.macros as Macro[]) ?? []);
+  };
+  useEffect(() => void loadMacros(), []);
+  useEffect(() => setHeld(false), [threadId]);
 
   async function macro(id: string) {
     if (!id) return;
@@ -77,6 +81,7 @@ export function Composer({
 
   async function send() {
     setBusy(true);
+    setHeld(false);
     onResult("", "");
     const f = new FormData();
     f.set("mode", mode);
@@ -89,8 +94,11 @@ export function Composer({
     }).catch(() => null);
     const json = (await res?.json().catch(() => ({}))) as Record<string, unknown> | undefined;
     setBusy(false);
-    if (!res?.ok) {
-      // a network failure after the request left is also unknown: say so rather than inviting a duplicate
+    // sent_not_recorded: the provider took it, so the draft goes as on success (one more click would be a duplicate)
+    const gone = !!res?.ok || json?.error === "sent_not_recorded";
+    if (!gone) {
+      // an unknown outcome (or a connection that dropped after the request left) keeps the draft but holds Send
+      if (!res || json?.error === "send_uncertain") setHeld(true);
       return onResult(
         "",
         res
@@ -102,78 +110,98 @@ export function Composer({
     setTo("");
     setFiles([]);
     setFileKey((k) => k + 1);
-    onResult(mode === "forward" ? "Forward sent." : "Reply sent.", "");
+    if (res?.ok) onResult(mode === "forward" ? "Forward sent." : "Reply sent.", "");
+    else onResult("", sendError(json ?? {}));
     onSent();
   }
 
   return (
-    <form
-      className="flex flex-col gap-2 rounded-md border border-border p-3"
-      onSubmit={(e) => {
-        e.preventDefault();
-        void send();
-      }}
-    >
-      <div className="flex flex-wrap items-center gap-2">
-        <select
-          aria-label="Reply mode"
-          value={mode}
-          onChange={(e) => setMode(e.target.value)}
-          className="h-10 rounded-md border border-border bg-card px-3 text-sm"
-        >
-          <option value="reply">Reply</option>
-          <option value="reply_all">Reply all</option>
-          <option value="forward">Forward</option>
-        </select>
-        {macros.length > 0 && (
+    <>
+      <form
+        className="flex flex-col gap-2 rounded-md border border-border p-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void send();
+        }}
+      >
+        <div className="flex flex-wrap items-center gap-2">
           <select
-            aria-label="Insert macro"
-            value=""
-            onChange={(e) => void macro(e.target.value)}
+            aria-label="Reply mode"
+            value={mode}
+            onChange={(e) => setMode(e.target.value)}
             className="h-10 rounded-md border border-border bg-card px-3 text-sm"
           >
-            <option value="">Insert macro</option>
-            {macros.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-              </option>
-            ))}
+            <option value="reply">Reply</option>
+            <option value="reply_all">Reply all</option>
+            <option value="forward">Forward</option>
           </select>
+          {macros.length > 0 && (
+            <select
+              aria-label="Insert macro"
+              value=""
+              onChange={(e) => void macro(e.target.value)}
+              className="h-10 rounded-md border border-border bg-card px-3 text-sm"
+            >
+              <option value="">Insert macro</option>
+              {macros.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
+          )}
+          <Button type="button" variant="outline" onClick={() => setManage(true)}>
+            Manage macros
+          </Button>
+        </div>
+        {mode === "forward" && (
+          <Input
+            aria-label="Forward to"
+            placeholder="name@example.com"
+            value={to}
+            onChange={(e) => setTo(e.target.value)}
+          />
         )}
-      </div>
-      {mode === "forward" && (
-        <Input
-          aria-label="Forward to"
-          placeholder="name@example.com"
-          value={to}
-          onChange={(e) => setTo(e.target.value)}
+        <label htmlFor="reply-body" className="text-sm">
+          Reply
+        </label>
+        <textarea
+          id="reply-body"
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          rows={5}
+          className="rounded-md border border-border bg-card p-3 text-sm focus-visible:outline-2 focus-visible:outline-primary"
         />
+        <label htmlFor="reply-files" className="text-sm">
+          Attachments
+        </label>
+        <input
+          id="reply-files"
+          key={fileKey}
+          type="file"
+          multiple
+          onChange={(e) => setFiles([...(e.target.files ?? [])])}
+        />
+        <div className="flex gap-2">
+          <Button type="submit" disabled={busy || held || !body.trim()}>
+            {busy ? "Sending..." : mode === "forward" ? "Send forward" : "Send reply"}
+          </Button>
+          {held && (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy || !body.trim()}
+              onClick={() => void send()}
+            >
+              Send anyway
+            </Button>
+          )}
+        </div>
+      </form>
+      {/* outside the form: the dialog has its own */}
+      {manage && (
+        <MacrosDialog macros={macros} onChanged={loadMacros} onClose={() => setManage(false)} />
       )}
-      <label htmlFor="reply-body" className="text-sm">
-        Reply
-      </label>
-      <textarea
-        id="reply-body"
-        value={body}
-        onChange={(e) => setBody(e.target.value)}
-        rows={5}
-        className="rounded-md border border-border bg-card p-3 text-sm focus-visible:outline-2 focus-visible:outline-primary"
-      />
-      <label htmlFor="reply-files" className="text-sm">
-        Attachments
-      </label>
-      <input
-        id="reply-files"
-        key={fileKey}
-        type="file"
-        multiple
-        onChange={(e) => setFiles([...(e.target.files ?? [])])}
-      />
-      <div>
-        <Button type="submit" disabled={busy || !body.trim()}>
-          {busy ? "Sending..." : mode === "forward" ? "Send forward" : "Send reply"}
-        </Button>
-      </div>
-    </form>
+    </>
   );
 }

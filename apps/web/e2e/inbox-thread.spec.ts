@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type Route } from "@playwright/test";
 import { createPrisma } from "@rightnow/db/create";
 import { buildMime, getFakeProvider, newMessageId } from "@rightnow/providers";
 import { ensureSession, STATE } from "./session";
@@ -159,6 +159,49 @@ test("thread, reply with attachment, inert rendering, notes, bulk unread, remind
   };
   const mine = mb.sent.find((m) => m.subject === "Re: Quick question")!;
   expect(mine.headers["in-reply-to"]?.[0]).toBeTruthy();
+
+  // FR I3: an unknown outcome keeps the draft but blocks Send until "Send anyway"; an unrecorded send clears it
+  const replyRoute = "**/api/v1/inbox/threads/*/reply";
+  const answer = (error: string) => (r: Route) =>
+    r.fulfill({
+      status: 502,
+      contentType: "application/json",
+      body: JSON.stringify({ error, message: `${error} message` }),
+    });
+  const draft = conv.getByLabel("Reply", { exact: true });
+  await page.route(replyRoute, answer("send_uncertain"));
+  await draft.fill("One more thing.");
+  await conv.getByRole("button", { name: "Send reply" }).click();
+  await expect(conv.getByRole("alert")).toContainText("send_uncertain message");
+  await expect(draft).toHaveValue("One more thing.");
+  await expect(conv.getByRole("button", { name: "Send reply" })).toBeDisabled();
+  await page.unroute(replyRoute);
+  await page.route(replyRoute, answer("sent_not_recorded"));
+  await conv.getByRole("button", { name: "Send anyway" }).click();
+  await expect(conv.getByRole("alert")).toContainText("sent_not_recorded message");
+  await expect(draft).toHaveValue("");
+  await expect(conv.getByRole("button", { name: "Send reply" })).toBeDisabled();
+  await page.unroute(replyRoute);
+
+  // PS-INBOX-09: macros are created, edited and deleted from the composer
+  await conv.getByRole("button", { name: "Manage macros" }).click();
+  const dlg = page.getByRole("dialog", { name: "Macros" });
+  await dlg.getByLabel("Name").fill("Thanks");
+  await dlg.getByLabel("Body").fill("Thanks {{firstName}}!");
+  await dlg.getByRole("button", { name: "Save macro" }).click();
+  await dlg.getByRole("button", { name: "Edit Thanks" }).click();
+  await dlg.getByLabel("Name").fill("Thank you");
+  await dlg.getByRole("button", { name: "Save macro" }).click();
+  await expect(dlg.getByRole("button", { name: "Edit Thank you" })).toBeVisible();
+  await dlg.getByRole("button", { name: "Close" }).click();
+  await conv.getByLabel("Insert macro").selectOption({ label: "Thank you" });
+  await expect(draft).toHaveValue("Thanks Ann!");
+  await draft.fill("");
+  await conv.getByRole("button", { name: "Manage macros" }).click();
+  await dlg.getByRole("button", { name: "Delete Thank you" }).click();
+  await expect(dlg.getByRole("listitem")).toHaveCount(0);
+  await dlg.getByRole("button", { name: "Close" }).click();
+  await expect(conv.getByLabel("Insert macro")).toHaveCount(0);
 
   // notes survive a reload
   await conv.getByLabel("New note").fill("Call her on Friday");
