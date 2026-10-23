@@ -190,7 +190,7 @@ describe("PS-REWARM-13 scenarios on the Fake", () => {
     await w.tick();
     const a = await w.acct();
     expect(a).toMatchObject({ lifecycle: "REWARMING", healthCap: 4, rewarmSendDays: 3 });
-    expect(await w.day(3)).toBeLessThanOrEqual(4);
+    expect(await w.day(3)).toBe(4);
     expect(await w.acct()).toMatchObject({ lifecycle: "REWARMING", rewarmSendDays: 3 });
   }, 120_000);
 
@@ -258,7 +258,7 @@ describe("PS-REWARM-13 scenarios on the Fake", () => {
         });
       await w.tick();
       expect((await w.acct()).healthCap).toBe(3); // floor(7 x 50 %)
-      expect(await w.day(2)).toBeLessThanOrEqual(3);
+      expect(await w.day(2)).toBe(3);
       expect((await w.acct()).rewarmSendDays).toBe(2);
     },
     120_000,

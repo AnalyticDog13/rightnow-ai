@@ -25,6 +25,7 @@ let cookie: string;
 let accountId: string;
 let foreignId: string;
 let key: string;
+let mk: (ws: string, email: string) => Promise<string>;
 let rewarm: typeof import("../app/api/v1/accounts/[id]/rewarm/route");
 
 const setRole = (role: string) =>
@@ -69,7 +70,7 @@ beforeAll(async () => {
     .getSetCookie()
     .map((c) => c.split(";")[0])
     .join("; ");
-  const mk = async (ws: string, email: string) =>
+  mk = async (ws: string, email: string) =>
     (
       await db.prisma.emailAccount.create({
         data: {
@@ -136,7 +137,7 @@ describe("accounts/[id]/rewarm", () => {
     };
     expect(j.account.lifecycle).toBe("REWARMING");
     expect(j.account.rewarm).toMatchObject({ allowance: 4, target: 30 });
-    expect(j.warnings.length).toBeGreaterThan(0);
+    expect(j.warnings).toEqual([]); // the Fake skips the DNS recheck, like campaign launch
     expect((await start(accountId)).status).toBe(409);
     const c = await cancel(accountId);
     expect(c.status).toBe(200);
@@ -151,5 +152,12 @@ describe("accounts/[id]/rewarm", () => {
     const auth = { authorization: `Bearer ${key}` };
     expect((await start(accountId, {}, auth)).status).toBe(200);
     expect((await cancel(accountId, auth)).status).toBe(200);
+  });
+
+  it("under the Fake a domain without SPF still starts (launch skips the DNS gate too)", async () => {
+    const id = await mk(workspaceId, "me@nospf.io");
+    const r = await start(id);
+    expect(r.status).toBe(200);
+    expect(((await r.json()) as { warnings: unknown[] }).warnings).toEqual([]);
   });
 });

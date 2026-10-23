@@ -456,20 +456,29 @@ export async function warmupTick(
   return out;
 }
 
-/** 30-day (or `days`) table for the account: zeros filled. Where the mail it SENT landed, what it received and replied. */
-export async function warmupStats(
-  prisma: Db,
+/** The rows `warmupDays` buckets for these accounts. */
+export const warmupRowsWhere = (
   ws: string,
+  accountIds: string[],
+  since: Date,
+): Prisma.WarmupMessageWhereInput => ({
+  workspaceId: ws,
+  kind: { not: "PLACEMENT" },
+  OR: [
+    { fromAccountId: { in: accountIds }, status: "SENT", sentAt: { gte: since } },
+    { toAccountId: { in: accountIds }, receivedAt: { gte: since } },
+  ],
+});
+
+/** The last `days` local days (zeros filled) of one account from its WarmupMessage rows. */
+export function warmupDays(
+  rows: WarmupMessage[],
   accountId: string,
+  timezone: string,
   days: number,
   now: Date,
-): Promise<WarmupDay[]> {
-  const a = await prisma.emailAccount.findFirst({
-    where: { id: accountId, workspaceId: ws },
-    select: { timezone: true },
-  });
-  if (!a) return [];
-  const today = dayKey(a.timezone, now);
+): WarmupDay[] {
+  const today = dayKey(timezone, now);
   const keys = Array.from({ length: days }, (_, i) =>
     new Date(Date.parse(today) - (days - 1 - i) * DAY).toISOString().slice(0, 10),
   );
@@ -479,18 +488,7 @@ export async function warmupStats(
       { day, sent: 0, received: 0, replied: 0, inbox: 0, spam: 0, missing: 0 },
     ]),
   );
-  const since = new Date(Date.parse(keys[0]!) - DAY);
-  const rows = await prisma.warmupMessage.findMany({
-    where: {
-      workspaceId: ws,
-      kind: { not: "PLACEMENT" },
-      OR: [
-        { fromAccountId: accountId, status: "SENT", sentAt: { gte: since } },
-        { toAccountId: accountId, receivedAt: { gte: since } },
-      ],
-    },
-  });
-  const at = (d: Date | null) => (d ? out.get(dayKey(a.timezone, d)) : undefined);
+  const at = (d: Date | null) => (d ? out.get(dayKey(timezone, d)) : undefined);
   for (const r of rows) {
     if (r.fromAccountId === accountId && r.sentAt) {
       const d = at(r.sentAt);
@@ -508,6 +506,29 @@ export async function warmupStats(
     }
   }
   return [...out.values()];
+}
+
+/** First instant `warmupRowsWhere` needs for `days` local days ending today in `timezone`. */
+export const warmupSince = (timezone: string, days: number, now: Date) =>
+  new Date(Date.parse(dayKey(timezone, now)) - days * DAY);
+
+/** 30-day (or `days`) table for the account: zeros filled. Where the mail it SENT landed, what it received and replied. */
+export async function warmupStats(
+  prisma: Db,
+  ws: string,
+  accountId: string,
+  days: number,
+  now: Date,
+): Promise<WarmupDay[]> {
+  const a = await prisma.emailAccount.findFirst({
+    where: { id: accountId, workspaceId: ws },
+    select: { timezone: true },
+  });
+  if (!a) return [];
+  const rows = await prisma.warmupMessage.findMany({
+    where: warmupRowsWhere(ws, [accountId], warmupSince(a.timezone, days, now)),
+  });
+  return warmupDays(rows, accountId, a.timezone, days, now);
 }
 
 /** Settings (defaults when none), the PS-WARM-10 state, and the number of usable peers. */

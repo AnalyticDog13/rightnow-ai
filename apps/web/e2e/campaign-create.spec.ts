@@ -124,7 +124,7 @@ test("create, preview, launch gate, launch, held rows, keyboard", async ({ page 
   // set the address in settings, launch again
   await page.goto("/settings");
   await page.getByLabel("Physical postal address").fill("1 Test Street, Berlin");
-  await page.getByRole("button", { name: "Save" }).click();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByText("Saved.")).toBeVisible();
   await page.goto(`/campaigns/${campaignId}`);
   await page.getByRole("button", { name: "Launch", exact: true }).click();

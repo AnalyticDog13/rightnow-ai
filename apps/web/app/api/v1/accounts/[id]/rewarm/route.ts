@@ -3,6 +3,7 @@ import { prisma } from "@rightnow/db";
 import { actor, run } from "../../../../../../lib/accounts-http";
 import { route } from "../../../../../../lib/api";
 import { resolver } from "../../../../../../lib/dns";
+import { getWebEnv } from "../../../../../../lib/env";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,11 @@ export const POST = route(
       const { warnings } = await startRewarm(
         prisma,
         o.clock,
-        { providerFor: async (a) => createProvider(a, { prisma, clock: o.clock }), resolver },
+        {
+          providerFor: async (a) => createProvider(a, { prisma, clock: o.clock }),
+          // Fake mailboxes use made-up domains: no DNS check, as at campaign launch (launch-deps.ts)
+          resolver: getWebEnv().MAIL_PROVIDER_FAKE ? undefined : resolver,
+        },
         c.workspaceId,
         o.actorId,
         c.params.id!,

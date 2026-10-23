@@ -24,12 +24,13 @@ export type RewarmInput = z.infer<typeof rewarmInput>;
 /**
  * PS-REWARM-03/04: "Re-warm" on a live ACTIVE or INACTIVE account. Rechecks the connection (token refresh, IMAP/SMTP
  * login; an auth failure sets NEEDS_ATTENTION, M19) and the domain's DNS, fresh, both outside any transaction; a DNS
- * block refuses with the reasons. Returns the DNS warnings.
+ * block refuses with the reasons. Returns the DNS warnings. No `resolver` (Fake mailboxes, as at campaign launch):
+ * the DNS check is skipped.
  */
 export async function startRewarm(
   prisma: PrismaClient,
   clock: Clock,
-  deps: { providerFor: SyncDeps["providerFor"]; resolver: DnsResolver },
+  deps: { providerFor: SyncDeps["providerFor"]; resolver?: DnsResolver },
   ws: string,
   actor: Actor,
   accountId: string,
@@ -46,9 +47,9 @@ export async function startRewarm(
   });
   if (!connectionOk(d)) throw new AccountError(409, "reconnect_required", { checks: d.checks });
   const domain = a.email.slice(a.email.lastIndexOf("@") + 1);
-  const found = (await checkWorkspaceDomains(prisma, deps.resolver, clock, ws, [domain])).flatMap(
-    findings,
-  );
+  const found = deps.resolver
+    ? (await checkWorkspaceDomains(prisma, deps.resolver, clock, ws, [domain])).flatMap(findings)
+    : [];
   const issues = found.filter((f) => f.level === "block");
   if (issues.length) throw new AccountError(409, "rewarm_blocked", { issues });
   const now = clock.now();
