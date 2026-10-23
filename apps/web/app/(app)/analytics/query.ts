@@ -1,3 +1,5 @@
+import { line } from "@rightnow/core/csv";
+
 const DAY = 86_400_000;
 /** The filters the analytics API accepts; anything else in the page URL is dropped. */
 export const FILTER_KEYS = [
@@ -35,17 +37,14 @@ export function apiParams(
 /** PS-18 tooltip copy: "{numerator} of {denominator} {base}". */
 export const rateTip = (n: number, d: number, base: string) => `${n} of ${d} ${base}`;
 
-/** CSV text for the tables the API has no CSV for; a cell a spreadsheet would run as a formula gets a `'`. */
-export const csvText = (rows: unknown[][]) =>
-  rows
-    .map(
-      (r) =>
-        r
-          .map((v) => {
-            let s = v === null || v === undefined ? "" : String(v);
-            if (typeof v !== "number" && /^[\t\r]|^[\s"']*[=+\-@]/.test(s)) s = `'${s}`;
-            return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-          })
-          .join(",") + "\r\n",
-    )
-    .join("");
+/** CSV text for the tables the API has no CSV for; the same cell rules as the server exports. */
+export const csvText = (rows: unknown[][]) => rows.map(line).join("");
+
+/** Today's date in `tz`; a zone this browser does not know falls back to UTC, and the API then answers 400 invalid_tz. */
+export function todayIn(tz: string): string {
+  try {
+    return new Date().toLocaleDateString("en-CA", { timeZone: tz });
+  } catch {
+    return new Date().toISOString().slice(0, 10);
+  }
+}

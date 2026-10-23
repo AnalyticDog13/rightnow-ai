@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { apiParams, csvText, preset, rateTip } from "../app/(app)/analytics/query";
+import { apiParams, csvText, preset, rateTip, todayIn } from "../app/(app)/analytics/query";
 
 describe("analytics UI helpers", () => {
   it("rateTip prints numerator, denominator and base", () => {
@@ -35,5 +35,14 @@ describe("analytics UI helpers", () => {
 
   it("csvText quotes cells and defuses formulas", () => {
     expect(csvText([["a", 'x"y', "=SUM(1)", 2]])).toBe('a,"x""y",\'=SUM(1),2\r\n');
+  });
+
+  it("csvText keeps plain numbers, including negatives, unquoted", () => {
+    expect(csvText([[-5, "-5", "-x"]])).toBe("-5,-5,'-x\r\n");
+  });
+
+  it("todayIn falls back to the UTC day for a zone the browser does not know", () => {
+    expect(todayIn("Bogus/Zone")).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(todayIn("UTC")).toBe(new Date().toISOString().slice(0, 10));
   });
 });

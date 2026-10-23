@@ -3,7 +3,7 @@
 import type { Metrics } from "@rightnow/core";
 import { Settings2 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { pct, StatTile } from "../../../components/stat-tile";
 import { Button } from "../../../components/ui/button";
 import { call, errorText } from "../accounts/api-client";
@@ -11,7 +11,7 @@ import type { Member, Named } from "../leads/bulk-bar";
 import { Charts } from "./charts";
 import { Filters } from "./filters";
 import { CONTACTED_NOTE, METRICS, type Row, SENT_TIP } from "./metrics-def";
-import { apiParams, csvText, rateTip } from "./query";
+import { apiParams, csvText, rateTip, todayIn } from "./query";
 
 type Report = { total: Metrics; rows: Row[] };
 type Acct = {
@@ -152,6 +152,8 @@ export function AnalyticsClient({
   const [today, setToday] = useState("");
   const [hidden, setHidden] = useState<string[]>([]);
   const [menu, setMenu] = useState(false);
+  const menuBox = useRef<HTMLDivElement>(null);
+  const menuButton = useRef<HTMLButtonElement>(null);
   const [data, setData] = useState<Data | null>(null);
   const [error, setError] = useState("");
   const [variants, setVariants] = useState<Map<string, VariantInfo>>(new Map());
@@ -162,7 +164,7 @@ export function AnalyticsClient({
 
   // today in the chosen zone and the stored metric choice are browser-only, so they load after mount
   useEffect(() => {
-    setToday(new Date().toLocaleDateString("en-CA", { timeZone: tz }));
+    setToday(todayIn(tz));
   }, [tz]);
   useEffect(() => {
     try {
@@ -171,6 +173,15 @@ export function AnalyticsClient({
       /* storage blocked: every metric stays shown */
     }
   }, []);
+  // the metric menu closes on an outside click; Escape (below) also returns focus to its button
+  useEffect(() => {
+    if (!menu) return;
+    const away = (e: MouseEvent) => {
+      if (!menuBox.current?.contains(e.target as Node)) setMenu(false);
+    };
+    document.addEventListener("mousedown", away);
+    return () => document.removeEventListener("mousedown", away);
+  }, [menu]);
   function toggleMetric(id: string, on: boolean) {
     const next = on ? hidden.filter((h) => h !== id) : [...hidden, id];
     setHidden(next);
@@ -215,9 +226,12 @@ export function AnalyticsClient({
   }, [query, today]);
 
   // variant ids -> their step, so the table can pause a variant (one campaign at a time)
+  const variantSeq = useRef(0);
   const loadVariants = useCallback(async () => {
+    const seq = ++variantSeq.current; // a slower answer for a campaign we have left is dropped
     if (!campaignId) return setVariants(new Map());
     const r = await call(`/api/v1/campaigns/${campaignId}/steps`, "GET");
+    if (seq !== variantSeq.current) return;
     const steps = (r.json.steps ?? []) as {
       id: string;
       variants: { id: string; active: boolean }[];
@@ -270,6 +284,7 @@ export function AnalyticsClient({
         <td key={d.id} className={td} title={rate?.tip}>
           {d.count(m)}
           {rate && ` (${pct(rate.value)})`}
+          {rate && <span className="sr-only"> {rate.tip}</span>}
         </td>
       );
     };
@@ -329,7 +344,15 @@ export function AnalyticsClient({
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold tracking-tight">Analytics</h1>
-        <div className="relative flex gap-2">
+        <div
+          ref={menuBox}
+          className="relative flex gap-2"
+          onKeyDown={(e) => {
+            if (e.key !== "Escape" || !menu) return;
+            setMenu(false);
+            menuButton.current?.focus();
+          }}
+        >
           {today && (
             <Button asChild variant="outline">
               <a href={`${API}/activity?${query()}`} download>
@@ -338,6 +361,7 @@ export function AnalyticsClient({
             </Button>
           )}
           <Button
+            ref={menuButton}
             variant="outline"
             aria-expanded={menu}
             aria-controls="metric-menu"
@@ -349,7 +373,6 @@ export function AnalyticsClient({
             <fieldset
               id="metric-menu"
               className="absolute right-0 top-12 z-10 flex flex-col gap-1 rounded-md border border-border bg-card p-3 text-sm shadow-md"
-              onKeyDown={(e) => e.key === "Escape" && setMenu(false)}
             >
               <legend className="px-1 font-medium">Show metrics</legend>
               {METRICS.map((m) => (

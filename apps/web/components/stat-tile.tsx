@@ -17,6 +17,8 @@ export function StatTile({
       <p className="text-sm text-muted-foreground">{label}</p>
       <p className="text-2xl font-semibold tabular-nums">{value}</p>
       {note && <p className="text-xs text-muted-foreground">{note}</p>}
+      {/* the tooltip text, also on the page for keyboard and touch users */}
+      {title && <p className="text-xs text-muted-foreground">{title}</p>}
     </Card>
   );
 }

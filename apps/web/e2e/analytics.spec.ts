@@ -137,8 +137,19 @@ test("hiding Clicked in the Metrics menu removes it and survives a reload", asyn
   await page.getByRole("button", { name: "Metrics" }).click();
   await page.getByRole("checkbox", { name: "Clicked" }).uncheck();
   await expect(tile(page, "Clicked")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("checkbox", { name: "Clicked" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Metrics" })).toBeFocused();
   await page.reload();
   await expect(tile(page, "Sent")).toBeVisible();
   await expect(tile(page, "Clicked")).toHaveCount(0);
   await expect(page.getByRole("columnheader", { name: "Clicked" })).toHaveCount(0);
+});
+
+test("an unknown time zone in the URL shows the API error instead of crashing", async ({
+  page,
+}) => {
+  await page.goto("/analytics?tz=Bogus/Zone");
+  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Analytics" })).toBeVisible();
 });
