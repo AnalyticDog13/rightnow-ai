@@ -251,6 +251,19 @@ describe("launch", () => {
     expect(codes(await launch(id).catch((x) => x))).toContain("invalid_schedule");
   });
 
+  test("INACTIVE accounts are not usable (M15): only INACTIVE → no_accounts; some → accounts_inactive warning", async () => {
+    const { id, a } = await ready();
+    await P().emailAccount.update({ where: { id: a.id }, data: { lifecycle: "INACTIVE" } });
+    const e = await launch(id).catch((x) => x);
+    expect(e).toMatchObject({ status: 422 });
+    expect(codes(e)).toEqual(["no_accounts"]);
+    const b = await account();
+    await setCampaignAccounts(P(), ws, null, id, [a.id, b.id]);
+    const r = await launch(id);
+    expect(r.status).toBe("ACTIVE");
+    expect(r.warnings.map((w: { code: string }) => w.code)).toContain("accounts_inactive");
+  });
+
   test("accountTags restricts which assigned accounts count", async () => {
     const { id, a } = await ready({ accountTags: ["warm"] });
     expect(codes(await launch(id).catch((x) => x))).toEqual(["no_accounts"]);

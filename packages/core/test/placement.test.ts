@@ -80,7 +80,7 @@ async function world(o: { cap?: number; seeds?: boolean; failM?: boolean } = {})
       who.map((a) =>
         reconcileAccount(P(), clock, a.id, {
           providerFor,
-          env: { SYNC_POLL_SEC: 120 },
+          env: { SYNC_POLL_SEC: 120, SYNC_MAX_STALENESS_SEC: 300 },
         } as unknown as SyncDeps),
       ),
     );

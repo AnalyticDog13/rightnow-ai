@@ -13,7 +13,8 @@ import { getOAuthClient, TIER_CAP, tierFor } from "./accounts/factory";
 import { audit } from "./audit";
 import type { Clock } from "./clock";
 import { decrypt, encrypt } from "./crypto";
-import { getEnv } from "./env";
+import { returnToService } from "./deliverability/lifecycle";
+import { getEnv, maxStalenessSec } from "./env";
 
 const TTL_MS = 10 * 60_000;
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
@@ -210,13 +211,13 @@ export async function completeOAuth(
           const resume =
             a.lifecycle === "NEEDS_ATTENTION" ||
             (a.lifecycle === "PAUSED" && a.status === "DISCONNECTED");
-          const data = { ...base, ...(resume && { lifecycle: "ACTIVE" as const }) };
-          if (!(await setCredentials(tx, p.workspaceId, id, creds, data)))
+          if (!(await setCredentials(tx, p.workspaceId, id, creds, base)))
             throw new Fail("server_error");
+          if (resume) await returnToService(tx, clock, a, { lookaheadSec: maxStalenessSec() });
         } else {
           const capTier = tierFor(s.provider, email);
           const name = x.displayName ?? email.split("@")[0]!;
-          const opened = await openAccount(tx, p.workspaceId, {
+          const opened = await openAccount(tx, clock, p.workspaceId, {
             provider: s.provider,
             email,
             capTier,

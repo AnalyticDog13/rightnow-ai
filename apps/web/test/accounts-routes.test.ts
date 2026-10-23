@@ -17,6 +17,7 @@ let readKey: string;
 let list: typeof import("../app/api/v1/accounts/route");
 let one: typeof import("../app/api/v1/accounts/[id]/route");
 let pause: typeof import("../app/api/v1/accounts/[id]/pause/route");
+let resumeFull: typeof import("../app/api/v1/accounts/[id]/resume-full/route");
 let bulk: typeof import("../app/api/v1/accounts/bulk/route");
 let testConn: typeof import("../app/api/v1/accounts/test-connection/route");
 
@@ -68,6 +69,7 @@ beforeAll(async () => {
   list = await import("../app/api/v1/accounts/route");
   one = await import("../app/api/v1/accounts/[id]/route");
   pause = await import("../app/api/v1/accounts/[id]/pause/route");
+  resumeFull = await import("../app/api/v1/accounts/[id]/resume-full/route");
   bulk = await import("../app/api/v1/accounts/bulk/route");
   testConn = await import("../app/api/v1/accounts/test-connection/route");
   ({ workspaceId } = await createFirstOwner(
@@ -134,6 +136,17 @@ describe("accounts routes", () => {
     const j = (await res.json()) as { account: { dailyLimit: number }; warnings: unknown[] };
     expect(j.account.dailyLimit).toBe(750);
     expect(j.warnings).toEqual([{ field: "dailyLimit", clampedTo: 750, reason: "provider_cap" }]);
+  });
+
+  it("resume-full: 409 unless INACTIVE, then ACTIVE; foreign 404", async () => {
+    const post = (id: string) =>
+      resumeFull.POST(req("POST", `/api/v1/accounts/${id}/resume-full`, {}), p(id));
+    expect((await post(accountId)).status).toBe(409);
+    await db.prisma.emailAccount.update({ where: { id: accountId }, data: { lifecycle: "INACTIVE" } });
+    const r = await post(accountId);
+    expect(r.status).toBe(200);
+    expect(((await r.json()) as { lifecycle: string }).lifecycle).toBe("ACTIVE");
+    expect((await post(foreignId)).status).toBe(404);
   });
 
   it("pause then bulk resume", async () => {

@@ -46,6 +46,17 @@ describe("accountsAutoResume", () => {
     expect((await get(manual.id)).lifecycle).toBe("PAUSED");
   });
 
+  test("a timed pause ends through returnToService: a re-warm plan resumes as REWARMING (Rev 2 I2)", async () => {
+    const a = await mk({
+      lifecycle: "PAUSED",
+      pausedUntil: min(-1),
+      rewarmStartedAt: min(-3 * 24 * 60),
+      healthCap: 4,
+    });
+    await accountsAutoResume(db.prisma, fixedClock(T0));
+    expect(await get(a.id)).toMatchObject({ lifecycle: "REWARMING", pausedUntil: null, healthResetAt: T0 });
+  });
+
   test("purges OAuth sessions older than one day, keeps newer ones", async () => {
     const mkSession = (hash: string, createdAt: Date) =>
       db.prisma.oAuthSession.create({

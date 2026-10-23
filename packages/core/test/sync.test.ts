@@ -33,7 +33,7 @@ const DAY = 86_400_000;
 const fake = (a: { email: string }) => getFakeProvider(a.email);
 const deps = (o: Partial<SyncDeps> = {}): SyncDeps => ({
   providerFor: async (a) => fake(a),
-  env: { SYNC_POLL_SEC: 120 },
+  env: { SYNC_POLL_SEC: 120, SYNC_MAX_STALENESS_SEC: 300 },
   ...o,
 });
 /** A provider whose methods are wrapped; the rest is the Fake. */
@@ -334,6 +334,28 @@ describe("reconcileAccount", () => {
     clock.advance(60_000);
     expect(await run(clock, A)).toBe("caught_up");
     expect(await acct(A.id)).toMatchObject({ status: "CONNECTED", lastError: null });
+
+    // the sync keeps failing under the health pause: re-escalation drops the SYNC nested in the SOFT_BOUNCE, so a
+    // caught-up run leaves no stale SYNC behind it and a resume shows no CONNECTION_ERROR
+    const D = (await setup()).A;
+    const c4 = fixedClock(T);
+    await run(c4, D);
+    await failSync(c4, D);
+    await bounces(D, c4.now());
+    await evaluateHealth(P(), c4);
+    fake(D).failNextRead("token_5xx");
+    c4.advance(60_000);
+    await run(c4, D);
+    expect((await acct(D.id)).lastError).toEqual({
+      ...sync,
+      message: "mailbox sync failed 6 times in a row",
+      previous: { ...soft, message: expect.any(String) },
+    });
+    c4.advance(60_000);
+    expect(await run(c4, D)).toBe("caught_up");
+    expect((await acct(D.id)).lastError).toEqual({ ...soft, message: expect.any(String) });
+    await resumeAccount(P(), D.workspaceId, D.id, { clock: c4 });
+    expect(await acct(D.id)).toMatchObject({ lifecycle: "ACTIVE", status: "CONNECTED", lastError: null });
 
     // the same, but the sync recovers while the account is paused
     const B = (await setup()).A;

@@ -17,6 +17,10 @@ const patch = z.strictObject({
   // D34: account pause / BounceProtect line (hard bounce %) and the health throttle (% of the allowance kept)
   bounceThresholdPct: z.number().min(0.5).max(20).optional(),
   healthSlowdownPct: z.number().int().min(10).max(90).optional(),
+  // D33 / D32: idle threshold, what happens at it, and the clean days a re-warm needs to finish
+  inactivityDays: z.union([z.literal(7), z.literal(14), z.literal(30), z.literal(60)]).optional(),
+  autoRewarm: z.enum(["OFF", "RECOMMEND", "AUTO"]).optional(),
+  rewarmExitCleanDays: z.number().int().min(1).max(30).optional(),
 });
 const SELECT = {
   timezone: true,
@@ -27,6 +31,9 @@ const SELECT = {
   firstEmailTextOnly: true,
   bounceThresholdPct: true,
   healthSlowdownPct: true,
+  inactivityDays: true,
+  autoRewarm: true,
+  rewarmExitCleanDays: true,
 } as const;
 
 export async function getWorkspaceSettings(prisma: PrismaClient, ws: string) {

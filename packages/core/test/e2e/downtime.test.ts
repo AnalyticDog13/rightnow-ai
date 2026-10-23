@@ -133,7 +133,7 @@ async function scenario(P: PrismaClient, days: number, mode: "cold_boot" | "slee
       if (broken.has(a.id)) throw new TransientBeforeSendError("connect_refused");
       return fake(a);
     },
-    env: { SYNC_POLL_SEC: 120 },
+    env: { SYNC_POLL_SEC: 120, SYNC_MAX_STALENESS_SEC: 300 },
   };
   let bootId = "boot-1";
   const dispatch = () =>

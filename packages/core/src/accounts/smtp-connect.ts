@@ -9,7 +9,8 @@ import {
 import { z } from "zod";
 import { audit } from "../audit";
 import type { Clock } from "../clock";
-import { getEnv } from "../env";
+import { returnToService } from "../deliverability/lifecycle";
+import { getEnv, maxStalenessSec } from "../env";
 import { applyLimits } from "./caps";
 import { setCredentials } from "./credentials";
 import { clip } from "./diagnostics";
@@ -100,7 +101,7 @@ export async function connectSmtpAccount(
   );
   const id = await prisma
     .$transaction(async (tx) => {
-      const opened = await openAccount(tx, workspaceId, {
+      const opened = await openAccount(tx, clock, workspaceId, {
         provider: "SMTP",
         email: i.email,
         capTier: tier,
@@ -183,10 +184,10 @@ export async function reconnectSmtpAccount(
         lastError: Prisma.DbNull,
         errorCount24h: 0,
         appendToSent: defaultAppendToSent(c.smtp.host),
-        ...(resume && { lifecycle: "ACTIVE" as const }),
       },
     );
     if (!stored) throw new AccountError(404, "Not found");
+    if (resume) await returnToService(tx, clock, cur, { lookaheadSec: maxStalenessSec() });
     await audit(tx, { workspaceId, actorId }, "account.reconnect", accountId, {
       provider: "SMTP",
       email: a.email,

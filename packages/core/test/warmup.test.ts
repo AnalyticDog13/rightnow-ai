@@ -27,7 +27,7 @@ const FAKE = { MAIL_PROVIDER_FAKE: "1" as const };
 const MIN = 60_000;
 const DAY = 86_400_000;
 const TUE_8 = new Date("2026-10-20T08:00:00Z"); // a Tuesday
-const syncDeps: SyncDeps = { providerFor, env: { SYNC_POLL_SEC: 120 } };
+const syncDeps: SyncDeps = { providerFor, env: { SYNC_POLL_SEC: 120, SYNC_MAX_STALENESS_SEC: 300 } };
 
 let n = 0;
 /** A workspace with an ACTIVE campaign (one lead) and `count` connected, warm-up-enabled mailboxes on different domains. */

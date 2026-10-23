@@ -46,6 +46,9 @@ model Workspace {
   verifierConfigEnc    String? // encrypted {url, apiKey, statusPath}
   verifierLastError    String? // short reason code of the last verifier failure, never a body or key
   verifierLastErrorAt  DateTime?
+  inactivityDays       Int                   @default(30) // 7 | 14 | 30 | 60 (D33)
+  autoRewarm           AutoRewarm            @default(AUTO)
+  rewarmExitCleanDays  Int                   @default(3) // 1-30 (D32)
 }
 
 // better-auth tables. Roles are stored lowercase: owner | admin | member | viewer.
@@ -184,6 +187,12 @@ enum AccountStatus {
   DISCONNECTED
 }
 
+enum AutoRewarm {
+  OFF
+  RECOMMEND
+  AUTO
+}
+
 enum AccountLifecycle {
   ACTIVE
   INACTIVE
@@ -290,6 +299,15 @@ model EmailAccount {
   lastWarmupAt               DateTime?
   warmupSettings             WarmupSettings?
   placementSeed              Boolean             @default(false) // D37: this mailbox may receive placement tests
+  // D32 re-warm plan (allowance term while rewarmStartedAt is set) and D33 inactivity reset ("Resume at full volume")
+  rewarmStartedAt            DateTime?
+  rewarmStartVolume          Int                 @default(5)
+  rewarmIncrementPerDay      Int                 @default(2)
+  rewarmTarget               Int?
+  rewarmSendDays             Int                 @default(0)
+  rewarmLastSendDay          DateTime?           @db.Date
+  rewarmPrevious             Json?
+  activityResetAt            DateTime?
   placementTests             PlacementTest[]
   warmupSent                 WarmupMessage[]     @relation("WarmupFrom")
   warmupReceived             WarmupMessage[]     @relation("WarmupTo")

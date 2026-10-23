@@ -61,6 +61,9 @@ let cached: Env | undefined;
 export function getEnv(): Env {
   return (cached ??= parseEnv(process.env));
 }
+/** SYNC_MAX_STALENESS_SEC alone, for core paths that must not need the whole env (the D33 look-ahead). */
+export const maxStalenessSec = () =>
+  envSchema.shape.SYNC_MAX_STALENESS_SEC.parse(process.env.SYNC_MAX_STALENESS_SEC);
 export function resetEnvCache(): void {
   cached = undefined;
 }

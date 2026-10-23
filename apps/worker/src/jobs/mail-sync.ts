@@ -13,7 +13,7 @@ import type { JobDef } from "../boss";
 export async function mailSync(
   prisma: PrismaClient,
   clock: Clock,
-  env: Pick<Env, "SYNC_POLL_SEC"> = getEnv(),
+  env: Pick<Env, "SYNC_POLL_SEC" | "SYNC_MAX_STALENESS_SEC"> = getEnv(),
   providerFor: SyncDeps["providerFor"] = async (a) => createProvider(a, { prisma, clock }),
   signal?: AbortSignal,
 ) {

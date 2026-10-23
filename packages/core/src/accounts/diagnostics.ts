@@ -3,6 +3,8 @@ import { AuthError, type Diagnostics } from "@rightnow/providers";
 import { audit } from "../audit";
 import { systemClock } from "../clock";
 import { accountDns, type DomainReport } from "../deliverability/dns";
+import { returnToService } from "../deliverability/lifecycle";
+import { maxStalenessSec } from "../env";
 import { AccountError, live, mutate, providerOf, type Opts } from "./service";
 
 /** Error codes that only a new grant or new credentials can fix: never auto-fixed. */
@@ -110,8 +112,12 @@ export async function markFixed(prisma: PrismaClient, ws: string, id: string, o:
       lastErrorAt: null,
       errorCount24h: 0,
       autofixState: "NONE",
-      ...(a.lifecycle === "NEEDS_ATTENTION" && { lifecycle: "ACTIVE" as const }),
     },
     "account.mark_fixed",
+    undefined,
+    async (tx) => {
+      if (a.lifecycle === "NEEDS_ATTENTION")
+        await returnToService(tx, o.clock ?? systemClock, a, { lookaheadSec: maxStalenessSec() });
+    },
   );
 }

@@ -11,9 +11,9 @@ import { audit } from "../audit";
 import { type Clock, systemClock } from "../clock";
 import type { DnsResolver } from "../deliverability/dns";
 import { updateWarmup } from "../deliverability/warmup-settings";
-import { getEnv } from "../env";
+import { returnToService } from "../deliverability/lifecycle";
+import { getEnv, maxStalenessSec } from "../env";
 import { applyLimits, type LimitWarning } from "./caps";
-import { unwrapPrevious } from "./status";
 import { setCredentials } from "./credentials";
 import { dayKey } from "./daykey";
 import { createProvider } from "./factory";
@@ -121,6 +121,8 @@ export async function mutate(
   data: Prisma.EmailAccountUpdateManyMutationInput,
   action: string,
   meta?: Record<string, string | number | boolean | null | string[]>,
+  /** Runs in the same transaction, after `data` is written (e.g. returnToService). */
+  then?: (tx: Prisma.TransactionClient) => Promise<void>,
 ) {
   await prisma.$transaction(async (tx) => {
     const r = await tx.emailAccount.updateMany({
@@ -128,6 +130,7 @@ export async function mutate(
       data,
     });
     if (!r.count) throw new AccountError(404, "Not found");
+    await then?.(tx);
     await audit(tx, { workspaceId: ws, actorId: o.actorId }, action, id, meta);
   });
   return (await getAccount(prisma, ws, id, o))!;
@@ -235,23 +238,14 @@ export async function resumeAccount(prisma: Db, ws: string, id: string, o: Opts 
   if (a.lifecycle === "NEEDS_ATTENTION") throw new AccountError(409, RECONNECT);
   if (a.status === "DISCONNECTED") throw new AccountError(409, "reconnect first");
   if (a.lifecycle !== "PAUSED") return (await getAccount(prisma, ws, id, o))!;
-  // D34 / Rev 2 I3, M3: health rates restart from now, so the bounces behind a health pause do not pause it again,
-  // and the health pause's SOFT_BOUNCE goes, at the top (the error it covered comes back) or kept under a SYNC
-  // shortcut: T05 moves this into returnToService for every path back into service
+  // Rev 2 I2: conditional on the PAUSED state read above; health restarts and a SOFT_BOUNCE goes in returnToService
   await prisma.$transaction(async (tx) => {
     const r = await tx.emailAccount.updateMany({
-      where: { id, workspaceId: ws, deletedAt: null },
-      data: {
-        lifecycle: "ACTIVE",
-        pausedUntil: null,
-        consecutivePermanentErrors: 0,
-        healthResetAt: now(o),
-      },
+      where: { id, workspaceId: ws, deletedAt: null, lifecycle: "PAUSED", pausedUntil: a.pausedUntil },
+      data: { consecutivePermanentErrors: 0 },
     });
-    if (!r.count) throw new AccountError(404, "Not found");
-    await tx.$executeRaw`UPDATE "EmailAccount" SET "lastError" = CASE
-        WHEN "lastError"->>'kind' = 'SOFT_BOUNCE' THEN "lastError"->'previous' ELSE ${unwrapPrevious} END
-      WHERE id = ${id} AND ("lastError"->>'kind' = 'SOFT_BOUNCE' OR "lastError"->'previous'->>'kind' = 'SOFT_BOUNCE')`;
+    if (!r.count) return; // changed meanwhile: that change wins
+    await returnToService(tx, o.clock ?? systemClock, a, { lookaheadSec: maxStalenessSec() });
     await audit(tx, { workspaceId: ws, actorId: o.actorId }, "account.resume", id);
   });
   return (await getAccount(prisma, ws, id, o))!;

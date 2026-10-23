@@ -137,6 +137,22 @@ describe("workspace cap settings", () => {
     expect((await getWorkspaceSettings(db.prisma, s.ws)).perCompanyDailyLimit).toBe(3);
   });
 
+  test("inactivity settings (D33): inactivityDays in {7,14,30,60}, autoRewarm, rewarmExitCleanDays 1-30", async () => {
+    const s = await seedCampaign(db.prisma, { at: T });
+    const up = (i: unknown) => updateWorkspaceSettings(db.prisma, clock, s.ws, null, i);
+    expect(await getWorkspaceSettings(db.prisma, s.ws)).toMatchObject({
+      inactivityDays: 30,
+      autoRewarm: "AUTO",
+      rewarmExitCleanDays: 3,
+    });
+    await expect(up({ inactivityDays: 10 })).rejects.toMatchObject({ status: 400 });
+    await expect(up({ autoRewarm: "SOMETIMES" })).rejects.toMatchObject({ status: 400 });
+    await expect(up({ rewarmExitCleanDays: 31 })).rejects.toMatchObject({ status: 400 });
+    expect(
+      await up({ inactivityDays: 14, autoRewarm: "RECOMMEND", rewarmExitCleanDays: 5 }),
+    ).toMatchObject({ inactivityDays: 14, autoRewarm: "RECOMMEND", rewarmExitCleanDays: 5 });
+  });
+
   test("the claim honors the API value", async () => {
     const s = await seedCampaign(db.prisma, { at: T, rows: 4 });
     await updateWorkspaceSettings(db.prisma, fixedClock(T), s.ws, null, { dailyCap: 2 });

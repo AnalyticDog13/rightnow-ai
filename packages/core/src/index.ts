@@ -21,6 +21,7 @@ export * from "./accounts/test-send";
 export * from "./accounts/live-verify";
 export * from "./deliverability/dns";
 export * from "./deliverability/health";
+export * from "./deliverability/lifecycle";
 export * from "./deliverability/placement";
 export * from "./deliverability/warmup";
 export * from "./deliverability/warmup-settings";

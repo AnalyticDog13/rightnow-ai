@@ -68,7 +68,6 @@ export const remainingToday = (
   c: { used: number; scheduled: number },
   now: Date,
 ) =>
-  // shortcut: no re-warm ctx, as the claim; add it here and in the claim together, upgrade in P5-T05/T06
   effectiveAllowance(a, now) - c.used - c.scheduled;
 
 /**

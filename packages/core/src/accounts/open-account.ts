@@ -1,4 +1,7 @@
 import { Prisma, type AccountProvider, type CapTier } from "@rightnow/db/client";
+import type { Clock } from "../clock";
+import { returnToService } from "../deliverability/lifecycle";
+import { maxStalenessSec } from "../env";
 import { TIER_MIN_GAP } from "./caps";
 import { maxDailyLimit } from "./factory";
 
@@ -13,9 +16,11 @@ import { maxDailyLimit } from "./factory";
  * - provider, tier, providerCap, appendToSent and the names come from this connect;
  * - ALL provider-specific and runtime state is reset: sync cursor and state, last sync, errors, autofix, pause,
  *   health. A cursor of one provider must never be read by another.
+ * - it returns to service through returnToService (Rev 2 I2), so an old mailbox comes back re-warming or inactive.
  */
 export async function openAccount(
   tx: Prisma.TransactionClient,
+  clock: Clock,
   workspaceId: string,
   a: {
     provider: AccountProvider;
@@ -64,7 +69,6 @@ export async function openAccount(
       dailyLimit: Math.min(dead.dailyLimit, max),
       minGapSec: Math.max(dead.minGapSec, TIER_MIN_GAP[a.capTier]),
       deletedAt: null,
-      lifecycle: "ACTIVE",
       pausedUntil: null,
       syncCursor: Prisma.DbNull,
       syncState: "IDLE",
@@ -77,5 +81,8 @@ export async function openAccount(
       healthScore: null,
     },
   });
-  return won.count ? dead.id : null;
+  if (!won.count) return null;
+  const revived = await tx.emailAccount.findUniqueOrThrow({ where: { id: dead.id } });
+  await returnToService(tx, clock, revived, { lookaheadSec: maxStalenessSec() });
+  return dead.id;
 }

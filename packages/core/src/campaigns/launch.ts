@@ -113,6 +113,7 @@ async function activate(
       (a) =>
         a.lifecycle !== "PAUSED" &&
         a.lifecycle !== "NEEDS_ATTENTION" &&
+        a.lifecycle !== "INACTIVE" &&
         (!c.accountTags.length || a.tags.some((t) => c.accountTags.includes(t))),
     );
 
@@ -122,6 +123,10 @@ async function activate(
       warn("unsubscribe_mailto_only", "Unsubscribe links need a public https APP_URL; mailto only"),
     );
   if (c.minGapSec < 300) warnings.push(warn("gap_below_5_min", "Gap below 5 minutes"));
+  if (links.some((l) => l.account.lifecycle === "INACTIVE"))
+    warnings.push(
+      warn("accounts_inactive", "Some accounts are inactive: re-warm them or resume at full volume"),
+    );
   const send = (c.espRoutingRules as EspRule[]).filter((r) => r.action === "send");
   if (
     send.length &&

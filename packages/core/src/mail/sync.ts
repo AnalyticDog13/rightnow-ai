@@ -13,6 +13,7 @@ import { recordProviderError } from "../accounts/health";
 import { unwrapPrevious } from "../accounts/status";
 import type { Clock } from "../clock";
 import { withTxRetry } from "../dispatch";
+import { computeLifecycle } from "../deliverability/lifecycle";
 import { warmupReceipt } from "../deliverability/warmup";
 import { classify, type AiClassifier } from "./classify";
 import { codeOf, ingestMessage, sanitizeRemote, syntheticMessageId } from "./ingest";
@@ -21,7 +22,7 @@ import { applyInbound } from "./stoprules";
 export type SyncDeps = {
   providerFor: (a: EmailAccount) => Promise<MailProvider>;
   aiClassify?: AiClassifier;
-  env: { SYNC_POLL_SEC: number };
+  env: { SYNC_POLL_SEC: number; SYNC_MAX_STALENESS_SEC: number };
   /** Test-only (M9): provider pages per run, default 10. */
   maxPages?: number;
   /** Test-only: page size asked of the provider (its own default otherwise). */
@@ -225,7 +226,9 @@ export async function reconcileAccount(
       const cursor = out.cursor ? JSON.stringify(out.cursor) : null;
       // a caught-up run also clears a SYNC escalation (I3), restoring the error it covered (D39); CONNECTED unless that
       // restored error is a connection problem. A SYNC kept under a health pause (SOFT_BOUNCE) is dropped the same way.
-      const n = await prisma.$executeRaw`
+      // D33: the idle check commits with the watermark, so the first claim that sees the account fresh sees its lifecycle.
+      await prisma.$transaction(async (tx) => {
+        const n = await tx.$executeRaw`
         UPDATE "EmailAccount" SET
           "lastSyncCompletedAt" = GREATEST(COALESCE("lastSyncCompletedAt", ${w}::timestamp), ${w}::timestamp),
           "syncCursor" = COALESCE(${cursor}::jsonb, "syncCursor"),
@@ -243,7 +246,11 @@ export async function reconcileAccount(
               THEN ${unwrapPrevious}
             ELSE "lastError" END
         WHERE id = ${accountId} AND "syncLeaseId" = ${lease}`;
-      if (!n) throw new LeaseLost();
+        if (!n) throw new LeaseLost();
+        await computeLifecycle(tx, clock, accountId, {
+          lookaheadSec: deps.env.SYNC_MAX_STALENESS_SEC,
+        });
+      });
       result = "caught_up";
     } else result = await release(prisma, own);
   } catch (e) {
@@ -306,12 +313,16 @@ async function fail(
     await prisma.emailAccount.updateMany({ where: own, data: { ...done, syncErrors: n } });
     return;
   }
-  // D39: an earlier non-SYNC error (e.g. SENDING) is kept as `previous`, read in the same statement, never overwritten
+  // D39: an earlier non-SYNC error (e.g. SENDING) is kept as `previous`, read in the same statement, never overwritten.
+  // An older SYNC nested under a health pause goes too, or it would outlive this one and show after a resume.
   const error = { kind: "SYNC", code, message: `mailbox sync failed ${n} times in a row` };
   await prisma.$executeRaw`
     UPDATE "EmailAccount" SET "syncState" = 'FAILED', "syncLeaseId" = NULL, "syncLeaseUntil" = NULL,
       "syncErrors" = ${n}::int, status = 'ERROR', "lastErrorAt" = ${clock.now().toISOString()}::timestamp,
       "lastError" = ${JSON.stringify(error)}::jsonb || (SELECT CASE WHEN p IS NULL OR p = 'null' THEN '{}'::jsonb
+        WHEN p->>'kind' = 'SOFT_BOUNCE' AND p->'previous'->>'kind' = 'SYNC' THEN jsonb_build_object('previous',
+          CASE WHEN p->'previous'->'previous' IS NULL THEN p - 'previous'
+          ELSE jsonb_set(p, '{previous}', p->'previous'->'previous') END)
         ELSE jsonb_build_object('previous', p) END
         FROM (SELECT CASE WHEN "lastError"->>'kind' = 'SYNC' THEN "lastError"->'previous' ELSE "lastError" END) x(p))
     WHERE id = ${acct.id} AND "syncLeaseId" = ${lease}`;

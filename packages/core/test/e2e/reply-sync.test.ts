@@ -44,7 +44,7 @@ test("a reply found by syncDue stops that lead's step 2; an unrelated lead's ste
   const A = s.accounts[0]! as EmailAccount;
   const [replier, other] = s.leads as [(typeof s.leads)[0], (typeof s.leads)[0]];
   const tick = async () => {
-    await syncDue(P, clock, { providerFor: async (a) => fake(a), env: { SYNC_POLL_SEC: 120 } });
+    await syncDue(P, clock, { providerFor: async (a) => fake(a), env: { SYNC_POLL_SEC: 120, SYNC_MAX_STALENESS_SEC: 300 } });
     await planDue(P, clock, { stalenessSec: 300, sendableProviders: ["SMTP"], env });
     await dispatchTick(P, clock, {
       providerFor: fake,

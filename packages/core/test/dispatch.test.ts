@@ -892,8 +892,9 @@ describe("quota helpers", () => {
   test("effectiveAllowance", () => {
     expect(effectiveAllowance(acct, T)).toBe(20);
     expect(effectiveAllowance({ ...acct, healthCap: 7 }, T)).toBe(7);
-    expect(effectiveAllowance(acct, T, { rewarmAllowance: 4 })).toBe(4);
-    expect(effectiveAllowance({ ...acct, dailyLimit: 10 }, T, { rewarmAllowance: null })).toBe(10);
+    const rewarm = { rewarmStartedAt: T, rewarmStartVolume: 4, rewarmIncrementPerDay: 2, rewarmTarget: 30 };
+    expect(effectiveAllowance({ ...acct, ...rewarm }, T)).toBe(4);
+    expect(effectiveAllowance({ ...acct, dailyLimit: 10 }, T)).toBe(10);
   });
 
   test("withTxRetry retries 40P01/40001/P2034 and rethrows the third failure", async () => {

@@ -4,9 +4,20 @@ import { dayKey } from "./schedule";
 
 type Tx = Prisma.TransactionClient;
 
+type RewarmFields =
+  | "healthCap"
+  | "rewarmStartedAt"
+  | "rewarmStartVolume"
+  | "rewarmIncrementPerDay"
+  | "rewarmTarget"
+  | "rewarmSendDays"
+  | "rewarmLastSendDay";
+
 /**
  * Sends an account may make today: min(user limit, re-warm, health, ramp, floor(providerCap/2)). Never negative.
  * Ramp: start + increment x whole local days since rampStartedAt (createdAt when never stamped).
+ * Re-warm (D32, while rewarmStartedAt is set): min(rewarmTarget, start + increment x local days with a campaign send
+ * before today), so days the machine was off never grow it.
  */
 export function effectiveAllowance(
   a: Pick<
@@ -20,27 +31,37 @@ export function effectiveAllowance(
     | "createdAt"
     | "timezone"
   > &
-    Partial<Pick<EmailAccount, "healthCap">>,
+    Partial<Pick<EmailAccount, RewarmFields>>,
   now: Date,
-  ctx: { rewarmAllowance?: number | null } = {},
 ): number {
+  const today = dayKey(a.timezone, now);
   const ramp = a.slowRamp
     ? a.rampStartVolume +
       a.rampIncrementPerDay *
         Math.max(
           0,
           Math.round(
-            (Date.parse(dayKey(a.timezone, now)) -
-              Date.parse(dayKey(a.timezone, a.rampStartedAt ?? a.createdAt))) /
+            (Date.parse(today) - Date.parse(dayKey(a.timezone, a.rampStartedAt ?? a.createdAt))) /
               86_400_000,
           ),
         )
+    : null;
+  const priorSendDays = Math.max(
+    0,
+    (a.rewarmSendDays ?? 0) -
+      (a.rewarmLastSendDay?.toISOString().slice(0, 10) === today ? 1 : 0),
+  );
+  const rewarm = a.rewarmStartedAt
+    ? Math.min(
+        a.rewarmTarget ?? Infinity,
+        (a.rewarmStartVolume ?? 5) + (a.rewarmIncrementPerDay ?? 2) * priorSendDays,
+      )
     : null;
   const terms = [
     ramp,
     a.dailyLimit,
     maxDailyLimit(a.providerCap),
-    ctx.rewarmAllowance,
+    rewarm,
     a.healthCap, // D34 health throttle (evaluateHealth)
   ];
   return Math.max(0, Math.min(...terms.filter((t): t is number => typeof t === "number")));

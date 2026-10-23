@@ -14,6 +14,7 @@ export type ReasonCode =
   | "outside_window"
   | "no_accounts"
   | "accounts_unavailable"
+  | "account_inactive"
   | "sync_pending"
   | "provider_not_verified"
   | "no_physical_address"
@@ -145,10 +146,16 @@ export async function whyNotSending(
     add("no_accounts", "No sending accounts are assigned to this campaign.");
     blocking.add("no_accounts");
   }
+  const inactive = assigned.filter((a) => !a.deletedAt && a.lifecycle === "INACTIVE");
   accountReason(
     "accounts_unavailable",
     "Some accounts are deleted, paused or need attention, so they cannot send.",
-    assigned.filter((a) => !live.includes(a)),
+    assigned.filter((a) => !live.includes(a) && !inactive.includes(a)),
+  );
+  accountReason(
+    "account_inactive",
+    'These accounts sent no campaign email for longer than the inactivity threshold, so they send nothing until you choose "Re-warm" or "Resume at full volume" on the Email Accounts page.',
+    inactive,
   );
   accountReason(
     "provider_not_verified",
