@@ -62,7 +62,7 @@ async function validate(
     if (!a) throw bad("unknown_action");
     return { type, ...(parse(a.input, rest) as object) } as ActionEntry;
   });
-  validateScopes(acts, c);
+  validateScopes(acts, c, d.trigger);
   for (const { type } of acts)
     if (
       (ACTIONS[type]!.lead && LEADLESS_TRIGGERS.has(d.trigger)) ||
@@ -159,7 +159,7 @@ export async function updateRule(
       p.trigger !== undefined || p.conditions !== undefined || p.actions !== undefined;
     let actions: ActionEntry[] | undefined;
     if (changed) actions = await validate(tx, ws, next, c);
-    else validateScopes(next.actions, c);
+    else validateScopes(next.actions, c, next.trigger);
     const r = await tx.automationRule.update({
       where: { id },
       data: {
@@ -180,11 +180,22 @@ export async function updateRule(
   });
 }
 
-function validateScopes(actions: { type: string }[], c: Caller) {
+/** Triggers whose payload carries the reply body (only REPLY Events: `reply_*` fields). */
+const REPLY_TRIGGERS = new Set(["reply_received"]);
+
+function validateScopes(actions: { type: string }[], c: Caller, trigger: string) {
   for (const { type } of actions) {
     const scope = ACTIONS[type]?.scope;
     if (c.scopes && scope && !scopeAllows(c.scopes, scope))
       throw new AccountError(403, `scope_required:${scope}`);
+    // fix I1: send_webhook on a reply hands the reply body to the URL, which otherwise needs inbox:read (R12)
+    if (
+      c.scopes &&
+      type === "send_webhook" &&
+      REPLY_TRIGGERS.has(trigger) &&
+      !scopeAllows(c.scopes, "inbox:read")
+    )
+      throw new AccountError(403, "scope_required:inbox:read");
   }
 }
 

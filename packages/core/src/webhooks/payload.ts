@@ -59,7 +59,10 @@ export async function buildPayload(
         })
       : null,
   ]);
+  const custom = lead?.customFields;
+  // custom fields first: neither the envelope nor a standard field can be overridden by one (fix I2)
   const p: Record<string, unknown> = {
+    ...(custom && typeof custom === "object" && !Array.isArray(custom) ? custom : {}),
     event_id: e.id,
     timestamp: e.occurredAt.toISOString(),
     event_type,
@@ -68,8 +71,7 @@ export async function buildPayload(
     campaign_name: campaign?.name ?? null,
   };
   if (lead) {
-    // custom fields first: a custom key never overrides a standard one
-    Object.assign(p, lead.customFields as object, { lead_email: lead.email });
+    p.lead_email = lead.email;
     for (const [k, out] of LEAD_FIELDS) p[out] = lead[k];
   }
   if (account) p.email_account = account.email;
@@ -102,5 +104,10 @@ export async function buildPayload(
     ["email_text", "reply_text"],
   ])
     if (Buffer.byteLength(JSON.stringify(p)) > MAX_BYTES) for (const k of drop) delete p[k];
+  // fix M4: still too large (huge custom fields): refused, so no delivery row is written
+  if (Buffer.byteLength(JSON.stringify(p)) > MAX_BYTES) {
+    console.error("webhook_payload_too_large", { eventId: e.id });
+    return null;
+  }
   return p;
 }

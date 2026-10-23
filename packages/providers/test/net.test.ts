@@ -108,15 +108,20 @@ describe("R11 ranges and R24 metadata", () => {
     await expect(assertPublicHost(ip, vps)).rejects.toThrow(/non-public/);
   });
 
-  it.each(["169.254.169.254", "169.254.1.1", "fd00:ec2::254", "fe80::1", "::ffff:169.254.169.254"])(
-    "metadata and link-local %s stay refused with allowPrivate in every mode",
-    async (ip) => {
-      for (const mode of ["vps", "local"] as const)
-        await expect(assertPublicHost(ip, { mode, allowPrivate: true })).rejects.toThrow(
-          /non-public/,
-        );
-    },
-  );
+  it.each([
+    "169.254.169.254",
+    "169.254.1.1",
+    "fd00:ec2::254",
+    "fe80::1",
+    "::ffff:169.254.169.254",
+    "100.100.100.200", // Alibaba Cloud
+    "192.0.0.192", // Oracle Cloud
+  ])("metadata and link-local %s stay refused with allowPrivate in every mode", async (ip) => {
+    for (const mode of ["vps", "local"] as const)
+      await expect(assertPublicHost(ip, { mode, allowPrivate: true })).rejects.toThrow(
+        /non-public/,
+      );
+  });
 
   it("metadata.google.internal is refused by name, and by what it resolves to", async () => {
     const resolve = dns({ "md.example": ["169.254.169.254"] });

@@ -51,6 +51,7 @@ function parse<S extends z.ZodType>(s: S, input: unknown): z.output<S> {
   return r.data;
 }
 
+const BODY = /^(reply_.*|email_text|email_html)$/;
 const newSecret = () => `whsec_${randomBytes(32).toString("base64url")}`;
 const toApi = (w: Webhook, headerNames: string[]): ApiWebhook => {
   const out: Partial<Webhook> = { ...w };
@@ -276,6 +277,7 @@ export async function listDeliveries(
   ws: string,
   webhookId: string,
   q: unknown,
+  c: Caller = {},
 ): Promise<{ deliveries: ApiDelivery[]; nextCursor: string | null }> {
   const p = parse(listQuery, q);
   if (!(await db.webhook.count({ where: { id: webhookId, workspaceId: ws } }))) throw notFound();
@@ -287,6 +289,12 @@ export async function listDeliveries(
     ...(p.cursor && { cursor: { id: p.cursor } }),
   });
   const next = deliveries.length > take ? deliveries.pop()! : null;
+  // fix I3: message bodies are inbox data; an API key without inbox:read sees the payload without them
+  if (c.scopes && !scopeAllows(c.scopes, "inbox:read"))
+    for (const d of deliveries)
+      d.payload = Object.fromEntries(
+        Object.entries(d.payload as Prisma.JsonObject).filter(([k]) => !BODY.test(k)),
+      );
   return { deliveries, nextCursor: next?.id ?? null };
 }
 

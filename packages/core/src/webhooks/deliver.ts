@@ -44,7 +44,7 @@ async function insert(tx: Tx, e: Event, now: Date, webhookIds: string[]) {
       webhookId,
       eventId: e.id,
       leadId: e.leadId,
-      eventType: payload.event_type as string,
+      eventType: webhookEventName(e)!, // never from the payload (fix I2); buildPayload is null without a name
       payload: payload as Prisma.InputJsonObject,
       nextAttemptAt: now,
       createdAt: now,

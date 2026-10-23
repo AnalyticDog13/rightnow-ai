@@ -37,6 +37,8 @@ const metadata = new BlockList();
 metadata.addSubnet("169.254.0.0", 16, "ipv4");
 metadata.addSubnet("fe80::", 10, "ipv6");
 metadata.addAddress("fd00:ec2::254", "ipv6");
+metadata.addAddress("100.100.100.200", "ipv4"); // Alibaba Cloud
+metadata.addAddress("192.0.0.192", "ipv4"); // Oracle Cloud
 const METADATA_NAMES = new Set(["metadata.google.internal"]);
 
 /** Parses any textual IPv6 form (compressed, expanded, mixed ::ffff:a.b.c.d) to 16 bytes. */

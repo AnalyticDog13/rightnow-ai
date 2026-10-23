@@ -1081,3 +1081,97 @@ describe("overview, list, test, retention", () => {
     expect((await rows(W.id)).map((d) => d.id).sort()).toEqual([keepPending.id, recent.id].sort());
   });
 });
+
+describe("fix round 1", () => {
+  test("I1: a send_webhook rule on reply_received needs inbox:read for an API key", async () => {
+    const w = await world({ leads: 0 });
+    const W = await hook(w, ["email_sent"]);
+    const input = {
+      name: "leak",
+      trigger: "reply_received",
+      actions: [{ type: "send_webhook", webhookId: W.id }],
+    };
+    expect(
+      await err(
+        createRule(P(), w.ws, null, input, { scopes: ["automations:write", "webhooks:write"] }),
+      ),
+    ).toEqual({ status: 403, message: "scope_required:inbox:read" });
+    await createRule(P(), w.ws, null, input, {
+      scopes: ["automations:write", "webhooks:write", "inbox:read"],
+    });
+    // another trigger carries no reply body: no inbox:read needed
+    await createRule(
+      P(),
+      w.ws,
+      null,
+      { ...input, trigger: "bounced" },
+      { scopes: ["automations:write", "webhooks:write"] },
+    );
+  });
+
+  test("I2: custom fields never override the envelope; a non-string event_type cannot break dispatch", async () => {
+    const w = await world();
+    const W = await hook(w, ["email_sent"]);
+    await P().lead.update({
+      where: { id: w.lead.id },
+      data: {
+        customFields: { event_type: 5, event_id: "spoof", lead_email: "x@y.z", plan: "pro" },
+      },
+    });
+    const e = await accepted(w);
+    expect(await drain()).toEqual({ events: 1, deliveries: 1 });
+    expect((await P().event.findUniqueOrThrow({ where: { id: e.id } })).dispatchError).toBeNull();
+    const [d] = await rows(W.id);
+    expect(d!.eventType).toBe("email_sent");
+    expect(d!.payload).toMatchObject({
+      event_type: "email_sent",
+      event_id: e.id,
+      lead_email: w.lead.email,
+      plan: "pro",
+    });
+  });
+
+  test("I3: listDeliveries strips reply and body fields for an API key without inbox:read", async () => {
+    const w = await world({ leads: 0 });
+    const W = await hook(w, ["all_events"]);
+    await pending(w, W.id, {
+      payload: {
+        event_type: "reply_received",
+        lead_email: "a@b.test",
+        reply_text: "secret",
+        reply_html: "<p>secret</p>",
+        reply_subject: "Re",
+        reply_text_snippet: "secret",
+        email_text: "body",
+        email_html: "<p>body</p>",
+      },
+    });
+    const shown = async (c?: { scopes?: string[] }) =>
+      (await listDeliveries(P(), w.ws, W.id, {}, c)).deliveries[0]!.payload;
+    expect(await shown({ scopes: ["webhooks:read"] })).toEqual({
+      event_type: "reply_received",
+      lead_email: "a@b.test",
+    });
+    expect(await shown({ scopes: ["webhooks:read", "inbox:read"] })).toMatchObject({
+      reply_text: "secret",
+      email_html: "<p>body</p>",
+    });
+    expect(await shown()).toMatchObject({ reply_text: "secret" }); // a session user
+  });
+
+  test("M4: a payload still over 256 KB after the drops is refused, not stored", async () => {
+    const w = await world();
+    const W = await hook(w, ["email_sent"]);
+    await P().lead.update({
+      where: { id: w.lead.id },
+      data: { customFields: { notes: "n".repeat(300 * 1024) } },
+    });
+    const err_ = vi.spyOn(console, "error").mockImplementation(() => {});
+    const e = await accepted(w);
+    expect(await P().$transaction((tx) => buildPayload(tx, e, "https://a.test"))).toBeNull();
+    await drain();
+    expect(await rows(W.id)).toEqual([]);
+    expect(err_).toHaveBeenCalledWith("webhook_payload_too_large", { eventId: e.id });
+    err_.mockRestore();
+  });
+});
