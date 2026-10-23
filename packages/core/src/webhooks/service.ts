@@ -302,13 +302,16 @@ export async function listDeliveries(
 export async function redeliver(
   prisma: PrismaClient,
   ws: string,
-  _actor: Actor,
+  actor: Actor,
   deliveryId: string,
 ) {
-  const n = await prisma.$executeRaw`
-    UPDATE "WebhookDelivery" SET status = 'PENDING', attempts = 0, "nextAttemptAt" = "createdAt", "leaseUntil" = NULL
-    WHERE id = ${deliveryId} AND "workspaceId" = ${ws} AND status IN ('DELIVERED', 'FAILED')`;
-  if (!n) throw notFound();
+  await prisma.$transaction(async (tx) => {
+    const n = await tx.$executeRaw`
+      UPDATE "WebhookDelivery" SET status = 'PENDING', attempts = 0, "nextAttemptAt" = "createdAt", "leaseUntil" = NULL
+      WHERE id = ${deliveryId} AND "workspaceId" = ${ws} AND status IN ('DELIVERED', 'FAILED')`;
+    if (!n) throw notFound();
+    await audit(tx, { workspaceId: ws, actorId: actor }, "webhook.redeliver", deliveryId);
+  });
 }
 
 /** PS-ANALYTICS-19: per local day (workspace timezone) of the last attempt, delivered vs failed. */

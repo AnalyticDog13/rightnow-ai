@@ -861,6 +861,11 @@ describe("auto-disable", () => {
       status: "PENDING",
       attempts: 0,
     });
+    expect(
+      await P().auditLog.count({
+        where: { workspaceId: w.ws, action: "webhook.redeliver", target: due.id },
+      }),
+    ).toBe(1);
     answer = () => ({ status: 200 });
     await deliver(fixedClock(T));
     expect(await P().webhookDelivery.findUniqueOrThrow({ where: { id: due.id } })).toMatchObject({

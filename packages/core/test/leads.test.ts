@@ -499,6 +499,9 @@ describe("labels", () => {
     await expect(
       createLabel(db.prisma, ws, null, { name: "email_sent", color: "#ff0000" }),
     ).rejects.toMatchObject(reserved);
+    await expect(
+      createLabel(db.prisma, ws, null, { name: "Email_Sent", color: "#ff0000" }),
+    ).rejects.toMatchObject(reserved);
     const lab = await createLabel(db.prisma, ws, null, { name: "Fine", color: "#ff0000" });
     await expect(
       updateLabel(db.prisma, ws, lab.id, { name: "lead_interested" }),

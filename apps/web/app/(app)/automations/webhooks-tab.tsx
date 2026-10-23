@@ -71,6 +71,7 @@ export function WebhooksTab({
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  const [tick, setTick] = useState(0); // bumps the overview after anything that can change its counts
 
   // one request per webhook at a time, so a double click cannot race
   async function act(h: Hook, what: "test" | "resume" | "rotate-secret" | "delete") {
@@ -101,6 +102,7 @@ export function WebhooksTab({
     if (r.ok && what === "rotate-secret")
       setSecret({ name: label(h), value: String(r.json.secret) });
     if (r.ok && what === "delete" && viewing?.id === h.id) setViewing(null);
+    setTick((t) => t + 1);
     reload();
   }
 
@@ -242,13 +244,17 @@ export function WebhooksTab({
           </table>
         </Card>
       )}
-      <Overview />
+      <Overview tick={tick} />
       {viewing && (
         <Deliveries
           key={viewing.id}
           hook={viewing}
           canEdit={canEdit}
           onClose={() => setViewing(null)}
+          onRedelivered={(m) => {
+            setNotice(m);
+            setTick((t) => t + 1);
+          }}
         />
       )}
     </div>
@@ -438,10 +444,12 @@ function Deliveries({
   hook,
   canEdit,
   onClose,
+  onRedelivered,
 }: {
   hook: Hook;
   canEdit: boolean;
   onClose: () => void;
+  onRedelivered: (message: string) => void;
 }) {
   const [status, setStatus] = useState("");
   const [rows, setRows] = useState<Delivery[] | null>(null);
@@ -475,7 +483,16 @@ function Deliveries({
   async function redeliver(d: Delivery) {
     const r = await call(`/api/v1/webhooks/deliveries/${d.id}/redeliver`, "POST");
     setError(r.ok ? "" : why(r));
-    void load();
+    if (!r.ok) return;
+    // keep the loaded pages: only this row changes
+    setRows((old) =>
+      (old ?? []).map((x) =>
+        x.id === d.id
+          ? { ...x, status: "PENDING", attempts: 0, nextAttemptAt: new Date().toISOString() }
+          : x,
+      ),
+    );
+    onRedelivered(`Queued ${d.eventType} for redelivery`);
   }
 
   return (
@@ -584,17 +601,18 @@ type Day = { day: string; delivered: number; failed: number };
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 
 /** PS-ANALYTICS-19: delivered vs failed attempts per day, last 14 days; the table is the text alternative. */
-function Overview() {
+function Overview({ tick }: { tick: number }) {
   const [days, setDays] = useState<Day[] | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
-    const to = new Date();
-    const from = new Date(to.getTime() - 13 * 86_400_000);
+    // the server buckets by workspace timezone: ending tomorrow (UTC) keeps the local today in range
+    const to = new Date(Date.now() + 86_400_000);
+    const from = new Date(to.getTime() - 14 * 86_400_000);
     void call(`/api/v1/webhooks/overview?from=${iso(from)}&to=${iso(to)}`, "GET").then((r) => {
       if (!r.ok) return setError(errorText(r));
       setDays(r.json.days as Day[]);
     });
-  }, []);
+  }, [tick]);
   const axis = { tick: { fontSize: 12 }, stroke: "currentColor" };
   return (
     <figure

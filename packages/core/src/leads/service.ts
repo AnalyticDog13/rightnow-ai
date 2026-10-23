@@ -703,7 +703,8 @@ export const listLabels = (prisma: Db, ws: string): Promise<LeadLabel[]> =>
 
 /** R23: a label name is also a webhook event name, so it may not equal a standard one. */
 const reserved = (name?: string) => {
-  if (name && (name === "all_events" || WEBHOOK_EVENTS.includes(name)))
+  const n = name?.toLowerCase();
+  if (n && (n === "all_events" || WEBHOOK_EVENTS.includes(n)))
     throw new LeadError(400, "label_name_reserved");
 };
 
