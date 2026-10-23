@@ -42,10 +42,10 @@ Areas: UI, ACC, WARM, CAMP, SEQ, SEND, LEAD, INBOX, TRACK, CRM, ANALYTICS, AUTO,
 - [x] PS-UI-01: Left navigation with exactly: Dashboard, Email Accounts, Warm-Up & Deliverability, Campaigns, Leads, Unified Inbox, CRM, Analytics, Automations, Settings — master §2; Instantly's own nav groups Campaigns, Accounts, Unibox, CRM, Analytics, Lead Finder/SuperSearch (no SuperSearch clone) (S15).
 - [ ] PS-UI-02: Responsive layouts, searchable/sortable/paginated tables, saved filters, bulk-select action bar — Instantly list views support filter+search and bulk action bars (S14).
 - [ ] PS-UI-03: Every control wired to real backend behavior; no dead buttons; Playwright smoke test walks each nav item — master §2.
-- [ ] PS-UI-04: Dashboard widgets: sends today vs capacity, active campaigns progress, reply/positive/bounce rates, account health strip, remaining daily capacity, pending reminders/tasks — master §11 + Instantly workspace analytics (S16).
+- [x] PS-UI-04: Dashboard widgets: sends today vs capacity, active campaigns progress, reply/positive/bounce rates, account health strip, remaining daily capacity, pending reminders/tasks — master §11 + Instantly workspace analytics (S16).
 - [ ] PS-UI-05: Original visual design, light/dark theme, accessible components (keyboard, labels, contrast) — master §2.
 - [x] PS-UI-06: Global status badges for accounts and campaigns using the status sets in PS-ACC-14 and PS-CAMP-20 — Instantly numeric status enums (S4, S9).
-- [ ] PS-UI-07: Global date-range and workspace-timezone display; analytics bucketed in UTC unless user chooses otherwise — Instantly reports in UTC (S16).
+- [x] PS-UI-07: Global date-range and workspace-timezone display; analytics bucketed in UTC unless user chooses otherwise — Instantly reports in UTC (S16).
 - [ ] PS-UI-08: Tags (custom tags) assignable to accounts and campaigns, filterable everywhere — Instantly custom tags map to accounts/campaigns; `email_tag_list` on campaign limits sending accounts (S3, S23 Custom Tag).
 
 ---
@@ -160,7 +160,7 @@ See section 17 (SYNC) for requirements; account-level items:
 - [x] PS-SEQ-18: Template validation: unknown variable, unmatched braces, missing `RANDOM` keyword, empty fallback, variable absent from >0 leads (warn count) — S12 troubleshooting; master §4 validation.
 - [x] PS-SEQ-19: Unsubscribe link/variable `{{unsubscribeLink}}` available in body and auto-appended footer if absent when compliance setting on — master §14 (Instantly variable name undocumented).
 - [x] PS-SEQ-20: Body stored as HTML with plain-text alternative auto-generated; `<br/>` line breaks — S3.
-- [ ] PS-SEQ-21: Per-step and per-variant analytics: sent, opened, replied, clicked, reply rate, positive reply rate, opportunities, meetings booked, won; date-range selectable — S20, S23 steps analytics.
+- [x] PS-SEQ-21: Per-step and per-variant analytics: sent, opened, replied, clicked, reply rate, positive reply rate, opportunities, meetings booked, won; date-range selectable — S20, S23 steps analytics.
 - [x] PS-SEQ-22: Reply-dependent branching only via subsequences (no full visual flow builder) — S13.
 
 ---
@@ -219,7 +219,7 @@ See section 17 (SYNC) for requirements; account-level items:
 - [x] PS-LEAD-01: Lead fields: email (required, unique per workspace unless dedupe off), firstName, lastName, companyName, companyDomain (derived), jobTitle, phone, website, personalization, plValueLead, custom variables (string/number/boolean/null), assignedTo, listId, campaign — S5.
 - [x] PS-LEAD-02: Lead status (per campaign): Active, Paused, Completed, Bounced, Unsubscribed, Skipped — S5.
 - [x] PS-LEAD-03: Interest status (`interest`): Interested, Meeting Booked, Meeting Completed, Won, Out of Office, Not Interested, Wrong Person, Lost, No Show, (null = plain "Lead"); numeric codes 1,2,3,4,0,-1,-2,-3,-4 — S5, S11. Custom labels with a user-chosen name, color, positive/negative flag, AI description — S28 (custom labels), S7.
-- [ ] PS-LEAD-04: Setting interest status has side effects: may complete the lead in campaigns, create/update an opportunity, fire automations and subsequences; setting null resets to Lead; processed asynchronously — S11.
+- [ ] PS-LEAD-04: Setting interest status has side effects: may complete the lead in campaigns, create/update an opportunity, fire automations and subsequences; setting null resets to Lead; processed asynchronously — S11. (P6: opportunity side effect done, runs synchronously in the same tx)
 - [x] PS-LEAD-05: Verification status: Not verified, Verified, Pending, Pending job, Invalid, Risky, Catch-all, Job change — S5. Campaign does not send to Invalid; Risky/Catch-all only when "allow risky" — S1.
 - [x] PS-LEAD-06: Enrichment status field (enriched, pending, not available, error) kept for integration hooks — S5.
 - [x] PS-LEAD-07: ESP code (Google, Microsoft, Zoho, Yahoo, Yandex, Other, Not found, In queue) and ESG code (Barracuda, Mimecast, Proofpoint, Cisco) detected via MX lookup; used for provider matching — S5. RightNow implements MX-based ESP/ESG detection; "in queue" while pending.
@@ -234,7 +234,7 @@ See section 17 (SYNC) for requirements; account-level items:
 - [x] PS-LEAD-16: Lead merge (two records into one, keeping history) — S23 "Merge two leads".
 - [x] PS-LEAD-17: Bulk actions: assign to users (round-robin option), move, delete, add to blocklist, change interest status, add/remove tag, export selected CSV — S14, S15, S23.
 - [x] PS-LEAD-18: Advanced lead filters: status, interest status, verification status, campaign, list, owner, "opened but no reply", last contacted, custom field contains — S17 ("Email opened, No reply" filter), S15, S23 (advanced filtering article exists).
-- [ ] PS-LEAD-19: Contact history timeline per lead: imports, sends (step/variant/account), opens, clicks, replies, status changes, notes, tasks, campaign attribution — master §7; Instantly "Lead activity" article exists (search result). (imports, sends, opens, clicks, replies, bounces, unsubscribes, status changes done P3/P4; notes and tasks → P6)
+- [x] PS-LEAD-19: Contact history timeline per lead: imports, sends (step/variant/account), opens, clicks, replies, status changes, notes, tasks, campaign attribution — master §7; Instantly "Lead activity" article exists (search result). (imports, sends, opens, clicks, replies, bounces, unsubscribes, status changes done P3/P4; notes and tasks → P6)
 - [x] PS-LEAD-20: Blocklist entries: single `value` that is an email or a domain (`isDomain` derived); CRUD, bulk create/delete, CSV download, delete-all; checked at import, campaign scheduling and send time — S10, S23.
 - [x] PS-LEAD-21: Global suppression list: unsubscribes, hard bounces, complaints and manual blocks added automatically; durable, survives lead deletion; enforced across all campaigns/workspace — master §7, §12, §14.
 - [ ] PS-LEAD-22: Import and export of historical conversations from authorized accounts and association with leads by email match — master §7. (sync imports conversations and matches leads by email done P4-T05; export of historical conversations → P7-T03)
@@ -276,7 +276,7 @@ See section 17 (SYNC) for requirements; account-level items:
 
 ## 10. Email Analytics and Event Tracking (master §9)
 
-- [ ] PS-TRACK-01: Immutable event log with types: scheduled, send_attempt, provider_accepted, send_failed, bounce_hard, bounce_soft, unsubscribe, reply, auto_reply, open (estimated), click, positive_reply, negative_reply, meeting, opportunity, deal_won, deal_lost — master §9; Instantly webhook event types cover sent/opened/clicked/reply/auto-reply/bounce/unsub (S6). (event log done P4-T01; scheduled/send_attempt kept on ScheduledMessage, not Events (D31); meeting/opportunity/deal events → P6-T01)
+- [x] PS-TRACK-01: Immutable event log with types: scheduled, send_attempt, provider_accepted, send_failed, bounce_hard, bounce_soft, unsubscribe, reply, auto_reply, open (estimated), click, positive_reply, negative_reply, meeting, opportunity, deal_won, deal_lost — master §9; Instantly webhook event types cover sent/opened/clicked/reply/auto-reply/bounce/unsub (S6). (event log done P4-T01; scheduled/send_attempt kept on ScheduledMessage, not Events (D31); meeting/opportunity/deal events → P6-T01)
 - [x] PS-TRACK-02: Event dedupe via unique key (provider message id + event type + timestamp bucket) so repeated notifications do not double count — master §9.
 - [x] PS-TRACK-03: [optional] Open tracking via 1x1 pixel served from the (custom) tracking domain; open rate denominator = leads who got step 1 ("sequences started"); text-only clients not counted — S17, S16.
 - [x] PS-TRACK-04: Opens flagged as estimated; classify machine opens (known prefetch proxies, Apple Mail Privacy Protection, security scanners, opens within seconds of send) into a separate counter; UI shows "estimated" and never merges into engagement KPIs by default — master §9 (Instantly doc pages fetched do not describe bot/MPP filtering; undocumented).
@@ -285,8 +285,8 @@ See section 17 (SYNC) for requirements; account-level items:
 - [x] PS-TRACK-07: Disabling tracking (text-only/delivery optimization) removes pixel and link rewriting — S1, S17.
 - [x] PS-TRACK-08: Hard vs soft bounce classification from SMTP codes and DSN (5.x.x hard, 4.x.x soft) plus reason text; unknown bucket — S21 (hard/soft/unknown).
 - [x] PS-TRACK-09: Unsubscribe via link, List-Unsubscribe one-click POST, and reply-text detection; immediately suppress and complete lead (status Unsubscribed) — S1, S5.
-- [ ] PS-TRACK-10: Reports by campaign, sender account, step, variant, recipient segment (ESP, list, tag, custom field), and time period — master §9, S20.
-- [ ] PS-TRACK-11: Meetings, opportunities, won/lost, revenue events recorded from interest status changes and CRM updates — S11, S15.
+- [x] PS-TRACK-10: Reports by campaign, sender account, step, variant, recipient segment (ESP, list, tag, custom field), and time period — master §9, S20.
+- [x] PS-TRACK-11: Meetings, opportunities, won/lost, revenue events recorded from interest status changes and CRM updates — S11, S15.
 - [x] PS-TRACK-12: All timestamps stored UTC; report bucketing UTC by default — S16.
 - [ ] PS-TRACK-13: Webhook/provider push notifications (Gmail Pub/Sub, Graph subscriptions) are idempotent and verified — master §3/§9.
 
@@ -294,43 +294,43 @@ See section 17 (SYNC) for requirements; account-level items:
 
 ## 11. Sales CRM (master §10)
 
-- [ ] PS-CRM-01: CRM area sections: Tasks, Inbox (all activity: email/calls/SMS/tasks), Opportunities, Leads — Instantly CRM tab (S15). RightNow ships Tasks, Activity inbox, Opportunities, Leads; calls/SMS channels are manual log entries only.
-- [ ] PS-CRM-02: Default pipeline stages (customizable: add, rename, reorder, delete with reassignment): Not Contacted, Contacted, Replied, Interested, Meeting Scheduled, Proposal Sent, Negotiation, Closed Won, Closed Lost — master §10. Instantly's own stages are lead interest statuses plus custom statuses editable in Preferences (S15).
-- [ ] PS-CRM-03: Interest status to stage mapping (Interested to Interested, Meeting Booked to Meeting Scheduled, Won to Closed Won, Lost to Closed Lost, etc.), configurable — S11 side effects (opportunity created/updated).
-- [ ] PS-CRM-04: Kanban board of opportunities with drag-and-drop between stages and per-column totals (count and value) — master §10; Instantly blog mentions kanban (S15 context).
-- [ ] PS-CRM-05: Opportunity record: lead, campaign (origin), stage, deal value, expected close date, owner, notes, tasks, reminders, activity history — master §10; Instantly opportunities have optional deal value, notes, meetings, tasks (S15, S16).
-- [ ] PS-CRM-06: Opportunity filters: campaign, list, time range, lead owner, stage; search by domain or email — S15.
-- [ ] PS-CRM-07: Opportunity auto-created when a positive interest status is set (Interested/Meeting Booked/...) if automation on; unique per lead per campaign — S11, S9 ("unique opportunities").
-- [ ] PS-CRM-08: Tasks with title, due date, assignee, status, linked lead/opportunity; "tasks awaiting approval" view — S15.
-- [ ] PS-CRM-09: Leads view with filters (campaign, list, status, owner), create/import lead, custom fields, download selected, assign to teammates with round-robin option — S15.
-- [ ] PS-CRM-10: Record revenue: deal value (expected), cash collected (actual) on Closed Won; revenue attributed to originating campaign/step/variant/account — master §10, S16 (conversions with cash collected).
-- [ ] PS-CRM-11: CRM reports: pipeline value, average deal size, annualized value closed, conversion rate by stage, revenue per lead, revenue per campaign — S15 report names (search result), master §10.
+- [x] PS-CRM-01: CRM area sections: Tasks, Inbox (all activity: email/calls/SMS/tasks), Opportunities, Leads — Instantly CRM tab (S15). RightNow ships Tasks, Activity inbox, Opportunities, Leads; calls/SMS channels are manual log entries only.
+- [x] PS-CRM-02: Default pipeline stages (customizable: add, rename, reorder, delete with reassignment): Not Contacted, Contacted, Replied, Interested, Meeting Scheduled, Proposal Sent, Negotiation, Closed Won, Closed Lost — master §10. Instantly's own stages are lead interest statuses plus custom statuses editable in Preferences (S15).
+- [x] PS-CRM-03: Interest status to stage mapping (Interested to Interested, Meeting Booked to Meeting Scheduled, Won to Closed Won, Lost to Closed Lost, etc.), configurable — S11 side effects (opportunity created/updated).
+- [x] PS-CRM-04: Kanban board of opportunities with drag-and-drop between stages and per-column totals (count and value) — master §10; Instantly blog mentions kanban (S15 context).
+- [x] PS-CRM-05: Opportunity record: lead, campaign (origin), stage, deal value, expected close date, owner, notes, tasks, reminders, activity history — master §10; Instantly opportunities have optional deal value, notes, meetings, tasks (S15, S16).
+- [x] PS-CRM-06: Opportunity filters: campaign, list, time range, lead owner, stage; search by domain or email — S15.
+- [x] PS-CRM-07: Opportunity auto-created when a positive interest status is set (Interested/Meeting Booked/...) if automation on; unique per lead per campaign — S11, S9 ("unique opportunities").
+- [ ] PS-CRM-08: Tasks with title, due date, assignee, status, linked lead/opportunity; "tasks awaiting approval" view — S15. (P6: AWAITING_APPROVAL view + approve done; producers → P7-T05)
+- [x] PS-CRM-09: Leads view with filters (campaign, list, status, owner), create/import lead, custom fields, download selected, assign to teammates with round-robin option — S15.
+- [x] PS-CRM-10: Record revenue: deal value (expected), cash collected (actual) on Closed Won; revenue attributed to originating campaign/step/variant/account — master §10, S16 (conversions with cash collected).
+- [x] PS-CRM-11: CRM reports: pipeline value, average deal size, annualized value closed, conversion rate by stage, revenue per lead, revenue per campaign — S15 report names (search result), master §10.
 - [ ] PS-CRM-12: CRM inbox may store non-lead email, with a preference to stop saving it — S15.
-- [ ] PS-CRM-13: Activity history is append-only and shows stage changes with actor and timestamp — master §10.
-- [ ] PS-CRM-14: Won/Lost deals feed analytics (conversions, revenue) in real time — master §12.
+- [x] PS-CRM-13: Activity history is append-only and shows stage changes with actor and timestamp — master §10.
+- [x] PS-CRM-14: Won/Lost deals feed analytics (conversions, revenue) in real time — master §12.
 
 ---
 
 ## 12. Analytics Dashboard (master §11)
 
-- [ ] PS-ANALYTICS-01: Filters on every view: campaign (multi), account (multi), tags/owner, date range with presets, status (active/completed) — S16.
-- [ ] PS-ANALYTICS-02: Metric "Total sent": every email sent including follow-ups — S16.
-- [ ] PS-ANALYTICS-03: Metric "Contacted / sequences started": unique leads that received step 1 (`contacted_count`), plus `new_leads_contacted_count` — S9, S16.
-- [ ] PS-ANALYTICS-04: Metric "Opened": leads with >= 1 open (`open_count`), unique opens, unique opens by step; open rate = opens / sequences started (pixel-based, estimated) — S9, S17.
-- [ ] PS-ANALYTICS-05: Metric "Replied": total replies, unique replies (first per lead, excluding auto-replies), unique by step; auto-replies counted separately; toggle "include auto replies"; account-level reply rate = replies / total sent, campaign-level counts replied leads — S9, S16 (Instantly's own definitions differ by view; RightNow documents both and defaults to unique replied leads / leads contacted, with total-sent variant selectable).
-- [ ] PS-ANALYTICS-06: Metric "Clicked": total, unique, unique-by-step; click rate = sends with >= 1 click — S9, S16.
-- [ ] PS-ANALYTICS-07: Metric "Bounced" (hard/soft split), "Unsubscribed", "Completed" lead counts — S9.
-- [ ] PS-ANALYTICS-08: Metrics "Opportunities" (unique, count and total value) and "Positive reply rate" = opportunities / replies; "Conversions" = won opportunities with cash collected — S9, S16.
-- [ ] PS-ANALYTICS-09: Campaign progress = share of leads that finished the entire sequence — S16.
-- [ ] PS-ANALYTICS-10: Pipeline value, average deal size, revenue by campaign, revenue per lead — S15 report names, master §10.
-- [ ] PS-ANALYTICS-11: Daily time series per campaign and per account (sent, opened, replied, clicked, bounced) — S23 daily campaign/account analytics.
-- [ ] PS-ANALYTICS-12: Step and variant analytics: sent, replied, reply rate, positive reply rate, opportunities, meeting booked, won; recommend long ranges (e.g. last 3 months) for significance; variant toggle to pause underperformers — S20.
-- [ ] PS-ANALYTICS-13: Bounce breakdown view (hard, soft, unknown, reason) — S21.
-- [ ] PS-ANALYTICS-14: Account analytics: sent, contacted, opened, replied, combined score; account health, deliverability trend, remaining daily capacity — S16, master §11.
-- [ ] PS-ANALYTICS-15: Charts (Recharts): volume over time, rates, funnel (sent to replied to positive to meeting to won), A/B bars, health trend; hide/show metrics gear — S16.
-- [ ] PS-ANALYTICS-16: CSV export of sending activity (lead email, account, step, action, date, link) and of aggregate tables; image share of campaign chart optional — S16.
-- [ ] PS-ANALYTICS-17: All metrics computed from stored events; no synthetic or placeholder numbers; unit tests assert counts against fixtures — master §11.
-- [ ] PS-ANALYTICS-18: Metrics display denominators and "estimated" flags in tooltips — master §9.
+- [x] PS-ANALYTICS-01: Filters on every view: campaign (multi), account (multi), tags/owner, date range with presets, status (active/completed) — S16.
+- [x] PS-ANALYTICS-02: Metric "Total sent": every email sent including follow-ups — S16.
+- [x] PS-ANALYTICS-03: Metric "Contacted / sequences started": unique leads that received step 1 (`contacted_count`), plus `new_leads_contacted_count` — S9, S16.
+- [x] PS-ANALYTICS-04: Metric "Opened": leads with >= 1 open (`open_count`), unique opens, unique opens by step; open rate = opens / sequences started (pixel-based, estimated) — S9, S17.
+- [x] PS-ANALYTICS-05: Metric "Replied": total replies, unique replies (first per lead, excluding auto-replies), unique by step; auto-replies counted separately; toggle "include auto replies"; account-level reply rate = replies / total sent, campaign-level counts replied leads — S9, S16 (Instantly's own definitions differ by view; RightNow documents both and defaults to unique replied leads / leads contacted, with total-sent variant selectable).
+- [x] PS-ANALYTICS-06: Metric "Clicked": total, unique, unique-by-step; click rate = sends with >= 1 click — S9, S16.
+- [x] PS-ANALYTICS-07: Metric "Bounced" (hard/soft split), "Unsubscribed", "Completed" lead counts — S9.
+- [x] PS-ANALYTICS-08: Metrics "Opportunities" (unique, count and total value) and "Positive reply rate" = opportunities / replies; "Conversions" = won opportunities with cash collected — S9, S16.
+- [x] PS-ANALYTICS-09: Campaign progress = share of leads that finished the entire sequence — S16.
+- [x] PS-ANALYTICS-10: Pipeline value, average deal size, revenue by campaign, revenue per lead — S15 report names, master §10.
+- [x] PS-ANALYTICS-11: Daily time series per campaign and per account (sent, opened, replied, clicked, bounced) — S23 daily campaign/account analytics.
+- [x] PS-ANALYTICS-12: Step and variant analytics: sent, replied, reply rate, positive reply rate, opportunities, meeting booked, won; recommend long ranges (e.g. last 3 months) for significance; variant toggle to pause underperformers — S20.
+- [x] PS-ANALYTICS-13: Bounce breakdown view (hard, soft, unknown, reason) — S21.
+- [x] PS-ANALYTICS-14: Account analytics: sent, contacted, opened, replied, combined score; account health, deliverability trend, remaining daily capacity — S16, master §11.
+- [ ] PS-ANALYTICS-15: Charts (Recharts): volume over time, rates, funnel (sent to replied to positive to meeting to won), A/B bars, health trend; hide/show metrics gear — S16. (P6: charts + metric menu done; health-trend sparkline → P7-T08)
+- [x] PS-ANALYTICS-16: CSV export of sending activity (lead email, account, step, action, date, link) and of aggregate tables; image share of campaign chart optional — S16.
+- [x] PS-ANALYTICS-17: All metrics computed from stored events; no synthetic or placeholder numbers; unit tests assert counts against fixtures — master §11.
+- [x] PS-ANALYTICS-18: Metrics display denominators and "estimated" flags in tooltips — master §9.
 - [ ] PS-ANALYTICS-19: Webhook delivery analytics (success/failure by date) — S23 webhook event overview.
 
 ---
