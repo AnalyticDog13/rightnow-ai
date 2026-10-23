@@ -10,8 +10,7 @@ export const GET = route({ auth: "session-or-apikey", scope: "crm:read" }, async
   stages: await ensureStages(prisma, c.workspaceId),
 }));
 
-// pipeline configuration is ADMIN: an API key acts as MEMBER, so it gets 403
-export const POST = route(
-  { auth: "session-or-apikey", scope: "crm:create", role: "ADMIN", body: z.unknown() },
-  (c) => run(() => createStage(prisma, c.workspaceId, c.userId, c.body)),
+// pipeline configuration is ADMIN and session-only (CLAUDE.md): an API key gets 401
+export const POST = route({ auth: "session", role: "ADMIN", body: z.unknown() }, (c) =>
+  run(() => createStage(prisma, c.workspaceId, c.userId, c.body)),
 );

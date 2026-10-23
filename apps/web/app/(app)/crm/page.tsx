@@ -31,7 +31,7 @@ export default async function Page({
     }),
     prisma.workspace.findUniqueOrThrow({
       where: { id: ws },
-      select: { currency: true, crmAutoOpportunity: true },
+      select: { currency: true, crmAutoOpportunity: true, timezone: true },
     }),
     // the currency is fixed while any deal carries money (409 currency_in_use)
     prisma.opportunity.count({
@@ -39,7 +39,9 @@ export default async function Page({
     }),
   ]);
   // a bad filter in the URL leaves the board to the client, which shows the API's error
-  const board = await pipelineBoard(prisma, ws, boardQuery(sp)).catch(() => null);
+  const board = await pipelineBoard(prisma, ws, boardQuery(sp, settings.timezone)).catch(
+    () => null,
+  );
   return (
     <CrmClient
       initial={board && JSON.parse(JSON.stringify(board))}
@@ -52,6 +54,7 @@ export default async function Page({
       currency={settings.currency}
       currencyLocked={moneyDeals > 0}
       autoOpportunity={settings.crmAutoOpportunity}
+      timezone={settings.timezone}
     />
   );
 }

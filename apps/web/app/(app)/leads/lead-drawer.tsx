@@ -48,6 +48,12 @@ const describe = (t: TimelineItem) => {
       return d.auto ? "Auto-replied" : "Replied";
     case "bounced":
       return `Bounced (${String(d.type).toLowerCase()})`;
+    case "note":
+      return `Note (${d.noteKind}): ${d.body}`;
+    case "task":
+      return `Task ${d.action === "task.create" ? "added" : "updated"}: ${d.title ?? "(deleted)"}`;
+    case "opportunity":
+      return `Deal ${String(d.action).slice("opportunity.".length)}`;
     default:
       return `Suppressed (${String(d.reason).toLowerCase()})`;
   }

@@ -24,6 +24,7 @@ export function CrmClient({
   currency,
   currencyLocked,
   autoOpportunity,
+  timezone,
 }: {
   initial: BoardData | null;
   stages: Named[];
@@ -35,6 +36,7 @@ export function CrmClient({
   currency: string;
   currencyLocked: boolean;
   autoOpportunity: boolean;
+  timezone: string;
 }) {
   const sp = useSearchParams();
   const [tab, setTab] = useState(sp.get("tab") === "tasks" ? "tasks" : "opportunities");
@@ -58,7 +60,7 @@ export function CrmClient({
             <Filters campaigns={campaigns} lists={lists} members={members} stages={stages} />
             <Board
               initial={initial}
-              query={boardQuery(Object.fromEntries(sp))}
+              query={boardQuery(Object.fromEntries(sp), timezone)}
               members={members}
               campaigns={campaigns}
               canEdit={canEdit}

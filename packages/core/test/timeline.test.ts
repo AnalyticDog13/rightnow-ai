@@ -2,6 +2,7 @@ import { createTestDb } from "@rightnow/db/test-db";
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { fixedClock } from "../src/clock";
 import { createOpportunity } from "../src/crm/opportunities";
+import { createTask } from "../src/crm/tasks";
 import { updateLead } from "../src/leads/service";
 import { hashValue } from "../src/leads/suppression";
 import { leadTimeline } from "../src/leads/timeline";
@@ -115,7 +116,7 @@ test("notes, tasks and deals", async () => {
   const { lead } = s.leads[0]!;
   const clock = fixedClock(new Date("2026-10-21T10:00:00Z"));
   await p.note.create({ data: { workspaceId: s.ws, leadId: lead.id, body: "rang", kind: "call" } });
-  await p.task.create({ data: { workspaceId: s.ws, leadId: lead.id, title: "follow up" } });
+  await createTask(p, clock, s.ws, "u1", { leadId: lead.id, title: "follow up" });
   await createOpportunity(p, clock, s.ws, "u1", { leadId: lead.id });
   const other = await p.lead.create({ data: { workspaceId: s.ws, email: "o@x.test" } });
   await p.note.create({ data: { workspaceId: s.ws, leadId: other.id, body: "not mine" } });
@@ -127,7 +128,7 @@ test("notes, tasks and deals", async () => {
   });
   expect(t.find((e) => e.kind === "task")!.detail).toMatchObject({
     title: "follow up",
-    status: "OPEN",
+    action: "task.create",
   });
   expect(t.filter((e) => e.kind === "note")).toHaveLength(1);
 });

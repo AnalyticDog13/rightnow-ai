@@ -11,6 +11,8 @@ export type ActivityItem = {
   actorId: string | null;
   leadId: string | null;
   opportunityId: string | null;
+  /** the deal's current title; null once the deal is deleted */
+  opportunityTitle: string | null;
   detail: Record<string, unknown>;
 };
 
@@ -47,7 +49,7 @@ export async function leadFamily(db: Db, ws: string, leadId: string): Promise<st
  * D41, PS-CRM-01 "Inbox": the lead's notes (call, sms and meeting logs too), REPLY Events and the `opportunity.*` / `task.*`
  * audit rows, newest first, keyset on (at, id). One UNION so the page boundary is exact even when timestamps tie.
  * Audit rows are picked by `meta->>'leadId'`, so a deleted deal keeps its history.
- * shortcut: AuditLog has no meta index, add one if the feed gets slow.
+ * The partial expression indexes of the crm_activity_indexes migration serve the meta->>'leadId' / 'opportunityId' picks.
  */
 export async function crmActivity(
   db: Db,
@@ -118,6 +120,7 @@ export async function crmActivity(
   const page = rows.slice(0, f.take);
   const stageIds = new Set<string>();
   const taskIds = new Set<string>();
+  const oppIds = new Set(page.flatMap((r) => (r.oppId ? [r.oppId] : [])));
   for (const r of page) {
     if (r.kind === "opportunity.stage")
       for (const k of ["from", "to"]) {
@@ -127,7 +130,7 @@ export async function crmActivity(
     if (r.kind.startsWith("task.") && typeof r.detail?.target === "string")
       taskIds.add(r.detail.target);
   }
-  const [stages, tasks] = await Promise.all([
+  const [stages, tasks, opps] = await Promise.all([
     stageIds.size
       ? db.pipelineStage.findMany({
           where: { workspaceId: ws, id: { in: [...stageIds] } },
@@ -140,12 +143,26 @@ export async function crmActivity(
           select: { id: true, title: true },
         })
       : [],
+    oppIds.size
+      ? db.opportunity.findMany({
+          where: { workspaceId: ws, id: { in: [...oppIds] } },
+          select: { id: true, title: true },
+        })
+      : [],
   ]);
+  const oppTitle = new Map(opps.map((o) => [o.id, o.title]));
   const stageName = new Map(stages.map((s) => [s.id, s.name]));
   const taskTitle = new Map(tasks.map((t) => [t.id, t.title]));
 
   const items = page.map((r): ActivityItem => {
-    const base = { id: r.id, at: r.at, actorId: r.actor, leadId: r.leadId, opportunityId: r.oppId };
+    const base = {
+      id: r.id,
+      at: r.at,
+      actorId: r.actor,
+      leadId: r.leadId,
+      opportunityId: r.oppId,
+      opportunityTitle: (r.oppId && oppTitle.get(r.oppId)) ?? null,
+    };
     const d = r.detail ?? {};
     if (r.src !== "audit") return { ...base, kind: r.kind as ActivityItem["kind"], detail: d };
     const { target, ...meta } = d;

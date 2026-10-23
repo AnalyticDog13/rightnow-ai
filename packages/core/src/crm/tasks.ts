@@ -1,6 +1,6 @@
 import type { Prisma, PrismaClient, Task } from "@rightnow/db/client";
 import { z } from "zod";
-import { AccountError } from "../accounts/service";
+import { AccountError, isPrismaCode, notFound } from "../accounts/service";
 import { audit } from "../audit";
 import { systemClock, type Clock } from "../clock";
 import { assertMembers } from "../leads/service";
@@ -23,7 +23,6 @@ export type ApiTask = Pick<
   | "createdAt"
 > & { lead: { id: string; email: string } | null };
 
-const notFound = () => new AccountError(404, "Not found");
 const STATUS = ["OPEN", "DONE", "AWAITING_APPROVAL"] as const;
 const id = z.string().min(1).max(100);
 const fields = {
@@ -67,6 +66,7 @@ export async function listTasks(db: Db, ws: string, q: unknown, now: Date): Prom
   if (f.due && f.status && f.status !== "OPEN") return [];
   const where: Prisma.TaskWhereInput = {
     workspaceId: ws,
+    OR: [{ leadId: null }, { lead: { deletedAt: null } }], // a soft-deleted lead's tasks are hidden with it
     status: f.due ? "OPEN" : (f.status ?? "OPEN"),
     ...(f.assigneeId && { assigneeId: f.assigneeId }),
     ...(f.leadId && { leadId: f.leadId }),
@@ -101,7 +101,6 @@ const meta = (t: { leadId: string | null; opportunityId: string | null }) => ({
   ...(t.leadId && { leadId: t.leadId }),
   ...(t.opportunityId && { opportunityId: t.opportunityId }),
 });
-const isFk = (e: unknown) => (e as { code?: string })?.code === "P2003";
 
 export async function createTask(
   prisma: PrismaClient,
@@ -118,13 +117,16 @@ export async function createTask(
       let leadId = d.leadId ?? null;
       if (d.opportunityId) {
         const o = await tx.opportunity.findFirst({
-          where: { id: d.opportunityId, workspaceId: ws },
+          where: { id: d.opportunityId, workspaceId: ws, lead: { deletedAt: null } },
           select: { leadId: true },
         });
         if (!o) throw notFound();
         if (leadId && leadId !== o.leadId) throw new AccountError(400, "lead_mismatch");
         leadId = o.leadId;
-      } else if (leadId && !(await tx.lead.count({ where: { id: leadId, workspaceId: ws } })))
+      } else if (
+        leadId &&
+        !(await tx.lead.count({ where: { id: leadId, workspaceId: ws, deletedAt: null } }))
+      )
         throw notFound();
       const t = await tx.task.create({
         data: {
@@ -144,7 +146,7 @@ export async function createTask(
       return t;
     });
   } catch (e) {
-    if (isFk(e)) throw notFound(); // the lead or deal was deleted meanwhile
+    if (isPrismaCode(e, "P2003")) throw notFound(); // the lead or deal was deleted meanwhile
     throw e;
   }
 }

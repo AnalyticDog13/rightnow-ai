@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@rightnow/db/client";
-import { leadFamily } from "../crm/activity";
+import { crmActivity } from "../crm/activity";
 import { hashValue } from "./suppression";
 
 export type TimelineEntry = {
@@ -30,8 +30,7 @@ export async function leadTimeline(
 ): Promise<TimelineEntry[]> {
   const lead = await prisma.lead.findFirst({ where: { id: leadId, workspaceId: ws } });
   if (!lead) return [];
-  const family = await leadFamily(prisma, ws, leadId); // merged-away leads' deal history follows the kept lead
-  const [job, enrolled, sent, audits, sup, engaged, notes, tasks, deals] = await Promise.all([
+  const [job, enrolled, sent, audits, sup, engaged, crm] = await Promise.all([
     lead.importJobId
       ? prisma.importJob.findFirst({ where: { id: lead.importJobId, workspaceId: ws } })
       : null,
@@ -71,15 +70,9 @@ export async function leadTimeline(
         },
       },
     }),
-    prisma.note.findMany({ where: { workspaceId: ws, leadId } }),
-    prisma.task.findMany({ where: { workspaceId: ws, leadId } }),
-    prisma.auditLog.findMany({
-      where: {
-        workspaceId: ws,
-        action: { startsWith: "opportunity." },
-        OR: family.map((id) => ({ meta: { path: ["leadId"], equals: id } })),
-      },
-    }),
+    // notes, tasks and deals as the CRM feed has them, merged-away leads included
+    // shortcut: the newest 200 CRM items; page crmActivity if a lead ever has more
+    crmActivity(prisma, ws, { leadId, take: 200 }),
   ]);
   const out: TimelineEntry[] = [];
   for (const e of engaged) {
@@ -107,20 +100,27 @@ export async function leadTimeline(
         detail: { campaignId, type: e.type.slice(7), recipient: meta.recipient ?? null },
       });
   }
-  for (const n of notes)
-    out.push({ at: n.createdAt, kind: "note", detail: { noteKind: n.kind, body: n.body } });
-  for (const t of tasks)
-    out.push({
-      at: t.completedAt ?? t.createdAt,
-      kind: "task",
-      detail: { title: t.title, status: t.status, dueAt: t.dueAt },
-    });
-  for (const d of deals)
-    out.push({
-      at: d.createdAt,
-      kind: "opportunity",
-      detail: { action: d.action, opportunityId: d.target },
-    });
+  for (const i of crm.items) {
+    const d = i.detail;
+    if (i.kind === "reply") continue; // already listed from its Event
+    if (i.kind === "task")
+      out.push({
+        at: i.at,
+        kind: "task",
+        detail: { action: d.action, title: d.title, status: d.status },
+      });
+    else if (i.kind === "stage" || i.kind === "opportunity")
+      out.push({
+        at: i.at,
+        kind: "opportunity",
+        detail: {
+          action: i.kind === "stage" ? "opportunity.stage" : d.action,
+          opportunityId: i.opportunityId,
+          ...(i.kind === "stage" && { from: d.from, to: d.to }),
+        },
+      });
+    else out.push({ at: i.at, kind: "note", detail: { noteKind: i.kind, body: d.body } });
+  }
   const unsubEvent = out.some((x) => x.kind === "unsubscribed");
   if (job) out.push({ at: job.createdAt, kind: "imported", detail: { fileName: job.fileName } });
   for (const e of enrolled)

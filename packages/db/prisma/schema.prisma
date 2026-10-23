@@ -155,6 +155,9 @@ model AuditLog {
   createdAt   DateTime  @default(now())
 
   @@index([workspaceId, createdAt])
+  @@index([workspaceId, target])
+  // partial expression indexes ("workspaceId", meta->>'leadId') and (…, meta->>'opportunityId') for the CRM feed live
+  // in the crm_activity_indexes migration (raw SQL)
 }
 
 model ApiKey {
@@ -1213,4 +1216,6 @@ model Task {
   updatedAt     DateTime     @updatedAt
 
   @@index([workspaceId, status, dueAt])
+  @@index([leadId])
+  @@index([opportunityId])
 }

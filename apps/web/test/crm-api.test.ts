@@ -94,13 +94,13 @@ describe("crm routes", () => {
     for (const h of [bearer(writeKey)]) {
       expect(
         (await stages.POST(req("POST", "crm/stages", { name: "K", kind: "OPEN" }, h))).status,
-      ).toBe(403);
+      ).toBe(401);
       expect(
         (await stage.PATCH(req("PATCH", `crm/stages/${id}`, { name: "K" }, h), p(id))).status,
-      ).toBe(403);
+      ).toBe(401);
       expect(
         (await stage.DELETE(req("DELETE", `crm/stages/${id}`, undefined, h), p(id))).status,
-      ).toBe(403);
+      ).toBe(401);
     }
     await setRole("member");
     expect((await stages.POST(req("POST", "crm/stages", { name: "K", kind: "OPEN" }))).status).toBe(

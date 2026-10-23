@@ -11,6 +11,7 @@ export type Item = {
   kind: string;
   actorId: string | null;
   opportunityId: string | null;
+  opportunityTitle: string | null;
   detail: Record<string, unknown>;
 };
 
@@ -48,18 +49,19 @@ function what(i: Item): string {
 export function ActivityList({
   items,
   members,
-  titles,
+  showDeal,
 }: {
   items: Item[];
   members: Member[];
-  titles?: Map<string, string>;
+  /** names each item's deal (the workspace feed; a deal's own feed needs no name) */
+  showDeal?: boolean;
 }) {
   if (!items.length) return <p className="text-sm text-muted-foreground">No activity yet.</p>;
   return (
     <ul aria-label="Activity" className="flex flex-col gap-2 text-sm">
       {items.map((i) => {
         const who = members.find((m) => m.userId === i.actorId)?.name ?? "Automatic";
-        const deal = i.opportunityId && titles ? titles.get(i.opportunityId) : undefined;
+        const deal = showDeal ? i.opportunityTitle : null;
         return (
           <li key={i.id}>
             <span className="text-muted-foreground">{new Date(i.at).toLocaleString()}</span>{" "}
@@ -103,19 +105,6 @@ export function useActivity(opportunityId?: string) {
 
 export function ActivityTab({ members }: { members: Member[] }) {
   const { items, next, error, more } = useActivity();
-  const [titles, setTitles] = useState(new Map<string, string>());
-  useEffect(() => {
-    void call("/api/v1/crm/opportunities?take=200", "GET").then((r) =>
-      setTitles(
-        new Map(
-          ((r.json.opportunities ?? []) as { id: string; title: string }[]).map((o) => [
-            o.id,
-            o.title,
-          ]),
-        ),
-      ),
-    );
-  }, []);
   return (
     <div className="flex flex-col gap-3">
       {error && (
@@ -123,7 +112,7 @@ export function ActivityTab({ members }: { members: Member[] }) {
           {error}
         </p>
       )}
-      <ActivityList items={items} members={members} titles={titles} />
+      <ActivityList items={items} members={members} showDeal />
       {next && (
         <Button variant="outline" className="self-start" onClick={() => void more()}>
           Load more

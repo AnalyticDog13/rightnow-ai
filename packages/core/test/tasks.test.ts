@@ -1,11 +1,11 @@
 import { createTestDb, expectIsolated } from "@rightnow/db/test-db";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { fixedClock } from "../src/clock";
-import { crmActivity } from "../src/crm/activity";
+import { crmActivity, leadFamily } from "../src/crm/activity";
 import { createOpportunity, deleteOpportunity, updateOpportunity } from "../src/crm/opportunities";
 import { ensureStages } from "../src/crm/stages";
 import { createTask, deleteTask, listTasks, updateTask } from "../src/crm/tasks";
-import { gdprDeleteLead, mergeLeads } from "../src/leads/service";
+import { gdprDeleteLead, mergeLeads, softDeleteLead } from "../src/leads/service";
 import { leadTimeline } from "../src/leads/timeline";
 import { createNote } from "../src/mail/inbox-library";
 
@@ -137,7 +137,7 @@ describe("tasks", () => {
     expect(t.leadId).toBe(l1.id);
     await expect(
       createTask(P(), c, w2, "u1", { title: "t", opportunityId: opp.id, leadId: l2.id }),
-    ).rejects.toMatchObject({ status: 400 });
+    ).rejects.toMatchObject({ status: 400, message: "lead_mismatch" });
 
     await expectIsolated({
       prisma: P(),
@@ -351,5 +351,56 @@ describe("tasks", () => {
     await expect(
       createNote(P(), w, "u1", { leadId: l.id, body: "x", kind: "fax" }),
     ).rejects.toThrow();
+  });
+
+  test("a soft-deleted lead takes no task and its tasks are not listed; lead-less tasks stay", async () => {
+    const w = await ws();
+    const c = fixedClock(D("2026-11-05T10:00:00Z"));
+    const l = await lead(w);
+    const opp = await createOpportunity(P(), c, w, "u1", { leadId: l.id });
+    await createTask(P(), c, w, "u1", {
+      title: "lead",
+      leadId: l.id,
+      dueAt: "2026-11-04T09:00:00Z",
+    });
+    await createTask(P(), c, w, "u1", { title: "free", dueAt: "2026-11-04T09:00:00Z" });
+    await softDeleteLead(P(), c, w, l.id);
+    await expect(createTask(P(), c, w, "u1", { title: "x", leadId: l.id })).rejects.toMatchObject({
+      status: 404,
+    });
+    await expect(
+      createTask(P(), c, w, "u1", { title: "x", opportunityId: opp.id }),
+    ).rejects.toMatchObject({ status: 404 });
+    expect((await listTasks(P(), w, {}, c.now())).map((t) => t.title)).toEqual(["free"]);
+    expect((await listTasks(P(), w, { due: "overdue" }, c.now())).map((t) => t.title)).toEqual([
+      "free",
+    ]);
+  });
+
+  test("leadFamily follows merge chains, within the workspace", async () => {
+    const w = await ws();
+    const c = fixedClock(D("2026-11-05T10:00:00Z"));
+    const [a, b, k, x] = [await lead(w), await lead(w), await lead(w), await lead(w)];
+    await mergeLeads(P(), c, w, { keepId: b.id, mergeId: a.id }, "u1");
+    await mergeLeads(P(), c, w, { keepId: k.id, mergeId: b.id }, "u1");
+    expect((await leadFamily(P(), w, k.id)).sort()).toEqual([a.id, b.id, k.id].sort());
+    expect((await leadFamily(P(), w, b.id)).sort()).toEqual([a.id, b.id].sort());
+    expect(await leadFamily(P(), w, x.id)).toEqual([x.id]);
+    expect(await leadFamily(P(), await ws(), k.id)).toEqual([]);
+  });
+
+  test("the activity feed names each item's deal", async () => {
+    const w = await ws();
+    const c = fixedClock(D("2026-11-05T10:00:00Z"));
+    const l = await lead(w);
+    const opp = await createOpportunity(P(), c, w, "u1", { leadId: l.id, title: "Big deal" });
+    await createTask(P(), c, w, "u1", { title: "t", opportunityId: opp.id });
+    const { items } = await crmActivity(P(), w, {});
+    expect(items.map((i) => i.opportunityTitle)).toEqual(["Big deal", "Big deal"]);
+    await deleteOpportunity(P(), w, "u1", opp.id);
+    const after = await crmActivity(P(), w, {});
+    expect(
+      after.items.find((i) => i.detail.action === "opportunity.delete")!.opportunityTitle,
+    ).toBeNull();
   });
 });
