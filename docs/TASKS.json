@@ -690,100 +690,196 @@
    "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-6.md (incl. Revision 2); tests listed there pass"
   },
   {
-   "id": "P7-T01",
+   "id": "P7-T01a",
    "phase": 7,
-   "title": "Automation rules engine with spec §12 defaults",
+   "title": "Automation engine core: event outbox migration, dispatcher with per-event isolation, event producers, actions, rules service, event-dispatch job",
    "status": "todo",
    "deps": [
     "P6-T04"
    ],
-   "model": "sonnet",
+   "model": "opus",
    "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md; tests listed there pass"
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md (incl. Revision 2); tests listed there pass"
   },
   {
-   "id": "P7-T02",
+   "id": "P7-T01b",
    "phase": 7,
-   "title": "Webhooks: HMAC signing, custom headers, SSRF-safe delivery (block private ranges), retries, auto-disable, delivery log UI",
+   "title": "Automation routes, Automations page (rules, built-ins, runs), rule editor, e2e",
    "status": "todo",
    "deps": [
-    "P7-T01"
+    "P7-T01a"
    ],
    "model": "sonnet",
    "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md; tests listed there pass"
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md (incl. Revision 2); tests listed there pass"
   },
   {
-   "id": "P7-T03",
+   "id": "P7-T02a",
    "phase": 7,
-   "title": "Public API resource completion (accounts, campaigns, leads, lists, emails, analytics, blocklist, webhooks, jobs 202) + OpenAPI from zod + `docs/API.md`",
+   "title": "Webhook core: safeRequest, HMAC signing, SSRF-safe pinned delivery, retries, auto-disable, GDPR purge, webhook-deliver job",
    "status": "todo",
    "deps": [
-    "P7-T02"
+    "P7-T01b"
+   ],
+   "model": "opus",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md (incl. Revision 2); tests listed there pass"
+  },
+  {
+   "id": "P7-T02b",
+   "phase": 7,
+   "title": "Webhook routes, Webhooks tab, delivery log + overview chart, e2e",
+   "status": "todo",
+   "deps": [
+    "P7-T02a"
    ],
    "model": "sonnet",
    "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md; tests listed there pass"
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md (incl. Revision 2); tests listed there pass"
+  },
+  {
+   "id": "P7-T03a",
+   "phase": 7,
+   "title": "Background jobs (202), audit-log/tags/members endpoints, lead data export",
+   "status": "todo",
+   "deps": [
+    "P7-T02b"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md (incl. Revision 2); tests listed there pass"
+  },
+  {
+   "id": "P7-T03b",
+   "phase": 7,
+   "title": "OpenAPI from route zod schemas, API-key scope audit, strict bodies, docs/API.md",
+   "status": "todo",
+   "deps": [
+    "P7-T03a"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md (incl. Revision 2); tests listed there pass"
   },
   {
    "id": "P7-T04",
    "phase": 7,
-   "title": "A/B auto-optimize",
+   "title": "A/B auto-optimize + daily variant reset",
    "status": "todo",
    "deps": [
-    "P7-T03"
+    "P7-T03b"
    ],
    "model": "sonnet",
    "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md; tests listed there pass"
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md (incl. Revision 2); tests listed there pass"
   },
   {
-   "id": "P7-T05",
+   "id": "P7-T05a",
    "phase": 7,
-   "title": "AI module (all §13 features, approval workflow for recipient-facing text)",
+   "title": "AI foundation: encrypted settings, client + call log, approval workflow, AI classifier, smart pause",
    "status": "todo",
    "deps": [
     "P7-T04"
    ],
    "model": "sonnet",
    "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md; tests listed there pass"
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md (incl. Revision 2); tests listed there pass"
   },
   {
-   "id": "P7-T06",
+   "id": "P7-T05b",
    "phase": 7,
-   "title": "Push sync (Gmail watch + Pub/Sub JWT verify, Graph subscriptions + clientState), renewal jobs",
+   "title": "AI features: drafting, personalization, follow-ups, reply drafts, summaries, scoring, CRM recommendations, campaign analysis",
    "status": "todo",
    "deps": [
-    "P7-T05"
+    "P7-T05a"
    ],
    "model": "sonnet",
    "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md; tests listed there pass"
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md (incl. Revision 2); tests listed there pass"
   },
   {
-   "id": "P7-T07",
+   "id": "P7-T06a",
    "phase": 7,
-   "title": "Security hardening (rate limits, CSP, 2FA, password hashing per better-auth, data export/deletion, audit view, dependency audit); invite acceptance flow (deferred from P1-T04); trusted-proxy rate limiting for /api/setup and auth; rate-limit IMAP/SMTP test-connection + trim banner exposure (from P2-T06)",
+   "title": "Push sources (Gmail watch, Graph subscriptions), subscription model, renewal job",
    "status": "todo",
    "deps": [
-    "P7-T06"
+    "P7-T05b"
    ],
    "model": "sonnet",
    "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md; tests listed there pass"
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md (incl. Revision 2); tests listed there pass"
   },
   {
-   "id": "P7-T08",
+   "id": "P7-T06b",
    "phase": 7,
-   "title": "UI polish + accessibility (axe in Playwright per section)",
+   "title": "Push endpoints with JWT/clientState verification, sync request flag, non-lead mail setting",
    "status": "todo",
    "deps": [
-    "P7-T07"
+    "P7-T06a"
+   ],
+   "model": "opus",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md (incl. Revision 2); tests listed there pass"
+  },
+  {
+   "id": "P7-T07a",
+   "phase": 7,
+   "title": "Rate limits in Postgres, trusted-proxy IP, strict CSP + security headers, test-connection limit + banner trim",
+   "status": "todo",
+   "deps": [
+    "P7-T06b"
+   ],
+   "model": "opus",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md (incl. Revision 2); tests listed there pass"
+  },
+  {
+   "id": "P7-T07b",
+   "phase": 7,
+   "title": "TOTP 2FA, invite acceptance + member roles, audit view, dependency audit, PS-SEC sweep",
+   "status": "todo",
+   "deps": [
+    "P7-T07a"
    ],
    "model": "sonnet",
    "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md; tests listed there pass"
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md (incl. Revision 2); tests listed there pass"
+  },
+  {
+   "id": "P7-T09",
+   "phase": 7,
+   "title": "Phase 4-6 carry-forward fixes (placement, warm-up throttle, complaint window, re-warm exit, vitals CNAME, CRM counts, inbox perf)",
+   "status": "todo",
+   "deps": [
+    "P7-T07b"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md (incl. Revision 2); tests listed there pass"
+  },
+  {
+   "id": "P7-T08a",
+   "phase": 7,
+   "title": "Accessibility (axe per section, keyboard, dark mode), nav smoke, table + tag conventions",
+   "status": "todo",
+   "deps": [
+    "P7-T09"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md (incl. Revision 2); tests listed there pass"
+  },
+  {
+   "id": "P7-T08b",
+   "phase": 7,
+   "title": "UI polish: rich-text compose, link-target warnings, health sparkline, failed-sends view, carry-forwards",
+   "status": "todo",
+   "deps": [
+    "P7-T08a"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md (incl. Revision 2); tests listed there pass"
   },
   {
    "id": "P8-T01",
@@ -791,7 +887,7 @@
    "title": "Complete E2E suite per mapping below",
    "status": "todo",
    "deps": [
-    "P7-T08"
+    "P7-T08b"
    ],
    "model": "sonnet",
    "commit": null,
