@@ -18,6 +18,7 @@ import { campaignVariables } from "./campaigns/sequence";
 import { accountOk, withTxRetry } from "./dispatch";
 import { getEnv } from "./env";
 import { suppressedEmails } from "./leads/suppression";
+import { recordEvent } from "./mail/events";
 import type { EspRule } from "./campaigns/schema";
 import { committedToday, pickAccount, remainingToday, routeAllowed } from "./rotation";
 import {
@@ -699,12 +700,26 @@ async function reroute(tx: Tx, campaignId: string, now: Date, o: PlanOpts) {
 
 /** Past endAt (M1): COMPLETED and its SCHEDULED rows CANCELLED. */
 async function endCampaign(tx: Tx, campaignId: string, now: Date) {
-  const r = await tx.campaign.updateMany({
+  const r = await tx.campaign.updateManyAndReturn({
     where: { id: campaignId, status: "ACTIVE" },
     data: { status: "COMPLETED", updatedAt: now },
+    select: { id: true, workspaceId: true },
   });
-  if (r.count) await cancelRows(tx, Prisma.sql`"campaignId" = ${campaignId}`);
-  return r.count;
+  if (r.length) await cancelRows(tx, Prisma.sql`"campaignId" = ${campaignId}`);
+  return completed(tx, r, now);
+}
+
+/** D43 / Rev 2 R5: one CAMPAIGN_COMPLETED per campaign the COMPLETED write returned; the count of them. */
+async function completed(tx: Tx, rows: { id: string; workspaceId: string }[], now: Date) {
+  for (const c of rows)
+    await recordEvent(tx, {
+      workspaceId: c.workspaceId,
+      type: "CAMPAIGN_COMPLETED",
+      occurredAt: now,
+      campaignId: c.id,
+      dedupeKey: `campaign_completed:${c.id}:${now.getTime()}`,
+    });
+  return rows.length;
 }
 
 /**
@@ -732,12 +747,14 @@ async function housekeep(tx: Tx, campaignId: string, now: Date) {
       WHERE cl.id = "ScheduledMessage"."campaignLeadId" AND (cl.state IN ('COMPLETED', 'STOPPED')
         OR (cl."currentStepId" IS NOT NULL AND cl."currentStepId" <> "ScheduledMessage"."stepId")))`,
   );
-  return tx.$executeRaw`
+  const done = await tx.$queryRaw<{ id: string; workspaceId: string }[]>`
     UPDATE "Campaign" c SET status = 'COMPLETED', "updatedAt" = ${now.toISOString()}::timestamp
     WHERE c.id = ${campaignId} AND c.status = 'ACTIVE' AND NOT c.evergreen
       AND NOT EXISTS (SELECT 1 FROM "CampaignLead" WHERE "campaignId" = c.id AND state = ANY(${OPEN_STATES_SQL}))
       AND NOT EXISTS (SELECT 1 FROM "ScheduledMessage" WHERE "campaignId" = c.id
-        AND status IN ('SCHEDULED', 'SENDING', 'UNCERTAIN', 'HELD'))`;
+        AND status IN ('SCHEDULED', 'SENDING', 'UNCERTAIN', 'HELD'))
+    RETURNING c.id, c."workspaceId"`;
+  return completed(tx, done, now);
 }
 
 /** The lead's sticky account (alias `cl`) is live and assigned to its campaign. */

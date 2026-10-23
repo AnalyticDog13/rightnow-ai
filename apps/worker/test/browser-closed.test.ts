@@ -27,12 +27,13 @@ afterAll(async () => {
   await db.drop();
 });
 
-test("plan, dispatch, recovery and mail sync are sent once at boot, besides their cron", () => {
+test("plan, dispatch, recovery, mail sync and event dispatch are sent once at boot, besides their cron", () => {
   expect(jobs.filter((j) => j.boot).map((j) => [j.name, j.cron])).toEqual([
     ["campaign-plan", "* * * * *"],
     ["campaign-dispatch", "* * * * *"],
     ["send-recovery", "*/5 * * * *"],
     ["mail-sync", "* * * * *"],
+    ["event-dispatch", "* * * * *"],
   ]);
 });
 

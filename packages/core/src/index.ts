@@ -80,3 +80,5 @@ export * from "./analytics/crm-report";
 export * from "./analytics/accounts";
 export * from "./analytics/dashboard";
 export * from "./analytics/export";
+export * from "./automations/engine";
+export * from "./automations/rules";

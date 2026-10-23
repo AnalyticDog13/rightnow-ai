@@ -11,10 +11,12 @@ import {
   type OutboundMime,
   type SendResult,
 } from "@rightnow/providers";
+import { PgBoss } from "pg-boss";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { seedCampaign } from "../../../packages/core/test/campaign-fixture";
 import { startWorker } from "../src/boss";
 import { campaignDispatch, campaignDispatchJob } from "../src/jobs/campaign-dispatch";
+import { eventDispatchJob } from "../src/jobs/event-dispatch";
 import { sendRecoveryJob } from "../src/jobs/send-recovery";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
@@ -128,3 +130,34 @@ test("post-send update never happens (row left SENDING) → UNCERTAIN after the 
     ]),
   ).toEqual([[1, 0]]);
 }, 60_000);
+
+test("R2: a killed event-dispatch run is followed by a new run within 60 s", async () => {
+  const P = db.prisma;
+  const ws = (await P.workspace.create({ data: { name: "W", slug: "w-crash-ed" } })).id;
+  // a worker that died holding an active event-dispatch job: fetched, never completed, no heartbeat
+  const dead = new PgBoss({ connectionString: db.url, max: 2, supervise: false });
+  await dead.start();
+  await dead.createQueue(eventDispatchJob.name, eventDispatchJob.options);
+  await dead.send(eventDispatchJob.name, {});
+  expect(await dead.fetch(eventDispatchJob.name)).toHaveLength(1);
+  await dead.stop({ graceful: false });
+  const e = await P.event.create({
+    data: { workspaceId: ws, type: "REPLY", occurredAt: T, dedupeKey: "crash:ed" },
+  });
+  const w = await startWorker({
+    databaseUrl: db.url,
+    healthPort: 0,
+    clock: fixedClock(T),
+    jobs: [eventDispatchJob], // its boot send waits behind the orphan (stately) until the heartbeat fails it
+  });
+  try {
+    await expect
+      .poll(async () => (await P.event.findUniqueOrThrow({ where: { id: e.id } })).dispatchedAt, {
+        timeout: 60_000,
+        interval: 500,
+      })
+      .toEqual(T);
+  } finally {
+    await w.stop();
+  }
+}, 90_000);

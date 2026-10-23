@@ -37,6 +37,8 @@ model Workspace {
   pipelineStages       PipelineStage[]
   opportunities        Opportunity[]
   tasks                Task[]
+  automationRules      AutomationRule[]
+  automationRuns       AutomationRun[]
   timezone             String                @default("UTC")
   physicalAddress      String?
   dailyCap             Int? // null = no workspace cap
@@ -870,6 +872,10 @@ enum EventType {
   MEETING
   DEAL_WON
   DEAL_LOST
+  ACCOUNT_ERROR
+  QUOTA_REACHED
+  CAMPAIGN_COMPLETED
+  LABEL_ADDED
 }
 
 enum SyncMode {
@@ -981,6 +987,10 @@ model Event {
   meta               Json      @default("{}")
   dedupeKey          String    @unique
   createdAt          DateTime  @default(now())
+  // D43 outbox: NULL until event-dispatch handles it; partial index ("createdAt", id) WHERE NULL lives in the
+  // automations migration (raw SQL). dispatchError: the code of a poison event, stamped instead of handled (Rev 2 R1).
+  dispatchedAt       DateTime?
+  dispatchError      String?
 
   @@index([workspaceId, type, occurredAt])
   @@index([campaignId, type])
@@ -1218,4 +1228,43 @@ model Task {
   @@index([workspaceId, status, dueAt])
   @@index([leadId])
   @@index([opportunityId])
+}
+
+enum AutomationRunStatus {
+  OK
+  FAILED
+}
+
+/** D43: a user rule; conditions are AND-ed optional lists, actions run in array order. */
+model AutomationRule {
+  id          String          @id @default(cuid())
+  workspaceId String
+  workspace   Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name        String
+  enabled     Boolean         @default(true)
+  trigger     String
+  conditions  Json            @default("{}")
+  actions     Json
+  position    Int
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  runs        AutomationRun[]
+
+  @@index([workspaceId, enabled])
+}
+
+/** One per (rule, event): the exactly-once record of a rule run. eventId carries no FK (Events are append-only). */
+model AutomationRun {
+  id          String              @id @default(cuid())
+  workspaceId String
+  workspace   Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  ruleId      String
+  rule        AutomationRule      @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  eventId     String
+  status      AutomationRunStatus
+  error       String?
+  createdAt   DateTime            @default(now())
+
+  @@unique([ruleId, eventId])
+  @@index([workspaceId, createdAt])
 }

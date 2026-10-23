@@ -5,6 +5,7 @@ import { systemClock } from "../clock";
 import { accountDns, type DomainReport } from "../deliverability/dns";
 import { returnToService } from "../deliverability/lifecycle";
 import { maxStalenessSec } from "../env";
+import { accountError } from "./health";
 import { AccountError, live, mutate, providerOf, type Opts } from "./service";
 
 /** Error codes that only a new grant or new credentials can fix: never auto-fixed. */
@@ -81,11 +82,17 @@ export async function runDiagnostics(
       });
       if (!r.count) return;
       // User pause wins: an auth failure never replaces PAUSED (the error still shows via lastError).
-      if (auth)
-        await tx.emailAccount.updateMany({
-          where: { id, workspaceId: ws, lifecycle: { not: "PAUSED" } },
-          data: { lifecycle: "NEEDS_ATTENTION" },
-        });
+      // Rev 2 R5: already NEEDS_ATTENTION matches nothing, so the ACCOUNT_ERROR is written once
+      if (
+        auth &&
+        (
+          await tx.emailAccount.updateMany({
+            where: { id, workspaceId: ws, lifecycle: { notIn: ["PAUSED", "NEEDS_ATTENTION"] } },
+            data: { lifecycle: "NEEDS_ATTENTION" },
+          })
+        ).count
+      )
+        await accountError(tx, { id, workspaceId: ws }, "auth", (o.clock ?? systemClock).now());
       await audit(tx, { workspaceId: ws, actorId: o.actorId }, "account.diagnostics", id, {
         code,
         check: bad.name,

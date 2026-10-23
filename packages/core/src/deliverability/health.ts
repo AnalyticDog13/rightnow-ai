@@ -1,5 +1,6 @@
 import { Prisma, type EmailAccount, type PrismaClient } from "@rightnow/db/client";
 import { dayKey } from "../accounts/daykey";
+import { accountError } from "../accounts/health";
 import { audit } from "../audit";
 import type { Clock } from "../clock";
 import { effectiveAllowance } from "../quota";
@@ -234,6 +235,7 @@ async function evaluateAccount(prisma: PrismaClient, now: Date, a: Account, i: C
       if (r) {
         done.push("paused");
         await audit(tx, ctx, "account.health_pause", a.id, { ...meta, reason: pause });
+        await accountError(tx, a, pause, now);
       }
     }
     await tx.$executeRaw`INSERT INTO "HealthSnapshot" ("accountId", day, score)

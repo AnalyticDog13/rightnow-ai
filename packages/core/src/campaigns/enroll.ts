@@ -241,26 +241,35 @@ export async function moveToSubsequence(
   subsequenceId: string,
 ) {
   return withTxRetry(() =>
-    prisma.$transaction(async (tx) => {
-      const cl = await liveCl(tx, ws, id);
-      if (![...OPEN_STATES, "COMPLETED"].includes(cl.state))
-        throw new CampaignError(409, "lead_not_movable");
-      const sub = await tx.subsequence.findFirst({
-        where: { id: subsequenceId, campaignId: cl.campaignId, active: true },
-        include: { steps: { where: { deletedAt: null }, take: 1 } },
-      });
-      if (!sub) throw new CampaignError(404, "Not found");
-      if (!sub.steps[0]) throw new CampaignError(400, "subsequence_has_no_steps");
-      if (cl.subsequenceId === subsequenceId)
-        throw new CampaignError(409, "already_in_subsequence");
-      if (await subsequenceUsed(tx, id, subsequenceId))
-        throw new CampaignError(409, "subsequence_already_entered");
-      if (!(await enterSubsequence(tx, clock, id, subsequenceId)))
-        throw new CampaignError(409, "lead_not_movable");
-      await audited(tx, ws, actorId, cl, "move_to_subsequence");
-      return tx.campaignLead.findUniqueOrThrow({ where: { id } });
-    }),
+    prisma.$transaction((tx) => moveToSubsequenceTx(tx, clock, ws, actorId, id, subsequenceId)),
   );
+}
+
+/** The body of `moveToSubsequence` in the caller's transaction (the D43 `move_to_subsequence` action). */
+export async function moveToSubsequenceTx(
+  tx: Tx,
+  clock: Clock,
+  ws: string,
+  actorId: Actor,
+  id: string,
+  subsequenceId: string,
+) {
+  const cl = await liveCl(tx, ws, id);
+  if (![...OPEN_STATES, "COMPLETED"].includes(cl.state))
+    throw new CampaignError(409, "lead_not_movable");
+  const sub = await tx.subsequence.findFirst({
+    where: { id: subsequenceId, campaignId: cl.campaignId, active: true },
+    include: { steps: { where: { deletedAt: null }, take: 1 } },
+  });
+  if (!sub) throw new CampaignError(404, "Not found");
+  if (!sub.steps[0]) throw new CampaignError(400, "subsequence_has_no_steps");
+  if (cl.subsequenceId === subsequenceId) throw new CampaignError(409, "already_in_subsequence");
+  if (await subsequenceUsed(tx, id, subsequenceId))
+    throw new CampaignError(409, "subsequence_already_entered");
+  if (!(await enterSubsequence(tx, clock, id, subsequenceId)))
+    throw new CampaignError(409, "lead_not_movable");
+  await audited(tx, ws, actorId, cl, "move_to_subsequence");
+  return tx.campaignLead.findUniqueOrThrow({ where: { id } });
 }
 
 /** Leaves the subsequence and stops the lead (STOPPED MANUAL), cancelling its open rows (D22: not skipStep, which would advance it). */

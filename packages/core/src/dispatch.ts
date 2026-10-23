@@ -122,15 +122,43 @@ const eligible = (ts: string, o: ClaimOpts) => Prisma.sql`
  * are only read (a suppressed lead's CampaignLead, already locked, is stopped). No network call happens here.
  */
 export async function claimDue(db: PrismaClient, clock: Clock, o: ClaimOpts): Promise<Claimed[]> {
+  const quotaHits = new Map<string, QuotaHit>();
+  try {
+    return await claimLoop(db, clock, o, quotaHits);
+  } finally {
+    // D43: QUOTA_REACHED after the claims committed, outside them; one per account and usage day (dedupe key)
+    for (const q of quotaHits.values())
+      await recordEvent(db, {
+        workspaceId: q.workspaceId,
+        type: "QUOTA_REACHED",
+        occurredAt: clock.now(),
+        accountId: q.accountId,
+        meta: { day: q.day },
+        dedupeKey: `quota:${q.accountId}:${q.day}`,
+      }).catch((e) => console.error("claimDue: QUOTA_REACHED not recorded", e));
+  }
+}
+
+type QuotaHit = { accountId: string; workspaceId: string; day: string };
+type Picked = { id?: string; quota?: QuotaHit };
+
+async function claimLoop(
+  db: PrismaClient,
+  clock: Clock,
+  o: ClaimOpts,
+  quotaHits: Map<string, QuotaHit>,
+): Promise<Claimed[]> {
   const out: Claimed[] = [];
   while (out.length < o.limit) {
-    const picked: { id?: string } = {};
+    const picked: Picked = {};
     let r: Claimed | "skip" | null;
     try {
       r = await withTxRetry(() => {
-        picked.id = undefined;
+        picked.id = picked.quota = undefined;
         return claimOne(db, clock.now(), o, picked);
       });
+      if (picked.quota)
+        quotaHits.set(`${picked.quota.accountId}:${picked.quota.day}`, picked.quota);
     } catch (e) {
       // Rows already in `out` are committed SENDING: never lose them, whatever happens next.
       try {
@@ -155,7 +183,7 @@ async function claimOne(
   db: PrismaClient,
   now: Date,
   o: ClaimOpts,
-  picked: { id?: string },
+  picked: Picked,
 ): Promise<Claimed | "skip" | null> {
   const ts = now.toISOString(); // ::timestamp drops the Z: columns hold UTC wall time
   return db.$transaction(
@@ -288,6 +316,8 @@ async function claimOne(
       });
       if (full) {
         await tx.$executeRaw`ROLLBACK TO SAVEPOINT reserve`;
+        if (full === "account")
+          picked.quota = { accountId: a.id, workspaceId: w.id, day: usageDay };
         const dueAt =
           full === "gap"
             ? (await tx.emailAccount.findUniqueOrThrow({ where: { id: a.id } })).nextSendAt

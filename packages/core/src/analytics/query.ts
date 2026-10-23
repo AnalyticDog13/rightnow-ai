@@ -126,10 +126,11 @@ export const SENDER = sql`COALESCE(sm."accountId", e."accountId")`;
 
 /**
  * WHERE over EVENT_FROM: the workspace, campaign events only (Rev 2 M8), D34's TARGETED_SQL (a DSN or ARF that
- * matched no send never counts) and the range. Warm-up and placement mail never become Events (D36, D37).
+ * matched no send never counts) and the range. The D43 automation Events never count. Warm-up and placement mail never become Events (D36, D37).
  */
 export function eventScope(ws: string, q: AnalyticsQuery): Prisma.Sql {
   return sql`e."workspaceId" = ${ws} AND e."campaignId" IS NOT NULL AND ${TARGETED_SQL}
+    AND e.type NOT IN ('ACCOUNT_ERROR', 'QUOTA_REACHED', 'CAMPAIGN_COMPLETED', 'LABEL_ADDED')
     AND ${inRange(sql`e."occurredAt"`, q)}
     AND ${filters(q, { campaign: sql`e."campaignId"`, account: SENDER, lead: sql`e."leadId"` })}`;
 }

@@ -103,6 +103,30 @@ async function assertNoSendInFlight(tx: Tx, ws: string, leadIds: string[]) {
     throw new LeadError(409, "send_in_progress");
 }
 
+/** D43: one LABEL_ADDED Event per label the write added. */
+async function labelsAdded(
+  tx: Tx,
+  ws: string,
+  leadId: string,
+  before: string[],
+  after: string[],
+  at: Date,
+) {
+  const added = after.filter((l) => !before.includes(l));
+  if (added.length)
+    await tx.event.createMany({
+      data: added.map((label) => ({
+        workspaceId: ws,
+        type: "LABEL_ADDED" as const,
+        occurredAt: at,
+        leadId,
+        meta: { label },
+        dedupeKey: `label:${leadId}:${label}:${at.getTime()}`,
+      })),
+      skipDuplicates: true,
+    });
+}
+
 export async function createLead(prisma: Db, ws: string, actorId: Actor, input: unknown) {
   const { customFields, plValue, ...d } = createLeadInput.parse(input);
   try {
@@ -120,6 +144,7 @@ export async function createLead(prisma: Db, ws: string, actorId: Actor, input: 
         },
       });
       await audit(tx, { workspaceId: ws, actorId }, "lead.create", lead.id);
+      await labelsAdded(tx, ws, lead.id, [], lead.labels, lead.createdAt);
       return toApiLead(lead);
     });
   } catch (e) {
@@ -191,8 +216,10 @@ export async function updateLead(
     if (p.interestStatus !== undefined)
       await applyInterestChange(tx, clock, ws, id, p.interestStatus);
     // the old status under the lock the update takes anyway (Lead last, D21): a concurrent change cannot drift it
-    const [before] = await tx.$queryRaw<{ interestStatus: number | null }[]>`
-      SELECT "interestStatus" FROM "Lead" WHERE id = ${id} FOR NO KEY UPDATE`;
+    const [before] = await tx.$queryRaw<
+      { interestStatus: number | null; labels: string[] | null }[]
+    >`
+      SELECT "interestStatus", labels FROM "Lead" WHERE id = ${id} FOR NO KEY UPDATE`;
     const lead = await tx.lead.update({
       where: { id },
       data: {
@@ -203,6 +230,7 @@ export async function updateLead(
         ...(p.interestStatus !== undefined && { lastInterestChangeAt: clock.now() }),
       },
     });
+    if (p.labels) await labelsAdded(tx, ws, id, before!.labels ?? [], lead.labels, clock.now());
     await audit(tx, { workspaceId: ws, actorId, at: clock.now() }, "lead.update", id, {
       fields: Object.keys(p),
       ...(p.interestStatus !== undefined && { interestStatus: p.interestStatus }),

@@ -131,15 +131,34 @@ const crmEvent = (
     meta: { opportunityId: o.id, ...meta },
     dedupeKey,
   });
-const closeEvent = (tx: Tx, o: Opportunity, kind: StageKind, at: Date) =>
+const closeEvent = (
+  tx: Tx,
+  o: Opportunity,
+  kind: StageKind,
+  at: Date,
+  meta: Prisma.InputJsonObject = {},
+) =>
   kind === "WON"
-    ? crmEvent(tx, o, "DEAL_WON", at, `won:${o.id}:${at.getTime()}`, { value: o.value.toFixed(2) })
-    : crmEvent(tx, o, "DEAL_LOST", at, `lost:${o.id}:${at.getTime()}`);
+    ? crmEvent(tx, o, "DEAL_WON", at, `won:${o.id}:${at.getTime()}`, {
+        value: o.value.toFixed(2),
+        ...meta,
+      })
+    : crmEvent(tx, o, "DEAL_LOST", at, `lost:${o.id}:${at.getTime()}`, meta);
 
-/** After a deal's insert: OPPORTUNITY (+ DEAL_WON/LOST when created closed) and the audit row (ids and amounts only, Rev 2 M9). */
-async function opened(tx: Tx, at: Date, actor: Actor, o: Opportunity, kind: StageKind) {
-  await crmEvent(tx, o, "OPPORTUNITY", at, `opp:${o.id}`, { value: o.value.toFixed(2) });
-  if (kind !== "OPEN") await closeEvent(tx, o, kind, at);
+/**
+ * After a deal's insert: OPPORTUNITY (+ DEAL_WON/LOST when created closed) and the audit row (ids and amounts only, Rev 2 M9).
+ * `meta` ({ruleId} from an automation) goes on the Events: the D43 loop guard never evaluates them.
+ */
+async function opened(
+  tx: Tx,
+  at: Date,
+  actor: Actor,
+  o: Opportunity,
+  kind: StageKind,
+  meta: Prisma.InputJsonObject = {},
+) {
+  await crmEvent(tx, o, "OPPORTUNITY", at, `opp:${o.id}`, { value: o.value.toFixed(2), ...meta });
+  if (kind !== "OPEN") await closeEvent(tx, o, kind, at, meta);
   await audit(tx, { workspaceId: o.workspaceId, actorId: actor, at }, "opportunity.create", o.id, {
     leadId: o.leadId,
     stageId: o.stageId,
@@ -276,27 +295,16 @@ export async function onInterestChange(
         const att = attOf(c.leadId);
         const camp = campaignId ?? att?.campaignId ?? null;
         const cp = camp ? camps.get(camp) : undefined;
-        const [row] = await tx.opportunity.createManyAndReturn({
-          data: [
-            {
-              workspaceId: ws,
-              leadId: c.leadId,
-              campaignId: camp,
-              stageId,
-              title: lead.companyName || lead.email,
-              value: clamp(lead.plValue ?? cp?.plValue),
-              ownerId: lead.ownerId ?? cp?.ownerId ?? actor ?? null,
-              closedAt: stage.kind === "OPEN" ? null : now,
-              createdAt: now, // the clock, like the Events: analytics buckets deals by createdAt
-              stepId: att?.stepId ?? null,
-              variantId: att?.variantId ?? null,
-              accountId: att?.accountId ?? null,
-            },
-          ],
-          skipDuplicates: true, // ON CONFLICT DO NOTHING: a concurrent create keeps its row (Rev 2 C1)
+        const row = await insertDeal(tx, now, actor, ws, {
+          leadId: c.leadId,
+          lead,
+          camp,
+          cp,
+          stageId,
+          stage,
+          att,
         });
-        if (row) await opened(tx, now, actor, row, stage.kind);
-        else {
+        if (!row) {
           deal = await tx.opportunity.findFirst({
             where: { workspaceId: ws, leadId: c.leadId, campaignId: camp },
           });
@@ -322,6 +330,105 @@ export async function onInterestChange(
       });
     }
   }
+}
+
+type DealLead = {
+  email: string;
+  companyName: string | null;
+  plValue: Prisma.Decimal | null;
+  ownerId: string | null;
+};
+/** The D40 creation path: the deal (ON CONFLICT DO NOTHING, Rev 2 C1) and its Events; null when a concurrent create won. */
+async function insertDeal(
+  tx: Tx,
+  now: Date,
+  actor: Actor,
+  ws: string,
+  p: {
+    leadId: string;
+    lead: DealLead;
+    camp: string | null;
+    cp?: { plValue: Prisma.Decimal | null; ownerId: string | null } | null;
+    stageId: string;
+    stage: { kind: StageKind };
+    att: Attribution | null;
+  },
+  meta: Prisma.InputJsonObject = {},
+): Promise<Opportunity | null> {
+  const [row] = await tx.opportunity.createManyAndReturn({
+    data: [
+      {
+        workspaceId: ws,
+        leadId: p.leadId,
+        campaignId: p.camp,
+        stageId: p.stageId,
+        title: p.lead.companyName || p.lead.email,
+        value: clamp(p.lead.plValue ?? p.cp?.plValue),
+        ownerId: p.lead.ownerId ?? p.cp?.ownerId ?? actor ?? null,
+        closedAt: p.stage.kind === "OPEN" ? null : now,
+        createdAt: now, // the clock, like the Events: analytics buckets deals by createdAt
+        stepId: p.att?.stepId ?? null,
+        variantId: p.att?.variantId ?? null,
+        accountId: p.att?.accountId ?? null,
+      },
+    ],
+    skipDuplicates: true,
+  });
+  if (row) await opened(tx, now, actor, row, p.stage.kind, meta);
+  return row ?? null;
+}
+
+/**
+ * D43 `create_opportunity`: the (lead, campaign) deal, created through the D40 path when there is none. The stage is
+ * the one mapped to the lead's interest status, else the first OPEN stage. Ignores `crmAutoOpportunity` (the rule is
+ * the user's explicit choice).
+ */
+export async function ensureOpportunity(
+  tx: Tx,
+  clock: Clock,
+  ws: string,
+  actor: Actor,
+  leadId: string,
+  campaignId: string | null,
+  o: { ruleId?: string } = {},
+): Promise<{ id: string; created: boolean }> {
+  const existing = () =>
+    tx.opportunity.findFirst({
+      where: { workspaceId: ws, leadId, campaignId },
+      select: { id: true },
+    });
+  const have = await existing();
+  if (have) return { id: have.id, created: false };
+  const lead = await tx.lead.findFirst({
+    where: { id: leadId, workspaceId: ws, deletedAt: null },
+    select: { email: true, companyName: true, plValue: true, ownerId: true, interestStatus: true },
+  });
+  if (!lead) throw notFound();
+  const stages = await ensureStages(tx, ws);
+  const code = lead.interestStatus;
+  const stageId = (
+    stages.find((s) => code !== null && s.interestCodes.includes(code)) ??
+    stages.find((s) => s.kind === "OPEN")!
+  ).id;
+  const stage = await keyShare(tx, ws, stageId);
+  if (!stage) throw notFound();
+  const cp = campaignId
+    ? await tx.campaign.findFirst({
+        where: { id: campaignId, workspaceId: ws },
+        select: { plValue: true, ownerId: true },
+      })
+    : null;
+  const att = (await lastSends(tx, ws, [leadId], campaignId)).get(leadId) ?? null;
+  const meta = o.ruleId ? { ruleId: o.ruleId } : {};
+  const row = await insertDeal(
+    tx,
+    clock.now(),
+    actor,
+    ws,
+    { leadId, lead, camp: campaignId, cp, stageId, stage, att },
+    meta,
+  );
+  return row ? { id: row.id, created: true } : { id: (await existing())!.id, created: false };
 }
 
 /**
