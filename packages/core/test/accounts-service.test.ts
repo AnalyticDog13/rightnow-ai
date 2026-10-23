@@ -341,6 +341,12 @@ describe("diagnostics and mark fixed", () => {
     });
     expect((row.lastError as { response: string }).response).toHaveLength(200);
     await expect(runDiagnostics(db.prisma, foreign, a.id, o)).rejects.toMatchObject(notFound);
+    // D43 / Rev 2 R5: one ACCOUNT_ERROR auth; a second run while NEEDS_ATTENTION writes none
+    await runDiagnostics(db.prisma, ws, a.id, { ...o, ...diag(bad) });
+    const errs = await db.prisma.event.findMany({
+      where: { accountId: a.id, type: "ACCOUNT_ERROR" },
+    });
+    expect(errs.map((e) => [e.workspaceId, e.meta])).toEqual([[ws, { reason: "auth" }]]);
   });
   test("markFixed: 409 with the diagnostics body while the token check fails; a user pause stays", async () => {
     const a = await mk({

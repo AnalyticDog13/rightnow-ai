@@ -431,6 +431,13 @@ export async function ensureOpportunity(
   return row ? { id: row.id, created: true } : { id: (await existing())!.id, created: false };
 }
 
+/** The short code of an error (Prisma / pg code, else the error's name): never a message or body. */
+export function errorCode(e: unknown): string {
+  const x = e as { code?: unknown; meta?: { code?: unknown } } | null;
+  const code = x?.meta?.code ?? x?.code;
+  return typeof code === "string" ? code : e instanceof Error ? e.name : "unknown";
+}
+
 /**
  * Rev 2 C1: runs `fn` under SAVEPOINT `name`. A retryable error (P2034, 40P01, 40001) is re-thrown so `withTxRetry`
  * reruns the whole transaction; any other error rolls back to the savepoint and is passed to `onError` as a code.
@@ -447,9 +454,7 @@ export async function inSavepoint(
   } catch (e) {
     if (isRetryable(e)) throw e;
     await tx.$executeRawUnsafe(`ROLLBACK TO SAVEPOINT ${name}`);
-    const x = e as { code?: unknown; meta?: { code?: unknown } } | null;
-    const code = x?.meta?.code ?? x?.code;
-    return onError(typeof code === "string" ? code : e instanceof Error ? e.name : "unknown");
+    return onError(errorCode(e));
   }
   await tx.$executeRawUnsafe(`RELEASE SAVEPOINT ${name}`);
 }

@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { createPrisma } from "@rightnow/db/create";
-import type { Event, EventType, Prisma, PrismaClient } from "@rightnow/db/client";
+import { PrismaPg } from "@prisma/adapter-pg";
+import { PrismaClient, type Event, type EventType, type Prisma } from "@rightnow/db/client";
 import { createTestDb } from "@rightnow/db/test-db";
 import { AuthError, PermanentSendError } from "@rightnow/providers";
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "vitest";
@@ -575,23 +576,60 @@ describe("dispatch races", () => {
     expect((await P().event.findUniqueOrThrow({ where: { id: next.id } })).dispatchedAt).toEqual(T);
   });
 
-  test("R1: a batch whose retries are exhausted is retried one event at a time", async () => {
+  test("R1: a batch whose retries are exhausted is retried one event at a time; a transient failure stays pending", async () => {
     const w = await world();
     await rule(w, "reply_received", [{ type: "create_task", title: "t" }]);
     await drain();
     const es = [];
     for (let i = 0; i < 4; i++) es.push(await reply(w));
-    const poison = es[1]!;
+    const [transient, broken] = [es[1]!, es[2]!];
     dispatchHooks.deliveries = async (_tx, e) => {
-      if (e.id === poison.id) throw Object.assign(new Error("deadlock"), { code: "40P01" });
+      if (e.id === transient.id) throw Object.assign(new Error("deadlock"), { code: "40P01" });
+      if (e.id === broken.id)
+        throw Object.assign(new Error("bad payload"), { code: "bad_payload" });
       return 0;
     };
-    expect(await dispatchEvents(P(), clock, { maxMs: 0 })).toMatchObject({ events: 4, runs: 3 });
-    expect(await P().event.findUniqueOrThrow({ where: { id: poison.id } })).toMatchObject({
-      dispatchedAt: T,
-      dispatchError: "40P01",
+    // the run reports the transient failure; the events dispatched one by one stay committed
+    expect(await err(dispatchEvents(P(), clock, { maxMs: 0 }))).toMatchObject({
+      message: "deadlock",
     });
+    expect(await P().event.findUniqueOrThrow({ where: { id: transient.id } })).toMatchObject({
+      dispatchedAt: null,
+      dispatchError: null,
+    });
+    // a genuinely non-retryable error is still isolated and stamped
+    expect(await P().event.findUniqueOrThrow({ where: { id: broken.id } })).toMatchObject({
+      dispatchedAt: T,
+      dispatchError: "bad_payload",
+    });
+    expect(await P().task.count({ where: { workspaceId: w.ws } })).toBe(2);
+    // the next tick retries only the pending event
+    dispatchHooks.deliveries = async () => 0;
+    expect(await dispatchEvents(P(), clock, { maxMs: 0 })).toMatchObject({ events: 1, runs: 1 });
     expect(await P().task.count({ where: { workspaceId: w.ws } })).toBe(3);
+  });
+
+  test("D43: Events of a workspace without enabled rules are only stamped (no savepoints)", async () => {
+    await drain();
+    const q = new PrismaClient({
+      adapter: new PrismaPg({ connectionString: db.url, max: 2 }),
+      log: [{ emit: "event", level: "query" }],
+    });
+    extra.push(q);
+    const sql: string[] = [];
+    q.$on("query", (e) => sql.push(e.query));
+    const bare = await world();
+    for (let i = 0; i < 3; i++) await reply(bare);
+    expect(await dispatchEvents(q, clock, { maxMs: 0 })).toMatchObject({ events: 3, runs: 0 });
+    expect(sql.filter((x) => /SAVEPOINT/.test(x))).toEqual([]);
+    expect(await P().event.count({ where: { workspaceId: bare.ws, dispatchedAt: null } })).toBe(0);
+    // with a rule: SAVEPOINT evt, SAVEPOINT rule, RELEASE rule, RELEASE evt
+    const ruled = await world();
+    await rule(ruled, "reply_received", [{ type: "add_tag", tag: "x" }]);
+    await reply(ruled);
+    sql.length = 0;
+    expect(await dispatchEvents(q, clock, { maxMs: 0 })).toMatchObject({ events: 1, runs: 1 });
+    expect(sql.filter((x) => /SAVEPOINT/.test(x))).toHaveLength(4);
   });
 
   test("dispatchEvents returns within maxMs when idle", async () => {
@@ -639,6 +677,30 @@ describe("event producers", () => {
     expect((await events(s.ws, "ACCOUNT_ERROR")).map((e) => [e.accountId, e.meta])).toEqual([
       [A.id, { reason: "auth" }],
     ]);
+  });
+
+  test("a plain client: the NEEDS_ATTENTION write and its ACCOUNT_ERROR commit together", async () => {
+    const s = await seedCampaign(P(), { at: T, accounts: [{}] });
+    const A = s.accounts[0]!;
+    await P().$executeRawUnsafe(`CREATE FUNCTION no_acct_err() RETURNS trigger LANGUAGE plpgsql AS
+      $$ BEGIN IF NEW.type = 'ACCOUNT_ERROR' THEN RAISE EXCEPTION 'crash'; END IF; RETURN NEW; END $$`);
+    await P().$executeRawUnsafe(
+      `CREATE TRIGGER no_acct_err BEFORE INSERT ON "Event" FOR EACH ROW EXECUTE FUNCTION no_acct_err()`,
+    );
+    try {
+      await expect(
+        recordProviderError(P(), clock, A.id, new AuthError("invalid_grant")),
+      ).rejects.toThrow();
+    } finally {
+      await P().$executeRawUnsafe(`DROP TRIGGER no_acct_err ON "Event"`);
+      await P().$executeRawUnsafe(`DROP FUNCTION no_acct_err()`);
+    }
+    expect((await P().emailAccount.findUniqueOrThrow({ where: { id: A.id } })).lifecycle).toBe(
+      "ACTIVE",
+    );
+    // the retry then records both
+    await recordProviderError(P(), clock, A.id, new AuthError("invalid_grant"));
+    expect((await events(s.ws, "ACCOUNT_ERROR")).map((e) => e.meta)).toEqual([{ reason: "auth" }]);
   });
 
   test("three unknown-scope strikes → ACCOUNT_ERROR send_failures", async () => {

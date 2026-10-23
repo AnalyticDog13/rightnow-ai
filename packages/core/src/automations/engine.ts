@@ -5,8 +5,8 @@ import { audit } from "../audit";
 import { stopOpenCampaignLeads } from "../campaigns/hooks";
 import { enrollBatch, moveToSubsequenceTx, noSkips } from "../campaigns/enroll";
 import type { Clock } from "../clock";
-import { ensureOpportunity, inSavepoint } from "../crm/opportunities";
-import { withTxRetry } from "../dispatch";
+import { ensureOpportunity, errorCode, inSavepoint } from "../crm/opportunities";
+import { isRetryable, withTxRetry } from "../dispatch";
 import { suppress } from "../leads/suppression";
 import { startOfNextDay } from "../schedule";
 
@@ -300,11 +300,11 @@ export type RuleConditions = {
   labels?: string[];
 };
 
-const codeOf = (e: unknown) => {
-  const x = e as { code?: unknown; meta?: { code?: unknown } } | null;
-  const c = x?.meta?.code ?? x?.code;
-  return typeof c === "string" ? c : e instanceof Error ? e.name : "unknown";
-};
+/** Deadlock/serialization (retries spent), the transaction timeout or a lost connection: the Event stays pending. */
+const isTransient = (e: unknown) =>
+  isRetryable(e) ||
+  /^(P2028|P2024|P1001|P1002|P1008|P1017)$/.test(errorCode(e)) ||
+  /ECONNRESET|ECONNREFUSED|Connection terminated/i.test(`${(e as Error | null)?.message}`);
 /** A service error (AccountError, CampaignError: `status` + message) becomes a run error code; others pass unchanged. */
 const asCode = (e: unknown) =>
   typeof (e as { status?: unknown } | null)?.status === "number" ? coded((e as Error).message) : e;
@@ -409,7 +409,9 @@ async function runBatch(
     ).map((l) => [l.id, l]),
   );
   const now = clock.now();
-  for (const e of events) {
+  const ruled = new Set(rules.map((r) => r.workspaceId));
+  // D43: an Event of a workspace without enabled rules is only stamped by the final UPDATE (T02 adds "and no ACTIVE webhook")
+  for (const e of events.filter((x) => ruled.has(x.workspaceId))) {
     await inSavepoint(
       tx,
       "evt",
@@ -472,6 +474,7 @@ async function dispatchBatch(prisma: PrismaClient, clock: Clock, limit: number, 
     return r.events;
   } catch (e) {
     if (!claimed.length) throw e;
+    let transient: unknown;
     for (const id of [...claimed])
       try {
         add(
@@ -481,7 +484,12 @@ async function dispatchBatch(prisma: PrismaClient, clock: Clock, limit: number, 
           ),
         );
       } catch (x) {
-        const code = codeOf(x);
+        // a transient failure is not the event's fault: it stays pending and the next tick retries it
+        if (isTransient(x)) {
+          transient ??= x;
+          continue;
+        }
+        const code = errorCode(x);
         console.error("dispatch_isolated", { eventId: id, code });
         out.events += (
           await prisma.event.updateMany({
@@ -490,6 +498,7 @@ async function dispatchBatch(prisma: PrismaClient, clock: Clock, limit: number, 
           })
         ).count;
       }
+    if (transient) throw transient; // the run fails visibly; the events dispatched above stay committed
     return claimed.length;
   }
 }

@@ -21,11 +21,16 @@ export const accountError = (
 
 /** A provider error seen while using the account. Only genuine auth errors take it out of service. */
 export async function recordProviderError(
-  prisma: Pick<PrismaClient, "emailAccount" | "event">,
+  db: PrismaClient | Prisma.TransactionClient,
   clock: Clock,
   accountId: string,
   err: unknown,
 ): Promise<void> {
+  // a plain client gets one transaction, so a lifecycle change and its ACCOUNT_ERROR commit together. A transaction
+  // client has no $connect (Prisma removes it), while its $transaction would open a nested transaction.
+  if ("$connect" in db)
+    return (db as PrismaClient).$transaction((tx) => recordProviderError(tx, clock, accountId, err));
+  const prisma = db;
   const now = clock.now();
   const live = { id: accountId, deletedAt: null };
   const count = { increment: 1 };
