@@ -1,6 +1,7 @@
 import { Prisma, type AccountProvider, type PrismaClient } from "@rightnow/db/client";
 import { effectiveAllowance } from "../quota";
 import { type DomainReport, findings } from "./dns";
+import { HARD_BOUNCE_SQL, perLead, TARGETED_SQL } from "./health";
 import { idleSince } from "./lifecycle";
 import { rewarmPlanView } from "./rewarm";
 import {
@@ -68,8 +69,8 @@ type Counts = {
 
 /**
  * The deliverability dashboard (PS-REWARM-10, PS-WARM-11/12/20/21): one row per live account of the workspace. Eight
- * statements whatever the number of accounts, each filtered by workspace. Bounce counts use D34's definitions, and a DSN
- * or ARF that matched no send of ours never counts.
+ * statements whatever the number of accounts, each filtered by workspace. Bounces and complaints use health.ts's own
+ * D34 definitions, so the dashboard counts exactly what health counts.
  */
 export async function deliverabilityOverview(
   prisma: Db,
@@ -88,7 +89,6 @@ export async function deliverabilityOverview(
   const warmSince = new Date(
     Math.min(...accounts.map((a) => warmupSince(a.timezone, 7, now).getTime())),
   );
-  const targeted = Prisma.sql`(e.type NOT IN ('BOUNCE_HARD', 'BOUNCE_SOFT', 'BOUNCE_UNKNOWN') OR e."scheduledMessageId" IS NOT NULL)`;
 
   const [workspace, snaps, counts, reasons, checks, settings, warmRows, peerRows] = await Promise.all([
     prisma.workspace.findUniqueOrThrow({ where: { id: ws }, select: { inactivityDays: true } }),
@@ -99,16 +99,15 @@ export async function deliverabilityOverview(
     prisma.$queryRaw<Counts[]>`
       SELECT e."accountId" AS id,
         count(*) FILTER (WHERE e.type = 'ACCEPTED')::int AS accepted,
-        count(*) FILTER (WHERE e.type = 'BOUNCE_HARD'
-          OR (e.type = 'SEND_FAILED' AND e.meta->>'scope' = 'recipient'))::int AS hard,
+        ${perLead(HARD_BOUNCE_SQL)} AS hard,
         count(*) FILTER (WHERE e.type IN ('BOUNCE_SOFT', 'BOUNCE_UNKNOWN'))::int AS soft,
-        count(*) FILTER (WHERE e.type = 'COMPLAINT')::int AS complaints,
+        ${perLead(Prisma.sql`e.type = 'COMPLAINT'`)} AS complaints,
         count(*) FILTER (WHERE e.type = 'REPLY')::int AS replies
       FROM "Event" e
       WHERE e."workspaceId" = ${ws} AND e."accountId" = ANY(${ids}::text[])
         AND e."occurredAt" >= ${t30.toISOString()}::timestamp
         AND e.type IN ('ACCEPTED', 'BOUNCE_HARD', 'BOUNCE_SOFT', 'BOUNCE_UNKNOWN', 'SEND_FAILED', 'COMPLAINT', 'REPLY')
-        AND ${targeted}
+        AND ${TARGETED_SQL}
       GROUP BY e."accountId"`,
     prisma.$queryRaw<{ id: string; reason: string }[]>`
       SELECT id, reason FROM (
@@ -118,7 +117,7 @@ export async function deliverabilityOverview(
         WHERE e."workspaceId" = ${ws} AND e."accountId" = ANY(${ids}::text[])
           AND e."occurredAt" >= ${t30.toISOString()}::timestamp
           AND e.type IN ('BOUNCE_HARD', 'BOUNCE_SOFT', 'BOUNCE_UNKNOWN')
-          AND e.meta->>'reason' IS NOT NULL AND ${targeted}) x
+          AND e.meta->>'reason' IS NOT NULL AND ${TARGETED_SQL}) x
       WHERE rn <= 3 ORDER BY rn`,
     prisma.domainCheck.findMany({ where: { workspaceId: ws } }),
     prisma.warmupSettings.findMany({ where: { workspaceId: ws } }),

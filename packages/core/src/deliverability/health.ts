@@ -48,9 +48,14 @@ export function healthScore(i: HealthInputs): number {
   return Math.max(0, Math.min(100, Math.round(s)));
 }
 
-// a DSN or ARF that matched no send of ours proves nothing (its From is unauthenticated, D27): it never counts
-const targeted = Prisma.sql`(e.type NOT IN ('BOUNCE_HARD', 'BOUNCE_SOFT', 'BOUNCE_UNKNOWN', 'COMPLAINT')
+// D34 definitions, shared by health, BounceProtect, re-warm completion and the dashboard (Event alias `e`).
+/** A DSN or ARF that matched no send of ours proves nothing (its From is unauthenticated, D27): it never counts. */
+export const TARGETED_SQL = Prisma.sql`(e.type NOT IN ('BOUNCE_HARD', 'BOUNCE_SOFT', 'BOUNCE_UNKNOWN', 'COMPLAINT')
   OR e."scheduledMessageId" IS NOT NULL)`;
+export const HARD_BOUNCE_SQL = Prisma.sql`(e.type = 'BOUNCE_HARD' OR (e.type = 'SEND_FAILED' AND e.meta->>'scope' = 'recipient'))`;
+/** Hard bounces and complaints count once per lead: a lead can forge any number of reports about our send to it (A-1). */
+export const perLead = (where: Prisma.Sql) =>
+  Prisma.sql`count(DISTINCT COALESCE(e."leadId", e.id)) FILTER (WHERE ${where})::int`;
 
 async function counts(db: Db, ids: string[], now: Date): Promise<Map<string, Counts>> {
   if (!ids.length) return new Map();
@@ -58,7 +63,6 @@ async function counts(db: Db, ids: string[], now: Date): Promise<Map<string, Cou
   const [t24, t7, t30] = [ts(24 * H), ts(7 * 24 * H), ts(30 * 24 * H)];
   // GREATEST ignores NULL: no reset (or no cap change) means the plain window
   const since = (t: string) => Prisma.sql`GREATEST(${t}::timestamp, a."healthResetAt")`;
-  const hard = Prisma.sql`(e.type = 'BOUNCE_HARD' OR (e.type = 'SEND_FAILED' AND e.meta->>'scope' = 'recipient'))`;
   const rows = await db.$queryRaw<
     (Omit<Counts, "syncFailing" | "dnsLevel" | "warmup" | "placement"> & {
       id: string;
@@ -68,13 +72,13 @@ async function counts(db: Db, ids: string[], now: Date): Promise<Map<string, Cou
   >`
     SELECT a.id, a."syncErrors",
       count(*) FILTER (WHERE e.type = 'ACCEPTED' AND e."occurredAt" >= ${since(t7)})::int AS "accepted7d",
-      count(*) FILTER (WHERE ${hard} AND e."occurredAt" >= ${since(t7)})::int AS "hard7d",
+      ${perLead(Prisma.sql`${HARD_BOUNCE_SQL} AND e."occurredAt" >= ${since(t7)}`)} AS "hard7d",
       count(*) FILTER (WHERE e.type IN ('BOUNCE_SOFT', 'BOUNCE_UNKNOWN') AND e."occurredAt" >= ${since(t7)})::int AS "soft7d",
       count(*) FILTER (WHERE e.type = 'ACCEPTED')::int AS "accepted30d",
-      count(*) FILTER (WHERE e.type = 'COMPLAINT')::int AS "complaints30d",
+      ${perLead(Prisma.sql`e.type = 'COMPLAINT'`)} AS "complaints30d",
       count(*) FILTER (WHERE e.type = 'ACCEPTED'
         AND e."occurredAt" >= GREATEST(${since(t7)}, a."healthCapAt"))::int AS "acceptedSinceCap",
-      count(*) FILTER (WHERE ${hard} AND e."occurredAt" >= GREATEST(${since(t7)}, a."healthCapAt"))::int AS "hardSinceCap",
+      ${perLead(Prisma.sql`${HARD_BOUNCE_SQL} AND e."occurredAt" >= GREATEST(${since(t7)}, a."healthCapAt")`)} AS "hardSinceCap",
       (count(*) FILTER (WHERE e.type = 'SEND_FAILED' AND e.meta->>'scope' IN ('account', 'unknown')
           AND e."occurredAt" >= ${since(t24)})
         + (SELECT count(*) FROM "SyncRun" r WHERE r."accountId" = a.id AND r.error IS NOT NULL
@@ -84,7 +88,7 @@ async function counts(db: Db, ids: string[], now: Date): Promise<Map<string, Cou
     FROM "EmailAccount" a
     LEFT JOIN "Event" e ON e."workspaceId" = a."workspaceId" AND e."accountId" = a.id
       AND e.type IN ('ACCEPTED', 'BOUNCE_HARD', 'BOUNCE_SOFT', 'BOUNCE_UNKNOWN', 'COMPLAINT', 'SEND_FAILED')
-      AND ${targeted} AND e."occurredAt" >= ${since(t30)}
+      AND ${TARGETED_SQL} AND e."occurredAt" >= ${since(t30)}
     WHERE a.id = ANY(${ids}::text[])
     GROUP BY a.id`;
   // where the account's warm-up mail landed (D36), 14 d: measured by sync (INBOX) or one locate() (SPAM); bounces of
@@ -169,7 +173,9 @@ async function evaluateAccount(prisma: PrismaClient, now: Date, a: Account, i: C
   };
 
   await prisma.$transaction(async (tx) => {
-    await tx.emailAccount.updateMany({ where: { id: a.id }, data: { healthScore: score } });
+    // A-8: write only what changed; this row is the hottest one of the send path
+    if (a.healthScore !== score)
+      await tx.emailAccount.updateMany({ where: { id: a.id }, data: { healthScore: score } });
     if (a.healthCap === null && reason) {
       const cap = Math.max(1, Math.floor((base * a.workspace.healthSlowdownPct) / 100));
       const r = await tx.emailAccount.updateMany({
@@ -230,12 +236,10 @@ async function evaluateAccount(prisma: PrismaClient, now: Date, a: Account, i: C
         await audit(tx, ctx, "account.health_pause", a.id, { ...meta, reason: pause });
       }
     }
-    const day = new Date(`${dayKey(a.timezone, now)}T00:00:00Z`);
-    await tx.healthSnapshot.upsert({
-      where: { accountId_day: { accountId: a.id, day } },
-      create: { accountId: a.id, day, score },
-      update: { score },
-    });
+    await tx.$executeRaw`INSERT INTO "HealthSnapshot" ("accountId", day, score)
+      VALUES (${a.id}, ${dayKey(a.timezone, now)}::date, ${score})
+      ON CONFLICT ("accountId", day) DO UPDATE SET score = EXCLUDED.score
+      WHERE "HealthSnapshot".score <> EXCLUDED.score`;
   });
   return done;
 }
@@ -257,14 +261,13 @@ async function bounceProtect(prisma: PrismaClient, now: Date): Promise<number> {
   >`
     SELECT c.id, c."workspaceId", w."bounceThresholdPct" AS thr,
       count(*) FILTER (WHERE e.type = 'ACCEPTED' AND e."occurredAt" >= ${since(ts(24 * H))})::int AS "accepted24h",
-      count(*) FILTER (WHERE (e.type = 'BOUNCE_HARD' OR (e.type = 'SEND_FAILED' AND e.meta->>'scope' = 'recipient'))
-        AND e."occurredAt" >= ${since(ts(24 * H))})::int AS "hard24h",
+      ${perLead(Prisma.sql`${HARD_BOUNCE_SQL} AND e."occurredAt" >= ${since(ts(24 * H))}`)} AS "hard24h",
       count(*) FILTER (WHERE e.type = 'ACCEPTED')::int AS "accepted30d",
-      count(*) FILTER (WHERE e.type = 'COMPLAINT')::int AS "complaints30d"
+      ${perLead(Prisma.sql`e.type = 'COMPLAINT'`)} AS "complaints30d"
     FROM "Campaign" c
     JOIN "Workspace" w ON w.id = c."workspaceId"
     JOIN "Event" e ON e."campaignId" = c.id
-      AND e.type IN ('ACCEPTED', 'BOUNCE_HARD', 'SEND_FAILED', 'COMPLAINT') AND ${targeted}
+      AND e.type IN ('ACCEPTED', 'BOUNCE_HARD', 'SEND_FAILED', 'COMPLAINT') AND ${TARGETED_SQL}
       AND e."occurredAt" >= ${since(ts(30 * 24 * H))}
     WHERE c.status = 'ACTIVE' AND c."bounceProtect" AND c."deletedAt" IS NULL
     GROUP BY c.id, w."bounceThresholdPct"`;
@@ -273,11 +276,13 @@ async function bounceProtect(prisma: PrismaClient, now: Date): Promise<number> {
     const hardPct = c.accepted24h ? (100 * c.hard24h) / c.accepted24h : 0;
     const complaintPct = pct(c.complaints30d, c.accepted30d, 1000);
     const reason =
-      c.accepted24h >= PAUSE_FLOOR && hardPct > c.thr
-        ? "bounce_rate"
-        : complaintPct > COMPLAINT_LINE
-          ? "complaint_rate"
-          : null;
+      c.accepted24h < PAUSE_FLOOR
+        ? null
+        : hardPct > c.thr
+          ? "bounce_rate"
+          : complaintPct > COMPLAINT_LINE
+            ? "complaint_rate"
+            : null;
     if (!reason) continue;
     await prisma.$transaction(async (tx) => {
       const r = await tx.campaign.updateMany({
@@ -368,10 +373,19 @@ export async function evaluateHealth(
     } catch (e) {
       console.error(`evaluateHealth: account ${a.id} skipped this run`, e);
     }
+  // each step on its own: one failure is logged and retried next run, the others still run (G-M7)
+  const step = async (name: string, f: () => Promise<number>) => {
+    try {
+      return await f();
+    } catch (e) {
+      console.error(`evaluateHealth: ${name} failed this run`, e);
+      return 0;
+    }
+  };
   // recovery first, so a campaign that comes back is checked by BounceProtect in the same run
-  const recovered = await flipUnhealthy(prisma, now, "ACTIVE");
-  const bounceProtected = await bounceProtect(prisma, now);
-  const unhealthy = await flipUnhealthy(prisma, now, "ACCOUNTS_UNHEALTHY");
-  const rewarmsCompleted = await completeRewarms(prisma, clock);
+  const recovered = await step("recovery", () => flipUnhealthy(prisma, now, "ACTIVE"));
+  const bounceProtected = await step("bounceProtect", () => bounceProtect(prisma, now));
+  const unhealthy = await step("unhealthy", () => flipUnhealthy(prisma, now, "ACCOUNTS_UNHEALTHY"));
+  const rewarmsCompleted = await step("completeRewarms", () => completeRewarms(prisma, clock));
   return { ...out, bounceProtected, unhealthy, recovered, rewarmsCompleted };
 }

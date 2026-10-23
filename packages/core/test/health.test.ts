@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import type { EmailAccount, EventType, Prisma } from "@rightnow/db/client";
 import { createTestDb } from "@rightnow/db/test-db";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { resumeAccount } from "../src/accounts/service";
 import { displayStatus } from "../src/accounts/status";
 import { resumeCampaign } from "../src/campaigns/launch";
@@ -38,7 +38,13 @@ async function events(
   a: Pick<EmailAccount, "id" | "workspaceId">,
   type: EventType,
   n: number,
-  o: { at?: Date; campaignId?: string; meta?: Prisma.InputJsonObject; untargeted?: boolean } = {},
+  o: {
+    at?: Date;
+    campaignId?: string;
+    meta?: Prisma.InputJsonObject;
+    untargeted?: boolean;
+    leadId?: string;
+  } = {},
 ) {
   await P().event.createMany({
     data: Array.from({ length: n }, () => ({
@@ -47,6 +53,7 @@ async function events(
       occurredAt: o.at ?? ago(H),
       accountId: a.id,
       campaignId: o.campaignId ?? null,
+      leadId: o.leadId ?? null,
       meta: o.meta ?? {},
       scheduledMessageId: o.untargeted ? null : `sm-${randomBytes(4).toString("hex")}`,
       dedupeKey: `t:${randomBytes(8).toString("hex")}`,
@@ -283,6 +290,52 @@ describe("evaluateHealth: accounts", () => {
     expect((await acct(A.id)).healthScore).toBe(90); // 10 % soft → −20, capped at −10
     expect((await acct(B.id)).healthScore).toBe(80);
   });
+  test("A-1: one lead's duplicate reports count once (forged ARFs/DSNs cannot pause an account)", async () => {
+    const s = await seedCampaign(P(), { at: T, accounts: [{}, {}] });
+    const [A, B] = s.accounts as [EmailAccount, EmailAccount];
+    await events(A, "ACCEPTED", 1000);
+    await events(A, "COMPLAINT", 3, { leadId: "lead-x" }); // 3 forged ARFs from one lead: 1 complaint = 0.1 %
+    await events(B, "ACCEPTED", 50, { at: ago(2 * H) });
+    await events(B, "BOUNCE_HARD", 2, { leadId: "lead-y" }); // one lead, 2 DSNs: 1 / 50 = 2 %
+    await events(B, "SEND_FAILED", 1, {
+      leadId: "lead-y",
+      meta: { error: "x", scope: "recipient" },
+    });
+    const i = await healthInputs(P(), [A.id, B.id], T);
+    expect(i.get(A.id)).toMatchObject({ complaints30d: 1 });
+    expect(i.get(B.id)).toMatchObject({ hard7d: 1 });
+    expect(await evaluateHealth(P(), fixedClock(T))).toMatchObject({ throttled: 0, paused: 0 });
+    for (const x of [A, B]) expect(await acct(x.id)).toMatchObject({ lifecycle: "ACTIVE" });
+  });
+
+  test("A-8: an unchanged account row and snapshot are not rewritten", async () => {
+    const s = await seedCampaign(P(), { at: T, accounts: [{}] });
+    const A = s.accounts[0]!;
+    await events(A, "ACCEPTED", 100);
+    await events(A, "BOUNCE_SOFT", 3);
+    const xmin = async () => {
+      const [a] = await P().$queryRaw<
+        { x: string }[]
+      >`SELECT xmin::text AS x FROM "EmailAccount" WHERE id = ${A.id}`;
+      const [h] = await P().$queryRaw<
+        { x: string }[]
+      >`SELECT xmin::text AS x FROM "HealthSnapshot" WHERE "accountId" = ${A.id}`;
+      return [a!.x, h!.x];
+    };
+    const clock = fixedClock(T);
+    await evaluateHealth(P(), clock);
+    const before = await xmin();
+    clock.advance(5 * 60_000);
+    await evaluateHealth(P(), clock);
+    expect(await xmin()).toEqual(before);
+    await events(A, "BOUNCE_SOFT", 3); // the score changes: both are written
+    clock.advance(5 * 60_000);
+    await evaluateHealth(P(), clock);
+    const after = await xmin();
+    expect(after[0]).not.toBe(before[0]);
+    expect(after[1]).not.toBe(before[1]);
+    expect((await acct(A.id)).healthScore).toBe(90);
+  });
 });
 
 describe("evaluateHealth: campaigns", () => {
@@ -376,5 +429,61 @@ describe("evaluateHealth: campaigns", () => {
       bounceProtected: 1,
     });
     expect((await camp(s.campaign.id)).status).toBe("BOUNCE_PROTECT");
+  });
+
+  test("A-1: BounceProtect counts one lead once and needs 50 sends for the complaint branch too", async () => {
+    const dup = await seedCampaign(P(), { at: T });
+    const few = await seedCampaign(P(), { at: T });
+    const many = await seedCampaign(P(), { at: T });
+    const [D] = dup.accounts as [EmailAccount];
+    const [F] = few.accounts as [EmailAccount];
+    const [M] = many.accounts as [EmailAccount];
+    // 60 sends, 2 hard bounces and 2 complaints, all from one lead: 1.7 % hard, 0.1 % complaints
+    await events(D, "ACCEPTED", 60, { campaignId: dup.campaign.id });
+    await events(D, "BOUNCE_HARD", 2, { campaignId: dup.campaign.id, leadId: "l1" });
+    await events(D, "COMPLAINT", 2, { campaignId: dup.campaign.id, leadId: "l1" });
+    // 5 sends, 2 complaints from 2 leads: below the 50-send floor
+    await events(F, "ACCEPTED", 5, { campaignId: few.campaign.id });
+    await events(F, "COMPLAINT", 1, { campaignId: few.campaign.id, leadId: "l2" });
+    await events(F, "COMPLAINT", 1, { campaignId: few.campaign.id, leadId: "l3" });
+    // 60 sends, 2 complaints from 2 leads: protected
+    await events(M, "ACCEPTED", 60, { campaignId: many.campaign.id });
+    await events(M, "COMPLAINT", 1, { campaignId: many.campaign.id, leadId: "l4" });
+    await events(M, "COMPLAINT", 1, { campaignId: many.campaign.id, leadId: "l5" });
+    expect(await evaluateHealth(P(), fixedClock(T))).toMatchObject({ bounceProtected: 1 });
+    expect((await camp(dup.campaign.id)).status).toBe("ACTIVE");
+    expect((await camp(few.campaign.id)).status).toBe("ACTIVE");
+    expect((await camp(many.campaign.id)).status).toBe("BOUNCE_PROTECT");
+  });
+
+  test("G-M7: a failing step does not skip the later ones", async () => {
+    const s = await seedCampaign(P(), {
+      at: T,
+      accounts: [{ lifecycle: "PAUSED" }, { lifecycle: "PAUSED" }],
+    });
+    // BounceProtect's query fails; the ACTIVE → ACCOUNTS_UNHEALTHY flip after it still runs
+    const real = P();
+    const faulty = new Proxy(real, {
+      get(t, k) {
+        const v = Reflect.get(t, k);
+        if (k === "$queryRaw")
+          return (q: TemplateStringsArray, ...xs: unknown[]) =>
+            q.join("").includes('bounceThresholdPct" AS thr')
+              ? Promise.reject(new Error("boom"))
+              : v.call(t, q, ...xs);
+        return typeof v === "function" ? v.bind(t) : v;
+      },
+    });
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect(await evaluateHealth(faulty, fixedClock(T))).toMatchObject({
+        bounceProtected: 0,
+        unhealthy: 1,
+      });
+      expect(err).toHaveBeenCalledWith(expect.stringContaining("bounceProtect"), expect.any(Error));
+    } finally {
+      err.mockRestore();
+    }
+    expect((await camp(s.campaign.id)).status).toBe("ACCOUNTS_UNHEALTHY");
   });
 });

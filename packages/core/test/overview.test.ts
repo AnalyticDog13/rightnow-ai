@@ -43,7 +43,7 @@ const events = (
   accountId: string,
   type: EventType,
   n: number,
-  o: { at?: Date; reasons?: string[]; untargeted?: boolean } = {},
+  o: { at?: Date; reasons?: string[]; untargeted?: boolean; leadId?: string } = {},
 ) =>
   P().event.createMany({
     data: Array.from({ length: n }, (_, i) => ({
@@ -52,6 +52,7 @@ const events = (
       type,
       occurredAt: o.at ?? ago(5 + i * 0.01),
       meta: o.reasons ? { reason: o.reasons[i] } : {},
+      leadId: o.leadId ?? null,
       scheduledMessageId: o.untargeted ? null : `sm-${hex()}`,
       dedupeKey: `t:${hex()}${hex()}`,
     })),
@@ -287,5 +288,16 @@ describe("deliverabilityOverview", () => {
     const rows = await deliverabilityOverview(counted as never, ws, T, SENDABLE);
     expect(rows).toHaveLength(20);
     expect(n).toBeLessThanOrEqual(10);
+  });
+
+  test("G-M1 / A-1: counts what health counts (targeted complaints, one per lead)", async () => {
+    const ws = (await mkWs()).id;
+    const a = await mkAcct(ws, "same@f.test", { lastSentAt: ago(1) });
+    await events(ws, a.id, "ACCEPTED", 100);
+    await events(ws, a.id, "COMPLAINT", 2, { leadId: "l1" });
+    await events(ws, a.id, "COMPLAINT", 4, { untargeted: true }); // matched no send of ours
+    await events(ws, a.id, "BOUNCE_HARD", 3, { leadId: "l2" });
+    const [row] = await deliverabilityOverview(P(), ws, T, SENDABLE);
+    expect(row).toMatchObject({ complaintPct30d: 1, hardBouncePct30d: 1 });
   });
 });

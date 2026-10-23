@@ -9,6 +9,7 @@ import type { SyncDeps } from "../mail/sync";
 import { rewarmAllowance } from "../quota";
 import { checkWorkspaceDomains, findings, type DnsResolver } from "./dns";
 import { beginRewarm } from "./lifecycle";
+import { HARD_BOUNCE_SQL, perLead, TARGETED_SQL } from "./health";
 
 type Tx = Prisma.TransactionClient;
 type Actor = string | null | undefined;
@@ -142,11 +143,10 @@ export async function completeRewarms(prisma: PrismaClient, clock: Clock): Promi
     if (a.lastErrorAt && a.lastErrorAt >= since) continue;
     // D34 hard bounces (a DSN that matched no send of ours never counts), damped like the throttle
     const [c] = await prisma.$queryRaw<{ accepted: number; hard: number }[]>`
-      SELECT count(*) FILTER (WHERE type = 'ACCEPTED')::int AS accepted,
-        count(*) FILTER (WHERE (type = 'BOUNCE_HARD' AND "scheduledMessageId" IS NOT NULL)
-          OR (type = 'SEND_FAILED' AND meta->>'scope' = 'recipient'))::int AS hard
-      FROM "Event" WHERE "workspaceId" = ${a.workspaceId} AND "accountId" = ${a.id}
-        AND "occurredAt" >= ${since.toISOString()}::timestamp`;
+      SELECT count(*) FILTER (WHERE e.type = 'ACCEPTED')::int AS accepted,
+        ${perLead(HARD_BOUNCE_SQL)} AS hard
+      FROM "Event" e WHERE e."workspaceId" = ${a.workspaceId} AND e."accountId" = ${a.id}
+        AND e."occurredAt" >= ${since.toISOString()}::timestamp AND ${TARGETED_SQL}`;
     if ((100 * c!.hard) / Math.max(c!.accepted, 20) > 2) continue;
     try {
       if (await prisma.$transaction((tx) => endRewarm(tx, now, a, null, "account.rewarm_complete")))
