@@ -597,12 +597,12 @@
    "id": "P5-T06",
    "phase": 5,
    "title": "Re-warm mode (button, DNS + connectivity recheck, plan, allowance in quota, health-based pause/reduce, completion restores previous settings, history preserved)",
-   "status": "todo",
+   "status": "done",
    "deps": [
     "P5-T05"
    ],
    "model": "opus",
-   "commit": null,
+   "commit": "d4291a3",
    "acceptance": "five spec scenarios."
   },
   {
