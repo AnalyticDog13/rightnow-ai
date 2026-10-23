@@ -15,11 +15,29 @@ type Props = {
   lastError?: { reason: string; at: string | Date | null };
 };
 
-/** Email verifier (D38): GET/PUT /settings/verifier. The API key is write-only: the stored one is never shown. */
+/**
+ * Email verifier (D38): GET/PUT /settings/verifier. The API key is write-only: the stored one is never shown. The form
+ * remounts when the saved values change, so the inputs show what was saved and the key field is empty again.
+ */
 export function VerifierSettings(v: Props) {
+  const [msg, setMsg] = useState("");
+  return (
+    <VerifierForm
+      key={JSON.stringify([v.kind, v.url, v.statusPath, v.hasApiKey])}
+      {...v}
+      msg={msg}
+      setMsg={setMsg}
+    />
+  );
+}
+
+function VerifierForm({
+  msg,
+  setMsg,
+  ...v
+}: Props & { msg: string; setMsg: (m: string) => void }) {
   const router = useRouter();
   const [kind, setKind] = useState(v.kind);
-  const [msg, setMsg] = useState("");
 
   async function save(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();

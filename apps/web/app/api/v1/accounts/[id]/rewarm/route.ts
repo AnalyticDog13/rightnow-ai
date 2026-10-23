@@ -19,7 +19,8 @@ export const POST = route(
         {
           providerFor: async (a) => createProvider(a, { prisma, clock: o.clock }),
           // Fake mailboxes use made-up domains: no DNS check, as at campaign launch (launch-deps.ts)
-          resolver: getWebEnv().MAIL_PROVIDER_FAKE ? undefined : resolver,
+          resolver,
+          skipDns: !!getWebEnv().MAIL_PROVIDER_FAKE,
         },
         c.workspaceId,
         o.actorId,

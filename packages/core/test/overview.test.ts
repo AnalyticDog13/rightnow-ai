@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import type { EventType, Prisma } from "@rightnow/db/client";
+import type { AccountProvider, EventType, Prisma } from "@rightnow/db/client";
 import { createTestDb } from "@rightnow/db/test-db";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { deliverabilityOverview } from "../src/deliverability/overview";
@@ -11,6 +11,7 @@ beforeAll(async () => {
 });
 afterAll(() => db.drop());
 
+const SENDABLE: AccountProvider[] = ["MICROSOFT"];
 const T = new Date("2026-10-20T10:00:00Z");
 const DAY = 86_400_000;
 const ago = (d: number) => new Date(T.getTime() - d * DAY);
@@ -68,7 +69,7 @@ describe("deliverabilityOverview", () => {
     const b = await mkAcct(ws, "inactive@b.test", { lifecycle: "INACTIVE", lastSentAt: ago(45) });
     const c = await mkAcct(ws, "rewarm@c.test", {
       lifecycle: "REWARMING",
-      lastSentAt: ago(1),
+      lastSentAt: ago(45), // idle, but the re-warm already started: no "Idle for" warning
       rewarmStartedAt: ago(4),
       rewarmStartVolume: 5,
       rewarmIncrementPerDay: 2,
@@ -144,7 +145,7 @@ describe("deliverabilityOverview", () => {
     const x = await mkAcct(other.id, "x@x.test", { lastSentAt: ago(1) });
     await events(other.id, x.id, "ACCEPTED", 7);
 
-    const rows = await deliverabilityOverview(P(), ws, T);
+    const rows = await deliverabilityOverview(P(), ws, T, SENDABLE);
     expect(rows.map((r) => r.email).sort()).toEqual([
       "active@a.test",
       "attention@e.test",
@@ -244,9 +245,25 @@ describe("deliverabilityOverview", () => {
         },
       },
     });
-    const [r] = await deliverabilityOverview(P(), ws, T);
+    const [r] = await deliverabilityOverview(P(), ws, T, SENDABLE);
     expect(r!.dns).toEqual({ level: "block", domain: "blk.test" });
     expect(r!.warnings).toEqual(["DNS: No SPF record"]);
+  });
+
+  test("warm-up state and peers follow the drawer: a provider that is not live-verified blocks (Rev 2 I7)", async () => {
+    const ws = (await mkWs()).id;
+    for (const n of ["p1", "p2"]) {
+      const a = await mkAcct(ws, `${n}@p.test`, { lastSentAt: ago(1), credentialsEnc: "x" });
+      await P().warmupSettings.create({
+        data: { accountId: a.id, workspaceId: ws, enabled: true, filterTag: "t" },
+      });
+    }
+    const blocked = await deliverabilityOverview(P(), ws, T, []);
+    expect(blocked.map((r) => r.warmup!.state)).toEqual(["PROVIDER_BLOCKED", "PROVIDER_BLOCKED"]);
+    expect(blocked[0]!.warnings).toContain("Warm-up has no peers");
+    const live = await deliverabilityOverview(P(), ws, T, SENDABLE);
+    expect(live.map((r) => r.warmup!.state)).toEqual(["ACTIVE", "ACTIVE"]);
+    expect(live[0]!.warnings).not.toContain("Warm-up has no peers");
   });
 
   test("at most 10 queries for 20 accounts", async () => {
@@ -267,7 +284,7 @@ describe("deliverabilityOverview", () => {
         },
       },
     });
-    const rows = await deliverabilityOverview(counted as never, ws, T);
+    const rows = await deliverabilityOverview(counted as never, ws, T, SENDABLE);
     expect(rows).toHaveLength(20);
     expect(n).toBeLessThanOrEqual(10);
   });

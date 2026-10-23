@@ -119,7 +119,7 @@ export function warmupState(
 }
 
 /** Opted-in mailboxes that may send or receive warm-up mail now. */
-const usable = (
+export const warmupUsable = (
   sendable: AccountProvider[],
   workspaceId?: string,
 ): Prisma.WarmupSettingsWhereInput => ({
@@ -235,7 +235,7 @@ export async function warmupTick(
   });
 
   const live: Live[] = await prisma.warmupSettings.findMany({
-    where: usable(sendable),
+    where: warmupUsable(sendable),
     include: { account: true },
     orderBy: { accountId: "asc" },
   });
@@ -540,7 +540,7 @@ export async function warmupView(
 ) {
   const s = await prisma.warmupSettings.findUnique({ where: { accountId: a.id } });
   const peers = await prisma.warmupSettings.count({
-    where: { ...usable(sendable, a.workspaceId), accountId: { not: a.id } },
+    where: { ...warmupUsable(sendable, a.workspaceId), accountId: { not: a.id } },
   });
   const full = { ...WARMUP_DEFAULTS, filterTag: null, startedAt: null, nextAt: null, ...s };
   return {

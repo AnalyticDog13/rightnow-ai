@@ -110,6 +110,21 @@ describe("startRewarm", () => {
     expect(await audits(A.id, "account.rewarm_start")).toBe(0);
   });
 
+  test("skipDns (Fake mailboxes only) starts despite a missing SPF and returns no warnings", async () => {
+    const { ws, A } = await setup();
+    const r = await startRewarm(
+      P(),
+      clock(),
+      { ...deps(fakeResolver({})), skipDns: true },
+      ws,
+      "u1",
+      A.id,
+      {},
+    );
+    expect(r.warnings).toEqual([]);
+    expect(await acct(A.id)).toMatchObject({ lifecycle: "REWARMING" });
+  });
+
   test("revoked auth on the connectivity check → 409 reconnect_required, account NEEDS_ATTENTION", async () => {
     const { ws, A } = await setup();
     getFakeProvider(A.email).failNext("auth_revoked");

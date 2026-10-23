@@ -122,5 +122,5 @@ test("verifier settings: write-only key, new host needs a key, last error shown"
   });
   await prisma.$disconnect();
   await page.reload();
-  await expect(page.getByText("Last verifier error: HTTP 503 from verifier")).toBeVisible();
+  await expect(page.getByText(/Last verifier error: HTTP 503 from verifier \(.+\)/)).toBeVisible();
 });

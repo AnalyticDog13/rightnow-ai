@@ -1,10 +1,11 @@
-import { Prisma, type EmailAccount, type PrismaClient } from "@rightnow/db/client";
+import { Prisma, type AccountProvider, type PrismaClient } from "@rightnow/db/client";
 import { effectiveAllowance } from "../quota";
 import { type DomainReport, findings } from "./dns";
 import { idleSince } from "./lifecycle";
 import { rewarmPlanView } from "./rewarm";
 import {
   warmupDays,
+  warmupUsable,
   warmupRowsWhere,
   warmupSince,
   warmupState,
@@ -46,7 +47,12 @@ const STATUS = {
 } as const;
 function groupBy<T, K>(xs: T[], key: (x: T) => K): Map<K, T[]> {
   const m = new Map<K, T[]>();
-  for (const x of xs) m.set(key(x), [...(m.get(key(x)) ?? []), x]);
+  for (const x of xs) {
+    const k = key(x);
+    const l = m.get(k);
+    if (l) l.push(x);
+    else m.set(k, [x]);
+  }
   return m;
 }
 const round1 = (x: number) => Math.round(x * 10) / 10;
@@ -61,7 +67,7 @@ type Counts = {
 };
 
 /**
- * The deliverability dashboard (PS-REWARM-10, PS-WARM-11/12/20/21): one row per live account of the workspace. Seven
+ * The deliverability dashboard (PS-REWARM-10, PS-WARM-11/12/20/21): one row per live account of the workspace. Eight
  * statements whatever the number of accounts, each filtered by workspace. Bounce counts use D34's definitions, and a DSN
  * or ARF that matched no send of ours never counts.
  */
@@ -69,6 +75,7 @@ export async function deliverabilityOverview(
   prisma: Db,
   ws: string,
   now: Date,
+  sendable: AccountProvider[], // D17 providers: `sendableProviders()`, as the drawer's `warmupView`
 ): Promise<AccountDeliverability[]> {
   const accounts = await prisma.emailAccount.findMany({
     where: { workspaceId: ws, deletedAt: null },
@@ -83,7 +90,7 @@ export async function deliverabilityOverview(
   );
   const targeted = Prisma.sql`(e.type NOT IN ('BOUNCE_HARD', 'BOUNCE_SOFT', 'BOUNCE_UNKNOWN') OR e."scheduledMessageId" IS NOT NULL)`;
 
-  const [workspace, snaps, counts, reasons, checks, settings, warmRows] = await Promise.all([
+  const [workspace, snaps, counts, reasons, checks, settings, warmRows, peerRows] = await Promise.all([
     prisma.workspace.findUniqueOrThrow({ where: { id: ws }, select: { inactivityDays: true } }),
     prisma.healthSnapshot.findMany({
       where: { accountId: { in: ids }, day: { gte: day30 } },
@@ -116,6 +123,11 @@ export async function deliverabilityOverview(
     prisma.domainCheck.findMany({ where: { workspaceId: ws } }),
     prisma.warmupSettings.findMany({ where: { workspaceId: ws } }),
     prisma.warmupMessage.findMany({ where: warmupRowsWhere(ws, ids, warmSince) }),
+    // the same filter warmupView and warmupTick use for peers
+    prisma.warmupSettings.findMany({
+      where: warmupUsable(sendable, ws),
+      select: { accountId: true },
+    }),
   ]);
 
   const trend = groupBy(snaps, (s) => s.accountId);
@@ -123,13 +135,7 @@ export async function deliverabilityOverview(
   const why = groupBy(reasons, (r) => r.id);
   const check = new Map(checks.map((c) => [c.domain, c]));
   const warm = new Map(settings.map((s) => [s.accountId, s]));
-  // opted-in mailboxes that can send and receive warm-up mail now (the peers of the others)
-  const usable = (a: EmailAccount) =>
-    !!warm.get(a.id)?.enabled &&
-    a.status === "CONNECTED" &&
-    !["PAUSED", "NEEDS_ATTENTION"].includes(a.lifecycle) &&
-    !!a.credentialsEnc;
-  const usableCount = accounts.filter(usable).length;
+  const usable = new Set(peerRows.map((p) => p.accountId));
 
   return accounts.map((a) => {
     const c = stat.get(a.id);
@@ -140,10 +146,10 @@ export async function deliverabilityOverview(
     const found = dc ? findings(dc.report as DomainReport) : [];
     const dnsReason = (found.find((f) => f.level === "block") ?? found[0])?.reason;
     const s = warm.get(a.id) ?? null;
-    const peers = usableCount - (usable(a) ? 1 : 0);
+    const peers = usable.size - (usable.has(a.id) ? 1 : 0);
     const hardPct = c && accepted ? (100 * c.hard) / accepted : 0;
     const warnings = [
-      ...(idleDays >= workspace.inactivityDays || a.lifecycle === "INACTIVE"
+      ...(!a.rewarmStartedAt && (idleDays >= workspace.inactivityDays || a.lifecycle === "INACTIVE")
         ? [`Idle for ${idleDays} days`]
         : []),
       ...(a.healthCap !== null ? [`Health throttled to ${a.healthCap}/day`] : []),
@@ -178,7 +184,7 @@ export async function deliverabilityOverview(
       dns: dc ? { level: dc.level, domain: dc.domain } : null,
       warmup: s
         ? {
-            state: warmupState(a, s, peers),
+            state: warmupState(a, s, peers, sendable),
             last7: warmupDays(warmRows, a.id, a.timezone, 7, now),
           }
         : null,

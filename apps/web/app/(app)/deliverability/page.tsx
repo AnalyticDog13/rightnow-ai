@@ -1,9 +1,15 @@
-import { deliverabilityOverview, getWorkspaceSettings, systemClock } from "@rightnow/core";
+import {
+  deliverabilityOverview,
+  getWorkspaceSettings,
+  sendableProviders,
+  systemClock,
+} from "@rightnow/core";
 import { prisma } from "@rightnow/db";
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { getWebEnv } from "../../../lib/env";
 import { getSessionInfo } from "../../../lib/workspace";
 import { DeliverabilitySettings } from "./deliverability-settings";
 import { DeliverabilityTable } from "./deliverability-table";
@@ -16,7 +22,12 @@ export default async function Page() {
   if (!info) redirect("/sign-in");
   const admin = info.role === "OWNER" || info.role === "ADMIN";
   const [rows, settings] = await Promise.all([
-    deliverabilityOverview(prisma, info.workspaceId, systemClock.now()),
+    deliverabilityOverview(
+      prisma,
+      info.workspaceId,
+      systemClock.now(),
+      await sendableProviders(prisma, getWebEnv()),
+    ),
     admin ? getWorkspaceSettings(prisma, info.workspaceId) : null,
   ]);
   return (
