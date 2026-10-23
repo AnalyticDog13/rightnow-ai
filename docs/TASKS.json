@@ -585,12 +585,12 @@
    "id": "P5-T05",
    "phase": 5,
    "title": "Inactivity detection (`computeLifecycle`, thresholds 7/14/30/60, recommend/auto) run inside every reconcileAccount",
-   "status": "todo",
+   "status": "done",
    "deps": [
     "P5-T08"
    ],
    "model": "opus",
-   "commit": null,
+   "commit": "80c7f09",
    "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-5.md; tests listed there pass"
   },
   {
