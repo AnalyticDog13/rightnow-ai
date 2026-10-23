@@ -31,7 +31,7 @@ export default async function Page({
     }),
     prisma.workspace.findUniqueOrThrow({
       where: { id: ws },
-      select: { currency: true, crmAutoOpportunity: true, timezone: true },
+      select: { currency: true, timezone: true },
     }),
     // the currency is fixed while any deal carries money (409 currency_in_use)
     prisma.opportunity.count({
@@ -53,7 +53,6 @@ export default async function Page({
       isAdmin={info.role === "OWNER" || info.role === "ADMIN"}
       currency={settings.currency}
       currencyLocked={moneyDeals > 0}
-      autoOpportunity={settings.crmAutoOpportunity}
       timezone={settings.timezone}
     />
   );

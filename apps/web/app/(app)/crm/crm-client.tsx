@@ -23,7 +23,7 @@ export function CrmClient({
   isAdmin,
   currency,
   currencyLocked,
-  autoOpportunity,
+
   timezone,
 }: {
   initial: BoardData | null;
@@ -35,7 +35,7 @@ export function CrmClient({
   isAdmin: boolean;
   currency: string;
   currencyLocked: boolean;
-  autoOpportunity: boolean;
+
   timezone: string;
 }) {
   const sp = useSearchParams();
@@ -70,11 +70,7 @@ export function CrmClient({
         {tab === "tasks" && <TasksTab members={members} canEdit={canEdit} />}
         {tab === "activity" && <ActivityTab members={members} />}
         {tab === "settings" && (
-          <StageSettings
-            currency={currency}
-            currencyLocked={currencyLocked}
-            autoOpportunity={autoOpportunity}
-          />
+          <StageSettings currency={currency} currencyLocked={currencyLocked} />
         )}
       </Tabs>
     </div>

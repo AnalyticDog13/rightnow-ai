@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Button } from "../../../components/ui/button";
@@ -168,11 +169,9 @@ function Row({
 export function StageSettings({
   currency,
   currencyLocked,
-  autoOpportunity,
 }: {
   currency: string;
   currencyLocked: boolean;
-  autoOpportunity: boolean;
 }) {
   const router = useRouter();
   const [stages, setStages] = useState<Stage[]>([]);
@@ -181,7 +180,6 @@ export function StageSettings({
   const [newName, setNewName] = useState("");
   const [newKind, setNewKind] = useState<Kind>("OPEN");
   const [cur, setCur] = useState(currency);
-  const [auto, setAuto] = useState(autoOpportunity);
   const [msg, setMsg] = useState("");
 
   const load = useCallback(async () => {
@@ -254,19 +252,13 @@ export function StageSettings({
             The currency cannot change while a deal has a value or cash collected.
           </p>
         )}
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={auto}
-            onChange={(e) => {
-              setAuto(e.target.checked);
-              void workspace({ crmAutoOpportunity: e.target.checked }).then(
-                (ok) => !ok && setAuto(!e.target.checked),
-              );
-            }}
-          />
-          Create opportunities from positive statuses
-        </label>
+        <p className="text-sm">
+          Automatic opportunities from positive replies are managed in{" "}
+          <Link href="/automations?tab=builtin" className="underline">
+            Automations
+          </Link>
+          .
+        </p>
         {msg && (
           <p role="status" className="text-sm">
             {msg}

@@ -23,7 +23,6 @@ const patch = z.strictObject({
   rewarmExitCleanDays: z.number().int().min(1).max(30).optional(),
   // D40: one currency per workspace (ISO 4217); fixed while a deal carries money (Rev 2 M12)
   currency: z.string().regex(/^[A-Z]{3}$/, "invalid_currency").optional(),
-  crmAutoOpportunity: z.boolean().optional(),
 });
 const SELECT = {
   timezone: true,
@@ -38,7 +37,6 @@ const SELECT = {
   autoRewarm: true,
   rewarmExitCleanDays: true,
   currency: true,
-  crmAutoOpportunity: true,
 } as const;
 
 export async function getWorkspaceSettings(prisma: PrismaClient, ws: string) {

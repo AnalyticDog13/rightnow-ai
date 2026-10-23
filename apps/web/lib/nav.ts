@@ -27,6 +27,6 @@ export const NAV: { href: string; label: string; icon: LucideIcon; arrives?: str
   { href: "/inbox", label: "Unified Inbox", icon: Inbox, arrives: "Phase 4 (task P4-T08)" },
   { href: "/crm", label: "CRM", icon: KanbanSquare },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
-  { href: "/automations", label: "Automations", icon: Workflow, arrives: "Phase 7 (task P7-T01)" },
+  { href: "/automations", label: "Automations", icon: Workflow },
   { href: "/settings", label: "Settings", icon: Settings, arrives: "Phase 7 (task P7-T07)" },
 ];

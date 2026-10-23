@@ -10,5 +10,5 @@ export const apiKeyResolver =
     const key = token ? await verifyApiKey(prisma, token) : null;
     if (!key) return null;
     if (!scope || !scopeAllows(key.scopes, scope)) throw new HttpError(403, "Forbidden");
-    return { workspaceId: key.workspaceId, role: "MEMBER" };
+    return { workspaceId: key.workspaceId, role: "MEMBER", scopes: key.scopes };
   };

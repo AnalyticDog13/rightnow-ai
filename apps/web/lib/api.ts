@@ -12,7 +12,8 @@ export class HttpError extends Error {
 
 export const ROLES = ["VIEWER", "MEMBER", "ADMIN", "OWNER"] as const;
 export type Role = (typeof ROLES)[number];
-export type SessionInfo = { userId?: string; workspaceId: string; role: Role };
+/** `scopes` is set only for API-key callers (R6: a handler checks the key against what it writes). */
+export type SessionInfo = { userId?: string; workspaceId: string; role: Role; scopes?: string[] };
 export type SessionGetter = (req: Request) => Promise<SessionInfo | null>;
 
 type Auth = "session" | "session-or-apikey" | "public";
@@ -32,7 +33,7 @@ type Ctx<B extends z.ZodType, Q extends z.ZodType, A extends Auth> = {
   /** Next dynamic segments, e.g. `params.id` in `[id]/route.ts`. */
   params: Record<string, string | undefined>;
   req: Request;
-} & (A extends "public" ? unknown : { workspaceId: string; role: Role });
+} & (A extends "public" ? unknown : { workspaceId: string; role: Role; scopes?: string[] });
 
 export type ApiKeyResolver = (req: Request, scope?: string) => Promise<SessionInfo | null>;
 
@@ -93,7 +94,7 @@ export function route<
         : undefined;
       const out = await handler({
         userId: info?.userId,
-        ...(info && { workspaceId: info.workspaceId, role: info.role }),
+        ...(info && { workspaceId: info.workspaceId, role: info.role, scopes: info.scopes }),
         body,
         query,
         params: (await rc?.params) ?? {},
