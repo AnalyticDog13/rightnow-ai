@@ -1,5 +1,5 @@
 import { Prisma, type PrismaClient, type StageKind } from "@rightnow/db/client";
-import { analytics, OPP_FROM, oppScope } from "./metrics";
+import { contactedCount, OPP_FROM, oppScope } from "./metrics";
 import { type AnalyticsQuery, checked, inRange, rangeDays } from "./query";
 
 type Db = PrismaClient | Prisma.TransactionClient;
@@ -8,8 +8,10 @@ const D = (v: Prisma.Decimal | number | string) => new Prisma.Decimal(v);
 
 /**
  * D42 revenue and conversion (PS-CRM-11, PS-ANALYTICS-12/13). Counts every deal of the filters, with or without a
- * campaign. Pipeline value and conversion are "current" (range-independent state, Rev 2 M7); won and cash are deals
- * in a WON stage whose closedAt is in range, so a reopened and re-won deal counts once.
+ * campaign. Pipeline value and open count are "current" (range-independent state, Rev 2 M7) and, like the board, leave
+ * out deals of soft-deleted leads; won, cash and conversion are history and keep them (D40). Won and cash are deals in a
+ * WON stage whose closedAt is in range, so a reopened and re-won deal counts once. Revenue per lead is campaign-deal
+ * cash over contacted, both campaign figures like the analytics funnel's.
  */
 export async function crmReport(
   db: Db,
@@ -33,7 +35,7 @@ export async function crmReport(
   }[];
 }> {
   const days = rangeDays(q);
-  const [w, stages, won, a] = await checked(
+  const [w, stages, won, contacted] = await checked(
     Promise.all([
       db.workspace.findUniqueOrThrow({ where: { id: ws }, select: { currency: true } }),
       db.$queryRaw<
@@ -49,9 +51,10 @@ export async function crmReport(
       >`
         SELECT s.id, s.name, s.kind, s.position,
           count(o.id) FILTER (WHERE ${inRange(sql`o."createdAt"`, q)})::int AS created,
-          count(o.id)::int AS current, COALESCE(sum(o.value), 0) AS value
+          count(o.id) FILTER (WHERE o.live)::int AS current,
+          COALESCE(sum(o.value) FILTER (WHERE o.live), 0) AS value
         FROM "PipelineStage" s
-        LEFT JOIN (SELECT o.* FROM ${OPP_FROM(ws)} WHERE ${oppScope(ws, q, false)}) o ON o."stageId" = s.id
+        LEFT JOIN (SELECT o.*, l."deletedAt" IS NULL AS live FROM ${OPP_FROM(ws)} WHERE ${oppScope(ws, q, false)}) o ON o."stageId" = s.id
         WHERE s."workspaceId" = ${ws}
         GROUP BY s.id ORDER BY s.position`,
       db.$queryRaw<
@@ -61,7 +64,7 @@ export async function crmReport(
         FROM ${OPP_FROM(ws)} JOIN "PipelineStage" s ON s.id = o."stageId" AND s.kind = 'WON'
         WHERE ${oppScope(ws, q, false)} AND ${inRange(sql`o."closedAt"`, q)}
         GROUP BY o."campaignId"`,
-      analytics(db, ws, { ...q, groupBy: "none" }),
+      contactedCount(db, ws, q),
     ]),
   );
   const names = new Map(
@@ -77,7 +80,7 @@ export async function crmReport(
   const wonValue = won.reduce((s, r) => s.add(r.value), D(0));
   const cash = won.reduce((s, r) => s.add(r.cash), D(0));
   const cohort = stages.reduce((n, s) => n + s.created, 0);
-  const contacted = a.total.contacted;
+  const campaignCash = won.reduce((s, r) => (r.campaignId ? s.add(r.cash) : s), D(0));
   return {
     currency: w.currency,
     pipelineValue: open.reduce((s, x) => s.add(x.value), D(0)).toFixed(2),
@@ -86,7 +89,7 @@ export async function crmReport(
     wonValue: wonValue.toFixed(2),
     cashCollected: cash.toFixed(2),
     annualizedClosed: wonValue.mul(365).div(days).toFixed(2),
-    revenuePerLead: contacted ? cash.div(contacted).toFixed(2) : null,
+    revenuePerLead: contacted ? campaignCash.div(contacted).toFixed(2) : null,
     // "by current stage": deals created in range now in this stage or a later OPEN/WON one; LOST only in its own
     conversionByStage: stages.map((s) => ({
       stageId: s.id,

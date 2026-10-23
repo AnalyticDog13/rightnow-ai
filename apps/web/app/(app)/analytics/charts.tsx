@@ -66,7 +66,7 @@ export function Charts({
     ["Replied", total.replied],
     ["Positive", total.opportunities],
     ["Meeting", total.meetings],
-    ["Won", total.won],
+    ["Won (campaign)", total.won],
   ].map(([stage, n]) => ({ stage, n }));
   const ab = variants.map((v) => ({
     variant: v.label,

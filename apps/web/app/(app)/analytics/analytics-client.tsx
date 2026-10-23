@@ -199,30 +199,31 @@ export function AnalyticsClient({
 
   useEffect(() => {
     if (!today) return;
-    let stale = false;
-    const get = async (path: string, by?: string) => {
-      const r = await call(`${API}${path}?${query(by)}`, "GET");
+    // a newer filter aborts the older requests, so the server stops scanning for an answer nobody reads
+    const ac = new AbortController();
+    const get = async (path: string, extra = "") => {
+      const r = await call(`${API}${path}?${query()}${extra}`, "GET", undefined, ac.signal);
       if (!r.ok) throw new Error(errorText(r));
       return r.json as never;
     };
     Promise.all([
-      get("", "campaign"),
-      get("", "step"),
-      get("", "variant"),
-      get("", "day"),
+      get("", "&groups=campaign,step,variant,day"), // one Event scan for the four tables
       get("/accounts"),
       get("/bounces"),
       get("/crm"),
     ])
-      .then(([campaign, step, variant, day, accounts, bounces, revenue]) => {
-        if (stale) return;
+      .then(([groups, accounts, bounces, revenue]) => {
+        if (ac.signal.aborted) return;
         setError("");
-        setData({ campaign, step, variant, day, accounts, bounces, revenue });
+        setData({
+          ...(groups as Pick<Data, "campaign" | "step" | "variant" | "day">),
+          accounts,
+          bounces,
+          revenue,
+        });
       })
-      .catch((e: Error) => !stale && setError(e.message));
-    return () => {
-      stale = true;
-    };
+      .catch((e: Error) => !ac.signal.aborted && setError(e.message));
+    return () => ac.abort();
   }, [query, today]);
 
   // variant ids -> their step, so the table can pause a variant (one campaign at a time)
@@ -434,6 +435,9 @@ export function AnalyticsClient({
 
           <Charts days={d.day.rows} variants={d.variant.rows} total={total} hidden={hidden} />
           <Section title="Funnel">
+            <p className={note}>
+              Positive and Won count campaign deals only; Revenue below counts every deal.
+            </p>
             <ol className="flex flex-wrap gap-x-6 text-sm">
               {(
                 [
@@ -441,7 +445,7 @@ export function AnalyticsClient({
                   ["Replied", total.replied],
                   ["Positive", total.opportunities],
                   ["Meeting", total.meetings],
-                  ["Won", total.won],
+                  ["Won (campaign deals)", total.won],
                 ] as const
               ).map(([k, n]) => (
                 <li key={k}>
@@ -605,10 +609,14 @@ export function AnalyticsClient({
                 note={`${d.revenue.openCount} open deals`}
               />
               <StatTile label="Average deal size" value={money(d.revenue.avgDealSize)} />
-              <StatTile label="Won in range" value={money(d.revenue.wonValue)} />
-              <StatTile label="Cash collected" value={money(d.revenue.cashCollected)} />
+              <StatTile label="Won in range (all deals)" value={money(d.revenue.wonValue)} />
+              <StatTile label="Cash collected (all deals)" value={money(d.revenue.cashCollected)} />
               <StatTile label="Annualized closed" value={money(d.revenue.annualizedClosed)} />
-              <StatTile label="Revenue per lead" value={money(d.revenue.revenuePerLead)} />
+              <StatTile
+                label="Revenue per lead"
+                value={money(d.revenue.revenuePerLead)}
+                note="Campaign-deal cash / contacted"
+              />
             </div>
             <Table
               caption="Conversion by current stage"

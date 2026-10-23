@@ -72,5 +72,5 @@ export const METRICS: Def[] = [
   },
   { id: "unsubscribed", label: "Unsubscribed", count: (m) => m.unsubscribed },
   { id: "meetings", label: "Meetings", count: (m) => m.meetings },
-  { id: "won", label: "Won", count: (m) => m.won },
+  { id: "won", label: "Won (campaign deals)", count: (m) => m.won },
 ];

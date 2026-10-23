@@ -114,22 +114,25 @@ const firstBefore = (ws: string, q: AnalyticsQuery, sameCampaign: boolean) =>
 const first = (by: Prisma.Sql) =>
   sql`row_number() OVER (PARTITION BY COALESCE(e."leadId", e.id), ${by} e.type ORDER BY e."occurredAt", e.id) = 1`;
 
-function eventStatement(db: Db, ws: string, q: AnalyticsQuery) {
-  const k = key(q.groupBy, q, {
-    campaign: sql`e."campaignId"`,
-    account: SENDER,
-    step: sql`e."stepId"`,
-    variant: sql`e."variantId"`,
-    at: sql`e."occurredAt"`,
-  });
+/** One scan of the range's Events for every grouping in `bys`: row `set` n (1-based) is grouping bys[n-1]. */
+function eventStatement(db: Db, ws: string, q: AnalyticsQuery, bys: By[]) {
+  const ks = bys.map((by) =>
+    key(by, q, {
+      campaign: sql`e."campaignId"`,
+      account: SENDER,
+      step: sql`e."stepId"`,
+      variant: sql`e."variantId"`,
+      at: sql`e."occurredAt"`,
+    }),
+  );
   const human = sql`(e.meta->>'machine') IS DISTINCT FROM 'true'`;
   const person = sql`(e.meta->>'scanner') IS DISTINCT FROM 'true'`;
   const replies = q.includeAutoReplies
     ? sql`e.type IN ('REPLY', 'AUTO_REPLY')`
     : sql`e.type = 'REPLY'`;
   // the outer alias is `e` again, so health.ts's perLead and HARD_BOUNCE_SQL apply unchanged (D34)
-  return db.$queryRaw<EventCounts[]>`
-    SELECT e.k AS key, GROUPING(e.k) AS total,
+  return db.$queryRaw<(EventCounts & { set: number })[]>`
+    SELECT g.s::int AS "set", g.k AS key, GROUPING(g.k) AS total,
       count(*) FILTER (WHERE e.type = 'ACCEPTED')::int AS sent,
       ${perLead(sql`e.first_c`)} AS contacted,
       ${perLead(sql`e.first_w`)} AS "newLeadsContacted",
@@ -150,13 +153,21 @@ function eventStatement(db: Db, ws: string, q: AnalyticsQuery) {
       ${perLead(sql`e.type = 'UNSUBSCRIBE'`)} AS unsubscribed,
       count(*) FILTER (WHERE e.type = 'MEETING')::int AS meetings
     FROM (
-      SELECT e.*, ${k} AS k, (${first(sql`e."campaignId",`)} AND ${firstBefore(ws, q, true)}) AS first_c,
+      SELECT e.*, ARRAY[${Prisma.join(ks)}]::text[] AS ks, (${first(sql`e."campaignId",`)} AND ${firstBefore(ws, q, true)}) AS first_c,
         (${first(Prisma.empty)} AND ${firstBefore(ws, q, false)}) AS first_w
       FROM ${EVENT_FROM}
       WHERE ${eventScope(ws, q)} AND e.type IN ('ACCEPTED', 'OPEN', 'CLICK', 'REPLY', 'AUTO_REPLY', 'BOUNCE_HARD',
         'BOUNCE_SOFT', 'BOUNCE_UNKNOWN', 'SEND_FAILED', 'COMPLAINT', 'UNSUBSCRIBE', 'MEETING')
-    ) e
-    GROUP BY GROUPING SETS ((e.k), ())`;
+    ) e CROSS JOIN LATERAL unnest(e.ks) WITH ORDINALITY AS g(k, s)
+    GROUP BY GROUPING SETS ((g.s, g.k), (g.s))`;
+}
+
+/** The range's contacted total alone, without the window flags: every send of a lead's first-in-campaign cohort qualifies it. */
+export async function contactedCount(db: Db, ws: string, q: AnalyticsQuery): Promise<number> {
+  const [r] = await db.$queryRaw<{ n: number }[]>`
+    SELECT ${perLead(sql`TRUE`)} AS n FROM ${EVENT_FROM}
+    WHERE ${eventScope(ws, q)} AND ${firstBefore(ws, q, true)}`;
+  return r!.n;
 }
 
 export const OPP_FROM = (ws: string) => sql`"Opportunity" o
@@ -311,25 +322,61 @@ function metrics(
   };
 }
 
+type Report = { total: Metrics; rows: (Metrics & { key: string; label: string })[] };
+
 /**
  * D42 metrics for the range, as a total and one row per group (day rows zero-filled), from stored Events,
  * Opportunities and CampaignLeads only. Three or four statements whatever the number of groups.
  */
-export async function analytics(
+export async function analytics(db: Db, ws: string, q: AnalyticsQuery): Promise<Report> {
+  return (await analyticsGroups(db, ws, q, [q.groupBy]))[q.groupBy]!;
+}
+
+/** `analytics` for several groupings at once: one Event scan for all of them (the scan is the expensive part). */
+export async function analyticsGroups(
   db: Db,
   ws: string,
   q: AnalyticsQuery,
-): Promise<{ total: Metrics; rows: (Metrics & { key: string; label: string })[] }> {
+  bys: By[],
+): Promise<Partial<Record<By, Report>>> {
   const range = rangeKeys(q); // validates the range before any statement
-  const days = q.groupBy === "day" ? range : null;
-  const withCompleted = COMPLETED.includes(q.groupBy);
-  const [ev, opp, done] = await checked(
+  const [ev, per] = await checked(
     Promise.all([
-      eventStatement(db, ws, q),
-      oppStatement(db, ws, q),
-      withCompleted ? completedStatement(db, ws, q) : Promise.resolve([]),
+      eventStatement(db, ws, q, bys),
+      Promise.all(
+        bys.map((groupBy) =>
+          Promise.all([
+            oppStatement(db, ws, { ...q, groupBy }),
+            COMPLETED.includes(groupBy)
+              ? completedStatement(db, ws, { ...q, groupBy })
+              : Promise.resolve([]),
+          ]),
+        ),
+      ),
     ]),
   );
+  return Object.fromEntries(
+    await Promise.all(
+      bys.map(async (groupBy, i) => {
+        const [opp, done] = per[i]!;
+        const rows = ev.filter((r) => r.set === i + 1);
+        return [groupBy, await report(db, ws, { ...q, groupBy }, range, rows, opp, done)] as const;
+      }),
+    ),
+  );
+}
+
+async function report(
+  db: Db,
+  ws: string,
+  q: AnalyticsQuery,
+  range: string[],
+  ev: EventCounts[],
+  opp: OppCounts[],
+  done: (Grouped & { completed: number })[],
+): Promise<Report> {
+  const days = q.groupBy === "day" ? range : null;
+  const withCompleted = COMPLETED.includes(q.groupBy);
   const total = <T extends Grouped>(rows: T[]) => rows.find((r) => r.total === 1);
   const grouped = <T extends Grouped>(rows: T[]) =>
     new Map(rows.filter((r) => r.total === 0).map((r) => [r.key ?? NONE, r]));

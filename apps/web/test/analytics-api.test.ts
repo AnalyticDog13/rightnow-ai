@@ -139,6 +139,16 @@ describe("analytics routes", () => {
     expect(byCampaign.total.sent).toBe(1);
     expect(byCampaign.rows.map((r) => r.key)).toEqual([mine.id]);
     expect(byCampaign.rows.map((r) => r.key)).not.toContain(theirs.id);
+    // A1: several groupings in one request, each equal to its own groupBy answer
+    const groups = (await (
+      await routes.analytics.GET(get(`analytics?${DAY}&groups=campaign,day,campaign`))
+    ).json()) as Record<string, unknown>;
+    expect(Object.keys(groups).sort()).toEqual(["campaign", "day"]);
+    expect(groups.campaign).toEqual(byCampaign);
+    expect((await routes.analytics.GET(get(`analytics?${DAY}&groups=list`))).status).toBe(400);
+    expect((await routes.analytics.GET(get(`analytics?${DAY}&groups=day&format=csv`))).status).toBe(
+      400,
+    );
 
     for (const bad of [
       "from=2026-11-03&to=2026-11-02",

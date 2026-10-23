@@ -1,7 +1,8 @@
 /** JSON call to the accounts API; resolves to the parsed body, or an error text. */
-export async function call(url: string, method: string, body?: unknown) {
+export async function call(url: string, method: string, body?: unknown, signal?: AbortSignal) {
   const res = await fetch(url, {
     method,
+    signal,
     headers: { "content-type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
   }).catch(() => null);

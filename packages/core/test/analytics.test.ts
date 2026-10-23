@@ -3,9 +3,9 @@ import { createTestDb } from "@rightnow/db/test-db";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { AccountError } from "../src/accounts/service";
 import { fixedClock } from "../src/clock";
-import { bounceBreakdown } from "../src/analytics/accounts";
+import { accountAnalytics, bounceBreakdown } from "../src/analytics/accounts";
 import { crmReport } from "../src/analytics/crm-report";
-import { analytics } from "../src/analytics/metrics";
+import { analytics, analyticsGroups } from "../src/analytics/metrics";
 import { analyticsQuery } from "../src/analytics/query";
 import { updateOpportunity } from "../src/crm/opportunities";
 import { AT, analyticsFixture, day2 } from "./analytics-fixture";
@@ -206,8 +206,7 @@ describe("analytics (D42)", () => {
     const two = { campaignIds: f.C.id, from: "2026-11-02", to: "2026-11-03" };
     const days = await run(f.ws, { ...two, groupBy: "day" });
     expect(row(days.rows, "2026-11-03")).toMatchObject({ contacted: 0, newLeadsContacted: 0 });
-    const sum = (k: "contacted" | "newLeadsContacted") =>
-      days.rows.reduce((n, r) => n + r[k], 0);
+    const sum = (k: "contacted" | "newLeadsContacted") => days.rows.reduce((n, r) => n + r[k], 0);
     expect([sum("contacted"), sum("newLeadsContacted")]).toEqual([
       days.total.contacted,
       days.total.newLeadsContacted,
@@ -253,6 +252,15 @@ describe("analytics (D42)", () => {
       revenuePerLead: null,
     });
     expect(later.conversionByStage.every((s) => s.reachedPct === null)).toBe(true);
+    // I1: "current" figures hide deals of soft-deleted leads, as the board does; history keeps them (D40)
+    await P().lead.update({
+      where: { id: f.L3.id },
+      data: { deletedAt: AT("2026-11-02T20:00:00Z") },
+    });
+    const gone = await crmReport(P(), f.ws, q());
+    expect([gone.pipelineValue, gone.openCount]).toEqual(["0.00", 0]);
+    expect(gone.conversionByStage.find((s) => s.stageId === f.st("Interested"))!.count).toBe(1);
+    expect(gone.wonValue).toBe("1000.00");
   });
 
   test("reopened deal counted once", async () => {
@@ -327,6 +335,29 @@ describe("analytics (D42)", () => {
     const r = await analytics(counted as never, f.ws, q({ groupBy: "variant" }));
     expect(r.rows).toHaveLength(4); // S1A, S1B, S2A and C2's variant
     expect(n).toBeLessThanOrEqual(4);
+  });
+
+  test("an analytics page load runs the heavy event statement at most twice", async () => {
+    const f = await analyticsFixture(P());
+    let heavy = 0;
+    const counted = P().$extends({
+      query: {
+        $allOperations({ args, query }) {
+          if (JSON.stringify(args ?? null).includes("first_c")) heavy++;
+          return query(args);
+        },
+      },
+    }) as never;
+    const BYS = ["campaign", "step", "variant", "day"] as const;
+    const g = await analyticsGroups(counted, f.ws, q(), [...BYS]);
+    expect(heavy).toBe(1);
+    // one scan gives each grouping exactly what its own call gives
+    for (const by of BYS) expect(g[by]).toEqual(await run(f.ws, { groupBy: by }));
+    heavy = 0;
+    await accountAnalytics(counted, f.ws, q(), AT("2026-11-02T20:00:00Z"));
+    await crmReport(counted, f.ws, q());
+    await bounceBreakdown(counted, f.ws, q());
+    expect(heavy).toBe(1);
   });
 
   test("workspace scope", async () => {

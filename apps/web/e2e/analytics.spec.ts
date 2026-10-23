@@ -75,10 +75,10 @@ const value = (page: Page, name: string) => tile(page, name).locator("p").nth(1)
 
 test("tiles equal the API total; Estimated open rate shows its denominator", async ({ page }) => {
   const api = page.waitForResponse(
-    (r) => r.url().includes("/api/v1/analytics?") && r.url().includes("groupBy=campaign"),
+    (r) => r.url().includes("/api/v1/analytics?") && r.url().includes("groups="),
   );
   await page.goto("/analytics");
-  const total = (await (await api).json()).total as { sent: number; replied: number };
+  const total = (await (await api).json()).campaign.total as { sent: number; replied: number };
   await expect(value(page, "Sent")).toHaveText(String(total.sent));
   await expect(value(page, "Replied")).toHaveText(String(total.replied));
   await expect(tile(page, "Sent")).toHaveAttribute("title", /not proof of delivery/);
