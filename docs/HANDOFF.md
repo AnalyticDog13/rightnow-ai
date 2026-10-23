@@ -1,7 +1,7 @@
 # Handoff
 
 **Phase:** 5 — Deliverability, warm-up, re-warm-up (branch `phase-5-deliverability`, created from `main` at 7c03dad)
-**Current task:** P5-T08 (verification hooks) PAUSED in fix round 2 — done so far 4d58c4e + 4539165 (CI green); round 2 (verifier HTTP ≥400 throws, shutdown abort not a failure, bad statusPath recorded) is UNCOMMITTED in the tree (verify.ts, verify.test.ts, DECISIONS.md) — keep it; backup `.superpowers/sdd/phase-5/p5t08-fix2-partial.diff`. Resume: fresh finisher, then scoped re-review (BASE 4539165), then P5-T05. Done: P5-T01 8b65f8b, P5-T02 d48a2da, P5-T03 355ffb2, P5-T04 4444b7d. Ledger `.superpowers/sdd/phase-5/progress.md`.
+**Current task:** P5-T05 (inactivity + returnToService). Done: P5-T01 8b65f8b, P5-T02 d48a2da, P5-T03 355ffb2, P5-T04 4444b7d, P5-T08 fe3e624. Order: T05 → T06 → T07 → gate. Ledger `.superpowers/sdd/phase-5/progress.md`.
 **Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 (approved). Done step plans: `docs/plans/phase-1.md` … `phase-4.md` (+ `phase-4-review.md`).
 **Tests:** ~1165 vitest + 20 Playwright green; CI `check`, `compose-smoke` (incl. Caddyfile validate), `imap-real` green.
 

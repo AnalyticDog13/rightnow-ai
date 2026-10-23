@@ -621,12 +621,12 @@
    "id": "P5-T08",
    "phase": 5,
    "title": "Verification hooks (`EmailVerifier`, built-in MX check, one HTTP integration template; risky handling per campaign)",
-   "status": "todo",
+   "status": "done",
    "deps": [
     "P5-T04"
    ],
    "model": "sonnet",
-   "commit": null,
+   "commit": "fe3e624",
    "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-5.md; tests listed there pass"
   },
   {
