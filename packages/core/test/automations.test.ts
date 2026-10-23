@@ -609,6 +609,65 @@ describe("dispatch races", () => {
     expect(await P().task.count({ where: { workspaceId: w.ws } })).toBe(3);
   });
 
+  test("an event too slow on its own (solo P2028) is stamped with a FAILED run; the others dispatch", async () => {
+    const w = await world();
+    const r = await rule(w, "reply_received", [{ type: "create_task", title: "t" }]);
+    await drain();
+    const es = [await reply(w), await reply(w), await reply(w)];
+    const slow = es[1]!;
+    dispatchHooks.deliveries = async (_tx, e) => {
+      if (e.id === slow.id) await new Promise((ok) => setTimeout(ok, 1_500));
+      return 0;
+    };
+    expect(await dispatchEvents(P(), clock, { maxMs: 0, txTimeoutMs: 800 })).toMatchObject({
+      events: 3,
+      runs: 3,
+    });
+    expect(await P().event.findUniqueOrThrow({ where: { id: slow.id } })).toMatchObject({
+      dispatchedAt: T,
+      dispatchError: "P2028",
+    });
+    expect((await runs(w.ws)).map((x) => [x.eventId, x.ruleId, x.status, x.error]).sort()).toEqual(
+      [
+        [es[0]!.id, r.id, "OK", null],
+        [slow.id, r.id, "FAILED", "P2028"],
+        [es[2]!.id, r.id, "OK", null],
+      ].sort(),
+    );
+    expect(await P().task.count({ where: { workspaceId: w.ws } })).toBe(2);
+  }, 30_000);
+
+  test("a lock wait past lock_timeout (55P03) stays pending and dispatches once the lock is gone", async () => {
+    const w = await world();
+    await rule(w, "reply_received", [{ type: "add_tag", tag: "x" }]);
+    await drain();
+    const e = await reply(w);
+    let release!: () => void;
+    const gate = new Promise<void>((ok) => (release = ok));
+    let locked!: () => void;
+    const holding = new Promise<void>((ok) => (locked = ok));
+    const held = P().$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT id FROM "Lead" WHERE id = ${w.lead!.id} FOR UPDATE`;
+        locked();
+        await gate;
+      },
+      { timeout: 20_000 },
+    );
+    await holding;
+    const o = { maxMs: 0, txTimeoutMs: 1_500, lockTimeoutMs: 300 };
+    expect((await err(dispatchEvents(client(), clock, o)))?.message).toMatch(/55P03|lock timeout/);
+    expect(await P().event.findUniqueOrThrow({ where: { id: e.id } })).toMatchObject({
+      dispatchedAt: null,
+      dispatchError: null,
+    });
+    expect(await runs(w.ws)).toEqual([]);
+    release();
+    await held;
+    expect(await dispatchEvents(P(), clock, o)).toMatchObject({ events: 1, runs: 1 });
+    expect((await P().lead.findUniqueOrThrow({ where: { id: w.lead!.id } })).tags).toEqual(["x"]);
+  }, 30_000);
+
   test("D43: Events of a workspace without enabled rules are only stamped (no savepoints)", async () => {
     await drain();
     const q = new PrismaClient({

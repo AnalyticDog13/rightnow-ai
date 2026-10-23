@@ -6,7 +6,7 @@ import { stopOpenCampaignLeads } from "../campaigns/hooks";
 import { enrollBatch, moveToSubsequenceTx, noSkips } from "../campaigns/enroll";
 import type { Clock } from "../clock";
 import { ensureOpportunity, errorCode, inSavepoint } from "../crm/opportunities";
-import { isRetryable, withTxRetry } from "../dispatch";
+import { isLockTimeout, isRetryable, withTxRetry } from "../dispatch";
 import { suppress } from "../leads/suppression";
 import { startOfNextDay } from "../schedule";
 
@@ -300,14 +300,30 @@ export type RuleConditions = {
   labels?: string[];
 };
 
-/** Deadlock/serialization (retries spent), the transaction timeout or a lost connection: the Event stays pending. */
+/**
+ * Deadlock/serialization (retries spent), a lock wait past `lock_timeout` or a lost connection: the Event stays pending.
+ * A solo transaction timeout (P2028) is not transient: that Event itself is too slow and is stamped.
+ */
 const isTransient = (e: unknown) =>
   isRetryable(e) ||
-  /^(P2028|P2024|P1001|P1002|P1008|P1017)$/.test(errorCode(e)) ||
+  isLockTimeout(e) ||
+  /^(P2024|P1001|P1002|P1008|P1017)$/.test(errorCode(e)) ||
   /ECONNRESET|ECONNREFUSED|Connection terminated/i.test(`${(e as Error | null)?.message}`);
 /** A service error (AccountError, CampaignError: `status` + message) becomes a run error code; others pass unchanged. */
 const asCode = (e: unknown) =>
   typeof (e as { status?: unknown } | null)?.status === "number" ? coded((e as Error).message) : e;
+/** A lock wait past `lock_timeout` passes through the savepoints (as a retryable error would), so the Event stays pending. */
+const LOCK = "55P03";
+const lockAware = (f: () => Promise<void>) => async () => {
+  try {
+    await f();
+  } catch (x) {
+    throw isLockTimeout(x) ? coded(LOCK) : x;
+  }
+};
+const passLock = (code: string) => {
+  if (code === LOCK) throw coded(LOCK);
+};
 
 /** Optional AND-ed lists; within a list any entry matches. `labels` on a LABEL_ADDED Event means the added label. */
 function matches(c: RuleConditions, e: Event, lead: LeadRow | undefined) {
@@ -323,7 +339,14 @@ function matches(c: RuleConditions, e: Event, lead: LeadRow | undefined) {
 }
 
 /** One rule for one Event in SAVEPOINT rule: exactly once per (rule, event); a failing action leaves a FAILED run. */
-async function runRule(tx: Tx, clock: Clock, now: Date, r: AutomationRule, e: Event) {
+async function runRule(
+  tx: Tx,
+  clock: Clock,
+  now: Date,
+  r: AutomationRule,
+  e: Event,
+  failWith?: string,
+) {
   let n = 0;
   // FOR KEY SHARE: a rule deleted mid-batch reads as gone instead of failing the run insert on its FK
   const insertRun = async (status: "OK" | "FAILED", error: string | null) =>
@@ -344,10 +367,11 @@ async function runRule(tx: Tx, clock: Clock, now: Date, r: AutomationRule, e: Ev
         skipDuplicates: true,
       })
     ).count === 1;
+  if (failWith) return (await insertRun("FAILED", failWith)) ? 1 : 0; // the record of an Event that failed alone
   await inSavepoint(
     tx,
     "rule",
-    async () => {
+    lockAware(async () => {
       if (!(await insertRun("OK", null))) return;
       for (const { type, ...input } of r.actions as { type: string }[]) {
         const a = ACTIONS[type];
@@ -359,22 +383,28 @@ async function runRule(tx: Tx, clock: Clock, now: Date, r: AutomationRule, e: Ev
         }
       }
       n = 1;
-    },
+    }),
     async (code) => {
+      passLock(code);
       if (await insertRun("FAILED", code)) n = 1;
     },
   );
   return n;
 }
 
-/** One claimed batch (or the given ids) in the caller's transaction; `claimed` receives the ids for the R1 fallback. */
+/**
+ * One claimed batch (or the given ids) in the caller's transaction; `claimed` receives the ids for the R1 fallback.
+ * `failWith`: no actions or deliveries; each matching rule gets a FAILED run and the Event is stamped with that code.
+ */
 async function runBatch(
   tx: Tx,
   clock: Clock,
-  sel: { limit: number; ids?: string[] },
+  sel: { limit: number; ids?: string[]; lockTimeoutMs?: number; failWith?: string },
   claimed: string[],
 ): Promise<Counts> {
   const out: Counts = { events: 0, runs: 0, deliveries: 0 };
+  if (sel.lockTimeoutMs)
+    await tx.$executeRawUnsafe(`SET LOCAL lock_timeout = '${Math.trunc(sel.lockTimeoutMs)}ms'`);
   const ids = (
     await tx.$queryRaw<{ id: string }[]>`
       SELECT id FROM "Event" WHERE "dispatchedAt" IS NULL
@@ -415,7 +445,7 @@ async function runBatch(
     await inSavepoint(
       tx,
       "evt",
-      async () => {
+      lockAware(async () => {
         const m = meta(e);
         const lead = e.leadId ? leads.get(e.leadId) : undefined;
         // D43: the loop guard (an action's own Event), no fabricated engagement, no deleted or foreign lead
@@ -432,13 +462,14 @@ async function runBatch(
               TRIGGERS[r.trigger]?.(e) &&
               matches(r.conditions as RuleConditions, e, lead)
             )
-              runs += await runRule(tx, clock, now, r, e);
-        const deliveries = await dispatchHooks.deliveries(tx, e, now);
+              runs += await runRule(tx, clock, now, r, e, sel.failWith);
+        const deliveries = sel.failWith ? 0 : await dispatchHooks.deliveries(tx, e, now);
         out.runs += runs;
         out.deliveries += deliveries;
-      },
+      }),
       // R1: a poison event is stamped with its code; the rest of the batch commits
       async (code) => {
+        passLock(code);
         console.error("dispatch_isolated", { eventId: e.id, code });
         await tx.event.update({
           where: { id: e.id },
@@ -449,7 +480,7 @@ async function runBatch(
   }
   await tx.event.updateMany({
     where: { id: { in: ids }, dispatchedAt: null },
-    data: { dispatchedAt: now },
+    data: { dispatchedAt: now, ...(sel.failWith && { dispatchError: sel.failWith }) },
   });
   out.events = ids.length;
   return out;
@@ -460,15 +491,37 @@ const add = (a: Counts, b: Counts) => {
   a.runs += b.runs;
   a.deliveries += b.deliveries;
 };
-const tx30 = { timeout: 30_000 };
+type Limits = { txTimeoutMs?: number; lockTimeoutMs?: number };
 
-/** One batch; when it fails as a whole (retries spent, timeout), its events are retried one at a time (R1). */
-async function dispatchBatch(prisma: PrismaClient, clock: Clock, limit: number, out: Counts) {
+/**
+ * One batch; when it fails as a whole (retries spent, timeout, lock wait), its events are retried one at a time (R1).
+ * Both run with a `lock_timeout` below the transaction timeout (as claimDue): a blocked query is not interrupted by
+ * the timeout, so lock contention surfaces as 55P03 instead, and a solo 55P03 leaves the Event pending.
+ */
+async function dispatchBatch(
+  prisma: PrismaClient,
+  clock: Clock,
+  limit: number,
+  out: Counts,
+  o: Limits,
+) {
+  const timeout = { timeout: o.txTimeoutMs ?? 30_000 };
+  const lockTimeoutMs = o.lockTimeoutMs ?? 10_000;
   const claimed: string[] = [];
+  const solo = (id: string, failWith?: string) =>
+    withTxRetry(() =>
+      prisma.$transaction(
+        (tx) => runBatch(tx, clock, { limit: 1, ids: [id], lockTimeoutMs, failWith }, []),
+        timeout,
+      ),
+    );
   try {
     const r = await withTxRetry(() => {
       claimed.length = 0;
-      return prisma.$transaction((tx) => runBatch(tx, clock, { limit }, claimed), tx30);
+      return prisma.$transaction(
+        (tx) => runBatch(tx, clock, { limit, lockTimeoutMs }, claimed),
+        timeout,
+      );
     });
     add(out, r);
     return r.events;
@@ -477,26 +530,26 @@ async function dispatchBatch(prisma: PrismaClient, clock: Clock, limit: number, 
     let transient: unknown;
     for (const id of [...claimed])
       try {
-        add(
-          out,
-          await withTxRetry(() =>
-            prisma.$transaction((tx) => runBatch(tx, clock, { limit: 1, ids: [id] }, []), tx30),
-          ),
-        );
+        add(out, await solo(id));
       } catch (x) {
         // a transient failure is not the event's fault: it stays pending and the next tick retries it
         if (isTransient(x)) {
           transient ??= x;
           continue;
         }
+        // the Event failed alone (P2028 = too slow by itself): stamped, with a FAILED run per matching rule
         const code = errorCode(x);
         console.error("dispatch_isolated", { eventId: id, code });
-        out.events += (
-          await prisma.event.updateMany({
-            where: { id, dispatchedAt: null },
-            data: { dispatchedAt: clock.now(), dispatchError: code },
-          })
-        ).count;
+        try {
+          add(out, await solo(id, code));
+        } catch {
+          out.events += (
+            await prisma.event.updateMany({
+              where: { id, dispatchedAt: null },
+              data: { dispatchedAt: clock.now(), dispatchError: code },
+            })
+          ).count;
+        }
       }
     if (transient) throw transient; // the run fails visibly; the events dispatched above stay committed
     return claimed.length;
@@ -516,12 +569,12 @@ const sleep = (ms: number, signal?: AbortSignal) =>
 export async function dispatchEvents(
   prisma: PrismaClient,
   clock: Clock,
-  o: { batch?: number; maxMs: number; signal?: AbortSignal },
+  o: { batch?: number; maxMs: number; signal?: AbortSignal } & Limits,
 ): Promise<Counts> {
   const out: Counts = { events: 0, runs: 0, deliveries: 0 };
   const start = Date.now();
   for (;;) {
-    const n = await dispatchBatch(prisma, clock, o.batch ?? BATCH, out);
+    const n = await dispatchBatch(prisma, clock, o.batch ?? BATCH, out, o);
     const left = o.maxMs - (Date.now() - start);
     if (o.signal?.aborted || left <= 0) return out;
     if (!n) await sleep(Math.min(IDLE_MS, left), o.signal);

@@ -46,7 +46,7 @@ export const isRetryable = (e: unknown) => {
   return x?.code === "P2034" || /40P01|40001/.test(`${x?.code} ${x?.meta?.code} ${x?.message}`);
 };
 
-const isLockTimeout = (e: unknown) => {
+export const isLockTimeout = (e: unknown) => {
   const x = e as { code?: string; message?: string; meta?: { code?: string } } | null;
   return /55P03|lock timeout/.test(`${x?.code} ${x?.meta?.code} ${x?.message}`);
 };
