@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Tabs } from "../../../components/tabs";
 import { Button } from "../../../components/ui/button";
 import { Card } from "../../../components/ui/card";
 import { Label } from "../../../components/ui/label";
 import { call, errorText } from "../accounts/api-client";
-import { ACTION_TYPES, RuleEditor, TRIGGERS, type Refs, type Rule } from "./rule-editor";
+import { RuleEditor } from "./rule-editor";
+import { ACTION_TYPES, TRIGGERS, type Refs, type Rule } from "./rule-meta";
 
 type Builtin = {
   key: string;
@@ -66,8 +67,14 @@ function RulesTab({
   const [editing, setEditing] = useState<Rule | "new" | null>(null);
   const [error, setError] = useState("");
 
+  // one request per rule at a time, so a double click cannot race
+  const [busy, setBusy] = useState<string | null>(null);
   async function act(r: Rule, method: "PATCH" | "DELETE", body?: unknown) {
+    if (method === "DELETE" && !confirm(`Delete rule ${r.name}? Its run history is deleted too.`))
+      return;
+    setBusy(r.id);
     const res = await call(`/api/v1/automations/rules/${r.id}`, method, body);
+    setBusy(null);
     setError(res.ok ? "" : errorText(res));
     reload();
   }
@@ -108,7 +115,7 @@ function RulesTab({
                       type="checkbox"
                       aria-label={`Enable ${r.name}`}
                       checked={r.enabled}
-                      disabled={!canEdit}
+                      disabled={!canEdit || busy === r.id}
                       onChange={(e) => void act(r, "PATCH", { enabled: e.target.checked })}
                     />
                   </td>
@@ -214,12 +221,14 @@ function RunsTab({ rules }: { rules: Rule[] | null }) {
   const [next, setNext] = useState<string | null>(null);
   const [error, setError] = useState("");
   const id = ruleId || rules?.[0]?.id || "";
+  const current = useRef(id);
 
   const load = useCallback(
     async (cursor?: string) => {
       if (!id) return;
-      const q = cursor ? `?cursor=${cursor}` : "";
+      const q = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
       const r = await call(`/api/v1/automations/rules/${id}/runs${q}`, "GET");
+      if (id !== current.current) return; // the selection moved on
       if (!r.ok) return setError(errorText(r));
       setError("");
       setRuns((old) => [...(cursor ? (old ?? []) : []), ...(r.json.runs as Run[])]);
@@ -228,8 +237,11 @@ function RunsTab({ rules }: { rules: Rule[] | null }) {
     [id],
   );
   useEffect(() => {
+    current.current = id;
+    setRuns(null);
+    setNext(null);
     void load();
-  }, [load]);
+  }, [id, load]);
 
   if (rules && !rules.length)
     return <p className="text-sm text-muted-foreground">No rules yet, so nothing has run.</p>;

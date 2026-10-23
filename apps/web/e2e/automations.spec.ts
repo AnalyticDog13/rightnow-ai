@@ -61,4 +61,14 @@ test("a rule created in the UI runs on a reply; built-ins show their reasons", a
   await expect(builtin.getByText("Locked", { exact: true })).toHaveCount(5);
   await expect(builtin).toContainText("an unsubscribe is always honored");
   await expect(builtin.getByLabel("Enabled")).toBeChecked();
+
+  // deleting a rule asks first; dismissing keeps it, accepting removes it
+  await page.goto("/automations");
+  const del = page.getByRole("button", { name: "Delete E2E reply task" });
+  page.once("dialog", (d) => void d.dismiss());
+  await del.click();
+  await expect(page.getByRole("table", { name: "Rules" })).toContainText("E2E reply task");
+  page.once("dialog", (d) => void d.accept());
+  await del.click();
+  await expect(page.getByRole("table", { name: "Rules" })).toHaveCount(0);
 });

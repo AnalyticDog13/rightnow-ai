@@ -23,7 +23,6 @@ export function CrmClient({
   isAdmin,
   currency,
   currencyLocked,
-
   timezone,
 }: {
   initial: BoardData | null;
@@ -35,7 +34,6 @@ export function CrmClient({
   isAdmin: boolean;
   currency: string;
   currencyLocked: boolean;
-
   timezone: string;
 }) {
   const sp = useSearchParams();
