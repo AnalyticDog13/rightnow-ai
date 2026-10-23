@@ -630,16 +630,28 @@
    "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-5.md; tests listed there pass"
   },
   {
-   "id": "P6-T01",
+   "id": "P6-T01a",
    "phase": 6,
-   "title": "CRM backend (stages, opportunities unique per lead+campaign, value, cashCollected, tasks, reminders, notes, owner, activity, attribution)",
+   "title": "CRM backend: pipeline stages, opportunities unique per lead+campaign, value, cashCollected, owner, attribution, interest-to-stage hook (savepoint in reply ingest), CRM events",
    "status": "todo",
    "deps": [
     "P5-T08"
    ],
+   "model": "opus",
+   "commit": null,
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-6.md (incl. Revision 2); tests listed there pass"
+  },
+  {
+   "id": "P6-T01b",
+   "phase": 6,
+   "title": "CRM backend: tasks, reminders, notes/logged calls, activity history, lead timeline",
+   "status": "todo",
+   "deps": [
+    "P6-T01a"
+   ],
    "model": "sonnet",
    "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-6.md; tests listed there pass"
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-6.md (incl. Revision 2); tests listed there pass"
   },
   {
    "id": "P6-T02",
@@ -647,35 +659,35 @@
    "title": "CRM UI (accessible Kanban, opportunity drawer, tasks)",
    "status": "todo",
    "deps": [
-    "P6-T01"
+    "P6-T01b"
    ],
    "model": "sonnet",
    "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-6.md; tests listed there pass"
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-6.md (incl. Revision 2); tests listed there pass"
   },
   {
    "id": "P6-T03",
    "phase": 6,
-   "title": "Analytics queries (campaign/account/variant/step/segment/date; capacity; revenue per lead; conversion; exact fixtures)",
+   "title": "Analytics, dashboard and export queries (campaign/account/variant/step/segment/date; capacity; revenue per lead; conversion; exact fixtures)",
    "status": "todo",
    "deps": [
     "P6-T02"
    ],
-   "model": "sonnet",
+   "model": "opus",
    "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-6.md; tests listed there pass"
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-6.md (incl. Revision 2); tests listed there pass"
   },
   {
    "id": "P6-T04",
    "phase": 6,
-   "title": "Dashboard + Analytics pages + CSV export",
+   "title": "Dashboard + Analytics pages + CSV export (UI)",
    "status": "todo",
    "deps": [
     "P6-T03"
    ],
    "model": "sonnet",
    "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-6.md; tests listed there pass"
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-6.md (incl. Revision 2); tests listed there pass"
   },
   {
    "id": "P7-T01",
