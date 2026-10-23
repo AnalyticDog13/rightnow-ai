@@ -1,7 +1,7 @@
 # Handoff
 
 **Phase:** 7 — Advanced features (in progress, branch `phase-7-advanced`). Phase 6 DONE and merged to `main` (114d0ab).
-**Current task:** P7-T01a (automation engine + event outbox — opus) dispatched. Plan `docs/plans/phase-7.md` + Revision 2 (24 rows, binding) approved de83c85; review `docs/plans/phase-7-review.md`. Order: T01a T01b T02a T02b T03a T03b T04 T05a T05b T06a T06b T07a T07b T09 T08a T08b, strictly sequential (low RAM). Ledger `.superpowers/sdd/phase-7/progress.md`.
+**Current task:** P7-T01b (automation routes + Automations page — sonnet) implemented 29d929f, in review. Done: P7-T01a dff21db. Plan `docs/plans/phase-7.md` + Revision 2 (binding). Order: T01b T02a T02b T03a T03b T04 T05a T05b T06a T06b T07a T07b T09 T08a T08b, sequential (low RAM). `jobs/retention.ts` (Fixed names) not yet created → T03a creates it (R13). Ledger `.superpowers/sdd/phase-7/progress.md`.
 **Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 (approved). Done step plans: `docs/plans/phase-1.md` … `phase-5.md` (+ `phase-4-review.md`, `phase-5-review.md`).
 **Tests:** ~1290 vitest + Playwright (auth, accounts*, campaign-create, deliverability, inbox, leads, test-send …) green; CI `check`, `compose-smoke`, `imap-real` green. Parity: 208/316 ticked.
 
