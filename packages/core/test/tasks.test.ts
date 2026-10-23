@@ -6,6 +6,7 @@ import { createOpportunity, deleteOpportunity, updateOpportunity } from "../src/
 import { ensureStages } from "../src/crm/stages";
 import { createTask, deleteTask, listTasks, updateTask } from "../src/crm/tasks";
 import { gdprDeleteLead, mergeLeads } from "../src/leads/service";
+import { leadTimeline } from "../src/leads/timeline";
 import { createNote } from "../src/mail/inbox-library";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
@@ -234,20 +235,89 @@ describe("tasks", () => {
     expect((await crmActivity(P(), w, {})).items.filter((i) => i.kind === "stage")).toHaveLength(2);
 
     // a deleted deal keeps its history in the lead feed (Rev 2 M10)
-    await deleteOpportunity(P(), w, "u1", opp.id);
+    await deleteOpportunity(P(), w, "u1", opp.id, fixedClock(at(8)));
     const after = await crmActivity(P(), w, { leadId: l.id });
-    // the delete audit is stamped with the real clock, far after the fixture's days
     expect(after.items.map((i) => i.kind)).toEqual([
+      "opportunity",
       "task",
       "stage",
       "opportunity",
       "reply",
       "call",
       "note",
-      "opportunity",
     ]);
-    expect(after.items[6]!.detail).toMatchObject({ action: "opportunity.delete" });
+    expect(after.items[0]!.detail).toMatchObject({ action: "opportunity.delete" });
+    // the deleted deal's own feed still answers (lead taken from its audit rows); unknown and foreign ids give an empty feed
+    const gone = await crmActivity(P(), w, { opportunityId: opp.id });
+    expect(gone.items.map((i) => i.kind)).toEqual(after.items.map((i) => i.kind));
+    expect((await crmActivity(P(), w, { opportunityId: "nope" })).items).toEqual([]);
+    const o = await ws();
+    const ol = await lead(o);
+    const os = await ensureStages(P(), o);
+    const oo = await P().opportunity.create({
+      data: { workspaceId: o, leadId: ol.id, stageId: os[0]!.id, title: "x" },
+    });
+    await deleteOpportunity(P(), o, "u1", oo.id, fixedClock(at(9)));
+    expect((await crmActivity(P(), w, { opportunityId: oo.id })).items).toEqual([]);
     await expect(crmActivity(P(), w, { cursor: "garbage" })).rejects.toThrow();
+  });
+
+  test("merged leads keep their CRM history in the kept lead's feed and timeline", async () => {
+    const w = await ws();
+    const c = fixedClock(D("2026-11-05T10:00:00Z"));
+    const [a, b, k] = [await lead(w), await lead(w), await lead(w)];
+    const opp = await createOpportunity(P(), c, w, "u1", { leadId: a.id });
+    const task = await createTask(P(), c, w, "u1", { title: "t", leadId: a.id });
+    await updateTask(P(), c, w, "u1", task.id, { status: "DONE" });
+    const kinds = async (id: string) =>
+      (await crmActivity(P(), w, { leadId: id })).items.map((i) => i.kind).sort();
+    const before = await kinds(a.id);
+    expect(before).toEqual(["opportunity", "task", "task"]);
+    await mergeLeads(P(), c, w, { keepId: b.id, mergeId: a.id }, "u1");
+    expect(await kinds(b.id)).toEqual(before);
+    await mergeLeads(P(), c, w, { keepId: k.id, mergeId: b.id }, "u1"); // chained: a into b into k
+    expect(await kinds(k.id)).toEqual(before);
+    expect(await kinds(await lead(w).then((x) => x.id))).toEqual([]);
+    const tl = await leadTimeline(P(), w, k.id);
+    expect(tl.filter((e) => e.kind === "opportunity")).toHaveLength(1);
+    expect((await crmActivity(P(), w, { opportunityId: opp.id })).items).toHaveLength(1);
+  });
+
+  test("today and overdue follow the local day across DST changes", async () => {
+    const w = await ws("America/New_York");
+    const mk = (iso: string) =>
+      P().task.create({ data: { workspaceId: w, title: iso, dueAt: D(iso) } });
+    const bucket = async (now: string) => {
+      const r: Record<string, string[]> = {};
+      for (const due of ["overdue", "today", "upcoming"])
+        r[due] = (await listTasks(P(), w, { due }, D(now))).map((t) => t.title);
+      return r;
+    };
+    // spring forward 2026-03-08: a 23 hour day, 05:00Z to 04:00Z
+    for (const iso of [
+      "2026-03-08T04:59:00Z",
+      "2026-03-08T05:00:00Z",
+      "2026-03-09T03:59:00Z",
+      "2026-03-09T04:00:00Z",
+    ])
+      await mk(iso);
+    expect(await bucket("2026-03-08T15:00:00Z")).toEqual({
+      overdue: ["2026-03-08T04:59:00Z"],
+      today: ["2026-03-08T05:00:00Z", "2026-03-09T03:59:00Z"],
+      upcoming: ["2026-03-09T04:00:00Z"],
+    });
+    // fall back 2026-11-01: a 25 hour day, 04:00Z to 05:00Z next day
+    for (const iso of [
+      "2026-11-01T03:59:00Z",
+      "2026-11-01T04:00:00Z",
+      "2026-11-02T04:59:00Z",
+      "2026-11-02T05:00:00Z",
+    ])
+      await mk(iso);
+    const fall = await bucket("2026-11-01T12:00:00Z");
+    expect(fall.overdue).toContain("2026-11-01T03:59:00Z");
+    expect(fall.today).toEqual(["2026-11-01T04:00:00Z", "2026-11-02T04:59:00Z"]);
+    expect(fall.upcoming).toEqual(["2026-11-02T05:00:00Z"]);
   });
 
   test("cascade and merge", async () => {

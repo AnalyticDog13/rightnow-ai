@@ -179,6 +179,31 @@ describe("task routes", () => {
     });
   });
 
+  it("activity for a deleted, unknown or foreign deal is not a 500", async () => {
+    const { createOpportunity, systemClock, ensureStages } = await import("@rightnow/core");
+    const l = await lead();
+    const o = await createOpportunity(db.prisma, systemClock, workspaceId, "u", { leadId: l.id });
+    const other = await db.prisma.workspace.create({ data: { name: "Y", slug: "y-act" } });
+    const st = (await ensureStages(db.prisma, other.id))[0]!;
+    const fo = await db.prisma.opportunity.create({
+      data: {
+        workspaceId: other.id,
+        leadId: (await lead(other.id)).id,
+        stageId: st.id,
+        title: "f",
+      },
+    });
+    await db.prisma.opportunity.delete({ where: { id: o.id } });
+    const feed = async (id: string) => {
+      const r = await activity.GET(req("GET", `crm/activity?opportunityId=${id}`));
+      expect(r.status).toBe(200);
+      return ((await json(r)).items as unknown[]).length;
+    };
+    expect(await feed(o.id)).toBeGreaterThan(0); // history survives the deal
+    expect(await feed("nope")).toBe(0);
+    expect(await feed(fo.id)).toBe(0);
+  });
+
   it("notes: a kind is accepted, a bad one is 400", async () => {
     const l = await lead();
     const post = (b: unknown) => notes.POST(req("POST", "inbox/notes", b));

@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@rightnow/db/client";
+import { leadFamily } from "../crm/activity";
 import { hashValue } from "./suppression";
 
 export type TimelineEntry = {
@@ -29,6 +30,7 @@ export async function leadTimeline(
 ): Promise<TimelineEntry[]> {
   const lead = await prisma.lead.findFirst({ where: { id: leadId, workspaceId: ws } });
   if (!lead) return [];
+  const family = await leadFamily(prisma, ws, leadId); // merged-away leads' deal history follows the kept lead
   const [job, enrolled, sent, audits, sup, engaged, notes, tasks, deals] = await Promise.all([
     lead.importJobId
       ? prisma.importJob.findFirst({ where: { id: lead.importJobId, workspaceId: ws } })
@@ -75,7 +77,7 @@ export async function leadTimeline(
       where: {
         workspaceId: ws,
         action: { startsWith: "opportunity." },
-        meta: { path: ["leadId"], equals: leadId },
+        OR: family.map((id) => ({ meta: { path: ["leadId"], equals: id } })),
       },
     }),
   ]);

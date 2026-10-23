@@ -8,7 +8,7 @@ import {
 import { z } from "zod";
 import { AccountError } from "../accounts/service";
 import { audit } from "../audit";
-import type { Clock } from "../clock";
+import { systemClock, type Clock } from "../clock";
 import { isRetryable } from "../dispatch";
 import { assertMembers } from "../leads/service";
 import { recordEvent } from "../mail/events";
@@ -560,6 +560,7 @@ export async function deleteOpportunity(
   ws: string,
   actor: Actor,
   id: string,
+  clock: Clock = systemClock,
 ) {
   await prisma.$transaction(async (tx) => {
     const o = await tx.opportunity.findFirst({
@@ -568,8 +569,14 @@ export async function deleteOpportunity(
     });
     if (!o) throw notFound();
     await tx.opportunity.deleteMany({ where: { id, workspaceId: ws } });
-    await audit(tx, { workspaceId: ws, actorId: actor }, "opportunity.delete", id, {
-      leadId: o.leadId,
-    });
+    await audit(
+      tx,
+      { workspaceId: ws, actorId: actor, at: clock.now() },
+      "opportunity.delete",
+      id,
+      {
+        leadId: o.leadId,
+      },
+    );
   });
 }

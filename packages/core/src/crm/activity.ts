@@ -32,6 +32,17 @@ type Row = {
   detail: Record<string, unknown> | null;
 };
 
+/** The lead and every lead merged into it (directly or through a chain): audit rows keep the id they were written with. */
+export async function leadFamily(db: Db, ws: string, leadId: string): Promise<string[]> {
+  const rows = await db.$queryRaw<{ id: string }[]>`
+    WITH RECURSIVE f AS (
+      SELECT "id" FROM "Lead" WHERE "id" = ${leadId} AND "workspaceId" = ${ws}
+      UNION
+      SELECT l."id" FROM "Lead" l JOIN f ON l."mergedIntoId" = f."id" WHERE l."workspaceId" = ${ws}
+    ) SELECT "id" FROM f`;
+  return rows.map((r) => r.id);
+}
+
 /**
  * D41, PS-CRM-01 "Inbox": the lead's notes (call, sms and meeting logs too), REPLY Events and the `opportunity.*` / `task.*`
  * audit rows, newest first, keyset on (at, id). One UNION so the page boundary is exact even when timestamps tie.
@@ -54,28 +65,37 @@ export async function crmActivity(
 
   // a deal's feed shows that deal's history plus its lead's notes and replies; a deleted deal has only its history
   let leadId = f.leadId;
-  if (f.opportunityId && !leadId)
-    leadId = (
-      await db.opportunity.findFirst({
-        where: { id: f.opportunityId, workspaceId: ws },
-        select: { leadId: true },
-      })
-    )?.leadId;
-  const noLead = f.opportunityId && !leadId; // nothing of the lead to show
-  const noteLead = leadId ? Prisma.sql`AND n."leadId" = ${leadId}` : Prisma.empty;
-  const replyLead = leadId ? Prisma.sql`AND e."leadId" = ${leadId}` : Prisma.empty;
+  if (f.opportunityId && !leadId) {
+    const o = await db.opportunity.findFirst({
+      where: { id: f.opportunityId, workspaceId: ws },
+      select: { leadId: true },
+    });
+    // a deleted deal: its audit rows still name the lead
+    const gone = o
+      ? null
+      : await db.auditLog.findFirst({
+          where: { workspaceId: ws, target: f.opportunityId, action: "opportunity.delete" },
+          select: { meta: true },
+        });
+    const m = gone?.meta as { leadId?: unknown } | null | undefined;
+    leadId = o?.leadId ?? (typeof m?.leadId === "string" ? m.leadId : undefined);
+  }
+  const noLead = f.opportunityId && !leadId; // nothing of a lead to show
+  const family = leadId ? await leadFamily(db, ws, leadId) : [];
+  const noteLead = leadId ? Prisma.sql`AND n."leadId" = ANY(${family})` : Prisma.empty;
+  const replyLead = leadId ? Prisma.sql`AND e."leadId" = ANY(${family})` : Prisma.empty;
   const auditScope = f.opportunityId
     ? Prisma.sql`AND ((a."action" LIKE 'opportunity.%' AND a."target" = ${f.opportunityId})
         OR (a."action" LIKE 'task.%' AND a."meta"->>'opportunityId' = ${f.opportunityId}))`
     : leadId
-      ? Prisma.sql`AND a."meta"->>'leadId' = ${leadId}`
+      ? Prisma.sql`AND a."meta"->>'leadId' = ANY(${family})`
       : Prisma.empty;
 
   const rows = await db.$queryRaw<Row[]>`
     SELECT * FROM (
       ${
         noLead
-          ? Prisma.sql`SELECT NULL::text AS id, NULL::timestamp AS "at", NULL AS src, NULL AS kind, NULL AS actor, NULL AS "leadId", NULL AS "oppId", NULL::jsonb AS detail WHERE false`
+          ? Prisma.empty
           : Prisma.sql`
       SELECT n."id", n."createdAt" AS "at", 'note' AS src, n."kind", n."authorId" AS actor, n."leadId", NULL AS "oppId",
         jsonb_build_object('body', n."body") AS detail
@@ -86,9 +106,9 @@ export async function crmActivity(
       FROM "Event" e WHERE e."workspaceId" = ${ws} AND e."type" = 'REPLY' AND e."leadId" IS NOT NULL ${replyLead}
       UNION ALL`
       }
-      SELECT a."id", a."createdAt", 'audit', a."action", a."actorId", a."meta"->>'leadId',
-        CASE WHEN a."action" LIKE 'opportunity.%' THEN a."target" ELSE a."meta"->>'opportunityId' END,
-        COALESCE(a."meta", '{}'::jsonb) || jsonb_build_object('target', a."target")
+      SELECT a."id", a."createdAt" AS "at", 'audit' AS src, a."action" AS kind, a."actorId" AS actor, a."meta"->>'leadId' AS "leadId",
+        CASE WHEN a."action" LIKE 'opportunity.%' THEN a."target" ELSE a."meta"->>'opportunityId' END AS "oppId",
+        COALESCE(a."meta", '{}'::jsonb) || jsonb_build_object('target', a."target") AS detail
       FROM "AuditLog" a
       WHERE a."workspaceId" = ${ws} AND (a."action" LIKE 'opportunity.%' OR a."action" LIKE 'task.%') ${auditScope}
     ) u ${after}

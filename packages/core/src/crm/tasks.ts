@@ -2,7 +2,7 @@ import type { Prisma, PrismaClient, Task } from "@rightnow/db/client";
 import { z } from "zod";
 import { AccountError } from "../accounts/service";
 import { audit } from "../audit";
-import type { Clock } from "../clock";
+import { systemClock, type Clock } from "../clock";
 import { assertMembers } from "../leads/service";
 import { localMidnightUtc, startOfNextDay } from "../schedule";
 
@@ -185,11 +185,23 @@ export function updateTask(
   });
 }
 
-export function deleteTask(prisma: PrismaClient, ws: string, actor: Actor, taskId: string) {
+export function deleteTask(
+  prisma: PrismaClient,
+  ws: string,
+  actor: Actor,
+  taskId: string,
+  clock: Clock = systemClock,
+) {
   return prisma.$transaction(async (tx) => {
     const t = await tx.task.findFirst({ where: { id: taskId, workspaceId: ws } });
     if (!t || !(await tx.task.deleteMany({ where: { id: taskId, workspaceId: ws } })).count)
       throw notFound();
-    await audit(tx, { workspaceId: ws, actorId: actor }, "task.delete", taskId, meta(t));
+    await audit(
+      tx,
+      { workspaceId: ws, actorId: actor, at: clock.now() },
+      "task.delete",
+      taskId,
+      meta(t),
+    );
   });
 }
