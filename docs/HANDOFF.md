@@ -1,7 +1,7 @@
 # Handoff
 
 **Phase:** 6 — CRM & analytics (next). Phase 5 (deliverability, warm-up, re-warm-up) DONE and merged to `main`.
-**Current task:** P6-T03 (analytics, dashboard and export queries — opus). Done: P6-T01a 2f2ebbc, P6-T01b 3eaa45c, P6-T02 ff1097a. Order: T03 → T04 → gate. Ledger `.superpowers/sdd/phase-6/progress.md`.
+**Current task:** P6-T03 (analytics queries — opus) IMPLEMENTED 168c77d, CI green, NOT YET REVIEWED → next: review package d1bc7f5..168c77d, opus task reviewer, fix rounds (fresh opus implementer), docs commit. Then T04 → gate. Done: P6-T01a 2f2ebbc, P6-T01b 3eaa45c, P6-T02 ff1097a. Ledger `.superpowers/sdd/phase-6/progress.md`.
 **Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 (approved). Done step plans: `docs/plans/phase-1.md` … `phase-5.md` (+ `phase-4-review.md`, `phase-5-review.md`).
 **Tests:** ~1290 vitest + Playwright (auth, accounts*, campaign-create, deliverability, inbox, leads, test-send …) green; CI `check`, `compose-smoke`, `imap-real` green. Parity: 208/316 ticked.
 
