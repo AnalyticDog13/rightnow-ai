@@ -1131,6 +1131,31 @@ describe("fix round 1", () => {
     });
   });
 
+  test("a custom field named like a conditional standard field never reaches the receiver as one", async () => {
+    const w = await world();
+    const spoof = {
+      step: 99,
+      variant: 9,
+      is_first: true,
+      email_id: "x",
+      email_subject: "x",
+      email_text: "x",
+      email_html: "x",
+      unibox_url: "http://evil.test",
+      email_account: "evil@x.test",
+      reply_text: "x",
+      reply_subject: "x",
+      reply_html: "x",
+      reply_text_snippet: "x",
+      plan: "pro",
+    };
+    await P().lead.update({ where: { id: w.lead.id }, data: { customFields: spoof } });
+    const e = await ev(w, "OPEN", { leadId: w.lead.id, campaignId: w.campaign.id });
+    const p = await P().$transaction((tx) => buildPayload(tx, e, "https://a.test"));
+    expect(p).toMatchObject({ plan: "pro" });
+    for (const k of Object.keys(spoof).filter((k) => k !== "plan")) expect(p).not.toHaveProperty(k);
+  });
+
   test("I3: listDeliveries strips reply and body fields for an API key without inbox:read", async () => {
     const w = await world({ leads: 0 });
     const W = await hook(w, ["all_events"]);

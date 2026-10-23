@@ -1,4 +1,4 @@
-import { listCampaigns, listLists } from "@rightnow/core";
+import { listCampaigns, listLabels, listLists, WEBHOOK_EVENTS } from "@rightnow/core";
 import { prisma } from "@rightnow/db";
 import type { Metadata } from "next";
 import { headers } from "next/headers";
@@ -13,7 +13,7 @@ export default async function Page() {
   const info = await getSessionInfo(await headers());
   if (!info) redirect("/sign-in");
   const ws = info.workspaceId;
-  const [campaigns, lists, members, accounts, subsequences] = await Promise.all([
+  const [campaigns, lists, members, accounts, subsequences, labels] = await Promise.all([
     listCampaigns(prisma, ws),
     listLists(prisma, ws),
     prisma.member.findMany({
@@ -29,6 +29,7 @@ export default async function Page() {
       where: { campaign: { workspaceId: ws } },
       select: { id: true, name: true, campaign: { select: { name: true } } },
     }),
+    listLabels(prisma, ws),
   ]);
   return (
     <AutomationsClient
@@ -44,6 +45,8 @@ export default async function Page() {
       }}
       canEdit={info.role !== "VIEWER"}
       isAdmin={info.role === "OWNER" || info.role === "ADMIN"}
+      events={WEBHOOK_EVENTS}
+      labels={labels.map((l) => l.name)}
     />
   );
 }

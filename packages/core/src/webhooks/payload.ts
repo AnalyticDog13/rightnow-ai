@@ -15,6 +15,30 @@ const LEAD_FIELDS = [
   ["personalization", "personalization"],
   ["country", "country"],
 ] as const;
+/** Every key the payload sets itself, present or not: a lead custom field with one of these names is dropped, never passed off as standard. */
+export const STANDARD_FIELDS: ReadonlySet<string> = new Set([
+  "event_id",
+  "timestamp",
+  "event_type",
+  "workspace",
+  "campaign_id",
+  "campaign_name",
+  "lead_email",
+  ...LEAD_FIELDS.map(([, out]) => out),
+  "email_account",
+  "unibox_url",
+  "step",
+  "variant",
+  "is_first",
+  "email_id",
+  "email_subject",
+  "email_text",
+  "email_html",
+  "reply_subject",
+  "reply_text",
+  "reply_html",
+  "reply_text_snippet",
+]);
 // M6: a rendered unsubscribe link is a working token; a third party never gets it
 const unsub = (s: string) => s.replace(/[^\s"'<>()]*\/u\/[A-Za-z0-9._~%-]+/g, "[unsubscribe link]");
 
@@ -60,9 +84,11 @@ export async function buildPayload(
       : null,
   ]);
   const custom = lead?.customFields;
-  // custom fields first: neither the envelope nor a standard field can be overridden by one (fix I2)
+  // custom fields never use a standard field's name (fix I2); first, so key order stays stable
   const p: Record<string, unknown> = {
-    ...(custom && typeof custom === "object" && !Array.isArray(custom) ? custom : {}),
+    ...(custom && typeof custom === "object" && !Array.isArray(custom)
+      ? Object.fromEntries(Object.entries(custom).filter(([k]) => !STANDARD_FIELDS.has(k)))
+      : {}),
     event_id: e.id,
     timestamp: e.occurredAt.toISOString(),
     event_type,

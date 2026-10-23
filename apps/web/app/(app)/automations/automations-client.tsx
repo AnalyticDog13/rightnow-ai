@@ -9,7 +9,9 @@ import { Card } from "../../../components/ui/card";
 import { Label } from "../../../components/ui/label";
 import { call, errorText } from "../accounts/api-client";
 import { RuleEditor } from "./rule-editor";
+import { WebhooksTab, type Hook } from "./webhooks-tab";
 import { ACTION_TYPES, TRIGGERS, type Refs, type Rule } from "./rule-meta";
+import { Err, Head, sel } from "./ui";
 
 type Builtin = {
   key: string;
@@ -27,31 +29,8 @@ type Run = {
   error: string | null;
   createdAt: string;
 };
-const sel = "h-10 rounded-md border border-border bg-card px-3 text-sm";
 const humanize = (k: string) => k.charAt(0).toUpperCase() + k.slice(1).replaceAll("_", " ");
 const actionLabel = (t: string) => ACTION_TYPES[t]?.label ?? humanize(t);
-
-function Err({ text }: { text: string }) {
-  return text ? (
-    <p role="alert" className="text-sm text-destructive">
-      {text}
-    </p>
-  ) : null;
-}
-
-function Head({ cols }: { cols: string[] }) {
-  return (
-    <thead>
-      <tr className="border-b border-border">
-        {cols.map((h) => (
-          <th key={h} className="p-3 font-medium">
-            {h}
-          </th>
-        ))}
-      </tr>
-    </thead>
-  );
-}
 
 function RulesTab({
   refs,
@@ -300,24 +279,42 @@ export function AutomationsClient({
   refs,
   canEdit,
   isAdmin,
+  events,
+  labels,
 }: {
-  refs: Refs;
+  refs: Omit<Refs, "webhooks">;
   canEdit: boolean;
   isAdmin: boolean;
+  /** Standard webhook event names and the workspace's label names (both can be subscribed to). */
+  events: string[];
+  labels: string[];
 }) {
   const sp = useSearchParams();
   const first = sp.get("tab");
-  const [tab, setTab] = useState(first === "builtin" || first === "runs" ? first : "rules");
+  const [tab, setTab] = useState(
+    first === "builtin" || first === "runs" || first === "webhooks" ? first : "rules",
+  );
   const [rules, setRules] = useState<Rule[] | null>(null);
+  const [hooks, setHooks] = useState<Hook[] | null>(null);
   const [error, setError] = useState("");
   const reload = useCallback(async () => {
     const r = await call("/api/v1/automations/rules", "GET");
     if (!r.ok) return setError(errorText(r));
     setRules(r.json.rules as Rule[]);
   }, []);
+  const reloadHooks = useCallback(async () => {
+    const r = await call("/api/v1/webhooks", "GET");
+    if (!r.ok) return setError(errorText(r));
+    setHooks(r.json.webhooks as Hook[]);
+  }, []);
   useEffect(() => {
     void reload();
-  }, [reload]);
+    void reloadHooks();
+  }, [reload, reloadHooks]);
+  const allRefs = {
+    ...refs,
+    webhooks: (hooks ?? []).map((h) => ({ id: h.id, name: h.name || h.url })),
+  };
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-2xl font-semibold tracking-tight">Automations</h1>
@@ -328,15 +325,26 @@ export function AutomationsClient({
           { id: "rules", label: "Rules" },
           { id: "builtin", label: "Built-in" },
           { id: "runs", label: "Runs" },
+          { id: "webhooks", label: "Webhooks" },
         ]}
         value={tab}
         onChange={setTab}
       >
         {tab === "rules" && (
-          <RulesTab refs={refs} canEdit={canEdit} rules={rules} reload={() => void reload()} />
+          <RulesTab refs={allRefs} canEdit={canEdit} rules={rules} reload={() => void reload()} />
         )}
         {tab === "builtin" && <BuiltinTab isAdmin={isAdmin} />}
         {tab === "runs" && <RunsTab rules={rules} />}
+        {tab === "webhooks" && (
+          <WebhooksTab
+            hooks={hooks}
+            reload={() => void reloadHooks()}
+            canEdit={canEdit}
+            campaigns={refs.campaigns}
+            events={events}
+            labels={labels}
+          />
+        )}
       </Tabs>
     </div>
   );

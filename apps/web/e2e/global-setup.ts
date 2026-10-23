@@ -24,9 +24,11 @@ export default async function setup() {
     BETTER_AUTH_SECRET: "e2e-better-auth-secret-0123456789abcdef",
     SETUP_TOKEN,
     MAIL_PROVIDER_FAKE: "1",
+    ALLOW_PRIVATE_HTTP_HOSTS: "1", // webhooks may target the _fake/echo route on localhost
     FAKE_MAIL_DIR: mkdtempSync(join(tmpdir(), "rn-e2e-mail-")),
   };
   process.env.E2E_DATABASE_URL = env.DATABASE_URL; // for specs that seed through @rightnow/db
+  Object.assign(process.env, env); // specs that call core services directly (webhook delivery) need the same ENCRYPTION_KEY and APP_URL
   process.env.FAKE_MAIL_DIR = env.FAKE_MAIL_DIR; // ...and deliver into the same Fake mailboxes the server reads
   const next = createRequire(import.meta.url).resolve("next/dist/bin/next");
   const server = spawn(

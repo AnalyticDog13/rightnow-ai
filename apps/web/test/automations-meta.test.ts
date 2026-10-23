@@ -13,6 +13,12 @@ describe("rule editor tables", () => {
     expect(Object.keys(ACTION_TYPES).sort()).toEqual(Object.keys(ACTIONS).sort());
   });
 
+  it("pick the webhook of send_webhook from the workspace's webhooks", () => {
+    expect(ACTION_TYPES.send_webhook!.fields).toEqual([
+      { key: "webhookId", label: "Webhook", kind: "select", source: "webhooks", required: true },
+    ]);
+  });
+
   it("pass an action type the client does not know through unchanged", () => {
     const hook = { type: "future_action", webhookId: "w1", extra: { a: 1 } };
     expect(toAction(toDraft(hook))).toEqual(hook);

@@ -16,7 +16,7 @@ export const TRIGGERS: Record<string, string> = {
   deal_lost: "Deal lost",
 };
 
-export type Source = "campaigns" | "lists" | "subsequences" | "members";
+export type Source = "campaigns" | "lists" | "subsequences" | "members" | "webhooks";
 export type Field = {
   key: string;
   label: string;
@@ -75,10 +75,11 @@ export const ACTION_TYPES: Record<string, { label: string; fields: Field[] }> = 
     label: "Add tag",
     fields: [{ key: "tag", label: "Tag", kind: "text", required: true }],
   },
-  // shortcut: a webhook id typed in, until the Webhooks tab (P7-T02b) adds a "webhooks" select source
   send_webhook: {
     label: "Send webhook",
-    fields: [{ key: "webhookId", label: "Webhook ID", kind: "text", required: true }],
+    fields: [
+      { key: "webhookId", label: "Webhook", kind: "select", source: "webhooks", required: true },
+    ],
   },
 };
 
@@ -102,6 +103,7 @@ export type Refs = {
   subsequences: Named[];
   members: Member[];
   accounts: Named[];
+  webhooks: Named[];
 };
 
 /** Per-action field values are edited as strings and converted on save; an action type this table lacks (raw) passes through unchanged. */

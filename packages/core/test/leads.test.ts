@@ -493,4 +493,15 @@ describe("labels", () => {
     await deleteLabel(db.prisma, ws, lab.id);
     expect((await getLead(db.prisma, ws, l.id)).labels).toEqual([]);
   });
+
+  test("a webhook event name is reserved (R23)", async () => {
+    const reserved = { status: 400, message: "label_name_reserved" };
+    await expect(
+      createLabel(db.prisma, ws, null, { name: "email_sent", color: "#ff0000" }),
+    ).rejects.toMatchObject(reserved);
+    const lab = await createLabel(db.prisma, ws, null, { name: "Fine", color: "#ff0000" });
+    await expect(
+      updateLabel(db.prisma, ws, lab.id, { name: "lead_interested" }),
+    ).rejects.toMatchObject(reserved);
+  });
 });

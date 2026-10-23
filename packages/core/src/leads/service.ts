@@ -8,6 +8,7 @@ import {
   campaignLeadStatusWhere,
 } from "../campaigns/lead-status";
 import { audit } from "../audit";
+import { WEBHOOK_EVENTS } from "../webhooks/events";
 import type { Clock } from "../clock";
 import { companyDomainOf } from "./domain";
 import {
@@ -700,8 +701,15 @@ export const labelInput = z.strictObject({
 export const listLabels = (prisma: Db, ws: string): Promise<LeadLabel[]> =>
   prisma.leadLabel.findMany({ where: { workspaceId: ws }, orderBy: { name: "asc" } });
 
+/** R23: a label name is also a webhook event name, so it may not equal a standard one. */
+const reserved = (name?: string) => {
+  if (name && (name === "all_events" || WEBHOOK_EVENTS.includes(name)))
+    throw new LeadError(400, "label_name_reserved");
+};
+
 export async function createLabel(prisma: Db, ws: string, actorId: Actor, input: unknown) {
   const d = labelInput.partial({ positive: true, aiDescription: true }).parse(input);
+  reserved(d.name);
   try {
     return await prisma.$transaction(async (tx) => {
       const l = await tx.leadLabel.create({ data: { ...d, workspaceId: ws } });
@@ -721,6 +729,7 @@ export async function updateLabel(
   actorId?: Actor,
 ) {
   const p = labelInput.partial().parse(patch);
+  reserved(p.name);
   try {
     return await prisma.$transaction(async (tx) => {
       const cur = await tx.leadLabel.findFirst({ where: { id, workspaceId: ws } });
