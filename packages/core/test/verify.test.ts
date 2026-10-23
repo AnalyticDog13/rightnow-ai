@@ -100,20 +100,31 @@ describe("httpVerifier", () => {
     expect((init.headers as Record<string, string>).authorization).toBe("Bearer k");
     expect(JSON.parse(init.body as string)).toEqual({ email: "a@b.test" });
   });
-  test("valid/invalid/risky/unknown map; an unmapped value, HTTP 500 or a huge body is null", async () => {
+  test("valid/invalid/risky/unknown map to statuses", async () => {
     for (const [s, want] of [
       ["valid", "VERIFIED"],
       ["invalid", "INVALID"],
       ["risky", "RISKY"],
       ["unknown", "NOT_VERIFIED"],
-      ["weird", null],
     ] as const)
       expect(
         await httpVerifier(cfg, reply({ result: { status: s } }), pub).verify("a@b.test", sig()),
       ).toBe(want);
-    expect(await httpVerifier(cfg, reply({}, 500), pub).verify("a@b.test", sig())).toBeNull();
-    const big = vi.fn(async () => new Response("x".repeat(70_000)));
-    expect(await httpVerifier(cfg, big, pub).verify("a@b.test", sig())).toBeNull();
+  });
+  test("every HTTP error status and every malformed 200 is a coded failure, never a silent null", async () => {
+    const code = (f: typeof fetch) =>
+      httpVerifier(cfg, f, pub)
+        .verify("a@b.test", sig())
+        .then(
+          () => "no error",
+          (e: { code?: string }) => e.code,
+        );
+    for (const st of [400, 401, 429, 500, 503])
+      expect(await code(reply({}, st))).toBe(`http_${st}`);
+    expect(await code(reply({ result: { status: "weird" } }))).toBe("bad_status_path");
+    expect(await code(reply({ other: 1 }))).toBe("bad_status_path");
+    expect(await code(vi.fn(async () => new Response("not json")))).toBe("bad_response");
+    expect(await code(vi.fn(async () => new Response("x".repeat(70_000))))).toBe("bad_response");
   });
   test("http:// and private hosts are refused before any fetch", async () => {
     const f = reply({ result: { status: "valid" } });
@@ -296,6 +307,52 @@ describe("queueVerify / runVerify", () => {
     await queueVerify(db.prisma, at(7), ws, "u", [l2.id]);
     await runVerify(db.prisma, at(7), {
       verifierFor: async () => stub({ "fine@f.test": "VERIFIED" }),
+    });
+    expect((await getVerifierSettings(db.prisma, ws)).lastError).toBeUndefined();
+  });
+
+  test("a 500 and a bad statusPath record a lastError and keep the lead queued", async () => {
+    const ws = await mkWs();
+    const cfg = { url: "https://v.example.com/x", apiKey: "k", statusPath: "a" };
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    for (const [res, want] of [
+      [new Response("{}", { status: 500 }), "http_500"],
+      [new Response(JSON.stringify({ z: 1 })), "bad_status_path"],
+    ] as const) {
+      const l = await mkLead(ws, `${want}@h.test`);
+      await queueVerify(db.prisma, clock, ws, "u", [l.id]);
+      await runVerify(db.prisma, clock, {
+        verifierFor: async () =>
+          httpVerifier(
+            cfg,
+            async () => res,
+            async () => ["93.184.216.34"],
+          ),
+      });
+      expect((await status(l.id)).verificationStatus).toBe("PENDING_JOB");
+      expect((await getVerifierSettings(db.prisma, ws)).lastError).toMatchObject({ reason: want });
+    }
+    err.mockRestore();
+  });
+
+  test("a worker shutdown abort is not a verifier failure: attempts unchanged, claim released", async () => {
+    const ws = await mkWs();
+    const l = await mkLead(ws, "abort@a.test", { verificationStatus: "RISKY" });
+    await queueVerify(db.prisma, clock, ws, "u", [l.id]);
+    const ac = new AbortController();
+    const v: EmailVerifier = {
+      kind: "http",
+      verify: async () => {
+        ac.abort();
+        throw new Error("aborted");
+      },
+    };
+    await runVerify(db.prisma, clock, { verifierFor: async () => v, signal: ac.signal });
+    const row = await db.prisma.lead.findUniqueOrThrow({ where: { id: l.id } });
+    expect(row).toMatchObject({
+      verificationStatus: "PENDING_JOB",
+      verifyAttempts: 0,
+      verifyClaimedAt: null,
     });
     expect((await getVerifierSettings(db.prisma, ws)).lastError).toBeUndefined();
   });

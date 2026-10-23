@@ -67,6 +67,9 @@ const MAPPED: Record<string, VerificationStatus> = {
   unknown: "NOT_VERIFIED",
 };
 
+/** An error whose `code` is the short reason shown to the user (never a body or key). */
+const coded = (code: string) => Object.assign(new Error(code), { code });
+
 async function readCapped(res: Response): Promise<string | null> {
   const reader = res.body?.getReader();
   if (!reader) return null;
@@ -107,19 +110,20 @@ export function httpVerifier(
         headers: { "content-type": "application/json", authorization: `Bearer ${cfg.apiKey}` },
         body: JSON.stringify({ email }),
       });
-      // 4xx = our config (bad key, wrong path), a failure the user must see; 5xx = the vendor has no answer
-      if (res.status >= 400 && res.status < 500) throw new Error(`http_${res.status}`);
-      if (!res.ok) return null;
+      // any error status or malformed answer is a visible failure (retry, backoff, lastError), never a quiet "no answer"
+      if (res.status >= 400) throw coded(`http_${res.status}`);
       const text = await readCapped(res);
-      if (text === null) return null;
+      if (text === null) throw coded("bad_response");
       let v: unknown;
       try {
         v = JSON.parse(text);
       } catch {
-        return null;
+        throw coded("bad_response");
       }
       for (const k of cfg.statusPath.split(".")) v = (v as Record<string, unknown> | null)?.[k];
-      return typeof v === "string" ? (MAPPED[v.toLowerCase()] ?? null) : null;
+      const status = typeof v === "string" ? MAPPED[v.toLowerCase()] : undefined;
+      if (!status) throw coded("bad_status_path");
+      return status;
     },
   };
 }
@@ -196,6 +200,14 @@ export async function runVerify(
           );
           answered++;
         } catch (e) {
+          if (deps.signal?.aborted) {
+            // worker shutdown, not the verifier's fault: release the claim, count nothing
+            await prisma.lead.updateMany({
+              where: { id: l.id, workspaceId: ws, verificationStatus: "PENDING_JOB" },
+              data: { verifyClaimedAt: null },
+            });
+            return;
+          }
           threw = true;
           failure ??= reasonOf(e);
         }
