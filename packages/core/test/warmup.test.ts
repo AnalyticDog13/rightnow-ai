@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { EmailAccount, WarmupSettings } from "@rightnow/db/client";
 import { createTestDb } from "@rightnow/db/test-db";
 import { buildMime, getFakeProvider, newMessageId } from "@rightnow/providers";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { fixedClock } from "../src/clock";
 import { updateWarmup } from "../src/deliverability/warmup-settings";
 import { healthInputs } from "../src/deliverability/health";
@@ -27,7 +27,10 @@ const FAKE = { MAIL_PROVIDER_FAKE: "1" as const };
 const MIN = 60_000;
 const DAY = 86_400_000;
 const TUE_8 = new Date("2026-10-20T08:00:00Z"); // a Tuesday
-const syncDeps: SyncDeps = { providerFor, env: { SYNC_POLL_SEC: 120, SYNC_MAX_STALENESS_SEC: 300 } };
+const syncDeps: SyncDeps = {
+  providerFor,
+  env: { SYNC_POLL_SEC: 120, SYNC_MAX_STALENESS_SEC: 300 },
+};
 
 let n = 0;
 /** A workspace with an ACTIVE campaign (one lead) and `count` connected, warm-up-enabled mailboxes on different domains. */
@@ -92,6 +95,26 @@ async function world(
 const rows = (where: object) =>
   P().warmupMessage.findMany({ where, orderBy: { createdAt: "asc" } });
 const set = (accountId: string) => P().warmupSettings.findUniqueOrThrow({ where: { accountId } });
+
+type Args = { data?: { fromAccountId?: string }; where?: { toAccountId?: unknown } };
+/** The test DB's client with one `warmupMessage` method replaced (`f` gets the real method). */
+const hooked = (
+  method: "create" | "count",
+  f: (real: (a: Args) => Promise<unknown>, a: Args) => Promise<unknown>,
+) => {
+  const real = P();
+  const m = real.warmupMessage as unknown as Record<string, (a: Args) => Promise<unknown>>;
+  const wrapped = new Proxy(m, {
+    get: (t, k) => (k === method ? (a: Args) => f(t[k]!.bind(t), a) : Reflect.get(t, k)),
+  });
+  return new Proxy(real, {
+    get: (t, k) => {
+      if (k === "warmupMessage") return wrapped;
+      const v = Reflect.get(t, k);
+      return typeof v === "function" ? v.bind(t) : v;
+    },
+  });
+};
 
 const base = (o: Partial<WarmupSettings> = {}) =>
   ({
@@ -611,6 +634,75 @@ describe("warmupTick", () => {
       status: "FAILED",
       error: "abandoned",
     });
+  });
+});
+
+describe("warmupTick: gate fixes", () => {
+  test("G-I2: 100+ unlocatable old rows of any kind leave the queue; a newer row is still located", async () => {
+    const w = await world(3);
+    const { A, B, C } = w;
+    await P().emailAccount.update({ where: { id: C.id }, data: { status: "DISCONNECTED" } });
+    const at = (ms: number) => new Date(w.clock.now().getTime() - ms);
+    const row = (to: string, sentAt: Date, i: number) => ({
+      workspaceId: w.ws,
+      fromAccountId: A.id,
+      toAccountId: to,
+      kind: "SEND" as const,
+      status: "SENT" as const,
+      rfcMessageId: `<old-${i}-${w.ws}@x.test>`,
+      subject: "s",
+      dueAt: sentAt,
+      sentAt,
+    });
+    await P().warmupMessage.createMany({
+      data: Array.from({ length: 100 }, (_, i) => row(C.id, at(2 * DAY + i * MIN), i)),
+    });
+    const fresh = await P().warmupMessage.create({ data: row(B.id, at(2 * 60 * MIN), 999) });
+    await w.tick();
+    expect(await P().warmupMessage.findUniqueOrThrow({ where: { id: fresh.id } })).toMatchObject({
+      landedFolder: "MISSING", // located: the Fake has no such message
+    });
+    expect(
+      await P().warmupMessage.count({
+        where: { toAccountId: C.id, landedFolder: "MISSING", checkedAt: { not: null } },
+      }),
+    ).toBe(100);
+  });
+
+  test("G-M7: one mailbox's failure does not stop the others or the locate step", async () => {
+    const w = await world(2);
+    const { A, B } = w;
+    const faulty = hooked("create", (create, a) =>
+      a.data?.fromAccountId === A.id ? Promise.reject(new Error("boom")) : create(a),
+    );
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect(await warmupTick(faulty, w.clock, { providerFor, env: FAKE })).toMatchObject({
+        sent: 1,
+      });
+      expect(err).toHaveBeenCalledWith(expect.stringContaining(A.id), expect.any(Error));
+    } finally {
+      err.mockRestore();
+    }
+    expect(await rows({ fromAccountId: B.id })).toHaveLength(1);
+  });
+
+  test("A-7: peer ranking is one grouped query per tick, not one count per sender and peer", async () => {
+    const w = await world(5);
+    let perPeer = 0;
+    const counting = hooked("count", (count, a) => {
+      if (a.where?.toAccountId) perPeer++;
+      return count(a);
+    });
+    await warmupTick(counting, w.clock, { providerFor, env: FAKE });
+    expect(perPeer).toBe(0);
+    const got = await P().warmupMessage.groupBy({
+      by: ["toAccountId"],
+      where: { workspaceId: w.ws },
+      _count: true,
+    });
+    expect(got.reduce((t, g) => t + g._count, 0)).toBe(5);
+    expect(Math.max(...got.map((g) => g._count))).toBeLessThanOrEqual(2); // still spread over the peers
   });
 });
 

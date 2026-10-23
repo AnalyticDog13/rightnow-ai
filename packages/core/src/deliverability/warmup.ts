@@ -292,22 +292,34 @@ export async function warmupTick(
     return true;
   };
 
-  const received = async (peer: Live) =>
-    prisma.warmupMessage.count({
-      where: {
-        toAccountId: peer.accountId,
-        kind: { in: ["SEND", "REPLY"] },
-        status: { not: "FAILED" },
-        dueAt: {
-          gte: localMidnightUtc(dayKey(peer.account.timezone, now), peer.account.timezone),
-          lte: now,
-        },
-      },
-    });
+  // A-7: what each mailbox received on its own local day, in one statement; senders below add their picks to it
+  const received = new Map(
+    (live.length
+      ? await prisma.$queryRaw<{ id: string; n: number }[]>`
+          SELECT m."toAccountId" AS id, count(*)::int AS n
+          FROM "WarmupMessage" m
+          JOIN unnest(${live.map((p) => p.accountId)}::text[],
+            ${live.map((p) => localMidnightUtc(dayKey(p.account.timezone, now), p.account.timezone).toISOString())}::timestamp[]) AS p(id, since)
+            ON p.id = m."toAccountId"
+          WHERE m.kind IN ('SEND', 'REPLY') AND m.status <> 'FAILED'
+            AND m."dueAt" >= p.since AND m."dueAt" <= ${now.toISOString()}::timestamp
+          GROUP BY m."toAccountId"`
+      : []
+    ).map((r) => [r.id, r.n]),
+  );
 
-  // (2) due replies, then (3) one new send, per mailbox; (2)+(3) share the day's target and the 600 s spacing
+  // (2) due replies, then (3) one new send, per mailbox; (2)+(3) share the day's target and the 600 s spacing.
+  // One mailbox's failure is logged and skipped; the others and steps (4)+ still run (G-M7).
   await mapLimit(live, 4, async (s) => {
     if (deps.signal?.aborted) return;
+    try {
+      await sendOne(s);
+    } catch (e) {
+      console.error(`warmupTick: account ${s.accountId} skipped this tick`, e);
+    }
+  });
+
+  async function sendOne(s: Live) {
     const a = s.account;
     const win = window(a.timezone, s.weekdaysOnly);
     const target = warmupTarget(s, a, now);
@@ -356,14 +368,13 @@ export async function warmupTick(
       (p) => p.workspaceId === s.workspaceId && p.accountId !== s.accountId,
     );
     const mine = domainOf(a.email);
-    const ranked = await Promise.all(peers.map(async (p) => ({ p, got: await received(p) })));
-    const peer = ranked.sort(
+    const got = (p: Live) => received.get(p.accountId) ?? 0;
+    const peer = peers.sort(
       (x, y) =>
-        Number(domainOf(x.p.account.email) === mine) -
-          Number(domainOf(y.p.account.email) === mine) ||
-        x.got - y.got ||
-        x.p.accountId.localeCompare(y.p.accountId),
-    )[0]?.p;
+        Number(domainOf(x.account.email) === mine) - Number(domainOf(y.account.email) === mine) ||
+        got(x) - got(y) ||
+        x.accountId.localeCompare(y.accountId),
+    )[0];
     if (!peer) return;
     // shortcut: window end taken as local 20:00 by plain addition, an hour off on a DST-change day
     const secLeft = Math.max(
@@ -376,6 +387,7 @@ export async function warmupTick(
       data: { nextAt: new Date(now.getTime() + gap * 1000) },
     });
     if (!claim.count) return;
+    received.set(peer.accountId, got(peer) + 1);
     const row = await prisma.warmupMessage.create({
       data: {
         workspaceId: s.workspaceId,
@@ -390,8 +402,14 @@ export async function warmupTick(
       },
     });
     if (await send(a, peer.account.email, row)) out.sent++;
-  });
+  }
 
+  // a message not located within 24 h (recipient disconnected, deleted, needs attention; locate keeps failing) is
+  // MISSING, so it leaves the oldest-first queue below and a placement test can finish (G-I2)
+  await prisma.warmupMessage.updateMany({
+    where: { status: "SENT", landedFolder: null, sentAt: { lte: ago(DAY) } },
+    data: { landedFolder: "MISSING", checkedAt: now },
+  });
   // (4) where did it land: INBOX is seen by sync; anything else is asked once, from the recipient's mailbox
   const stale = await prisma.warmupMessage.findMany({
     where: {
@@ -437,17 +455,8 @@ export async function warmupTick(
       out.located += w.count;
     } catch (e) {
       if (e instanceof AuthError) await recordProviderError(prisma, clock, acct.id, e);
+      else console.error(`warmupTick: locate ${r.id} failed (${codeOf(e)})`);
     }
-  });
-  // a seed that could not be located within 24 h (disconnected, needs attention) is MISSING, so the test can finish
-  await prisma.warmupMessage.updateMany({
-    where: {
-      kind: "PLACEMENT",
-      status: "SENT",
-      landedFolder: null,
-      sentAt: { lte: ago(24 * 60 * MIN) },
-    },
-    data: { landedFolder: "MISSING", checkedAt: now },
   });
   // a placement test is finished once every seed row has a folder or failed (D37)
   await prisma.$executeRaw`UPDATE "PlacementTest" t SET "finishedAt" = ${now}
