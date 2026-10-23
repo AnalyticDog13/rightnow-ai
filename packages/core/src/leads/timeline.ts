@@ -14,11 +14,14 @@ export type TimelineEntry = {
     | "opened"
     | "clicked"
     | "replied"
-    | "bounced";
+    | "bounced"
+    | "note"
+    | "task"
+    | "opportunity";
   detail: Record<string, unknown>;
 };
 
-/** PS-LEAD-19 (P3 part): everything that happened to a lead, newest first. P4 adds opens, clicks, replies, bounces and unsubscribes (Event), P6 notes/tasks. */
+/** PS-LEAD-19 (P3 part): everything that happened to a lead, newest first. P4 adds opens, clicks, replies, bounces and unsubscribes (Event), P6 notes, tasks and deals. */
 export async function leadTimeline(
   prisma: PrismaClient,
   ws: string,
@@ -26,7 +29,7 @@ export async function leadTimeline(
 ): Promise<TimelineEntry[]> {
   const lead = await prisma.lead.findFirst({ where: { id: leadId, workspaceId: ws } });
   if (!lead) return [];
-  const [job, enrolled, sent, audits, sup, engaged] = await Promise.all([
+  const [job, enrolled, sent, audits, sup, engaged, notes, tasks, deals] = await Promise.all([
     lead.importJobId
       ? prisma.importJob.findFirst({ where: { id: lead.importJobId, workspaceId: ws } })
       : null,
@@ -66,6 +69,15 @@ export async function leadTimeline(
         },
       },
     }),
+    prisma.note.findMany({ where: { workspaceId: ws, leadId } }),
+    prisma.task.findMany({ where: { workspaceId: ws, leadId } }),
+    prisma.auditLog.findMany({
+      where: {
+        workspaceId: ws,
+        action: { startsWith: "opportunity." },
+        meta: { path: ["leadId"], equals: leadId },
+      },
+    }),
   ]);
   const out: TimelineEntry[] = [];
   for (const e of engaged) {
@@ -93,6 +105,20 @@ export async function leadTimeline(
         detail: { campaignId, type: e.type.slice(7), recipient: meta.recipient ?? null },
       });
   }
+  for (const n of notes)
+    out.push({ at: n.createdAt, kind: "note", detail: { noteKind: n.kind, body: n.body } });
+  for (const t of tasks)
+    out.push({
+      at: t.completedAt ?? t.createdAt,
+      kind: "task",
+      detail: { title: t.title, status: t.status, dueAt: t.dueAt },
+    });
+  for (const d of deals)
+    out.push({
+      at: d.createdAt,
+      kind: "opportunity",
+      detail: { action: d.action, opportunityId: d.target },
+    });
   const unsubEvent = out.some((x) => x.kind === "unsubscribed");
   if (job) out.push({ at: job.createdAt, kind: "imported", detail: { fileName: job.fileName } });
   for (const e of enrolled)

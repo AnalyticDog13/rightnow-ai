@@ -21,6 +21,7 @@ export const noteInput = z
   .strictObject({
     threadId: z.string().min(1).optional(),
     leadId: z.string().min(1).optional(),
+    kind: z.enum(["note", "call", "sms", "meeting"]).default("note"), // D41: calls and meetings are logged by hand
     body: noteBody,
   })
   .refine((v) => (v.threadId === undefined) !== (v.leadId === undefined), "threadId or leadId");

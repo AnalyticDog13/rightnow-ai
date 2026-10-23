@@ -72,3 +72,5 @@ export * from "./mail/stoprules";
 export * from "./mail/sync";
 export * from "./crm/stages";
 export * from "./crm/opportunities";
+export * from "./crm/tasks";
+export * from "./crm/activity";

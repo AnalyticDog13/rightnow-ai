@@ -1,6 +1,7 @@
 import { createTestDb } from "@rightnow/db/test-db";
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { fixedClock } from "../src/clock";
+import { createOpportunity } from "../src/crm/opportunities";
 import { updateLead } from "../src/leads/service";
 import { hashValue } from "../src/leads/suppression";
 import { leadTimeline } from "../src/leads/timeline";
@@ -38,6 +39,7 @@ test("imported, enrolled, sent, interest change: 4 entries, newest first; worksp
     where: { id: s.rows[0]!.id },
     data: { status: "SENT", sentAt: new Date("2026-10-03T00:00:00Z") },
   });
+  await p.workspace.update({ where: { id: s.ws }, data: { crmAutoOpportunity: false } }); // keep this list to the P3 kinds
   await updateLead(
     p,
     fixedClock(new Date("2026-10-04T00:00:00Z")),
@@ -105,4 +107,27 @@ test("replies, bounces and unsubscribes come from Event; an unsubscribe is liste
     { kind: "replied", detail: { auto: true, category: "OUT_OF_OFFICE" } },
     { kind: "replied", detail: { auto: false, category: "INTERESTED" } },
   ]);
+});
+
+test("notes, tasks and deals", async () => {
+  const p = db.prisma;
+  const s = await seedCampaign(p, { at: new Date("2026-10-20T10:00:00Z"), rows: 1 });
+  const { lead } = s.leads[0]!;
+  const clock = fixedClock(new Date("2026-10-21T10:00:00Z"));
+  await p.note.create({ data: { workspaceId: s.ws, leadId: lead.id, body: "rang", kind: "call" } });
+  await p.task.create({ data: { workspaceId: s.ws, leadId: lead.id, title: "follow up" } });
+  await createOpportunity(p, clock, s.ws, "u1", { leadId: lead.id });
+  const other = await p.lead.create({ data: { workspaceId: s.ws, email: "o@x.test" } });
+  await p.note.create({ data: { workspaceId: s.ws, leadId: other.id, body: "not mine" } });
+  const t = await leadTimeline(p, s.ws, lead.id);
+  expect(t.map((e) => e.kind)).toEqual(expect.arrayContaining(["note", "task", "opportunity"]));
+  expect(t.find((e) => e.kind === "note")!.detail).toMatchObject({
+    body: "rang",
+    noteKind: "call",
+  });
+  expect(t.find((e) => e.kind === "task")!.detail).toMatchObject({
+    title: "follow up",
+    status: "OPEN",
+  });
+  expect(t.filter((e) => e.kind === "note")).toHaveLength(1);
 });

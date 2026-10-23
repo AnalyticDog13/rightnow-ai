@@ -36,6 +36,7 @@ model Workspace {
   domainChecks         DomainCheck[]
   pipelineStages       PipelineStage[]
   opportunities        Opportunity[]
+  tasks                Task[]
   timezone             String                @default("UTC")
   physicalAddress      String?
   dailyCap             Int? // null = no workspace cap
@@ -466,6 +467,7 @@ model Lead {
   listMembers          LeadListMember[]
   campaignLeads        CampaignLead[]
   opportunities        Opportunity[]
+  tasks                Task[]
 
   @@index([workspaceId, createdAt, id])
   @@index([workspaceId, companyDomain])
@@ -1003,6 +1005,7 @@ model Note {
   thread      Thread?   @relation(fields: [threadId], references: [id], onDelete: Cascade)
   leadId      String?
   authorId    String? // null for an API key
+  kind        String    @default("note") // note | call | sms | meeting (D41)
   body        String
   createdAt   DateTime  @default(now())
 
@@ -1175,7 +1178,37 @@ model Opportunity {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
+  tasks           Task[]
+
   @@index([workspaceId, stageId])
   @@index([workspaceId, createdAt])
   @@index([workspaceId, closedAt])
+}
+
+enum TaskStatus {
+  OPEN
+  DONE
+  AWAITING_APPROVAL // PS-CRM-08; approving sets OPEN
+}
+
+/** D41: a reminder is the task's dueAt; there are no notifications. */
+model Task {
+  id            String       @id @default(cuid())
+  workspaceId   String
+  workspace     Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  title         String
+  body          String?
+  dueAt         DateTime?
+  assigneeId    String?
+  status        TaskStatus   @default(OPEN)
+  leadId        String?
+  lead          Lead?        @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  opportunityId String?
+  opportunity   Opportunity? @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  createdById   String?
+  completedAt   DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([workspaceId, status, dueAt])
 }

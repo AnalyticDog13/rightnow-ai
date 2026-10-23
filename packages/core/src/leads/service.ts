@@ -554,6 +554,7 @@ export async function mergeLeads(
       await tx.note.updateMany(repoint);
       await tx.event.updateMany(repoint);
       await tx.opportunity.updateMany(repoint);
+      await tx.task.updateMany(repoint);
       await tx.lead.update({
         where: { id: mergeId },
         data: { deletedAt: clock.now(), mergedIntoId: keepId },
