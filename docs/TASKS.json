@@ -705,12 +705,12 @@
    "id": "P7-T01b",
    "phase": 7,
    "title": "Automation routes, Automations page (rules, built-ins, runs), rule editor, e2e",
-   "status": "todo",
+   "status": "done",
    "deps": [
     "P7-T01a"
    ],
    "model": "sonnet",
-   "commit": null,
+   "commit": "f2c2b25",
    "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md (incl. Revision 2); tests listed there pass"
   },
   {
