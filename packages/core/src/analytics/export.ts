@@ -1,11 +1,10 @@
 import { Prisma, type PrismaClient } from "@rightnow/db/client";
-import { csvCell } from "../leads/export";
+import { line } from "../leads/export";
 import type { analytics, Metrics } from "./metrics";
 import { type AnalyticsQuery, checked, EVENT_FROM, eventScope, rangeDays, SENDER } from "./query";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 const sql = Prisma.sql;
-const line = (cells: unknown[]) => cells.map(csvCell).join(",") + "\r\n";
 const PAGE = 500;
 
 type Row = {

@@ -15,7 +15,7 @@ export function csvCell(v: unknown): string {
   if (!NUMBER.test(s) && /^[\t\r]|^[\s"']*[=+\-@]/.test(s)) s = `'${s}`;
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
-const line = (cells: unknown[]) => cells.map(csvCell).join(",") + "\r\n";
+export const line = (cells: unknown[]) => cells.map(csvCell).join(",") + "\r\n";
 
 async function* pages(prisma: Parameters<typeof listLeads>[0], ws: string, q: LeadQuery) {
   let cursor: string | undefined;

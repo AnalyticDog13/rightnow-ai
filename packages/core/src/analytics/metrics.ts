@@ -110,6 +110,10 @@ const firstBefore = (ws: string, q: AnalyticsQuery, sameCampaign: boolean) =>
       ${sameCampaign ? sql`AND p."campaignId" = e."campaignId"` : Prisma.empty}
       AND p."occurredAt" < ((${q.from}::date::timestamp AT TIME ZONE ${q.tz}) AT TIME ZONE 'UTC'))`;
 
+// only the lead's first in-scope ACCEPTED is flagged, so a follow-up never counts in its day or step row (I6)
+const first = (by: Prisma.Sql) =>
+  sql`row_number() OVER (PARTITION BY COALESCE(e."leadId", e.id), ${by} e.type ORDER BY e."occurredAt", e.id) = 1`;
+
 function eventStatement(db: Db, ws: string, q: AnalyticsQuery) {
   const k = key(q.groupBy, q, {
     campaign: sql`e."campaignId"`,
@@ -146,7 +150,8 @@ function eventStatement(db: Db, ws: string, q: AnalyticsQuery) {
       ${perLead(sql`e.type = 'UNSUBSCRIBE'`)} AS unsubscribed,
       count(*) FILTER (WHERE e.type = 'MEETING')::int AS meetings
     FROM (
-      SELECT e.*, ${k} AS k, (${firstBefore(ws, q, true)}) AS first_c, (${firstBefore(ws, q, false)}) AS first_w
+      SELECT e.*, ${k} AS k, (${first(sql`e."campaignId",`)} AND ${firstBefore(ws, q, true)}) AS first_c,
+        (${first(Prisma.empty)} AND ${firstBefore(ws, q, false)}) AS first_w
       FROM ${EVENT_FROM}
       WHERE ${eventScope(ws, q)} AND e.type IN ('ACCEPTED', 'OPEN', 'CLICK', 'REPLY', 'AUTO_REPLY', 'BOUNCE_HARD',
         'BOUNCE_SOFT', 'BOUNCE_UNKNOWN', 'SEND_FAILED', 'COMPLAINT', 'UNSUBSCRIBE', 'MEETING')

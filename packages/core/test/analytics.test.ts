@@ -202,6 +202,18 @@ describe("analytics (D42)", () => {
     const steps = await run(f.ws, { campaignIds: f.C.id, groupBy: "step" });
     expect(row(steps.rows, f.S1.id).label).toBe("Step 1 (deleted)");
     expect(row(steps.rows, f.S2.id).label).toBe("Step 1");
+    // the follow-up is not a first contact in any group either: only a lead's first ACCEPTED is flagged
+    const two = { campaignIds: f.C.id, from: "2026-11-02", to: "2026-11-03" };
+    const days = await run(f.ws, { ...two, groupBy: "day" });
+    expect(row(days.rows, "2026-11-03")).toMatchObject({ contacted: 0, newLeadsContacted: 0 });
+    const sum = (k: "contacted" | "newLeadsContacted") =>
+      days.rows.reduce((n, r) => n + r[k], 0);
+    expect([sum("contacted"), sum("newLeadsContacted")]).toEqual([
+      days.total.contacted,
+      days.total.newLeadsContacted,
+    ]);
+    const s2 = row((await run(f.ws, { ...two, groupBy: "step" })).rows, f.S2.id);
+    expect(s2).toMatchObject({ contacted: 0, newLeadsContacted: 0 });
   });
 
   test("crmReport", async () => {
