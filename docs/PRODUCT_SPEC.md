@@ -63,14 +63,14 @@ Areas: UI, ACC, WARM, CAMP, SEQ, SEND, LEAD, INBOX, TRACK, CRM, ANALYTICS, AUTO,
 - [x] PS-ACC-08: Reconnect flow keeps account id, settings, history, campaign assignments (no delete+reconnect) — Instantly docs tell users to delete and reconnect after token errors (S18); RightNow deliberately does better (master reactivation §2).
 - [x] PS-ACC-09: Revocation: user can disconnect (revoke token at provider, stop jobs, keep history) — master §3.
 - [x] PS-ACC-10: Multiple independent mailboxes per workspace; duplicate email blocked with `account_exists` — S8.
-- [ ] PS-ACC-11: Bulk account management: multi-select pause/resume, set daily limit, set sending gap, set signature, apply tags, enable/disable warm-up, delete — Instantly exposes pause-multiple and enable/disable warm-up for many accounts (S23 Account).
+- [x] PS-ACC-11: Bulk account management: multi-select pause/resume, set daily limit, set sending gap, set signature, apply tags, enable/disable warm-up, delete — Instantly exposes pause-multiple and enable/disable warm-up for many accounts (S23 Account).
 
 ### 3.2 Per-account settings
 - [x] PS-ACC-12: Per-account `dailyLimit` (campaign emails/day) — Instantly guidance 30 campaign emails/account/day, 10 warm-up/day; plain-number field, nullable (S25, S4, S18).
 - [x] PS-ACC-13: Per-account `sendingGap` in minutes, integer 0–1440 — Instantly `sending_gap` range 0–1440 (S4). Campaign-level min gap default 9 min + random 5 min is separate (PS-CAMP-12).
 - [x] PS-ACC-14: Account status enum: Active, Paused, Temporarily paused (auto-resumes), Connection Error, Soft Bounce Error, Sending Error; plus RightNow adds Re-Warming, Inactive, Needs Attention as derived display states — Instantly status 1,2,3,-1,-2,-3 (S4).
 - [x] PS-ACC-15: Status message object with provider code, command, response, message for diagnostics (shown in UI) — Instantly `status_message` {code, command, response, e_message, responseCode} (S4).
-- [ ] PS-ACC-16: "Enable slow ramp" per-account toggle: new accounts start low and gain a fixed amount per day until the daily limit — Instantly: starts at 2 emails and adds 2/day (S25); an Instantly blog says warm-up +1/day and campaign slow ramp +2/day, sources disagree (S24). Use +2/day default, configurable.
+- [x] PS-ACC-16: "Enable slow ramp" per-account toggle: new accounts start low and gain a fixed amount per day until the daily limit — Instantly: starts at 2 emails and adds 2/day (S25); an Instantly blog says warm-up +1/day and campaign slow ramp +2/day, sources disagree (S24). Use +2/day default, configurable.
 - [x] PS-ACC-17: Signature (rich text/HTML) per account, appended to sends — Instantly `signature` field (S4).
 - [x] PS-ACC-18: `replyTo` address per account — Instantly `reply_to` (S4).
 - [x] PS-ACC-19: Custom tracking domain per account with CNAME verification and status; `skipCnameCheck` escape hatch for admins only — Instantly `tracking_domain_name/status`, `skip_cname_check` (S4); open-tracking guide recommends it per account (S17).
@@ -98,7 +98,7 @@ See section 17 (SYNC) for requirements; account-level items:
 - [x] PS-CAMP-01: Create, duplicate, edit, archive, delete, pause, resume campaigns — Instantly has create, activate/resume, stop/pause, duplicate, delete, export to JSON, share/clone from shared (S23 Campaign).
 - [x] PS-CAMP-02: Campaign export/import as JSON (sequence + settings, no leads) — Instantly export-to-JSON and create-from-shared (S23).
 - [x] PS-CAMP-03: Draft campaigns cannot send; subsequences tab appears only after first launch — Instantly (S13).
-- [ ] PS-CAMP-04: Campaign statuses: Draft, Active, Paused, Completed, Running Subsequences, Accounts Unhealthy, Bounce Protect, Account Suspended — Instantly codes 0,1,2,3,4,-1,-2,-99 (S9).
+- [x] PS-CAMP-04: Campaign statuses: Draft, Active, Paused, Completed, Running Subsequences, Accounts Unhealthy, Bounce Protect, Account Suspended — Instantly codes 0,1,2,3,4,-1,-2,-99 (S9).
 - [x] PS-CAMP-05: Campaign "Completed" when every lead has finished the sequence or been stopped; "evergreen" flag keeps it open for new leads — S3 `is_evergreen`, S9.
 - [x] PS-CAMP-06: Campaign wizard sections: Leads, Sequences, Schedule, Options (with Sending accounts) — Instantly campaign builder tabs (S1; layout partly undocumented).
 - [x] PS-CAMP-07: Assign multiple sending accounts; system rotates among them; no account-count limit — Instantly "Accounts to use" (S1).
@@ -118,14 +118,14 @@ See section 17 (SYNC) for requirements; account-level items:
 - [x] PS-CAMP-17: Prioritize new leads (default off: follow-ups go first) — S1, S3.
 - [x] PS-CAMP-18: Stop sending on reply (recommended on) — stops sequence for the replying lead only — S1.
 - [x] PS-CAMP-19: Stop campaign for company on reply: when one lead at a company (same domain) replies, remaining leads at that domain become Completed; auto-replies do not trigger it — S1, S3 `stop_for_company`.
-- [ ] PS-CAMP-20: Stop on auto-reply (OOO etc.): off by default recommended when using out-of-office smart pause (resume date); when on, auto-reply stops the lead — S1, S3 `stop_on_auto_reply`.
+- [x] PS-CAMP-20: Stop on auto-reply (OOO etc.): off by default recommended when using out-of-office smart pause (resume date); when on, auto-reply stops the lead — S1, S3 `stop_on_auto_reply`.
 - [x] PS-CAMP-21: Open tracking toggle and link tracking toggle per campaign; global org-level overrides (disable open tracking / always text-only first email) win over campaign settings — S1, S17.
 - [x] PS-CAMP-22: Delivery optimization: send as text-only (all steps) and send first email as text-only; enabling text-only disables open tracking and strips images/HTML styling — S1, S3 `text_only`, `first_email_text_only`, S17.
 - [x] PS-CAMP-23: Provider matching (`matchLeadEsp`): prefer sender with same ESP as recipient (Gmail to Gmail, Outlook to Outlook); needs at least one matching account — S1, S3. ESP detection for lead stored in lead record (Google, Microsoft, Zoho, Yahoo, Yandex, Other) — S5 ESP codes.
 - [x] PS-CAMP-24: ESP routing rules: list of {action send|do_not_send, recipientEsp[all|google|outlook|other], senderEsp[all|google|outlook|other]} evaluated at account selection — S3 `provider_routing_rules`.
 - [x] PS-CAMP-25: Insert unsubscribe header (List-Unsubscribe + one-click) toggle; RightNow default ON for compliance — S1 `insert_unsubscribe_header` (default undocumented).
 - [x] PS-CAMP-26: Allow risky emails (leads whose verification is Risky/Catch-all) toggle, default off; Disable BounceProtect toggle with warning — S1, S3.
-- [ ] PS-CAMP-27: BounceProtect: automatically pause campaign (status Bounce Protect) when bounce rate threshold exceeded; RightNow default: pause when hard-bounce rate > 3% over >= 50 sends in rolling 24h (configurable) — Instantly feature exists, threshold undocumented in fetched pages (S21 refers to a "High Bounce Auto-Pause" article).
+- [x] PS-CAMP-27: BounceProtect: automatically pause campaign (status Bounce Protect) when bounce rate threshold exceeded; RightNow default: pause when hard-bounce rate > 3% over >= 50 sends in rolling 24h (configurable) — Instantly feature exists, threshold undocumented in fetched pages (S21 refers to a "High Bounce Auto-Pause" article).
 - [x] PS-CAMP-28: Limit emails per company (domain): caps daily emails to leads sharing a domain; scope per campaign or workspace; mode custom/disabled; min 1 — S1, S3 `limit_emails_per_company_override`.
 - [x] PS-CAMP-29: CC and BCC recipient lists on every campaign email (CC visible, BCC hidden) — S1, S3.
 - [ ] PS-CAMP-30: Auto-optimize A/Z test: pick winning metric (reply rate, click rate, open rate); disable underperforming variants automatically; thresholds undocumented, RightNow requires min sample (default 100 sends per variant) before disabling — S1, S3 `auto_variant_select.trigger`, S20.
@@ -190,27 +190,27 @@ See section 17 (SYNC) for requirements; account-level items:
 
 ## 7. Warm-Up and Deliverability (master §6)
 
-- [ ] PS-WARM-01: Per-account warm-up enable/disable; bulk toggle — S23 enable/disable warm-up for accounts.
-- [ ] PS-WARM-02: Setting "daily warm-up limit" (max warm-up emails/day), suggested 10 for new accounts, separate from campaign daily limit — S2, S25.
-- [ ] PS-WARM-03: Setting "increase per day" (ramp): API enum disabled|0|1|2|3|4; UI default 1 (day 1 sends 1, +1 daily until limit) — S2, S4.
-- [ ] PS-WARM-04: Setting "reply rate %" suggested 30 for new accounts: share of warm-up messages that receive a reply (only meaningful between opted-in participants) — S2.
-- [ ] PS-WARM-05: "Disable slow warm-up" skips the ramp; for already-warmed accounts only, warn otherwise — S2.
-- [ ] PS-WARM-06: Weekdays-only mode: do not send warm-up on weekends (still receive) — S2.
-- [ ] PS-WARM-07: Warm-up filter tag: a label (customizable, "generate random") applied to warm-up messages so they can be auto-filed out of the primary inbox and excluded from inbox sync/analytics; change applies next cycle — S2.
+- [x] PS-WARM-01: Per-account warm-up enable/disable; bulk toggle — S23 enable/disable warm-up for accounts.
+- [x] PS-WARM-02: Setting "daily warm-up limit" (max warm-up emails/day), suggested 10 for new accounts, separate from campaign daily limit — S2, S25.
+- [x] PS-WARM-03: Setting "increase per day" (ramp): API enum disabled|0|1|2|3|4; UI default 1 (day 1 sends 1, +1 daily until limit) — S2, S4.
+- [x] PS-WARM-04: Setting "reply rate %" suggested 30 for new accounts: share of warm-up messages that receive a reply (only meaningful between opted-in participants) — S2.
+- [x] PS-WARM-05: "Disable slow warm-up" skips the ramp; for already-warmed accounts only, warn otherwise — S2.
+- [x] PS-WARM-06: Weekdays-only mode: do not send warm-up on weekends (still receive) — S2.
+- [x] PS-WARM-07: Warm-up filter tag: a label (customizable, "generate random") applied to warm-up messages so they can be auto-filed out of the primary inbox and excluded from inbox sync/analytics; change applies next cycle — S2.
 - [ ] PS-WARM-08: Advanced warm-up knobs exist in Instantly: read emulation (headless browser "reading"), open rate %, spam-protection % (rescue from spam), mark-important %, warm custom tracking domain — S2, S4. RightNow honesty rule: only implement what is real between opted-in mailboxes (opening/marking read/rescuing from spam on mailboxes the user owns); do not simulate human behavior to fool filters; document each knob as "cooperative-mailbox action" or "not provided".
-- [ ] PS-WARM-09: Warm-up traffic is plain text, separate message type, stored in a separate table, excluded from customer analytics, replies, unibox, CRM — S2 (plain text), master §6.
-- [ ] PS-WARM-10: Warm-up status enum: Paused, Active, Banned, Spam Folder Unknown, Permanent Suspension — Instantly 0,1,-1,-2,-3 (S4). RightNow maps to: Paused, Active, Provider-blocked, Placement-unknown, Suspended.
+- [x] PS-WARM-09: Warm-up traffic is plain text, separate message type, stored in a separate table, excluded from customer analytics, replies, unibox, CRM — S2 (plain text), master §6.
+- [x] PS-WARM-10: Warm-up status enum: Paused, Active, Banned, Spam Folder Unknown, Permanent Suspension — Instantly 0,1,-1,-2,-3 (S4). RightNow maps to: Paused, Active, Provider-blocked, Placement-unknown, Suspended.
 - [ ] PS-WARM-11: Warm-up health/score per account (0–100) — Instantly exposes `stat_warmup_score` (S4); formula undocumented. RightNow formula documented in-app: weighted from hard/soft bounce rate, provider errors, auth DNS status, warm-up reply/receive success between participants, and (if run) inbox-placement tests. Labeled an internal indicator, not a reputation guarantee.
-- [ ] PS-WARM-12: Warm-up analytics per account per day: sent, received, replied, landed-in-spam (where measurable between cooperative mailboxes), health score trend — S23 warmup analytics.
-- [ ] PS-WARM-13: Warm-up pool: "integration interface" for external warm-up providers + a self-hosted opt-in peer pool among the user's own mailboxes; no assumption of Instantly's pool — master §6, S17 section.
-- [ ] PS-WARM-14: Domain authentication checks: SPF, DKIM (selector discovery for Google/Microsoft/custom), DMARC policy, MX, reverse DNS where possible, with fix instructions; re-check on schedule and before campaigns — Instantly "Test domain setup" (S18).
-- [ ] PS-WARM-15: Bounce monitoring per account (hard, soft, unknown, with reasons) and deliverability warnings when thresholds crossed — S21 bounce types.
-- [ ] PS-WARM-16: Health-based slowdown: auto-reduce allowance by a configured factor when bounce/error thresholds hit; auto-restore stepwise — master §6.
-- [ ] PS-WARM-17: Custom warm-up schedule: user-defined per-day volume curve (table of day to volume) in addition to linear increment — master §6 (Instantly only linear increment, undocumented beyond that).
+- [x] PS-WARM-12: Warm-up analytics per account per day: sent, received, replied, landed-in-spam (where measurable between cooperative mailboxes), health score trend — S23 warmup analytics.
+- [x] PS-WARM-13: Warm-up pool: "integration interface" for external warm-up providers + a self-hosted opt-in peer pool among the user's own mailboxes; no assumption of Instantly's pool — master §6, S17 section.
+- [x] PS-WARM-14: Domain authentication checks: SPF, DKIM (selector discovery for Google/Microsoft/custom), DMARC policy, MX, reverse DNS where possible, with fix instructions; re-check on schedule and before campaigns — Instantly "Test domain setup" (S18).
+- [x] PS-WARM-15: Bounce monitoring per account (hard, soft, unknown, with reasons) and deliverability warnings when thresholds crossed — S21 bounce types.
+- [x] PS-WARM-16: Health-based slowdown: auto-reduce allowance by a configured factor when bounce/error thresholds hit; auto-restore stepwise — master §6.
+- [x] PS-WARM-17: Custom warm-up schedule: user-defined per-day volume curve (table of day to volume) in addition to linear increment — master §6 (Instantly only linear increment, undocumented beyond that).
 - [ ] PS-WARM-18: [optional] Inbox-placement testing: send a seed test to opted-in seed mailboxes (user-supplied) and report folder (inbox/spam/promotions) per seed ESP, plus blacklist and SpamAssassin report — Instantly has inbox placement tests, analytics, deliverability insights, blacklist/SpamAssassin report, ESP options (S23).
-- [ ] PS-WARM-19: Blacklist (DNSBL) check for sending IP/domain, listed in diagnostics — S23 blacklist report.
-- [ ] PS-WARM-20: Warm-up dashboard clearly states what warm-up cannot do (no guarantee of inbox placement) — master §6.
-- [ ] PS-WARM-21: Recommended defaults surfaced in UI hints: 30 campaign + 10 warm-up per account/day; at least ~2 weeks warm-up for new accounts (Instantly blog says two weeks minimum, four safer for new domains) — S18, S21, S24.
+- [x] PS-WARM-19: Blacklist (DNSBL) check for sending IP/domain, listed in diagnostics — S23 blacklist report.
+- [x] PS-WARM-20: Warm-up dashboard clearly states what warm-up cannot do (no guarantee of inbox placement) — master §6.
+- [x] PS-WARM-21: Recommended defaults surfaced in UI hints: 30 campaign + 10 warm-up per account/day; at least ~2 weeks warm-up for new accounts (Instantly blog says two weeks minimum, four safer for new domains) — S18, S21, S24.
 
 ---
 
@@ -229,7 +229,7 @@ See section 17 (SYNC) for requirements; account-level items:
 - [x] PS-LEAD-11: Email column mandatory; rows with missing/malformed email rejected and counted; unmapped columns become custom fields — S27 (search result).
 - [x] PS-LEAD-12: Dedupe options on import: (a) skip if already in workspace, (b) skip if already in campaign, (c) skip if already in list; workspace-wide check default ON; within-file duplicate check always ON — S5 `skip_if_in_*`, S19.
 - [x] PS-LEAD-13: Import honors blocklist (emails and domains) automatically and reports the skipped count — S19/S27, S5 `blocklist_id`.
-- [ ] PS-LEAD-14: Optional "verify on import" toggle calling a pluggable verification provider (hook interface); Instantly charges 0.25 credit/lead for built-in verifier; RightNow has no credits, provider cost is the user's — S27, S5 `verify_leads_on_import`.
+- [x] PS-LEAD-14: Optional "verify on import" toggle calling a pluggable verification provider (hook interface); Instantly charges 0.25 credit/lead for built-in verifier; RightNow has no credits, provider cost is the user's — S27, S5 `verify_leads_on_import`.
 - [x] PS-LEAD-15: Built-in local syntax + MX + disposable-domain validation always on; SMTP-probe verification not provided by default (provider-hook only) — master §7.
 - [x] PS-LEAD-16: Lead merge (two records into one, keeping history) — S23 "Merge two leads".
 - [x] PS-LEAD-17: Bulk actions: assign to users (round-robin option), move, delete, add to blocklist, change interest status, add/remove tag, export selected CSV — S14, S15, S23.
@@ -395,20 +395,20 @@ All AI items are `[optional]`, off by default, provider-pluggable (BYO API key),
 
 Instantly has no dedicated reactivation product: users lower limits manually, rely on warm-up, or delete and reconnect on token errors (S18). Items below are required by the master spec, with Instantly warm-up knobs as inspiration.
 
-- [ ] PS-REWARM-01: Per account track: last outbound email date, last campaign activity date, historical sending volume, historical bounce and reply rates, recent provider errors, inactivity duration, previous warm-up config, current SPF/DKIM/DMARC health.
-- [ ] PS-REWARM-02: Configurable inactivity thresholds (presets 7, 14, 30, 60 days); accounts beyond threshold flagged "Inactive / may benefit from gradual restart".
-- [ ] PS-REWARM-03: "Re-Warm Account" button on Email Accounts; keeps account id, settings, history; no delete/reconnect required.
-- [ ] PS-REWARM-04: On start: recheck connectivity (token refresh, IMAP/SMTP), SPF, DKIM, DMARC; block start with explicit reasons if failing (token expired triggers reconnect flow that preserves the account record).
-- [ ] PS-REWARM-05: Reset campaign sending allowance to a conservative start (default 5/day, configurable) and ramp by a configurable curve (default +2/day, consistent with slow-ramp +2/day in S25) up to the pre-inactivity target.
-- [ ] PS-REWARM-06: Scheduler reads the allowance from a single source of truth (DB row + Redis counter) so all workers and all campaigns respect it simultaneously.
-- [ ] PS-REWARM-07: Health gates: pause or reduce allowance (and hold a ramp step) when bounce rate, provider errors, or DNS health cross thresholds; resume stepwise after recovery window.
+- [x] PS-REWARM-01: Per account track: last outbound email date, last campaign activity date, historical sending volume, historical bounce and reply rates, recent provider errors, inactivity duration, previous warm-up config, current SPF/DKIM/DMARC health.
+- [x] PS-REWARM-02: Configurable inactivity thresholds (presets 7, 14, 30, 60 days); accounts beyond threshold flagged "Inactive / may benefit from gradual restart".
+- [x] PS-REWARM-03: "Re-Warm Account" button on Email Accounts; keeps account id, settings, history; no delete/reconnect required.
+- [x] PS-REWARM-04: On start: recheck connectivity (token refresh, IMAP/SMTP), SPF, DKIM, DMARC; block start with explicit reasons if failing (token expired triggers reconnect flow that preserves the account record).
+- [x] PS-REWARM-05: Reset campaign sending allowance to a conservative start (default 5/day, configurable) and ramp by a configurable curve (default +2/day, consistent with slow-ramp +2/day in S25) up to the pre-inactivity target.
+- [x] PS-REWARM-06: Scheduler reads the allowance from a single source of truth (DB row + Redis counter) so all workers and all campaigns respect it simultaneously.
+- [x] PS-REWARM-07: Health gates: pause or reduce allowance (and hold a ramp step) when bounce rate, provider errors, or DNS health cross thresholds; resume stepwise after recovery window.
 - [ ] PS-REWARM-08: Exit criteria configurable (e.g. allowance reached target AND N consecutive days with bounce < threshold AND no provider errors); then status returns to Active with normal limits.
-- [ ] PS-REWARM-09: Automatic reactivation protection (setting): before the next campaign send, an account over the threshold gets recommended or auto-applied reduced-volume restart; user chooses recommend vs auto per workspace.
-- [ ] PS-REWARM-10: Dashboard: status (Active, Inactive, Re-Warming, Paused, Needs Attention), days since last send, current allowance, target volume, progress bar, historical and current deliverability indicators, warnings, estimated schedule labeled "configurable plan, not a guaranteed reputation recovery timeline".
-- [ ] PS-REWARM-11: Optional warm-up activity only with opted-in participants or external provider; otherwise the volume-ramp workflow is the whole feature (honest mode) — S2 pool is not reproducible.
-- [ ] PS-REWARM-12: Runs through persistent BullMQ repeatable jobs; works while the user is offline (on a running server) and catches up after downtime without burst-sending.
-- [ ] PS-REWARM-13: Tests: inactive 30 days, inactive 60 days, reconnect after OAuth token expiry, bounce-rate breach during re-warm, successful return to normal limits.
-- [ ] PS-REWARM-14: Independent verification that a previously active account is reactivated without losing settings or history (data-preservation test).
+- [x] PS-REWARM-09: Automatic reactivation protection (setting): before the next campaign send, an account over the threshold gets recommended or auto-applied reduced-volume restart; user chooses recommend vs auto per workspace.
+- [x] PS-REWARM-10: Dashboard: status (Active, Inactive, Re-Warming, Paused, Needs Attention), days since last send, current allowance, target volume, progress bar, historical and current deliverability indicators, warnings, estimated schedule labeled "configurable plan, not a guaranteed reputation recovery timeline".
+- [x] PS-REWARM-11: Optional warm-up activity only with opted-in participants or external provider; otherwise the volume-ramp workflow is the whole feature (honest mode) — S2 pool is not reproducible.
+- [x] PS-REWARM-12: Runs through persistent BullMQ repeatable jobs; works while the user is offline (on a running server) and catches up after downtime without burst-sending.
+- [x] PS-REWARM-13: Tests: inactive 30 days, inactive 60 days, reconnect after OAuth token expiry, bounce-rate breach during re-warm, successful return to normal limits.
+- [x] PS-REWARM-14: Independent verification that a previously active account is reactivated without losing settings or history (data-preservation test).
 
 ---
 

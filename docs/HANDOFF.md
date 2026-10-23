@@ -1,15 +1,16 @@
 # Handoff
 
-**Phase:** 5 — Deliverability, warm-up, re-warm-up (branch `phase-5-deliverability`, created from `main` at 7c03dad)
-**Current task:** Phase 5 GATE — all tasks done (P5-T01 8b65f8b, T02 d48a2da, T03 355ffb2, T04 4444b7d, T08 fe3e624, T05 80c7f09, T06 d4291a3, T07 7da9006). Gate: opus whole-branch review + ponytail-audit → one fix wave → scoped re-review → full tests/Playwright/CI → tick PRODUCT_SPEC (incl. PS-ACC-16, PS-CAMP-20) → PROGRESS/HANDOFF/REVIEW_LOG → ff main. Ledger `.superpowers/sdd/phase-5/progress.md`.
-**Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 (approved). Done step plans: `docs/plans/phase-1.md` … `phase-4.md` (+ `phase-4-review.md`).
-**Tests:** ~1165 vitest + 20 Playwright green; CI `check`, `compose-smoke` (incl. Caddyfile validate), `imap-real` green.
+**Phase:** 6 — CRM & analytics (next). Phase 5 (deliverability, warm-up, re-warm-up) DONE and merged to `main`.
+**Current task:** start Phase 6 — create branch `phase-6-crm-analytics` from `main`, write `docs/plans/phase-6.md` (opus), independent opus plan review, revise, then execute with subagent-driven-development (new ledger `.superpowers/sdd/phase-6/`).
+**Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 (approved). Done step plans: `docs/plans/phase-1.md` … `phase-5.md` (+ `phase-4-review.md`, `phase-5-review.md`).
+**Tests:** ~1290 vitest + Playwright (auth, accounts*, campaign-create, deliverability, inbox, leads, test-send …) green; CI `check`, `compose-smoke`, `imap-real` green. Parity: 208/316 ticked.
 
 ## Next exact action
-Phase 5: create branch `phase-5-deliverability` from `main`, write the step plan `docs/plans/phase-5.md` from IMPLEMENTATION_PLAN Phase 5 + PRODUCT_SPEC (WARM, REWARM, deliverability) + TASKS.json carry-forwards, get an independent opus plan review, then execute with subagent-driven-development (new ledger `.superpowers/sdd/phase-5/`). Check CI after EVERY task commit.
-Carry-forwards from Phase 4 into P5: P5-T05 hooks `computeLifecycle` into `reconcileAccount` (after the caught-up write); P5-T06 extends `packages/core/test/e2e/downtime.test.ts` with the 30-day re-warm allowance; P5-T02 consumes SOFT/UNKNOWN bounce events and SYNC errors for health; sync escalation overwriting an earlier SENDING `lastError` (minor). Into P7: AI classifier (hook + lease renewal per message), push sync/IMAP IDLE, link-target warnings + rich-text compose, lead conversation export, inbox query-count/perf pass, near-copy cleanup.
+Phase 6 per IMPLEMENTATION_PLAN "Phase 6 — CRM & analytics" + PRODUCT_SPEC (CRM, analytics) + TASKS.json P6 entries. Check CI after EVERY task commit.
+Carry-forwards into P7 (from Phase 4 and Phase 5): AI classifier (hook + lease renewal per message), push sync/IMAP IDLE, link-target warnings + rich-text compose, lead conversation export, inbox query-count/perf pass, near-copy cleanup; P5 gate deferrals — placement ignores health cap/re-warm allowance and runs sends inside the HTTP request with no per-account test limit, warm-up keeps full volume on a throttled account, BounceProtect complaint floor counts 24 h vs the 30-day complaint window, status-banner sentence for `leads_verifying`, DNS chip deep link, Recharts sparkline, domain-of-email duplication; PS partials — PS-ACC-24 (CNAME in vitals), PS-SEND-11 (auth failure flags at once, spec says after 5), PS-WARM-08 (warm custom tracking domain), PS-WARM-11 (health formula documented in-app), PS-WARM-18 (SpamAssassin report), PS-REWARM-08 (exit-criteria bounce threshold hard-coded 2 %). Map: `.superpowers/sdd/phase-5/gate-spec-map.md` (deleted with the workspace; partials listed here).
+Dev DBs that applied the branch-edited placement migration `20261029000000_placement` before its index was added need `prisma migrate reset` (checksum drift).
 Existing dev DBs keep old pg-boss queue settings (recreate the pg-boss schema to pick up the new heartbeats).
-Known env issue: Windows vitest worker crash (exit 3221226505) recurs in random files; vitest 5 already uses forks; rerun affected files alone.
+Known env issues: Windows vitest worker crash (exit 3221226505) recurs in random files — rerun alone; the dev machine runs low on RAM — run vitest per project with `--maxWorkers=2`; run Playwright from `apps/web`.
 
 ## Interfaces available (Phases 1–2)
 Phase 1: `route()` (auth/role/scope/params, CSRF), `startWorker`/`JobDef` `{prisma, clock}`, `createPrisma`,
