@@ -609,12 +609,12 @@
    "id": "P5-T07",
    "phase": 5,
    "title": "Deliverability + reactivation dashboards (statuses, idle days, allowance vs target, progress, warnings, schedule labelled \"configurable plan\")",
-   "status": "todo",
+   "status": "done",
    "deps": [
     "P5-T06"
    ],
    "model": "sonnet",
-   "commit": null,
+   "commit": "7da9006",
    "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-5.md; tests listed there pass"
   },
   {
