@@ -500,3 +500,14 @@ describe("pipeline: import, planner and claim", () => {
     expect(await mine(later)).toHaveLength(1);
   });
 });
+
+describe("schema (audit A-3)", () => {
+  test("the verify job's scans use a partial index on queued leads", async () => {
+    const rows = await db.prisma.$queryRaw<{ indexdef: string }[]>`
+      SELECT indexdef FROM pg_indexes WHERE indexname = 'Lead_verify_pending_idx'`;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.indexdef).toMatch(
+      /\("workspaceId", "updatedAt"\) WHERE \("verificationStatus" = 'PENDING_JOB'::"VerificationStatus"\)/,
+    );
+  });
+});

@@ -4,6 +4,7 @@ import type { MailProvider } from "@rightnow/providers";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { accountsAutoResume } from "../src/jobs/accounts-auto-resume";
 import { accountsAutofix } from "../src/jobs/accounts-autofix";
+import { leadVerifyJob } from "../src/jobs/lead-verify";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
 let ws: string;
@@ -149,4 +150,25 @@ test("a disconnect during autofix stays disconnected", async () => {
     }) as unknown as MailProvider;
   await accountsAutofix(db.prisma, fixedClock(new Date("2026-11-01T00:00:00Z")), providerFor);
   expect(await get(a.id)).toMatchObject({ status: "DISCONNECTED", credentialsEnc: null });
+});
+
+describe("leadVerifyJob", () => {
+  test("G-M3: gets the worker's shutdown signal: a stopping worker claims and verifies nothing", async () => {
+    const lead = await db.prisma.lead.create({
+      data: { workspaceId: ws, email: "x@nowhere.invalid", verificationStatus: "PENDING_JOB" },
+    });
+    const stop = new AbortController();
+    stop.abort();
+    await leadVerifyJob.handler([], {
+      prisma: db.prisma,
+      clock: fixedClock(T0),
+      bootId: "b",
+      signal: stop.signal,
+    });
+    expect(await db.prisma.lead.findUniqueOrThrow({ where: { id: lead.id } })).toMatchObject({
+      verificationStatus: "PENDING_JOB",
+      verifyClaimedAt: null,
+      verifyAttempts: 0,
+    });
+  });
 });

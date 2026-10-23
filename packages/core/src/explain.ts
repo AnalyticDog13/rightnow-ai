@@ -28,7 +28,8 @@ export type ReasonCode =
   | "leads_suppressed"
   | "leads_paused"
   | "sticky_account_unassigned"
-  | "account_throttled";
+  | "account_throttled"
+  | "leads_verifying";
 export type Reason = {
   code: ReasonCode;
   message: string;
@@ -47,6 +48,7 @@ const INFO = new Set<ReasonCode>([
   "leads_paused",
   "sticky_account_unassigned",
   "account_throttled",
+  "leads_verifying",
 ]);
 const STATUS: Record<string, [ReasonCode, string] | undefined> = {
   DRAFT: ["draft", "This campaign is a draft. Launch it to start sending."],
@@ -91,7 +93,7 @@ export async function whyNotSending(
       reasons: [{ code: "ended", message: "This campaign's end date has passed.", blocking: true }],
     };
 
-  const [schedules, w, assigned, openLeads, claimErr, held, suppressed, pausedLeads] =
+  const [schedules, w, assigned, openLeads, claimErr, held, suppressed, pausedLeads, verifying] =
     await Promise.all([
       db.campaignSchedule.findMany({ where: { campaignId } }),
       db.workspace.findUniqueOrThrow({ where: { id: ws } }),
@@ -103,6 +105,13 @@ export async function whyNotSending(
       db.scheduledMessage.count({ where: { campaignId, status: "HELD" } }),
       db.campaignLead.count({ where: { campaignId, state: "STOPPED", stopReason: "SUPPRESSED" } }),
       db.campaignLead.count({ where: { campaignId, state: "PAUSED" } }),
+      db.campaignLead.count({
+        where: {
+          campaignId,
+          state: { in: ["QUEUED", "ACTIVE"] },
+          lead: { verificationStatus: "PENDING_JOB" },
+        },
+      }),
     ]);
 
   const when = fmt(w.timezone);
@@ -241,6 +250,7 @@ export async function whyNotSending(
   if (suppressed)
     add("leads_suppressed", `${suppressed} lead(s) were stopped because they are suppressed.`);
   if (pausedLeads) add("leads_paused", `${pausedLeads} lead(s) are paused.`);
+  if (verifying) add("leads_verifying", `${verifying} lead(s) are waiting for email verification.`);
   // D23 / gate I-3: follow-ups only go out from the lead's first sender; housekeeping paused these leads (D39 N-2)
   const sticky = await db.campaignLead.groupBy({
     by: ["accountId"],

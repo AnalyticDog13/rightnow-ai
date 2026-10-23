@@ -1,6 +1,7 @@
 import { createPublicKey } from "node:crypto";
 import { Resolver } from "node:dns/promises";
 import type { AccountProvider, Prisma, PrismaClient } from "@rightnow/db/client";
+import { mapLimit } from "@rightnow/providers";
 import { AccountError } from "../accounts/service";
 import { decryptCredentials } from "../accounts/credentials";
 import { audit } from "../audit";
@@ -447,9 +448,8 @@ export async function checkWorkspaceDomains(
   domains: string[],
 ): Promise<DomainReport[]> {
   const uniq = [...new Set(domains.map((d) => d.toLowerCase()))];
-  return (await Promise.all(uniq.map((d) => checkOne(prisma, r, clock, ws, d)))).map(
-    (x) => x.report,
-  );
+  // about 25 lookups per domain: 5 domains at a time, so public blocklists do not refuse a burst (A-4)
+  return (await mapLimit(uniq, 5, (d) => checkOne(prisma, r, clock, ws, d))).map((x) => x.report);
 }
 
 /** The launch/resume DNS gate: always a fresh check (D35). */
@@ -472,7 +472,11 @@ export async function recheckDomains(prisma: Db, clock: Clock, r: DnsResolver): 
   }
   let n = 0;
   for (const [ws, domains] of by)
-    n += (await checkWorkspaceDomains(prisma, r, clock, ws, [...domains])).length;
+    try {
+      n += (await checkWorkspaceDomains(prisma, r, clock, ws, [...domains])).length;
+    } catch (e) {
+      console.error(`recheckDomains: workspace ${ws} skipped this run`, e); // the others still run (G-M7)
+    }
   return n;
 }
 

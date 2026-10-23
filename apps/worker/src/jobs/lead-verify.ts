@@ -6,7 +6,7 @@ export const leadVerifyJob: JobDef = {
   name: "lead-verify",
   cron: "* * * * *",
   options: { retryLimit: 0 },
-  handler: async (_jobs, { prisma, clock }) => {
-    await runVerify(prisma, clock, { verifierFor: (ws) => workspaceVerifier(prisma, ws) });
+  handler: async (_jobs, { prisma, clock, signal }) => {
+    await runVerify(prisma, clock, { verifierFor: (ws) => workspaceVerifier(prisma, ws), signal });
   },
 };

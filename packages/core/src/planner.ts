@@ -463,6 +463,7 @@ async function planCampaign(tx: Tx, campaignId: string, now: Date, o: PlanOpts) 
   let written = 0;
   while (written < batch && seen.length < batch * MAX_PAGES) {
     // I3/C2: only the lead's current step, and only while no row for it exists except a plain CANCELLED one
+    // G-I1: a lead waiting for verification never uses up the page budget (re-checked under the lock below)
     const due = await tx.$queryRaw<{ id: string }[]>`
       SELECT cl.id FROM "CampaignLead" cl
       WHERE cl."campaignId" = ${campaignId} AND cl.state IN ('QUEUED', 'ACTIVE')
@@ -471,6 +472,7 @@ async function planCampaign(tx: Tx, campaignId: string, now: Date, o: PlanOpts) 
         AND cl.id <> ALL(${seen}::text[])
         AND (cl."accountId" IS NULL OR cl."accountId" <> ALL(${[...fullAccounts]}::text[]))
         AND (cl."subsequenceId" IS NULL OR cl."subsequenceId" <> ALL(${[...fullSubs]}::text[]))
+        AND NOT EXISTS (SELECT 1 FROM "Lead" l WHERE l.id = cl."leadId" AND l."verificationStatus" = 'PENDING_JOB')
         AND NOT EXISTS (SELECT 1 FROM "ScheduledMessage" sm
           WHERE sm."campaignLeadId" = cl.id AND sm."stepId" = COALESCE(cl."currentStepId", ${first.id})
             AND (sm.status <> 'CANCELLED' OR sm."uncertainAt" IS NOT NULL))

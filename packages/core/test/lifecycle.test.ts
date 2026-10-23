@@ -241,6 +241,35 @@ describe("computeLifecycle", () => {
     expect(await compute(never.id)).toBe("REWARMING");
   });
 
+  test("G-M2: does not wait on the KEY SHARE lock a send claim's usage insert holds (no deadlock)", async () => {
+    const { A } = await setup({ idle: 10 });
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    let locked!: () => void;
+    const isLocked = new Promise<void>((r) => (locked = r));
+    const claim = P().$transaction(
+      async (tx) => {
+        // what the claim's INSERT of an AccountDailyUsage row (FK to the account) takes
+        await tx.$queryRaw`SELECT 1 FROM "EmailAccount" WHERE id = ${A.id} FOR KEY SHARE`;
+        locked();
+        await held;
+      },
+      { timeout: 20_000 },
+    );
+    await isLocked;
+    try {
+      // the sync's caught-up transaction: the watermark UPDATE, then the idle check
+      await P().$transaction(async (tx) => {
+        await tx.$executeRaw`SET LOCAL lock_timeout = '2s'`;
+        await tx.$executeRaw`UPDATE "EmailAccount" SET "syncErrors" = 0 WHERE id = ${A.id}`;
+        expect(await computeLifecycle(tx, fixedClock(T), A.id, LOOK)).toBe("unchanged");
+      });
+    } finally {
+      release();
+      await claim;
+    }
+  });
+
   test("look-ahead flags before the watermark goes stale", async () => {
     const { A } = await setup({
       autoRewarm: "RECOMMEND",

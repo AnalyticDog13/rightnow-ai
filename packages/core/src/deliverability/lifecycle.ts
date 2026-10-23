@@ -31,8 +31,9 @@ export async function computeLifecycle(
   accountId: string,
   o: { lookaheadSec: number },
 ): Promise<"unchanged" | "INACTIVE" | "REWARMING"> {
-  // locked: the decision and its audit row describe the state they change
-  await tx.$queryRaw`SELECT 1 FROM "EmailAccount" WHERE id = ${accountId} FOR UPDATE`;
+  // locked: the decision and its audit row describe the state they change. NO KEY UPDATE (what the caller's UPDATE
+  // already holds), not FOR UPDATE: that one waits on a send claim's FK KEY SHARE and can deadlock with it (G-M2)
+  await tx.$queryRaw`SELECT 1 FROM "EmailAccount" WHERE id = ${accountId} FOR NO KEY UPDATE`;
   const a = await tx.emailAccount.findFirst({ where: { id: accountId, deletedAt: null } });
   if (!a || a.lifecycle !== "ACTIVE" || a.rewarmStartedAt) return "unchanged";
   const w = await tx.workspace.findUniqueOrThrow({

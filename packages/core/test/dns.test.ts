@@ -1,6 +1,6 @@
 import { generateKeyPairSync } from "node:crypto";
 import { createTestDb } from "@rightnow/db/test-db";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { encryptCredentials } from "../src/accounts/credentials";
 import { launchCampaign, type LaunchDeps } from "../src/campaigns/launch";
 import { PRESETS } from "../src/campaigns/schema";
@@ -393,5 +393,64 @@ describe("launch gate, DomainCheck and recheck", () => {
     await expect(
       P().domainCheck.findFirst({ where: { workspaceId: ws, domain: "gone.test" } }),
     ).resolves.toBeNull();
+  });
+
+  test("G-M7 / A-4: one workspace's failure skips only that workspace; domains run 5 at a time", async () => {
+    const ws2 = (await P().workspace.create({ data: { name: "W2", slug: "w2" } })).id;
+    const ws3 = (await P().workspace.create({ data: { name: "W3", slug: "w3" } })).id;
+    for (const [w, d] of [
+      ...Array.from({ length: 12 }, (_, i) => [ws2, `d${i}.test`]),
+      [ws3, "bad.test"],
+    ])
+      await P().emailAccount.create({
+        data: {
+          workspaceId: w!,
+          provider: "SMTP",
+          email: `a@${d}`,
+          fromName: "F",
+          firstName: "F",
+          lastName: "L",
+          capTier: "SMTP",
+          providerCap: 100,
+        },
+      });
+    const real = P();
+    const faulty = new Proxy(real, {
+      get(t, k) {
+        if (k === "domainCheck")
+          return new Proxy(t.domainCheck, {
+            get: (m, f) =>
+              f === "upsert"
+                ? (a: { where: { workspaceId_domain: { workspaceId: string } } }) =>
+                    a.where.workspaceId_domain.workspaceId === ws3
+                      ? Promise.reject(new Error("boom"))
+                      : m.upsert(a as Parameters<typeof m.upsert>[0])
+                : Reflect.get(m, f),
+          });
+        const v = Reflect.get(t, k);
+        return typeof v === "function" ? v.bind(t) : v;
+      },
+    });
+    const base = fakeResolver(good());
+    let inFlight = 0;
+    let most = 0;
+    const r = {
+      ...base,
+      resolveMx: async (n: string) => {
+        most = Math.max(most, ++inFlight);
+        await new Promise((x) => setTimeout(x, 20));
+        inFlight--;
+        return base.resolveMx(n);
+      },
+    };
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await recheckDomains(faulty, clock, r);
+      expect(err).toHaveBeenCalledWith(expect.stringContaining(ws3), expect.any(Error));
+    } finally {
+      err.mockRestore();
+    }
+    expect(await P().domainCheck.count({ where: { workspaceId: ws2 } })).toBe(12);
+    expect(most).toBeLessThanOrEqual(5);
   });
 });

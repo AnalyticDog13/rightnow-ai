@@ -53,6 +53,24 @@ describe("whyNotSending", () => {
     expect(codes(await why(b.ws, b.campaign.id))).toEqual(["ended"]);
   });
 
+  test("G-I1: leads waiting for verification are reported, informational", async () => {
+    const s = await seedCampaign(P(), { at: T, leads: 3 });
+    await P().lead.updateMany({
+      where: { id: { in: s.leads.slice(0, 2).map((l) => l.lead.id) } },
+      data: { verificationStatus: "PENDING_JOB" },
+    });
+    expect(await why(s.ws, s.campaign.id)).toEqual({
+      sending: true,
+      reasons: [
+        {
+          code: "leads_verifying",
+          message: "2 lead(s) are waiting for email verification.",
+          blocking: false,
+        },
+      ],
+    });
+  });
+
   test("stale account is sync_pending, in plain language, not an error", async () => {
     const s = await seedCampaign(P(), {
       at: T,

@@ -843,6 +843,27 @@ describe("caps", () => {
     }
   });
 
+  test("G-I1: leads waiting for verification never use up the page budget", async () => {
+    const s = await seedCampaign(P(), { at: T, leads: 22, accounts: [{ dailyLimit: 100 }] });
+    await queue(s);
+    const ordered = (
+      await P().campaignLead.findMany({
+        where: { campaignId: s.campaign.id },
+        orderBy: { id: "asc" },
+      })
+    ).map((c) => c.leadId);
+    // 21 pending leads ahead of one plannable lead: more than batch (2) x MAX_PAGES (10)
+    await P().lead.updateMany({
+      where: { id: { in: ordered.slice(0, 21) } },
+      data: { verificationStatus: "PENDING_JOB" },
+    });
+    expect((await plan({ batch: 2 })).planned).toBe(1);
+    const rows = await rowsOf(s.campaign.id);
+    expect(rows).toHaveLength(1);
+    const cls = await P().campaignLead.findMany({ where: { campaignId: s.campaign.id } });
+    expect(cls.filter((c) => c.state === "QUEUED")).toHaveLength(21);
+  });
+
   test("paused, stopped and completed leads get nothing", async () => {
     const s = await seedCampaign(P(), { at: T, leads: 3, accounts: [{ dailyLimit: 100 }] });
     const states = ["PAUSED", "STOPPED", "COMPLETED"] as const;
