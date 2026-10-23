@@ -19,6 +19,7 @@ let opps: typeof import("../app/api/v1/crm/opportunities/route");
 let opp: typeof import("../app/api/v1/crm/opportunities/[id]/route");
 let settings: typeof import("../app/api/v1/settings/workspace/route");
 let merge: typeof import("../app/api/v1/leads/merge/route");
+let leadRoute: typeof import("../app/api/v1/leads/[id]/route");
 
 const setRole = (role: string) =>
   db.prisma.member.updateMany({ where: { workspaceId }, data: { role } });
@@ -60,6 +61,7 @@ beforeAll(async () => {
   opp = await import("../app/api/v1/crm/opportunities/[id]/route");
   settings = await import("../app/api/v1/settings/workspace/route");
   merge = await import("../app/api/v1/leads/merge/route");
+  leadRoute = await import("../app/api/v1/leads/[id]/route");
   ({ workspaceId } = await createFirstOwner(
     db.prisma,
     { name: "O", email: "owner@x.io", password: PASSWORD, workspaceName: "Acme", token: TOKEN },
@@ -129,6 +131,8 @@ describe("crm routes", () => {
     expect(
       (await opps.POST(req("POST", "crm/opportunities", { leadId: l.id }, bearer(readKey)))).status,
     ).toBe(403);
+    const big = await leadRoute.PATCH(req("PATCH", `leads/${l.id}`, { plValue: 1e13 }), p(l.id));
+    expect(big.status).toBe(400); // Rev 2 C1: lead plValue ≤ 1e12
     for (const value of [-1, 1e13])
       expect(
         (await opps.POST(req("POST", "crm/opportunities", { leadId: l.id, value }))).status,

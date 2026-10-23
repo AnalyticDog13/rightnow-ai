@@ -43,11 +43,14 @@ export type ApiOpportunity = {
 };
 
 // Decimal(14,2) holds values below 1e12
-const LIMIT = new Prisma.Decimal("1e12");
-const money = z.number().min(0).lt(1e12);
+// Decimal(14,2): compared after rounding to cents, as Postgres stores it
+const MAX = 999_999_999_999.99;
+const money = z.number().min(0).max(MAX);
 /** D40 / Rev 2 C1: a derived value outside the column's range becomes 0, so it can never fail an insert. */
-const clamp = (d: Prisma.Decimal | null | undefined) =>
-  d && d.gte(0) && d.lt(LIMIT) ? d : new Prisma.Decimal(0);
+const clamp = (d: Prisma.Decimal | null | undefined) => {
+  const c = d?.toDecimalPlaces(2);
+  return c && c.gte(0) && c.lte(MAX) ? c : new Prisma.Decimal(0);
+};
 const notFound = () => new AccountError(404, "Not found");
 const isUnique = (e: unknown) => (e as { code?: string })?.code === "P2002";
 
@@ -150,7 +153,8 @@ async function opened(tx: Tx, at: Date, actor: Actor, o: Opportunity, kind: Stag
 /**
  * Rev 2 I2: locks the deal FOR UPDATE, reads the target stage FOR KEY SHARE, then computes from/to, so concurrent moves
  * serialize and a same-stage move is a no-op. Entering WON/LOST sets closedAt and records DEAL_WON/DEAL_LOST; back to
- * OPEN clears it. `keepClosed` (the interest hook): a WON/LOST deal never moves back to an OPEN stage.
+ * OPEN clears it. `keep` (the interest hook): "toOpen" (manual status) keeps a WON/LOST deal out of OPEN stages;
+ * "closed" (reply classification) never moves a WON/LOST deal at all (D40 ruling: only a person changes a closed deal).
  */
 async function moveStage(
   tx: Tx,
@@ -159,7 +163,7 @@ async function moveStage(
   actor: Actor,
   id: string,
   stageId: string,
-  keepClosed = false,
+  keep?: "toOpen" | "closed",
 ): Promise<"moved" | "same" | "kept" | "no_deal" | "no_stage"> {
   if (!(await lockDeal(tx, ws, id))) return "no_deal";
   const o = await tx.opportunity.findUniqueOrThrow({
@@ -169,7 +173,7 @@ async function moveStage(
   if (o.stageId === stageId) return "same";
   const to = await keyShare(tx, ws, stageId);
   if (!to) return "no_stage";
-  if (keepClosed && o.stage.kind !== "OPEN" && to.kind === "OPEN") return "kept";
+  if (keep && o.stage.kind !== "OPEN" && (keep === "closed" || to.kind === "OPEN")) return "kept";
   const now = clock.now();
   const entering = to.kind !== "OPEN" && to.kind !== o.stage.kind;
   const moved = await tx.opportunity.update({
@@ -212,6 +216,7 @@ export async function onInterestChange(
       })),
       skipDuplicates: true,
     });
+  const keep = o.source === "reply" ? "closed" : "toOpen";
   const stages = await ensureStages(tx, ws);
   const byCode = new Map(stages.flatMap((s) => s.interestCodes.map((c) => [c, s.id] as const)));
   const work = changes.filter((c) => c.to !== null && (byCode.has(c.to) || c.to === 2));
@@ -266,7 +271,7 @@ export async function onInterestChange(
   for (const c of work) {
     const stageId = byCode.get(c.to!);
     let deal = dealOf.get(c.leadId) ?? null;
-    if (deal && stageId) await moveStage(tx, clock, ws, actor, deal.id, stageId, true);
+    if (deal && stageId) await moveStage(tx, clock, ws, actor, deal.id, stageId, keep);
     else if (!deal && stageId && c.to! >= 1 && c.to! <= 4 && crmAutoOpportunity) {
       const stage = await lockStage(stageId);
       const lead = leads.get(c.leadId);
@@ -297,7 +302,7 @@ export async function onInterestChange(
           deal = await tx.opportunity.findFirst({
             where: { workspaceId: ws, leadId: c.leadId, campaignId: camp },
           });
-          if (deal) await moveStage(tx, clock, ws, actor, deal.id, stageId, true);
+          if (deal) await moveStage(tx, clock, ws, actor, deal.id, stageId, keep);
         }
         deal ??= row ?? null;
         if (deal) dealOf.set(c.leadId, deal);
@@ -426,7 +431,7 @@ export async function pipelineBoard(db: Db, ws: string, query: unknown) {
   for (const s of stages)
     cols.push(
       await db.opportunity.findMany({
-        where: { ...where, stageId: s.id },
+        where: { AND: [where, { stageId: s.id }] }, // keeps a stageId filter: cards agree with counts
         include: INCLUDE,
         orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
         take: CARDS + 1,
@@ -471,6 +476,8 @@ export async function createOpportunity(
   const d = createInput.parse(input);
   try {
     return await prisma.$transaction(async (tx) => {
+      // KEY SHARE waits for a merge or delete holding the lead, then the re-read sees it gone
+      await tx.$queryRaw`SELECT id FROM "Lead" WHERE id = ${d.leadId} AND "workspaceId" = ${ws} FOR KEY SHARE`;
       const lead = await tx.lead.findFirst({
         where: { id: d.leadId, workspaceId: ws, deletedAt: null },
       });

@@ -119,9 +119,13 @@ export async function updateStage(
         kind: p.kind ?? cur.kind,
         interestCodes: p.interestCodes ?? cur.interestCodes,
       });
-      // Rev 2 I3: a deal never changes between open and closed without a stage transition
-      if (p.kind && p.kind !== cur.kind && (await tx.opportunity.count({ where: { stageId: id } })))
-        throw new AccountError(409, "stage_not_empty");
+      // Rev 2 I3: a deal never changes between open and closed without a stage transition. FOR UPDATE on this one
+      // stage waits for in-flight moves into it (their FOR KEY SHARE), so the count sees their deals (D21).
+      if (p.kind && p.kind !== cur.kind) {
+        await tx.$queryRaw`SELECT id FROM "PipelineStage" WHERE id = ${id} FOR UPDATE`;
+        if (await tx.opportunity.count({ where: { stageId: id } }))
+          throw new AccountError(409, "stage_not_empty");
+      }
       await tx.pipelineStage.update({ where: { id }, data: p });
       if (position !== undefined) {
         const ids = stages.map((s) => s.id).filter((x) => x !== id);

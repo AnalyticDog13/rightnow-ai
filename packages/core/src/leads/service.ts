@@ -186,11 +186,14 @@ export async function updateLead(
 ) {
   const { plValue, ...p } = updateLeadInput.parse(patch);
   return prisma.$transaction(async (tx) => {
-    const before = await liveLead(tx, ws, id);
+    await liveLead(tx, ws, id);
     if (p.ownerId) await assertMembers(tx, ws, [p.ownerId]);
     // Lock order: Suppression before Lead (same in gdprDeleteLead and bulk set_interest).
     if (p.interestStatus !== undefined)
       await applyInterestChange(tx, clock, ws, id, p.interestStatus);
+    // the old status under the lock the update takes anyway (Lead last, D21): a concurrent change cannot drift it
+    const [before] = await tx.$queryRaw<{ interestStatus: number | null }[]>`
+      SELECT "interestStatus" FROM "Lead" WHERE id = ${id} FOR NO KEY UPDATE`;
     const lead = await tx.lead.update({
       where: { id },
       data: {
@@ -206,13 +209,13 @@ export async function updateLead(
       ...(p.interestStatus !== undefined && { interestStatus: p.interestStatus }),
     });
     // D40: after the Lead write (D21: Opportunity is a leaf)
-    if (p.interestStatus !== undefined && p.interestStatus !== before.interestStatus)
+    if (p.interestStatus !== undefined && p.interestStatus !== before!.interestStatus)
       await onInterestChange(
         tx,
         clock,
         ws,
         actorId,
-        [{ leadId: id, from: before.interestStatus, to: p.interestStatus }],
+        [{ leadId: id, from: before!.interestStatus, to: p.interestStatus }],
         { source: "manual" },
       );
     return toApiLead(lead);

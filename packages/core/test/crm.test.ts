@@ -99,6 +99,31 @@ const err = (p: Promise<unknown>) =>
     }),
   );
 
+type TxC = Parameters<Parameters<ReturnType<typeof P>["$transaction"]>[0]>[0];
+/** Runs `fn` in a transaction that stays open (its locks held) until `release()`; forces an interleaving. */
+async function hold(fn: (tx: TxC) => Promise<unknown>) {
+  let open!: () => void;
+  const gate = new Promise<void>((r) => (open = r));
+  let ready!: () => void;
+  const started = new Promise<void>((r) => (ready = r));
+  const done = P().$transaction(
+    async (tx) => {
+      await fn(tx);
+      ready();
+      await gate;
+    },
+    { timeout: 20_000 },
+  );
+  await started;
+  return {
+    release: async () => {
+      await new Promise((r) => setTimeout(r, 300)); // let the contender reach the lock
+      open();
+      await done;
+    },
+  };
+}
+
 /** step 1 SENT from X two days ago (rfc), step 2 SENT from X yesterday; both ACCEPTED; enrolled 3 days ago. */
 async function enrol(w: World, o: { plValue?: number; email?: string } = {}) {
   const lead = await newLead(w.ws, {
@@ -246,6 +271,7 @@ describe("stages", () => {
       await err(updateStage(P(), w.ws, null, w.st("Closed Won"), { kind: "OPEN" })),
     ).toMatchObject({
       status: 409,
+      message: "last_stage_of_kind",
     });
     expect(await err(deleteStage(P(), w.ws, null, w.st("Contacted")))).toMatchObject({
       status: 409,
@@ -267,6 +293,7 @@ describe("stages", () => {
       await createStage(P(), w.ws, null, { name: `S${i}`, kind: "OPEN" });
     expect(await err(createStage(P(), w.ws, null, { name: "S21", kind: "OPEN" }))).toMatchObject({
       status: 400,
+      message: "too_many_stages",
     });
     expect(await P().pipelineStage.count({ where: { workspaceId: w.ws } })).toBe(20);
 
@@ -310,11 +337,16 @@ describe("stages", () => {
       leadId: l.id,
       stageId: w.st("Proposal Sent"),
     });
-    const [del, upd] = await Promise.all([
-      err(deleteStage(P(), w.ws, null, w.st("Proposal Sent"), w.st("Negotiation"))),
-      err(updateOpportunity(P(), clock, w.ws, null, d.id, { stageId: w.st("Contacted") })),
-    ]);
-    expect([del, upd]).toEqual([null, null]);
+    // the move holds the deal while the delete starts: the delete's deal scan waits, then skips it
+    const h = await hold(
+      (tx) => tx.$queryRaw`SELECT id FROM "Opportunity" WHERE id = ${d.id} FOR UPDATE`,
+    );
+    const upd = err(
+      updateOpportunity(P(), clock, w.ws, null, d.id, { stageId: w.st("Contacted") }),
+    );
+    const del = err(deleteStage(P(), w.ws, null, w.st("Proposal Sent"), w.st("Negotiation")));
+    await h.release();
+    expect([await del, await upd]).toEqual([null, null]);
     expect((await P().opportunity.findUniqueOrThrow({ where: { id: d.id } })).stageId).toBe(
       w.st("Contacted"),
     );
@@ -352,13 +384,36 @@ describe("stages", () => {
       stageId: w.st("Negotiation"),
     });
     const won = { stageId: w.st("Closed Won") };
-    await Promise.all([
+    // both PATCHes queue behind a held deal lock, so both start from Negotiation
+    const h = await hold(
+      (tx) => tx.$queryRaw`SELECT id FROM "Opportunity" WHERE id = ${d.id} FOR UPDATE`,
+    );
+    const both = Promise.all([
       updateOpportunity(P(), clock, w.ws, null, d.id, won),
       updateOpportunity(P(), clock, w.ws, null, d.id, won),
     ]);
+    await h.release();
+    await both;
     expect(await events(w.ws, "DEAL_WON")).toHaveLength(1);
     expect(await audits(w.ws, "opportunity.stage")).toHaveLength(1);
     expect((await P().opportunity.findUniqueOrThrow({ where: { id: d.id } })).closedAt).toEqual(T);
+  });
+
+  test("a kind change waits for a deal moving in (Rev 2 I3)", async () => {
+    const w = await world();
+    const l = await newLead(w.ws);
+    const S = w.st("Proposal Sent");
+    // a move into the empty stage, in flight: it holds KEY SHARE on S and saw it OPEN
+    const h = await hold(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "PipelineStage" WHERE id = ${S} FOR KEY SHARE`;
+      await tx.opportunity.create({
+        data: { workspaceId: w.ws, leadId: l.id, stageId: S, title: "t" },
+      });
+    });
+    const edit = err(updateStage(P(), w.ws, null, S, { kind: "WON" }));
+    await h.release();
+    expect(await edit).toMatchObject({ status: 409, message: "stage_not_empty" });
+    expect((await P().pipelineStage.findUniqueOrThrow({ where: { id: S } })).kind).toBe("OPEN");
   });
 });
 
@@ -450,6 +505,68 @@ describe("interest hook", () => {
     expect(await events(w.ws, "DEAL_LOST")).toHaveLength(1);
   });
 
+  test("a value that rounds up to 1e12 becomes 0", async () => {
+    const w = await world();
+    const lead = await newLead(w.ws, { plValue: "999999999999.996" });
+    await updateLead(P(), clock, w.ws, lead.id, { interestStatus: 1 });
+    expect((await deals(w.ws))[0]!.value.toFixed(2)).toBe("0.00");
+    const l2 = await newLead(w.ws, { plValue: "999999999999.99" });
+    await updateLead(P(), clock, w.ws, l2.id, { interestStatus: 1 });
+    expect(
+      (await P().opportunity.findFirstOrThrow({ where: { leadId: l2.id } })).value.toFixed(2),
+    ).toBe("999999999999.99");
+    const l3 = await newLead(w.ws);
+    await expect(
+      createOpportunity(P(), clock, w.ws, null, { leadId: l3.id, value: 999999999999.999 }),
+    ).rejects.toThrow();
+  });
+
+  test("a reply never moves a closed deal", async () => {
+    const w = await world({ stopOnReply: false });
+    const e = await enrol(w);
+    const d = await createOpportunity(P(), clock, w.ws, null, {
+      leadId: e.lead.id,
+      campaignId: w.campaign.id,
+    });
+    await updateOpportunity(P(), clock, w.ws, null, d.id, { stageId: w.st("Closed Won") });
+    await receive(
+      w.accounts[0]!,
+      threaded(e.lead, e.rfc, { text: "Not interested." }),
+      REPLY("NOT_INTERESTED"),
+    );
+    expect((await P().lead.findUniqueOrThrow({ where: { id: e.lead.id } })).interestStatus).toBe(
+      -1,
+    );
+    expect(await deals(w.ws)).toMatchObject([{ stageId: w.st("Closed Won"), closedAt: T }]);
+    expect(await events(w.ws, "DEAL_LOST")).toEqual([]);
+  });
+
+  test("a status change reads the old status under the Lead lock", async () => {
+    const w = await world();
+    const lead = await newLead(w.ws);
+    await updateLead(P(), clock, w.ws, lead.id, { interestStatus: 1 });
+    const [d] = await deals(w.ws);
+    // another request has set 2 and moved the deal, not yet committed
+    const h = await hold(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "Lead" WHERE id = ${lead.id} FOR UPDATE`;
+      await tx.lead.update({ where: { id: lead.id }, data: { interestStatus: 2 } });
+      await tx.opportunity.update({
+        where: { id: d!.id },
+        data: { stageId: w.st("Meeting Scheduled") },
+      });
+    });
+    const c = fixedClock(at(1000));
+    const b = updateLead(P(), c, w.ws, lead.id, { interestStatus: 1 });
+    await h.release();
+    await b;
+    expect((await P().lead.findUniqueOrThrow({ where: { id: lead.id } })).interestStatus).toBe(1);
+    expect((await deals(w.ws))[0]!.stageId).toBe(w.st("Interested"));
+    expect((await events(w.ws, "INTEREST_CHANGED")).map((e) => e.meta)).toEqual([
+      { from: null, to: 1, source: "manual" },
+      { from: 2, to: 1, source: "manual" },
+    ]);
+  });
+
   test("reply creates opportunity", async () => {
     const w = await world();
     const e = await enrol(w);
@@ -521,38 +638,46 @@ describe("crm step never blocks ingest", () => {
     await synced0(s.ws, s.A.id, s.lead.id);
     const [d] = await deals(s.ws);
     expect(d!.value.toFixed(2)).toBe("0.00");
-    await expect(updateLead(P(), clock, s.ws, s.lead.id, { plValue: 1e13 })).rejects.toThrow();
+    await expect(updateLead(P(), clock, s.ws, s.lead.id, { plValue: 1e13 })).rejects.toThrow(
+      /too_big|Too big/,
+    );
   });
 
   test("2: a concurrent stage delete", async () => {
     const w = await world();
     const e = await enrol(w);
-    const [attempts, del] = await Promise.all([
-      receive(w.accounts[0]!, threaded(e.lead, e.rfc)),
-      err(deleteStage(P(), w.ws, null, w.st("Interested"), w.st("Replied"))),
-    ]);
-    expect(attempts).toBe(1);
+    // the delete of Interested is in flight (row locked FOR UPDATE, not committed) when the hook reads it
+    const h = await hold((tx) => tx.pipelineStage.delete({ where: { id: w.st("Interested") } }));
+    const ingest = receive(w.accounts[0]!, threaded(e.lead, e.rfc));
+    await h.release();
+    expect(await ingest).toBe(1); // one attempt: no retry loop
     expect(await P().message.count({ where: { workspaceId: w.ws } })).toBe(1);
-    const ds = await deals(w.ws);
-    expect(ds.length).toBeLessThanOrEqual(1);
-    if (del === null) expect(ds.map((d) => d.stageId)).not.toContain(w.st("Interested"));
-    else expect(del).toMatchObject({ status: 409, message: "stage_not_empty" });
-    if (ds[0]) expect(await P().pipelineStage.count({ where: { id: ds[0].stageId } })).toBe(1);
+    expect(await events(w.ws, "REPLY")).toHaveLength(1);
+    expect(await deals(w.ws)).toEqual([]); // the stage is gone: the step is skipped
+    expect(await audits(w.ws, "crm.hook_failed")).toEqual([]);
   });
 
   test("3: a concurrent manual create for the same lead and campaign", async () => {
     const w = await world();
     const e = await enrol(w);
-    const [attempts, post] = await Promise.all([
-      receive(w.accounts[0]!, threaded(e.lead, e.rfc)),
-      err(
-        createOpportunity(P(), clock, w.ws, null, { leadId: e.lead.id, campaignId: w.campaign.id }),
-      ),
-    ]);
-    expect(attempts).toBe(1);
-    if (post) expect(post).toMatchObject({ status: 409, message: "opportunity_exists" });
-    expect(await deals(w.ws)).toHaveLength(1);
+    // the POST's insert is in flight when the hook inserts: ON CONFLICT DO NOTHING waits, skips, re-reads
+    const h = await hold((tx) =>
+      tx.opportunity.create({
+        data: {
+          workspaceId: w.ws,
+          leadId: e.lead.id,
+          campaignId: w.campaign.id,
+          stageId: w.st("Not Contacted"),
+          title: "t",
+        },
+      }),
+    );
+    const ingest = receive(w.accounts[0]!, threaded(e.lead, e.rfc));
+    await h.release();
+    expect(await ingest).toBe(1);
+    expect(await deals(w.ws)).toMatchObject([{ stageId: w.st("Interested") }]);
     expect(await P().message.count({ where: { workspaceId: w.ws } })).toBe(1);
+    expect(await audits(w.ws, "crm.hook_failed")).toEqual([]);
   });
 
   test("4: an error in the CRM step rolls back to the savepoint and is audited", async () => {
@@ -695,6 +820,38 @@ describe("deal lifecycle", () => {
       currency: "EUR",
     });
   });
+
+  test("a deal created during a merge never stays on the merged-away lead", async () => {
+    const w = await world();
+    const keep = await newLead(w.ws);
+    const gone = await newLead(w.ws);
+    // the merge holds both Lead rows FOR UPDATE and soft-deletes the merged lead
+    const h = await hold(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "Lead" WHERE id = ANY(${[keep.id, gone.id]}) ORDER BY id FOR UPDATE`;
+      await tx.lead.update({
+        where: { id: gone.id },
+        data: { deletedAt: T, mergedIntoId: keep.id },
+      });
+    });
+    const post = err(createOpportunity(P(), clock, w.ws, null, { leadId: gone.id }));
+    await h.release();
+    expect(await post).toMatchObject({ status: 404 });
+    expect(await P().opportunity.count({ where: { leadId: gone.id } })).toBe(0);
+  });
+
+  test("currency_in_use holds against a deal created meanwhile", async () => {
+    const w = await world();
+    const l = await newLead(w.ws);
+    const h = await hold((tx) =>
+      tx.opportunity.create({
+        data: { workspaceId: w.ws, leadId: l.id, stageId: w.st("Replied"), title: "t", value: 100 },
+      }),
+    );
+    const change = err(updateWorkspaceSettings(P(), clock, w.ws, null, { currency: "EUR" }));
+    await h.release();
+    expect(await change).toMatchObject({ status: 409, message: "currency_in_use" });
+    expect((await P().workspace.findUniqueOrThrow({ where: { id: w.ws } })).currency).toBe("USD");
+  });
 });
 
 describe("filters", () => {
@@ -751,6 +908,11 @@ describe("filters", () => {
     expect(col.opportunities.map((o) => o.campaign?.id).sort()).toEqual(
       [w.campaign.id, d2c.campaign.id].sort(),
     );
+    // a stage filter: only that column has cards, and every column's cards match its count
+    const one = await pipelineBoard(P(), w.ws, { stageId: w.st("Closed Won") });
+    for (const s of one.stages) expect(s.opportunities).toHaveLength(s.count);
+    expect(one.stages.find((s) => s.id === w.st("Closed Won"))!.count).toBe(1);
+    expect(one.stages.find((s) => s.id === w.st("Interested"))!.opportunities).toEqual([]);
     await softDeleteLead(P(), clock, w.ws, b.id);
     const col2 = (await pipelineBoard(P(), w.ws, {})).stages.find(
       (s) => s.id === w.st("Interested"),
@@ -764,11 +926,14 @@ describe("filters", () => {
         email: `bulk${i}@b${n}.test`,
       })),
     });
+    const t0 = Date.now();
     await bulkLeads(P(), clock, w.ws, {
       ids: many.map((l) => l.id),
       action: "set_interest",
       value: 1,
     });
+    const ms = Date.now() - t0;
+    expect(ms).toBeLessThan(15_000); // half the bulk transaction's timeout
     expect(await P().opportunity.count({ where: { leadId: { in: many.map((l) => l.id) } } })).toBe(
       200,
     );

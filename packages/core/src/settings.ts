@@ -62,6 +62,8 @@ export async function updateWorkspaceSettings(
   const { physicalAddress, ...rest } = r.data;
   return prisma.$transaction(async (tx) => {
     if (rest.currency) {
+      // FOR UPDATE conflicts with the FK KEY SHARE of a deal insert, so the count sees in-flight deals
+      await tx.$queryRaw`SELECT id FROM "Workspace" WHERE id = ${ws} FOR UPDATE`;
       const cur = await tx.workspace.findUniqueOrThrow({ where: { id: ws }, select: { currency: true } });
       const money = { workspaceId: ws, OR: [{ value: { not: 0 } }, { cashCollected: { not: 0 } }] };
       if (cur.currency !== rest.currency && (await tx.opportunity.count({ where: money })))
