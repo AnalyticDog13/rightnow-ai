@@ -51,6 +51,7 @@ const describe = (t: TimelineItem) => {
     case "note":
       return `Note (${d.noteKind}): ${d.body}`;
     case "task":
+      if (d.action === "task.delete") return d.title ? `Task removed: ${d.title}` : "Task removed";
       return `Task ${d.action === "task.create" ? "added" : "updated"}: ${d.title ?? "(deleted)"}`;
     case "opportunity":
       return `Deal ${String(d.action).slice("opportunity.".length)}`;
