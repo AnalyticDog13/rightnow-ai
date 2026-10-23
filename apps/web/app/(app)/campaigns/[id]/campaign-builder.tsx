@@ -97,6 +97,9 @@ export function CampaignBuilder(p: Props) {
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-semibold tracking-tight">{c.name}</h1>
           <StatusBadge status={p.status} />
+          <Link href={`/analytics?campaignIds=${c.id}`} className="text-sm underline">
+            Analytics
+          </Link>
         </div>
         {canEdit && (
           <div className="flex gap-2">

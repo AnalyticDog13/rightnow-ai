@@ -37,7 +37,7 @@ export function CrmClient({
   autoOpportunity: boolean;
 }) {
   const sp = useSearchParams();
-  const [tab, setTab] = useState("opportunities");
+  const [tab, setTab] = useState(sp.get("tab") === "tasks" ? "tasks" : "opportunities");
   const tabs = [
     { id: "opportunities", label: "Opportunities" },
     { id: "tasks", label: "Tasks" },

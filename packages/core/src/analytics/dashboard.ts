@@ -25,6 +25,8 @@ export async function dashboardSummary(
   workspaceCap: number | null;
   campaigns: Awaited<ReturnType<typeof campaignOverview>>;
   rates7d: Metrics["rates"];
+  /** the counts behind rates7d, for the tooltips' numerators and denominators */
+  metrics7d: Metrics;
   accounts: { id: string; email: string; displayStatus: string; healthScore: number | null }[];
   tasksDue: ApiTask[];
   remindersDue: number;
@@ -74,6 +76,7 @@ export async function dashboardSummary(
     workspaceCap: w.dailyCap,
     campaigns: campaigns.filter((c) => !INACTIVE.includes(c.status)),
     rates7d: week.total.rates,
+    metrics7d: week.total,
     accounts: views.map((a) => ({
       id: a.id,
       email: a.email,
