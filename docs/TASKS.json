@@ -633,12 +633,12 @@
    "id": "P6-T01a",
    "phase": 6,
    "title": "CRM backend: pipeline stages, opportunities unique per lead+campaign, value, cashCollected, owner, attribution, interest-to-stage hook (savepoint in reply ingest), CRM events",
-   "status": "todo",
+   "status": "done",
    "deps": [
     "P5-T08"
    ],
    "model": "opus",
-   "commit": null,
+   "commit": "2f2ebbc",
    "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-6.md (incl. Revision 2); tests listed there pass"
   },
   {

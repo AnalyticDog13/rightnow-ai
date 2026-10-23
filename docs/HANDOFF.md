@@ -1,7 +1,7 @@
 # Handoff
 
 **Phase:** 6 — CRM & analytics (next). Phase 5 (deliverability, warm-up, re-warm-up) DONE and merged to `main`.
-**Current task:** P6-T01a (pipeline, opportunities, interest hook — opus). Plan `docs/plans/phase-6.md` reviewed (`phase-6-review.md`, 1 C / 8 I / 17 M) and revised (Revision 2, 3f340e9). Order strictly sequential: T01a → T01b → T02 → T03 → T04 → gate. Ledger `.superpowers/sdd/phase-6/progress.md`.
+**Current task:** P6-T01b (tasks, reminders, logged activity, lead timeline — sonnet). Done: P6-T01a 2f2ebbc. Order: T01b → T02 → T03 → T04 → gate. Ledger `.superpowers/sdd/phase-6/progress.md`.
 **Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 (approved). Done step plans: `docs/plans/phase-1.md` … `phase-5.md` (+ `phase-4-review.md`, `phase-5-review.md`).
 **Tests:** ~1290 vitest + Playwright (auth, accounts*, campaign-create, deliverability, inbox, leads, test-send …) green; CI `check`, `compose-smoke`, `imap-real` green. Parity: 208/316 ticked.
 
