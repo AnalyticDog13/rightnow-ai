@@ -39,6 +39,8 @@ model Workspace {
   tasks                Task[]
   automationRules      AutomationRule[]
   automationRuns       AutomationRun[]
+  webhooks             Webhook[]
+  webhookDeliveries    WebhookDelivery[]
   timezone             String                @default("UTC")
   physicalAddress      String?
   dailyCap             Int? // null = no workspace cap
@@ -473,6 +475,7 @@ model Lead {
   campaignLeads        CampaignLead[]
   opportunities        Opportunity[]
   tasks                Task[]
+  webhookDeliveries    WebhookDelivery[]
 
   @@index([workspaceId, createdAt, id])
   @@index([workspaceId, companyDomain])
@@ -1267,4 +1270,70 @@ model AutomationRun {
 
   @@unique([ruleId, eventId])
   @@index([workspaceId, createdAt])
+}
+
+enum WebhookStatus {
+  ACTIVE
+  ERROR
+}
+
+enum DeliveryStatus {
+  PENDING
+  SENDING
+  DELIVERED
+  FAILED
+}
+
+/** D44: an outgoing webhook. secretEnc / headersEnc are encrypted (ENCRYPTED_COLUMNS) and never returned. */
+model Webhook {
+  id                  String            @id @default(cuid())
+  workspaceId         String
+  workspace           Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name                String?
+  url                 String
+  events              String[]
+  campaignId          String?
+  secretEnc           String
+  headersEnc          String?
+  status              WebhookStatus     @default(ACTIVE)
+  consecutiveFailures Int               @default(0)
+  lastError           String? // a status or error code, never a body
+  disabledAt          DateTime?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  deliveries          WebhookDelivery[]
+
+  @@index([workspaceId, status])
+}
+
+/**
+ * D44: one per (webhook, event), the row-scheduled retry state. leadId is a real FK with cascade (R8): the insert and a
+ * GDPR Lead delete serialize on the FK lock. eventId carries no FK (Events are append-only).
+ */
+model WebhookDelivery {
+  id            String         @id @default(cuid())
+  workspaceId   String
+  workspace     Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  webhookId     String
+  webhook       Webhook        @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+  eventId       String
+  leadId        String?
+  lead          Lead?          @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  eventType     String
+  payload       Json
+  status        DeliveryStatus @default(PENDING)
+  attempts      Int            @default(0)
+  nextAttemptAt DateTime
+  leaseUntil    DateTime?
+  lastStatus    Int?
+  lastLatencyMs Int?
+  lastError     String?
+  lastAttemptAt DateTime?
+  deliveredAt   DateTime?
+  createdAt     DateTime       @default(now())
+
+  @@unique([webhookId, eventId])
+  @@index([status, nextAttemptAt])
+  @@index([workspaceId, lastAttemptAt])
+  @@index([leadId])
 }

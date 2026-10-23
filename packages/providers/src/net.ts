@@ -25,6 +25,19 @@ blocked.addSubnet("fc00::", 7, "ipv6"); // ULA
 blocked.addSubnet("fe80::", 10, "ipv6"); // link-local
 blocked.addSubnet("fec0::", 10, "ipv6"); // site-local (deprecated)
 blocked.addSubnet("ff00::", 8, "ipv6"); // multicast
+// R11 (M7): IPv4-translated, local-use NAT64, Teredo, discard-only, documentation
+blocked.addSubnet("::ffff:0:0:0", 96, "ipv6");
+blocked.addSubnet("64:ff9b:1::", 48, "ipv6");
+blocked.addSubnet("2001::", 32, "ipv6");
+blocked.addSubnet("100::", 64, "ipv6");
+blocked.addSubnet("2001:db8::", 32, "ipv6");
+
+// R24: cloud metadata and link-local stay refused even with allowPrivate (that flag is for LAN services)
+const metadata = new BlockList();
+metadata.addSubnet("169.254.0.0", 16, "ipv4");
+metadata.addSubnet("fe80::", 10, "ipv6");
+metadata.addAddress("fd00:ec2::254", "ipv6");
+const METADATA_NAMES = new Set(["metadata.google.internal"]);
 
 /** Parses any textual IPv6 form (compressed, expanded, mixed ::ffff:a.b.c.d) to 16 bytes. */
 function v6Bytes(ip: string): number[] {
@@ -62,18 +75,23 @@ function embeddedV4(ip: string): string | null {
   return b.slice(12).join(".");
 }
 
-export function isPrivate(ip: string): boolean {
+const inList = (l: BlockList, ip: string) => {
   const v4 = embeddedV4(ip);
-  if (v4) return blocked.check(v4, "ipv4");
-  return blocked.check(ip, isIP(ip) === 6 ? "ipv6" : "ipv4");
-}
+  if (v4) return l.check(v4, "ipv4");
+  return l.check(ip, isIP(ip) === 6 ? "ipv6" : "ipv4");
+};
+export const isPrivate = (ip: string): boolean => inList(blocked, ip);
+const isMetadata = (ip: string) => inList(metadata, ip);
 
 const isLoopback = (ip: string) => {
   const a = embeddedV4(ip) ?? ip;
   return a === "::1" || /^127\./.test(a);
 };
 
-/** Resolve `host` and, in vps mode without allowPrivate, refuse if ANY address is internal. Callers connect to `address` with TLS `servername`. */
+/**
+ * Resolve `host` and, in vps mode without allowPrivate, refuse if ANY address is internal. Cloud metadata and
+ * link-local are refused in every mode (R24). Callers connect to `address` with TLS `servername`.
+ */
 export async function assertPublicHost(
   host: string,
   o: {
@@ -86,6 +104,8 @@ export async function assertPublicHost(
   const resolve =
     o.resolve ??
     (async (h) => (await lookup(h, { all: true, verbatim: true })).map((a) => a.address));
+  const nonPublic = () => new ProviderError(`host ${host} resolves to a non-public address`);
+  if (METADATA_NAMES.has(bare.toLowerCase().replace(/\.$/, ""))) throw nonPublic();
   let addrs: string[];
   try {
     addrs = isIP(bare) ? [bare] : await resolve(bare);
@@ -95,8 +115,9 @@ export async function assertPublicHost(
       `dns lookup failed for ${host}: ${(e as NodeJS.ErrnoException).code ?? "error"}`,
     );
   }
-  if (addrs.length === 0) throw new ProviderError(`host ${host} did not resolve`);
-  if (o.mode === "vps" && !o.allowPrivate && addrs.some(isPrivate))
-    throw new ProviderError(`host ${host} resolves to a non-public address`);
+  if (addrs.length === 0)
+    throw new TransientBeforeSendError(`dns lookup for ${host} returned nothing`);
+  if (addrs.some(isMetadata) || (o.mode === "vps" && !o.allowPrivate && addrs.some(isPrivate)))
+    throw nonPublic();
   return { address: addrs[0]!, servername: host, loopback: isLoopback(addrs[0]!) };
 }

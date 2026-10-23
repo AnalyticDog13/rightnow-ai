@@ -43,6 +43,8 @@ test("A to B re-encrypts, keeps nulls, is idempotent; a value under a third key 
     "EmailAccount.credentialsEnc": 2,
     "OAuthSession.codeVerifierEnc": 1,
     "Workspace.verifierConfigEnc": 0,
+    "Webhook.secretEnc": 0,
+    "Webhook.headersEnc": 0,
   });
   const acc = async (id: string) =>
     (await db.prisma.emailAccount.findUniqueOrThrow({ where: { id } })).credentialsEnc;
@@ -56,6 +58,8 @@ test("A to B re-encrypts, keeps nulls, is idempotent; a value under a third key 
     "EmailAccount.credentialsEnc": 0,
     "OAuthSession.codeVerifierEnc": 0,
     "Workspace.verifierConfigEnc": 0,
+    "Webhook.secretEnc": 0,
+    "Webhook.headersEnc": 0,
   });
 
   // two rows back on A plus one under a third key: the column is left exactly as it was
@@ -86,4 +90,22 @@ test("Workspace.verifierConfigEnc is rotated", async () => {
   await rotateColumns(db.prisma, [{ model: "Workspace", field: "verifierConfigEnc" }], A, B);
   const got = await db.prisma.workspace.findUniqueOrThrow({ where: { id: w.id } });
   expect(decrypt(got.verifierConfigEnc!, B)).toBe("{}");
+});
+
+test("Webhook.secretEnc and headersEnc are rotated", async () => {
+  const w = await db.prisma.workspace.create({ data: { name: "H", slug: "w-rot-hook" } });
+  const h = await db.prisma.webhook.create({
+    data: {
+      workspaceId: w.id,
+      url: "https://h.test",
+      events: ["email_sent"],
+      secretEnc: encrypt("s", A),
+      headersEnc: encrypt("{}", A),
+    },
+  });
+  const cols = ENCRYPTED_COLUMNS.filter((c) => c.model === "Webhook");
+  expect(cols.map((c) => c.field)).toEqual(["secretEnc", "headersEnc"]);
+  await rotateColumns(db.prisma, cols, A, B);
+  const got = await db.prisma.webhook.findUniqueOrThrow({ where: { id: h.id } });
+  expect([decrypt(got.secretEnc, B), decrypt(got.headersEnc!, B)]).toEqual(["s", "{}"]);
 });

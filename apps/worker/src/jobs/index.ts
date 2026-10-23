@@ -10,7 +10,9 @@ import { leadImportJob } from "./lead-import";
 import { leadVerifyJob } from "./lead-verify";
 import { mailSyncJob } from "./mail-sync";
 import { sendRecoveryJob } from "./send-recovery";
+import { retentionJob } from "./retention";
 import { warmupTickJob } from "./warmup-tick";
+import { webhookDeliverJob } from "./webhook-deliver";
 
 // Later phases register their jobs here.
 export const jobs: JobDef[] = [
@@ -26,4 +28,6 @@ export const jobs: JobDef[] = [
   deliverabilityHealthJob,
   warmupTickJob,
   eventDispatchJob,
+  webhookDeliverJob,
+  retentionJob,
 ];

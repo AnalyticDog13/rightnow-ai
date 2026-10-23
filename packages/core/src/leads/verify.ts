@@ -1,11 +1,12 @@
 import dns from "node:dns";
 import type { PrismaClient, VerificationStatus } from "@rightnow/db/client";
-import { assertPublicHost, mapLimit } from "@rightnow/providers";
+import { HttpOutError, mapLimit, safeRequest } from "@rightnow/providers";
 import { z } from "zod";
 import { AccountError } from "../accounts/service";
 import { audit } from "../audit";
 import type { Clock } from "../clock";
 import { decrypt, encrypt } from "../crypto";
+import { getEnv } from "../env";
 import { DISPOSABLE_DOMAINS } from "./disposable";
 import type { ResolveMx } from "./esp";
 import { parseEmail } from "./validate";
@@ -70,53 +71,44 @@ const MAPPED: Record<string, VerificationStatus> = {
 /** An error whose `code` is the short reason shown to the user (never a body or key). */
 const coded = (code: string) => Object.assign(new Error(code), { code });
 
-async function readCapped(res: Response): Promise<string | null> {
-  const reader = res.body?.getReader();
-  if (!reader) return null;
-  const chunks: Uint8Array[] = [];
-  let n = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    n += value.length;
-    if (n > MAX_BODY) {
-      await reader.cancel();
-      return null;
-    }
-    chunks.push(value);
-  }
-  return Buffer.concat(chunks).toString("utf8");
-}
-
 /**
- * POSTs `{ email }` to the user's https URL. Private hosts are refused whatever MODE (M9).
- * shortcut: DNS-rebinding window between the check and fetch, pin the IP when P7-T02 adds a pinned HTTP helper
+ * POSTs `{ email }` to the user's https URL through safeRequest (pinned IP, no redirects, capped body). Private hosts
+ * are refused whatever MODE unless ALLOW_PRIVATE_HTTP_HOSTS (M9, D44); cloud metadata always.
  */
 export function httpVerifier(
   cfg: { url: string; apiKey: string; statusPath: string },
-  fetchFn: typeof fetch = fetch,
+  request: typeof safeRequest = safeRequest,
   resolve?: (host: string) => Promise<string[]>,
+  allowPrivate = false,
 ): EmailVerifier {
   return {
     kind: "http",
     async verify(email, signal) {
       const u = new URL(cfg.url);
       if (u.protocol !== "https:") throw new Error("verifier url must be https");
-      await assertPublicHost(u.hostname, { mode: "vps", allowPrivate: false, resolve });
-      const res = await fetchFn(cfg.url, {
-        method: "POST",
-        redirect: "error",
-        signal,
-        headers: { "content-type": "application/json", authorization: `Bearer ${cfg.apiKey}` },
-        body: JSON.stringify({ email }),
-      });
-      // any error status or malformed answer is a visible failure (retry, backoff, lastError), never a quiet "no answer"
-      if (res.status >= 400) throw coded(`http_${res.status}`);
-      const text = await readCapped(res);
-      if (text === null) throw coded("bad_response");
+      let res;
+      try {
+        res = await request(cfg.url, {
+          method: "POST",
+          signal,
+          headers: { "content-type": "application/json", authorization: `Bearer ${cfg.apiKey}` },
+          body: JSON.stringify({ email }),
+          timeoutMs: TIMEOUT_MS,
+          maxResponseBytes: MAX_BODY,
+          allowPrivate,
+          resolve,
+        });
+      } catch (e) {
+        if (e instanceof HttpOutError)
+          throw coded(e.code === "response_too_large" ? "bad_response" : e.code);
+        throw e;
+      }
+      // any error status (a redirect too: never followed) or malformed answer is a visible failure (retry, backoff,
+      // lastError), never a quiet "no answer"
+      if (res.status >= 300) throw coded(`http_${res.status}`);
       let v: unknown;
       try {
-        v = JSON.parse(text);
+        v = JSON.parse(res.body.toString("utf8"));
       } catch {
         throw coded("bad_response");
       }
@@ -346,5 +338,7 @@ export async function workspaceVerifier(
     select: { verifierKind: true, verifierConfigEnc: true },
   });
   const c = readConfig(w.verifierConfigEnc);
-  return w.verifierKind === "http" && c ? httpVerifier(c) : mxVerifier(resolveMx);
+  return w.verifierKind === "http" && c
+    ? httpVerifier(c, safeRequest, undefined, getEnv().ALLOW_PRIVATE_HTTP_HOSTS === "1")
+    : mxVerifier(resolveMx);
 }

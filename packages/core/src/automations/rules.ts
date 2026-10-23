@@ -81,6 +81,7 @@ async function validate(
   const lists = uniq(of("add_to_list", "listId"));
   const subs = uniq(of("move_to_subsequence", "subsequenceId"));
   const users = uniq([...of("assign_owner", "userId"), ...of("create_task", "assigneeId")]);
+  const hooks = uniq(of("send_webhook", "webhookId"));
   const counts = await Promise.all([
     campaigns.length &&
       tx.campaign.count({ where: { id: { in: campaigns }, workspaceId: ws, deletedAt: null } }),
@@ -90,8 +91,9 @@ async function validate(
     subs.length &&
       tx.subsequence.count({ where: { id: { in: subs }, campaign: { workspaceId: ws } } }),
     users.length && tx.member.count({ where: { workspaceId: ws, userId: { in: users } } }),
+    hooks.length && tx.webhook.count({ where: { id: { in: hooks }, workspaceId: ws } }),
   ]);
-  if (counts.some((n, i) => n !== [campaigns, accounts, lists, subs, users][i]!.length))
+  if (counts.some((n, i) => n !== [campaigns, accounts, lists, subs, users, hooks][i]!.length))
     throw bad("invalid_reference");
   return acts;
 }

@@ -31,6 +31,10 @@ export const envSchema = z.object({
   ALLOW_PRIVATE_MAIL_HOSTS: z
     .union([z.literal("1"), z.literal("").transform(() => undefined)])
     .optional(),
+  // D44: webhooks, the AI base URL and the email verifier may reach private (LAN) hosts; cloud metadata never
+  ALLOW_PRIVATE_HTTP_HOSTS: z
+    .union([z.literal("1"), z.literal("").transform(() => undefined)])
+    .optional(),
   FAKE_MAIL_DIR: z.string().optional(),
   MAIL_PROVIDER_FAKE: z
     .union([z.literal("1"), z.literal("").transform(() => undefined)])

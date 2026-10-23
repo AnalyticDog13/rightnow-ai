@@ -47,8 +47,9 @@ const client = () => {
 beforeAll(async () => {
   db = await createTestDb();
 });
+const realDeliveries = dispatchHooks.deliveries;
 afterEach(() => {
-  dispatchHooks.deliveries = async () => 0;
+  dispatchHooks.deliveries = realDeliveries;
 });
 afterAll(async () => {
   await Promise.all(extra.map((p) => p.$disconnect()));

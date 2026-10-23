@@ -14,7 +14,7 @@ describe("rule editor tables", () => {
   });
 
   it("pass an action type the client does not know through unchanged", () => {
-    const hook = { type: "send_webhook", webhookId: "w1", extra: { a: 1 } };
+    const hook = { type: "future_action", webhookId: "w1", extra: { a: 1 } };
     expect(toAction(toDraft(hook))).toEqual(hook);
     const task = { type: "create_task", title: "Call", dueInDays: 2 };
     expect(toAction(toDraft(task))).toEqual(task);

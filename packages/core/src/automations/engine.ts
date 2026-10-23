@@ -9,6 +9,7 @@ import { ensureOpportunity, errorCode, inSavepoint } from "../crm/opportunities"
 import { isLockTimeout, isRetryable, withTxRetry } from "../dispatch";
 import { suppress } from "../leads/suppression";
 import { startOfNextDay } from "../schedule";
+import { enqueueDelivery, insertDeliveries, type ActiveHook } from "../webhooks/deliver";
 
 type Tx = Prisma.TransactionClient;
 const DAY = 86_400_000;
@@ -214,6 +215,13 @@ export const ACTIONS: Record<string, Action> = {
       tx.$executeRaw`UPDATE "Lead" SET tags = array_append(tags, ${d.tag}), "updatedAt" = now()
         WHERE id = ${e.leadId} AND "workspaceId" = ${e.workspaceId} AND NOT coalesce(${d.tag} = ANY(tags), false)`,
   ),
+  // D44: one delivery to that webhook (subscribed or not); the (webhookId, eventId) unique keeps it to one
+  send_webhook: act(
+    "webhooks:write",
+    false,
+    z.strictObject({ webhookId: ref }),
+    (tx, clock, e, d) => enqueueDelivery(tx, e, clock.now(), d.webhookId),
+  ),
 };
 
 /**
@@ -278,10 +286,10 @@ export const BUILTIN_RULES: {
   },
 ];
 
-/** Seam per dispatched Event, inside its savepoint: T02 inserts the WebhookDelivery rows here (returns how many). */
-export const dispatchHooks: { deliveries: (tx: Tx, e: Event, now: Date) => Promise<number> } = {
-  deliveries: async () => 0,
-};
+/** Seam per dispatched Event, inside its savepoint: inserts the WebhookDelivery rows (returns how many). */
+export const dispatchHooks: {
+  deliveries: (tx: Tx, e: Event, now: Date, hooks: ActiveHook[]) => Promise<number>;
+} = { deliveries: insertDeliveries };
 
 type Counts = { events: number; runs: number; deliveries: number };
 type LeadRow = {
@@ -438,9 +446,13 @@ async function runBatch(
       })
     ).map((l) => [l.id, l]),
   );
+  const hooks = await tx.webhook.findMany({
+    where: { workspaceId: { in: wsIds }, status: "ACTIVE" },
+    select: { id: true, workspaceId: true, events: true, campaignId: true },
+  });
   const now = clock.now();
-  const ruled = new Set(rules.map((r) => r.workspaceId));
-  // D43: an Event of a workspace without enabled rules is only stamped by the final UPDATE (T02 adds "and no ACTIVE webhook")
+  const ruled = new Set([...rules, ...hooks].map((r) => r.workspaceId));
+  // D43: an Event of a workspace without enabled rules and ACTIVE webhooks is only stamped by the final UPDATE
   for (const e of events.filter((x) => ruled.has(x.workspaceId))) {
     await inSavepoint(
       tx,
@@ -463,7 +475,7 @@ async function runBatch(
               matches(r.conditions as RuleConditions, e, lead)
             )
               runs += await runRule(tx, clock, now, r, e, sel.failWith);
-        const deliveries = sel.failWith ? 0 : await dispatchHooks.deliveries(tx, e, now);
+        const deliveries = sel.failWith ? 0 : await dispatchHooks.deliveries(tx, e, now, hooks);
         out.runs += runs;
         out.deliveries += deliveries;
       }),

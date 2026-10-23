@@ -45,4 +45,6 @@ export const ENCRYPTED_COLUMNS: Array<{ model: string; field: string }> = [
   { model: "EmailAccount", field: "credentialsEnc" },
   { model: "OAuthSession", field: "codeVerifierEnc" },
   { model: "Workspace", field: "verifierConfigEnc" },
+  { model: "Webhook", field: "secretEnc" },
+  { model: "Webhook", field: "headersEnc" },
 ];

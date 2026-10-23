@@ -95,3 +95,47 @@ describe("assertPublicHost", () => {
     });
   });
 });
+
+describe("R11 ranges and R24 metadata", () => {
+  it.each([
+    "::ffff:0:7f00:1", // IPv4-translated ::ffff:0:0:0/96
+    "::ffff:0:808:808",
+    "64:ff9b:1::1", // local-use NAT64
+    "2001::1", // Teredo
+    "100::1", // discard-only
+    "2001:db8::1", // documentation
+  ])("vps rejects new range %s", async (ip) => {
+    await expect(assertPublicHost(ip, vps)).rejects.toThrow(/non-public/);
+  });
+
+  it.each(["169.254.169.254", "169.254.1.1", "fd00:ec2::254", "fe80::1", "::ffff:169.254.169.254"])(
+    "metadata and link-local %s stay refused with allowPrivate in every mode",
+    async (ip) => {
+      for (const mode of ["vps", "local"] as const)
+        await expect(assertPublicHost(ip, { mode, allowPrivate: true })).rejects.toThrow(
+          /non-public/,
+        );
+    },
+  );
+
+  it("metadata.google.internal is refused by name, and by what it resolves to", async () => {
+    const resolve = dns({ "md.example": ["169.254.169.254"] });
+    for (const h of ["metadata.google.internal", "METADATA.google.internal."])
+      await expect(
+        assertPublicHost(h, { mode: "vps", allowPrivate: true, resolve: async () => ["8.8.8.8"] }),
+      ).rejects.toThrow(/non-public/);
+    await expect(
+      assertPublicHost("md.example", { mode: "vps", allowPrivate: true, resolve }),
+    ).rejects.toThrow(/non-public/);
+  });
+
+  it("allowPrivate still lets LAN addresses through", async () => {
+    for (const ip of ["10.0.0.5", "192.168.1.5"])
+      expect((await assertPublicHost(ip, { mode: "vps", allowPrivate: true })).address).toBe(ip);
+  });
+
+  it("a public 8.8.8.8 and 2606:4700::1111 still pass", async () => {
+    expect((await assertPublicHost("8.8.8.8", vps)).address).toBe("8.8.8.8");
+    expect((await assertPublicHost("2606:4700::1111", vps)).address).toBe("2606:4700::1111");
+  });
+});

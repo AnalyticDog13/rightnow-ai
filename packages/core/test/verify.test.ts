@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { createTestDb } from "@rightnow/db/test-db";
+import { HttpOutError, safeRequest, type SafeResponse } from "@rightnow/providers";
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { fixedClock } from "../src/clock";
 import { decrypt } from "../src/crypto";
@@ -52,6 +53,12 @@ const stub = (m: Record<string, string>): EmailVerifier => ({
     return v && v !== "null" ? (v as never) : null;
   },
 });
+const res = (body: string, status = 200): SafeResponse => ({
+  status,
+  headers: {},
+  body: Buffer.from(body),
+  latencyMs: 1,
+});
 const claimOpts = {
   limit: 5,
   bootId: "b",
@@ -88,17 +95,24 @@ describe("mxVerifier", () => {
 
 describe("httpVerifier", () => {
   const cfg = { url: "https://v.example.com/check", apiKey: "k", statusPath: "result.status" };
+  type Req = typeof safeRequest;
   const reply = (body: unknown, status = 200) =>
-    vi.fn(async () => new Response(JSON.stringify(body), { status }));
+    vi.fn<Req>(async () => res(JSON.stringify(body), status));
   const pub = async () => ["93.184.216.34"];
-  test("maps the status at statusPath and sends a bearer POST", async () => {
+  test("maps the status at statusPath and sends a bearer POST through safeRequest", async () => {
     const f = reply({ result: { status: "catch_all" } });
     expect(await httpVerifier(cfg, f, pub).verify("a@b.test", sig())).toBe("CATCH_ALL");
-    const [url, init] = f.mock.calls[0] as unknown as [string, RequestInit];
+    const [url, o] = f.mock.calls[0]!;
     expect(url).toBe(cfg.url);
-    expect(init).toMatchObject({ method: "POST", redirect: "error" });
-    expect((init.headers as Record<string, string>).authorization).toBe("Bearer k");
-    expect(JSON.parse(init.body as string)).toEqual({ email: "a@b.test" });
+    expect(o).toMatchObject({
+      method: "POST",
+      allowPrivate: false,
+      resolve: pub,
+      timeoutMs: 10_000,
+      maxResponseBytes: 64 * 1024,
+    });
+    expect(o.headers!.authorization).toBe("Bearer k");
+    expect(JSON.parse(o.body as string)).toEqual({ email: "a@b.test" });
   });
   test("valid/invalid/risky/unknown map to statuses", async () => {
     for (const [s, want] of [
@@ -112,32 +126,69 @@ describe("httpVerifier", () => {
       ).toBe(want);
   });
   test("every HTTP error status and every malformed 200 is a coded failure, never a silent null", async () => {
-    const code = (f: typeof fetch) =>
+    const code = (f: Req) =>
       httpVerifier(cfg, f, pub)
         .verify("a@b.test", sig())
         .then(
           () => "no error",
           (e: { code?: string }) => e.code,
         );
-    for (const st of [400, 401, 429, 500, 503])
+    for (const st of [301, 302, 400, 401, 429, 500, 503])
       expect(await code(reply({}, st))).toBe(`http_${st}`);
     expect(await code(reply({ result: { status: "weird" } }))).toBe("bad_status_path");
     expect(await code(reply({ other: 1 }))).toBe("bad_status_path");
-    expect(await code(vi.fn(async () => new Response("not json")))).toBe("bad_response");
-    expect(await code(vi.fn(async () => new Response("x".repeat(70_000))))).toBe("bad_response");
+    expect(await code(vi.fn(async () => res("not json")))).toBe("bad_response");
+    const big = vi.fn<Req>(async () => {
+      throw new HttpOutError("response_too_large", 200);
+    });
+    expect(await code(big)).toBe("bad_response");
+    const slow = vi.fn<Req>(async () => {
+      throw new HttpOutError("timeout");
+    });
+    expect(await code(slow)).toBe("timeout");
   });
-  test("http:// and private hosts are refused before any fetch", async () => {
+  test("http:// is refused before any request; private hosts by safeRequest, before any socket", async () => {
     const f = reply({ result: { status: "valid" } });
     await expect(
       httpVerifier({ ...cfg, url: "http://v.example.com/x" }, f, pub).verify("a@b.test", sig()),
     ).rejects.toThrow();
-    await expect(
-      httpVerifier({ ...cfg, url: "https://10.0.0.1/x" }, f).verify("a@b.test", sig()),
-    ).rejects.toThrow();
-    await expect(
-      httpVerifier(cfg, f, async () => ["127.0.0.1"]).verify("a@b.test", sig()),
-    ).rejects.toThrow();
     expect(f).not.toHaveBeenCalled();
+    for (const [url, resolve] of [
+      ["https://10.0.0.1/x", undefined],
+      [cfg.url, async () => ["127.0.0.1"]],
+    ] as const)
+      await expect(
+        httpVerifier({ ...cfg, url }, safeRequest, resolve).verify("a@b.test", sig()),
+      ).rejects.toMatchObject({ code: "host_not_public" });
+  });
+
+  test("verifier pinned: a name that resolves public, then private, is refused on the second call", async () => {
+    let n = 0;
+    const resolve = vi.fn(async () => (n++ === 0 ? ["93.184.216.34"] : ["10.0.0.1"]));
+    // call 1 answers without the network, after resolving through the verifier's own resolver, as safeRequest does
+    const first = vi.fn<Req>(async (_u, o) => {
+      await o.resolve!("v.example.com");
+      return res(JSON.stringify({ result: { status: "valid" } }));
+    });
+    expect(await httpVerifier(cfg, first, resolve).verify("a@b.test", sig())).toBe("VERIFIED");
+    await expect(
+      httpVerifier(cfg, safeRequest, resolve).verify("a@b.test", sig()),
+    ).rejects.toMatchObject({ code: "host_not_public" });
+    expect(resolve).toHaveBeenCalledTimes(2); // one lookup per call: no separate check before the request
+  });
+
+  test("ALLOW_PRIVATE_HTTP_HOSTS lets a LAN verifier through, but never cloud metadata", async () => {
+    const f = reply({ result: { status: "valid" } });
+    expect(
+      await httpVerifier(cfg, f, async () => ["10.0.0.1"], true).verify("a@b.test", sig()),
+    ).toBe("VERIFIED");
+    expect(f.mock.calls[0]![1]).toMatchObject({ allowPrivate: true });
+    await expect(
+      httpVerifier(cfg, safeRequest, async () => ["169.254.169.254"], true).verify(
+        "a@b.test",
+        sig(),
+      ),
+    ).rejects.toMatchObject({ code: "host_not_public" });
   });
 });
 
@@ -315,9 +366,9 @@ describe("queueVerify / runVerify", () => {
     const ws = await mkWs();
     const cfg = { url: "https://v.example.com/x", apiKey: "k", statusPath: "a" };
     const err = vi.spyOn(console, "error").mockImplementation(() => {});
-    for (const [res, want] of [
-      [new Response("{}", { status: 500 }), "http_500"],
-      [new Response(JSON.stringify({ z: 1 })), "bad_status_path"],
+    for (const [r, want] of [
+      [res("{}", 500), "http_500"],
+      [res(JSON.stringify({ z: 1 })), "bad_status_path"],
     ] as const) {
       const l = await mkLead(ws, `${want}@h.test`);
       await queueVerify(db.prisma, clock, ws, "u", [l.id]);
@@ -325,7 +376,7 @@ describe("queueVerify / runVerify", () => {
         verifierFor: async () =>
           httpVerifier(
             cfg,
-            async () => res,
+            async () => r,
             async () => ["93.184.216.34"],
           ),
       });

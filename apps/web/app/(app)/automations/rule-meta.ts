@@ -75,6 +75,11 @@ export const ACTION_TYPES: Record<string, { label: string; fields: Field[] }> = 
     label: "Add tag",
     fields: [{ key: "tag", label: "Tag", kind: "text", required: true }],
   },
+  // shortcut: a webhook id typed in, until the Webhooks tab (P7-T02b) adds a "webhooks" select source
+  send_webhook: {
+    label: "Send webhook",
+    fields: [{ key: "webhookId", label: "Webhook ID", kind: "text", required: true }],
+  },
 };
 
 export type Rule = {

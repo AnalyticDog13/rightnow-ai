@@ -482,7 +482,11 @@ export async function gdprDeleteLead(
       where: { workspaceId: ws, leadId: { in: ids } },
       data: { leadId: null },
     });
+    // the lead's deliveries cascade with it (R8: the FK serializes a concurrent dispatch insert behind this delete)
     await tx.lead.deleteMany({ where: { workspaceId: ws, id: { in: ids } } });
+    // R8: a payload that holds the address without a lead link (a non-lead's reply), and any a dispatch committed
+    await tx.$executeRaw`DELETE FROM "WebhookDelivery" WHERE "workspaceId" = ${ws}
+      AND payload::text ILIKE ANY(${like}::text[])`;
     await audit(tx, { workspaceId: ws, actorId, at: clock.now() }, "lead.gdpr_delete", undefined, {
       hashes,
     });
