@@ -731,6 +731,7 @@ model CampaignLead {
   @@unique([campaignId, leadId])
   @@index([campaignId, state, nextDueAt])
   @@index([workspaceId, leadId])
+  // partial ("workspaceId", "completedAt") WHERE state = 'COMPLETED' for analytics lives in the analytics_indexes migration (raw SQL)
 }
 
 model CampaignDailyUsage {
@@ -981,6 +982,7 @@ model Event {
   @@index([workspaceId, type, occurredAt])
   @@index([campaignId, type])
   @@index([leadId, occurredAt])
+  @@index([workspaceId, occurredAt, id]) // D42: the activity export pages by (occurredAt, id)
 }
 
 model SyncRun {

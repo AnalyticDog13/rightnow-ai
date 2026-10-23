@@ -290,6 +290,7 @@ export async function onInterestChange(
               value: clamp(lead.plValue ?? cp?.plValue),
               ownerId: lead.ownerId ?? cp?.ownerId ?? actor ?? null,
               closedAt: stage.kind === "OPEN" ? null : now,
+              createdAt: now, // the clock, like the Events: analytics buckets deals by createdAt
               stepId: att?.stepId ?? null,
               variantId: att?.variantId ?? null,
               accountId: att?.accountId ?? null,
@@ -508,6 +509,7 @@ export async function createOpportunity(
           ownerId:
             d.ownerId !== undefined ? d.ownerId : (lead.ownerId ?? camp?.ownerId ?? actor ?? null),
           closedAt: stage.kind === "OPEN" ? null : now,
+          createdAt: now,
           stepId: att?.stepId ?? null,
           variantId: att?.variantId ?? null,
           accountId: att?.accountId ?? null,

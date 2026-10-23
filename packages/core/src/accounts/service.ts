@@ -56,7 +56,11 @@ export async function live(prisma: Db, ws: string, id: string): Promise<EmailAcc
 }
 
 /** Rows plus today's real usage (account timezone). */
-async function views(prisma: Db, rows: EmailAccount[], at: Date): Promise<ApiAccount[]> {
+export async function accountViews(
+  prisma: Db,
+  rows: EmailAccount[],
+  at: Date,
+): Promise<ApiAccount[]> {
   const keys = rows.map((r) => dayKey(r.timezone, at));
   const usage = await prisma.accountDailyUsage.findMany({
     where: {
@@ -74,7 +78,7 @@ export async function getAccount(prisma: Db, ws: string, id: string, o: Opts = {
   const a = await prisma.emailAccount.findFirst({
     where: { id, workspaceId: ws, deletedAt: null },
   });
-  return a ? (await views(prisma, [a], now(o)))[0]! : null;
+  return a ? (await accountViews(prisma, [a], now(o)))[0]! : null;
 }
 
 export const listQuery = z.strictObject({
@@ -109,7 +113,7 @@ export async function listAccounts(prisma: Db, ws: string, q: ListQuery, o: Opts
     ...(q.cursor && { cursor: { id: q.cursor }, skip: 0 }),
   });
   const next = rows.length > take ? rows.pop()! : null;
-  return { accounts: await views(prisma, rows, now(o)), nextCursor: next?.id ?? null };
+  return { accounts: await accountViews(prisma, rows, now(o)), nextCursor: next?.id ?? null };
 }
 
 /** One write plus its audit row in a transaction; 404 when no live account of this workspace matched. */
@@ -241,7 +245,13 @@ export async function resumeAccount(prisma: Db, ws: string, id: string, o: Opts 
   // Rev 2 I2: conditional on the PAUSED state read above; health restarts and a SOFT_BOUNCE goes in returnToService
   await prisma.$transaction(async (tx) => {
     const r = await tx.emailAccount.updateMany({
-      where: { id, workspaceId: ws, deletedAt: null, lifecycle: "PAUSED", pausedUntil: a.pausedUntil },
+      where: {
+        id,
+        workspaceId: ws,
+        deletedAt: null,
+        lifecycle: "PAUSED",
+        pausedUntil: a.pausedUntil,
+      },
       data: { consecutivePermanentErrors: 0 },
     });
     if (!r.count) return; // changed meanwhile: that change wins
