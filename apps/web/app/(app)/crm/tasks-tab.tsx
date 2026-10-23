@@ -29,16 +29,17 @@ export function TasksTab({ members, canEdit }: { members: Member[]; canEdit: boo
     if (due) p.set("due", due);
     if (assigneeId) p.set("assigneeId", assigneeId);
     const r = await call(`/api/v1/crm/tasks?${p}`, "GET");
-    if (!r.ok) return setError(friendly(r));
-    setError("");
+    if (!r.ok) return setError((e) => e || friendly(r));
     setTasks(r.json.tasks as Task[]);
   }, [status, due, assigneeId]);
   useEffect(() => {
+    setError(""); // new filters, new list; a reload after an action keeps that action's error
     void load();
   }, [load]);
 
   // complete (OPEN -> DONE) and approve (AWAITING_APPROVAL -> OPEN)
   async function setTo(t: Task, to: "DONE" | "OPEN") {
+    setError("");
     const r = await call(`/api/v1/crm/tasks/${t.id}`, "PATCH", { status: to });
     if (!r.ok) setError(friendly(r));
     void load();

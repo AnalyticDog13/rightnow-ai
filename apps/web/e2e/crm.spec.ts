@@ -4,8 +4,7 @@ import { ensureSession, STATE } from "./session";
 
 // E2E #12: a seeded lead with one ACCEPTED send; the board is driven with the lead drawer, the card's Stage select
 // (keyboard path), drag and drop, the opportunity drawer, Tasks and Activity. Runs after auth.spec.
-// wide enough that the source and target columns are on screen together (drag and drop does not scroll)
-test.use({ storageState: STATE, viewport: { width: 2400, height: 900 } });
+test.use({ storageState: STATE });
 test.setTimeout(180_000); // cold route compiles under next dev
 test.beforeAll(async ({ playwright, baseURL }) => ensureSession(playwright, baseURL!));
 
@@ -13,8 +12,9 @@ const db = () => createPrisma(process.env.E2E_DATABASE_URL!, 2);
 
 async function clean() {
   const prisma = db();
-  await prisma.task.deleteMany({});
-  await prisma.opportunity.deleteMany({});
+  const leads = { lead: { email: { endsWith: "@e2e-crm.io" } } };
+  await prisma.task.deleteMany({ where: { OR: [leads, { title: "Stuck task" }] } });
+  await prisma.opportunity.deleteMany({ where: leads });
   await prisma.event.deleteMany({ where: { dedupeKey: { startsWith: "crm-e2e:" } } });
   await prisma.campaign.deleteMany({ where: { name: "CRM E2E" } });
   await prisma.lead.deleteMany({ where: { email: { endsWith: "@e2e-crm.io" } } });
@@ -94,35 +94,51 @@ test("interest creates a card; move by select and drag; tasks; activity", async 
   await expect(drawer).toContainText("From CRM E2E · step 1 · variant A · sender@e2e-crm.test");
   await drawer.getByRole("button", { name: "Close" }).click();
 
-  // keyboard path: the card's Stage select, announced and persistent
+  // keyboard only: Tab from the card's title to its Stage select, ArrowDown picks the next stage; the move is
+  // announced and focus stays on the moved card's Stage select
   const moved = page.waitForResponse(
     (r) => /\/crm\/opportunities\/[^/]+$/.test(r.url()) && r.request().method() === "PATCH",
   );
-  await card("Acme CRM")
-    .getByLabel("Stage of Acme CRM")
-    .selectOption({ label: "Meeting Scheduled" });
+  const stage = page.getByLabel("Stage of Acme CRM");
+  await card("Acme CRM").getByRole("button", { name: "Open Acme CRM" }).focus();
+  await page.keyboard.press("Tab");
+  await expect(stage).toBeFocused();
+  await page.keyboard.press("ArrowDown"); // Interested -> Meeting Scheduled
   expect((await moved).status()).toBe(200);
   await expect(
     page.getByRole("status").filter({ hasText: "Moved Acme CRM to Meeting Scheduled" }),
   ).toBeVisible();
+  await expect(column("Meeting Scheduled").getByText("Acme CRM")).toBeVisible();
+  await expect(stage).toBeFocused();
   await page.reload();
   await expect(column("Meeting Scheduled").getByText("Acme CRM")).toBeVisible();
 
-  // a failed move is reported and the board reloads, so the card is not left in the wrong column
+  // a rejected move is reported and the card goes back
   const patchUrl = "**/api/v1/crm/opportunities/*";
   await page.route(patchUrl, (r) =>
     r.request().method() === "PATCH"
       ? r.fulfill({ status: 409, contentType: "application/json", body: '{"error":"conflict"}' })
       : r.fallback(),
   );
-  await card("Acme CRM").getByLabel("Stage of Acme CRM").selectOption({ label: "Negotiation" });
+  await stage.selectOption({ label: "Negotiation" });
   await expect(
     page.getByRole("alert").filter({ hasText: "Could not move Acme CRM" }),
   ).toBeVisible();
   await expect(column("Meeting Scheduled").getByText("Acme CRM")).toBeVisible();
   await page.unroute(patchUrl);
 
-  // a manual opportunity, dragged to "Proposal Sent"
+  // the network is down: the move and the reload both fail, and the card still goes back
+  const down = "**/api/v1/crm/opportunities**";
+  await page.route(down, (r) => r.abort());
+  await stage.selectOption({ label: "Negotiation" });
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Could not move Acme CRM" }),
+  ).toBeVisible();
+  await expect(column("Meeting Scheduled").getByText("Acme CRM")).toBeVisible();
+  await expect(column("Negotiation").getByText("Acme CRM")).toHaveCount(0);
+  await page.unroute(down);
+
+  // a manual opportunity, dragged to the next column
   await page.getByRole("button", { name: "New opportunity" }).click();
   const form = page.getByRole("dialog", { name: "New opportunity" });
   await form.getByLabel("Find a lead").fill("bob@e2e-crm.io");
@@ -133,9 +149,9 @@ test("interest creates a card; move by select and drag; tasks; activity", async 
   const drop = page.waitForResponse(
     (r) => /\/crm\/opportunities\/[^/]+$/.test(r.url()) && r.request().method() === "PATCH",
   );
-  await card("Manual deal").dragTo(column("Proposal Sent"), { sourcePosition: { x: 24, y: 5 } });
+  await card("Manual deal").dragTo(column("Contacted"), { sourcePosition: { x: 24, y: 5 } });
   expect((await drop).status()).toBe(200);
-  await expect(column("Proposal Sent").getByText("Manual deal")).toBeVisible();
+  await expect(column("Contacted").getByText("Manual deal")).toBeVisible();
 
   // a task due today, added in the drawer, then completed under Tasks
   await card("Acme CRM").getByRole("button", { name: "Open Acme CRM" }).click();
@@ -160,6 +176,26 @@ test("interest creates a card; move by select and drag; tasks; activity", async 
   await expect(row).toBeVisible();
   await row.getByRole("button", { name: "Complete Send proposal" }).click();
   await expect(row).toHaveCount(0);
+
+  // a rejected complete keeps its error on screen after the list reloads
+  const stuck = await page.request.post("/api/v1/crm/tasks", {
+    data: { title: "Stuck task", dueAt: new Date().toISOString() },
+    headers: { origin: "http://localhost:3100" },
+  });
+  expect(stuck.status()).toBe(200);
+  await page.getByLabel("Due", { exact: true }).selectOption({ label: "Any time" });
+  await page.getByLabel("Due", { exact: true }).selectOption({ label: "Due today" });
+  const taskUrl = "**/api/v1/crm/tasks/*";
+  await page.route(taskUrl, (r) =>
+    r.request().method() === "PATCH"
+      ? r.fulfill({ status: 500, contentType: "application/json", body: '{"error":"boom"}' })
+      : r.fallback(),
+  );
+  const stuckRow = page.getByRole("listitem").filter({ hasText: "Stuck task" });
+  await stuckRow.getByRole("button", { name: "Complete Stuck task" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "boom" })).toBeVisible();
+  await expect(stuckRow).toBeVisible();
+  await page.unroute(taskUrl);
 
   // activity names the move and who made it
   await page.getByRole("tab", { name: "Activity" }).click();

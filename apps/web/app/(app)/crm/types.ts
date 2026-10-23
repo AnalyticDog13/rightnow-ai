@@ -27,8 +27,9 @@ export type Column = {
 export type BoardData = { currency: string; stages: Column[] };
 export type StageOption = { id: string; name: string; kind: Kind };
 
+// fixed locale: the server render and every browser then print the same text (no hydration mismatch)
 export const money = (currency: string, v: string | number) =>
-  new Intl.NumberFormat(undefined, { style: "currency", currency }).format(Number(v));
+  new Intl.NumberFormat("en-US", { style: "currency", currency }).format(Number(v));
 
 /** Backend error codes that a person can act on. */
 const ERRORS: Record<string, string> = {

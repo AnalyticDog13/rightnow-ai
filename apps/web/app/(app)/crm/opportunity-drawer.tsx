@@ -109,18 +109,15 @@ export function OpportunityDrawer({
         if (v) parts.push(`variant ${v.label}`);
       }
       if (opp.accountId) {
-        const r = await call("/api/v1/accounts?includeDeleted=true&take=500", "GET");
-        const a = ((r.json.accounts ?? []) as { id: string; email: string }[]).find(
-          (x) => x.id === opp.accountId,
-        );
-        if (a) parts.push(a.email);
+        const r = await call(`/api/v1/accounts/${opp.accountId}`, "GET");
+        if (typeof r.json.email === "string") parts.push(r.json.email);
       }
       if (live) setAttribution(parts.join(" · "));
     })();
     return () => {
       live = false;
     };
-  }, [opp.campaign, opp.stepId, opp.variantId, opp.accountId]);
+  }, [opp.campaign?.id, opp.stepId, opp.variantId, opp.accountId]);
 
   async function save(e: FormEvent) {
     e.preventDefault();

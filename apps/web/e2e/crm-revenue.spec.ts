@@ -2,8 +2,8 @@ import { expect, test } from "@playwright/test";
 import { createPrisma } from "@rightnow/db/create";
 import { ensureSession, STATE } from "./session";
 
-// E2E #13: revenue fields on a deal, validation, and the ADMIN stage settings. Runs after auth.spec; crm.spec runs after
-// this file and needs the default stages, so afterEach puts "Negotiation" and "Proposal Sent" back.
+// E2E #13: revenue fields on a deal, validation, and the ADMIN stage settings. Runs after auth.spec. It only creates
+// throwaway "E2E *" stages (never edits the defaults), so it does not depend on the order of the specs.
 test.use({ storageState: STATE });
 test.setTimeout(180_000); // cold route compiles under next dev
 test.beforeAll(async ({ playwright, baseURL }) => ensureSession(playwright, baseURL!));
@@ -13,8 +13,9 @@ const ORIGIN = { origin: "http://localhost:3100" };
 
 async function clean() {
   const prisma = db();
-  await prisma.task.deleteMany({});
-  await prisma.opportunity.deleteMany({});
+  const leads = { lead: { email: { endsWith: "@e2e-rev.io" } } };
+  await prisma.task.deleteMany({ where: leads });
+  await prisma.opportunity.deleteMany({ where: leads });
   await prisma.lead.deleteMany({ where: { email: { endsWith: "@e2e-rev.io" } } });
   await prisma.$disconnect();
 }
@@ -23,24 +24,16 @@ test.afterAll(clean);
 
 type Stages = { stages: { id: string; name: string }[] };
 
+// The test only creates throwaway "E2E *" stages; this removes whatever of them is left (also after a failure or a
+// retry), so the default pipeline other specs rely on is never touched.
 test.afterEach(async ({ page }) => {
   const stages = ((await (await page.request.get("/api/v1/crm/stages")).json()) as Stages).stages;
-  const renamed = stages.find((s) => s.name === "Negotiation (renamed)");
-  if (renamed)
-    await page.request.patch(`/api/v1/crm/stages/${renamed.id}`, {
-      data: { name: "Negotiation" },
+  const contacted = stages.find((s) => s.name === "Contacted")!.id;
+  for (const s of stages.filter((x) => x.name.startsWith("E2E "))) {
+    const r = await page.request.delete(`/api/v1/crm/stages/${s.id}?moveTo=${contacted}`, {
       headers: ORIGIN,
     });
-  if (!stages.some((s) => s.name === "Proposal Sent")) {
-    const made = await page.request.post("/api/v1/crm/stages", {
-      data: { name: "Proposal Sent", kind: "OPEN" },
-      headers: ORIGIN,
-    });
-    // back to its default place (after "Meeting Scheduled"), so crm.spec sees the usual column order
-    await page.request.patch(`/api/v1/crm/stages/${((await made.json()) as { id: string }).id}`, {
-      data: { position: 5 },
-      headers: ORIGIN,
-    });
+    expect(r.status()).toBe(200);
   }
 });
 
@@ -50,15 +43,23 @@ test("value, close date, cash collected, validation, stage settings", async ({ p
   const a = await prisma.lead.create({ data: { workspaceId: ws, email: "rev@e2e-rev.io" } });
   const b = await prisma.lead.create({ data: { workspaceId: ws, email: "move@e2e-rev.io" } });
   await prisma.$disconnect();
-  const stages = ((await (await page.request.get("/api/v1/crm/stages")).json()) as Stages).stages;
-  const id = (name: string) => stages.find((s) => s.name === name)!.id;
+  const stage = async (name: string) => {
+    const r = await page.request.post("/api/v1/crm/stages", {
+      data: { name, kind: "OPEN" },
+      headers: ORIGIN,
+    });
+    expect(r.status()).toBe(200);
+    return ((await r.json()) as { id: string }).id;
+  };
+  await stage("E2E Rename");
+  const doomed = await stage("E2E Doomed");
   const make = (leadId: string, title: string, stageId?: string) =>
     page.request.post("/api/v1/crm/opportunities", {
       data: { leadId, title, stageId },
       headers: ORIGIN,
     });
   expect((await make(a.id, "Revenue deal")).status()).toBe(200);
-  expect((await make(b.id, "Proposal deal", id("Proposal Sent"))).status()).toBe(200);
+  expect((await make(b.id, "Proposal deal", doomed)).status()).toBe(200);
 
   await page.goto("/crm");
   const column = (name: string) => page.getByRole("region", { name, exact: true });
@@ -111,16 +112,16 @@ test("value, close date, cash collected, validation, stage settings", async ({ p
 
   // ADMIN stage settings
   await page.getByRole("tab", { name: "Pipeline settings" }).click();
-  const rename = page.getByRole("group", { name: "Stage Negotiation" });
-  await rename.getByLabel("Name").fill("Negotiation (renamed)");
+  const rename = page.getByRole("group", { name: "Stage E2E Rename", exact: true });
+  await rename.getByRole("textbox", { name: "Name", exact: true }).fill("E2E Renamed");
   const renamed = page.waitForResponse(
     (r) => /\/crm\/stages\/[^/]+$/.test(r.url()) && r.request().method() === "PATCH",
   );
   await rename.getByRole("button", { name: "Save" }).click();
   expect((await renamed).status()).toBe(200);
-  await expect(page.getByRole("group", { name: "Stage Negotiation (renamed)" })).toBeVisible();
+  await expect(page.getByRole("group", { name: "Stage E2E Renamed" })).toBeVisible();
 
-  const del = page.getByRole("group", { name: "Stage Proposal Sent" });
+  const del = page.getByRole("group", { name: "Stage E2E Doomed" });
   const moveTo = del.getByLabel("Move deals to");
   await expect(moveTo.getByRole("option", { name: "Contacted", exact: true })).toHaveCount(1);
   await expect(moveTo.getByRole("option", { name: "Closed Won" })).toHaveCount(0);
@@ -132,7 +133,7 @@ test("value, close date, cash collected, validation, stage settings", async ({ p
   );
   await del.getByRole("button", { name: "Delete" }).click();
   expect((await gone).status()).toBe(200);
-  await expect(page.getByRole("group", { name: "Stage Proposal Sent" })).toHaveCount(0);
+  await expect(page.getByRole("group", { name: "Stage E2E Doomed" })).toHaveCount(0);
 
   await page.getByRole("tab", { name: "Opportunities" }).click();
   await expect(column("Contacted").getByText("Proposal deal")).toBeVisible();
