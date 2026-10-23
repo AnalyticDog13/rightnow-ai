@@ -6,7 +6,7 @@ import {
   type StageKind,
 } from "@rightnow/db/client";
 import { z } from "zod";
-import { AccountError } from "../accounts/service";
+import { AccountError, isPrismaCode, notFound } from "../accounts/service";
 import { audit } from "../audit";
 import { systemClock, type Clock } from "../clock";
 import { isRetryable } from "../dispatch";
@@ -42,8 +42,7 @@ export type ApiOpportunity = {
   createdAt: Date;
 };
 
-// Decimal(14,2) holds values below 1e12
-// Decimal(14,2): compared after rounding to cents, as Postgres stores it
+// Decimal(14,2) holds values below 1e12, compared after rounding to cents, as Postgres stores it
 const MAX = 999_999_999_999.99;
 const money = z.number().min(0).max(MAX);
 /** D40 / Rev 2 C1: a derived value outside the column's range becomes 0, so it can never fail an insert. */
@@ -51,8 +50,6 @@ const clamp = (d: Prisma.Decimal | null | undefined) => {
   const c = d?.toDecimalPlaces(2);
   return c && c.gte(0) && c.lte(MAX) ? c : new Prisma.Decimal(0);
 };
-const notFound = () => new AccountError(404, "Not found");
-const isUnique = (e: unknown) => (e as { code?: string })?.code === "P2002";
 
 const INCLUDE = { lead: { select: { id: true, email: true, companyName: true } } } as const;
 type Row = Prisma.OpportunityGetPayload<{ include: typeof INCLUDE }>;
@@ -85,7 +82,7 @@ async function toApi(db: Db, ws: string, rows: Row[]): Promise<ApiOpportunity[]>
 }
 
 /** The latest ACCEPTED send per lead (in `campaignId` when given): one DISTINCT ON query (Rev 2 M2). */
-export async function lastSends(
+async function lastSends(
   tx: Tx,
   ws: string,
   leadIds: string[],
@@ -366,7 +363,7 @@ const createInput = z
   .required({ leadId: true });
 const patchInput = z.strictObject(fields).partial();
 
-export const opportunityQuery = z.strictObject({
+const opportunityQuery = z.strictObject({
   campaignId: id.optional(),
   listId: id.optional(),
   ownerId: id.optional(),
@@ -520,7 +517,7 @@ export async function createOpportunity(
       return (await toApi(tx, ws, [o]))[0]!;
     });
   } catch (e) {
-    throw isUnique(e) ? new AccountError(409, "opportunity_exists") : e;
+    throw isPrismaCode(e, "P2002") ? new AccountError(409, "opportunity_exists") : e;
   }
 }
 

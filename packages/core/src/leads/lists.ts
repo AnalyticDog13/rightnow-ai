@@ -1,5 +1,6 @@
 import type { Prisma, PrismaClient, VerificationStatus } from "@rightnow/db/client";
 import { z } from "zod";
+import { isPrismaCode } from "../accounts/service";
 import { audit } from "../audit";
 import { LeadError } from "./service";
 
@@ -13,7 +14,6 @@ const STATUSES: VerificationStatus[] = [
   ...["NOT_VERIFIED", "VERIFIED", "PENDING", "PENDING_JOB"],
   ...["INVALID", "RISKY", "CATCH_ALL", "JOB_CHANGE"],
 ] as VerificationStatus[];
-const isUnique = (e: unknown) => (e as { code?: string })?.code === "P2002";
 
 async function ownList(tx: Tx | Db, ws: string, id: string) {
   const l = await tx.leadList.findFirst({ where: { id, workspaceId: ws } });
@@ -37,7 +37,7 @@ export async function createList(prisma: Db, ws: string, actorId: Actor, input: 
       return l;
     });
   } catch (e) {
-    throw isUnique(e) ? new LeadError(409, "list_exists") : e;
+    throw isPrismaCode(e, "P2002") ? new LeadError(409, "list_exists") : e;
   }
 }
 
@@ -56,7 +56,7 @@ export async function renameList(
       return l;
     });
   } catch (e) {
-    throw isUnique(e) ? new LeadError(409, "list_exists") : e;
+    throw isPrismaCode(e, "P2002") ? new LeadError(409, "list_exists") : e;
   }
 }
 

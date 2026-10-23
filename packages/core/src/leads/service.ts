@@ -1,6 +1,6 @@
 import type { Lead, LeadLabel, Prisma, PrismaClient } from "@rightnow/db/client";
 import { z } from "zod";
-import { AccountError } from "../accounts/service";
+import { AccountError, isPrismaCode } from "../accounts/service";
 import {
   CAMPAIGN_LEAD_STATUSES,
   OPEN_STATES,
@@ -80,7 +80,6 @@ export function toApiLead(l: Lead): ApiLead {
 
 const uniq = <T>(a: T[]) => [...new Set(a)];
 const notFound = () => new LeadError(404, "Not found");
-const isUnique = (e: unknown) => (e as { code?: string })?.code === "P2002";
 
 async function liveLead(db: Tx, ws: string, id: string) {
   const l = await db.lead.findFirst({ where: { id, workspaceId: ws, deletedAt: null } });
@@ -124,7 +123,7 @@ export async function createLead(prisma: Db, ws: string, actorId: Actor, input: 
       return toApiLead(lead);
     });
   } catch (e) {
-    throw isUnique(e) ? new LeadError(409, "lead_exists") : e;
+    throw isPrismaCode(e, "P2002") ? new LeadError(409, "lead_exists") : e;
   }
 }
 
@@ -438,7 +437,9 @@ export async function gdprDeleteLead(
         { bounceRecipient: { in: emails } },
       ],
     };
-    const threads = uniq((await tx.message.findMany({ where, select: { threadId: true } })).map((m) => m.threadId));
+    const threads = uniq(
+      (await tx.message.findMany({ where, select: { threadId: true } })).map((m) => m.threadId),
+    );
     await tx.message.deleteMany({ where });
     await tx.thread.deleteMany({ where: { id: { in: threads }, messages: { none: {} } } });
     // events whose meta (a bounce recipient, a clicked URL) holds the address: deleted when the lead's, else redacted
@@ -675,7 +676,7 @@ export async function createLabel(prisma: Db, ws: string, actorId: Actor, input:
       return l;
     });
   } catch (e) {
-    throw isUnique(e) ? new LeadError(409, "label_exists") : e;
+    throw isPrismaCode(e, "P2002") ? new LeadError(409, "label_exists") : e;
   }
 }
 
@@ -700,7 +701,7 @@ export async function updateLabel(
       return l;
     });
   } catch (e) {
-    throw isUnique(e) ? new LeadError(409, "label_exists") : e;
+    throw isPrismaCode(e, "P2002") ? new LeadError(409, "label_exists") : e;
   }
 }
 

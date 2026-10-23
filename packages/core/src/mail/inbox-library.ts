@@ -1,6 +1,6 @@
 import type { Prisma, PrismaClient } from "@rightnow/db/client";
 import { z } from "zod";
-import { AccountError } from "../accounts/service";
+import { AccountError, isPrismaCode, notFound } from "../accounts/service";
 import { audit } from "../audit";
 import { RENDER_LEAD_FIELDS } from "../planner";
 import { TemplateError, render } from "../template";
@@ -9,9 +9,8 @@ import { threadFilterSchema } from "./inbox";
 type Db = PrismaClient;
 type Actor = string | null | undefined;
 
-const notFound = () => new AccountError(404, "Not found");
 const taken = (e: unknown) => {
-  if ((e as { code?: string } | null)?.code === "P2002") throw new AccountError(409, "name_taken");
+  if (isPrismaCode(e, "P2002")) throw new AccountError(409, "name_taken");
   throw e;
 };
 

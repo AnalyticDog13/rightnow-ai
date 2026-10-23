@@ -30,6 +30,10 @@ export class AccountError extends Error {
     super(message);
   }
 }
+export const notFound = () => new AccountError(404, "Not found");
+/** A Prisma request error with this code: P2002 unique violation, P2003 foreign key violation. */
+export const isPrismaCode = (e: unknown, code: string) =>
+  (e as { code?: string } | null)?.code === code;
 
 export type Opts = {
   clock?: Clock;

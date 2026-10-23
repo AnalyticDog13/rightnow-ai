@@ -1,6 +1,6 @@
 import type { PipelineStage, Prisma, PrismaClient, StageKind } from "@rightnow/db/client";
 import { z } from "zod";
-import { AccountError } from "../accounts/service";
+import { AccountError, isPrismaCode, notFound } from "../accounts/service";
 import { audit } from "../audit";
 
 type Db = PrismaClient | Prisma.TransactionClient;
@@ -33,12 +33,9 @@ const stageInput = z.strictObject({ ...fields, interestCodes: fields.interestCod
 const stagePatch = z.strictObject({ ...fields, position: z.number().int().min(0) }).partial();
 
 const ORDER = { orderBy: [{ position: "asc" as const }, { id: "asc" as const }] };
-const notFound = () => new AccountError(404, "Not found");
-const isUnique = (e: unknown) => (e as { code?: string })?.code === "P2002";
-const isFk = (e: unknown) => {
-  const x = e as { code?: string; message?: string } | null;
-  return x?.code === "P2003" || /23503/.test(`${x?.message}`);
-};
+// a raw statement's foreign key violation surfaces as 23503 in the message, not as P2003
+const isFk = (e: unknown) =>
+  isPrismaCode(e, "P2003") || /23503/.test(`${(e as { message?: string } | null)?.message}`);
 
 /** D40 / Rev 2 M1: seeds the defaults only while the workspace has no stage, so a renamed default never comes back. */
 export async function ensureStages(db: Db, ws: string): Promise<PipelineStage[]> {
@@ -97,7 +94,7 @@ export async function createStage(prisma: PrismaClient, ws: string, actor: Actor
       return s;
     });
   } catch (e) {
-    throw isUnique(e) ? new AccountError(409, "stage_exists") : e;
+    throw isPrismaCode(e, "P2002") ? new AccountError(409, "stage_exists") : e;
   }
 }
 
@@ -138,7 +135,7 @@ export async function updateStage(
       return tx.pipelineStage.findMany({ where: { workspaceId: ws }, ...ORDER });
     });
   } catch (e) {
-    throw isUnique(e) ? new AccountError(409, "stage_exists") : e;
+    throw isPrismaCode(e, "P2002") ? new AccountError(409, "stage_exists") : e;
   }
 }
 

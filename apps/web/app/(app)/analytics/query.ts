@@ -2,7 +2,7 @@ import { line } from "@rightnow/core/csv";
 
 const DAY = 86_400_000;
 /** The filters the analytics API accepts; anything else in the page URL is dropped. */
-export const FILTER_KEYS = [
+const FILTER_KEYS = [
   ...["campaignIds", "accountIds", "campaignTag", "ownerId", "status", "esp", "listId", "tag"],
   ...["from", "to", "tz", "replyBase", "includeAutoReplies"],
 ] as const;

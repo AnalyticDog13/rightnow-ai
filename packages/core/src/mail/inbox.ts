@@ -1,6 +1,6 @@
 import { Prisma, type Message, type PrismaClient } from "@rightnow/db/client";
 import { z } from "zod";
-import { AccountError } from "../accounts/service";
+import { AccountError, notFound } from "../accounts/service";
 import { audit } from "../audit";
 import type { Clock } from "../clock";
 import { withTxRetry } from "../dispatch";
@@ -140,7 +140,14 @@ export async function listThreads(
         orderBy: [{ sentAt: "desc" }, { id: "desc" }],
         take: 1,
         select: {
-          ...{ id: true, direction: true, kind: true, fromEmail: true, fromName: true, sentAt: true },
+          ...{
+            id: true,
+            direction: true,
+            kind: true,
+            fromEmail: true,
+            fromName: true,
+            sentAt: true,
+          },
           attachments: { select: ATTACHMENT_META },
         },
       },
@@ -161,8 +168,6 @@ export async function listThreads(
   );
   return ids.flatMap((id) => byId.get(id) ?? []);
 }
-
-const notFound = () => new AccountError(404, "Not found");
 
 export async function getThread(db: Db, ws: string, id: string) {
   const t = await db.thread.findFirst({
