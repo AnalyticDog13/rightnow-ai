@@ -380,7 +380,11 @@ describe("replies", () => {
     expect(await lead(e.lead.id)).toMatchObject({ interestStatus: 1, lastInterestChangeAt: T });
     expect(await cl(e.cl.id)).toMatchObject({ state: "ACTIVE", subsequenceId: sub.id });
     expect(await cl(other.cl.id)).toMatchObject({ state: "ACTIVE", subsequenceId: null });
-    expect((await events(s.ws)).map((x) => x.type)).toEqual(["REPLY", "INTEREST_CHANGED"]);
+    expect((await events(s.ws)).map((x) => x.type)).toEqual([
+      "REPLY",
+      "INTEREST_CHANGED",
+      "OPPORTUNITY", // D40: the interest opens a deal
+    ]);
 
     const s3 = await setup();
     const w = await enrol(s3, "wrong@acme.test");
@@ -420,7 +424,11 @@ describe("replies", () => {
     await receive(s.accounts[0]!, m, REPLY("INTERESTED"));
     await receive(s.accounts[1]!, { ...m, providerMessageId: "other" }, REPLY("INTERESTED"));
     expect(await P().message.count({ where: { workspaceId: s.ws } })).toBe(2);
-    expect((await events(s.ws)).map((x) => x.type)).toEqual(["REPLY", "INTEREST_CHANGED"]);
+    expect((await events(s.ws)).map((x) => x.type)).toEqual([
+      "REPLY",
+      "INTEREST_CHANGED",
+      "OPPORTUNITY", // D40: the interest opens a deal
+    ]);
     expect((await lead(e.lead.id)).replies).toBe(1);
   });
 

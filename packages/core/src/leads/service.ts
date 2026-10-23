@@ -17,6 +17,7 @@ import {
   stopOpenCampaignLeads,
 } from "../campaigns/hooks";
 import { enterSubsequence, leadStatusTrigger } from "../planner";
+import { onInterestChange } from "../crm/opportunities";
 import { withTxRetry } from "../dispatch";
 import { hashValue, suppress, suppressedEmails } from "./suppression";
 
@@ -49,7 +50,7 @@ const fields = {
   source: opt(200),
   lawfulBasis: opt(200),
   country: opt(100),
-  plValue: z.number().nonnegative().nullable(),
+  plValue: z.number().nonnegative().max(1e12).nullable(),
 };
 export const createLeadInput = z
   .strictObject({ email: z.string().trim().toLowerCase().pipe(z.email().max(320)) })
@@ -88,7 +89,7 @@ async function liveLead(db: Tx, ws: string, id: string) {
 }
 
 /** Owners must be members of this workspace. */
-async function assertMembers(db: Tx, ws: string, ids: string[]) {
+export async function assertMembers(db: Tx, ws: string, ids: string[]) {
   const n = await db.member.count({ where: { workspaceId: ws, userId: { in: ids } } });
   if (n !== new Set(ids).size) throw new LeadError(400, "unknown_owner");
 }
@@ -185,7 +186,7 @@ export async function updateLead(
 ) {
   const { plValue, ...p } = updateLeadInput.parse(patch);
   return prisma.$transaction(async (tx) => {
-    await liveLead(tx, ws, id);
+    const before = await liveLead(tx, ws, id);
     if (p.ownerId) await assertMembers(tx, ws, [p.ownerId]);
     // Lock order: Suppression before Lead (same in gdprDeleteLead and bulk set_interest).
     if (p.interestStatus !== undefined)
@@ -204,6 +205,16 @@ export async function updateLead(
       fields: Object.keys(p),
       ...(p.interestStatus !== undefined && { interestStatus: p.interestStatus }),
     });
+    // D40: after the Lead write (D21: Opportunity is a leaf)
+    if (p.interestStatus !== undefined && p.interestStatus !== before.interestStatus)
+      await onInterestChange(
+        tx,
+        clock,
+        ws,
+        actorId,
+        [{ leadId: id, from: before.interestStatus, to: p.interestStatus }],
+        { source: "manual" },
+      );
     return toApiLead(lead);
   });
 }
@@ -480,6 +491,11 @@ export async function mergeLeads(
       await tx.$queryRaw`SELECT id FROM "Lead" WHERE "workspaceId" = ${ws} AND id = ANY(${[keepId, mergeId]}) ORDER BY id FOR UPDATE`;
       const keep = await liveLead(tx, ws, keepId);
       const from = await liveLead(tx, ws, mergeId);
+      // D40: deals follow the kept lead; checked under the Lead locks, which block a new deal for either lead
+      const [clash] = await tx.$queryRaw<{ campaignId: string | null }[]>`
+        SELECT a."campaignId" FROM "Opportunity" a JOIN "Opportunity" b ON a."campaignId" IS NOT DISTINCT FROM b."campaignId"
+        WHERE a."leadId" = ${mergeId} AND b."leadId" = ${keepId} LIMIT 1`;
+      if (clash) throw new LeadError(409, "opportunity_conflict", { campaignId: clash.campaignId });
       const data: Prisma.LeadUpdateInput = {
         customFields: { ...(from.customFields as object), ...(keep.customFields as object) },
         tags: uniq([...keep.tags, ...from.tags]),
@@ -534,6 +550,7 @@ export async function mergeLeads(
       await tx.message.updateMany(repoint);
       await tx.note.updateMany(repoint);
       await tx.event.updateMany(repoint);
+      await tx.opportunity.updateMany(repoint);
       await tx.lead.update({
         where: { id: mergeId },
         data: { deletedAt: clock.now(), mergedIntoId: keepId },
@@ -572,7 +589,7 @@ export async function bulkLeads(
         const base = { workspaceId: ws, deletedAt: null, id: { in: ids } };
         const leads = await tx.lead.findMany({
           where: base,
-          select: { id: true },
+          select: { id: true, interestStatus: true },
           orderBy: { id: "asc" },
         });
         const found = leads.map((l) => l.id);
@@ -606,6 +623,15 @@ export async function bulkLeads(
             where: base,
             data: { interestStatus: v, lastInterestChangeAt: clock.now() },
           });
+          const changes = leads.filter((l) => l.interestStatus !== v);
+          await onInterestChange(
+            tx,
+            clock,
+            ws,
+            actorId,
+            changes.map((l) => ({ leadId: l.id, from: l.interestStatus, to: v })),
+            { source: "manual" },
+          );
         } else if (action === "add_tags") {
           await tx.$executeRaw`UPDATE "Lead" SET "updatedAt" = now(), "tags" = ARRAY(SELECT DISTINCT unnest("tags" || ${strs()}::text[])) WHERE "workspaceId" = ${ws} AND "id" = ANY(${found})`;
         } else if (action === "remove_tags") {

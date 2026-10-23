@@ -41,7 +41,7 @@ const BUSY_PUSH_MS = 60_000;
 const ALL: AccountProvider[] = ["GMAIL", "MICROSOFT", "SMTP"];
 
 /** Deadlock (40P01) or serialization failure (40001), however Prisma or the pg adapter surfaces it. */
-const isRetryable = (e: unknown) => {
+export const isRetryable = (e: unknown) => {
   const x = e as { code?: string; message?: string; meta?: { code?: string } } | null;
   return x?.code === "P2034" || /40P01|40001/.test(`${x?.code} ${x?.meta?.code} ${x?.message}`);
 };

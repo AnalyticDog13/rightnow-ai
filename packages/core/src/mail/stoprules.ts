@@ -1,7 +1,9 @@
 import { Prisma, type EventType, type Message, type ScheduledMessage } from "@rightnow/db/client";
+import { audit } from "../audit";
 import { stopOpenCampaignLeads } from "../campaigns/hooks";
 import { OPEN_STATES } from "../campaigns/lead-status";
 import type { Clock } from "../clock";
+import { inSavepoint, onInterestChange } from "../crm/opportunities";
 import { companyDomainOf } from "../leads/domain";
 import { applyInterestChange } from "../leads/service";
 import { suppress } from "../leads/suppression";
@@ -193,6 +195,21 @@ export async function applyInbound(
       meta: { from: null, to: interest, source: "reply" },
       dedupeKey: `interest:${lead.id}:${now.getTime()}`,
     });
+  // D40 / Rev 2 C1: only a fresh reply that set an interest (the twin check passed), after its Events, in a savepoint:
+  // a CRM failure is audited and never blocks the message, its stops, its Events or the sync watermark
+  if (interest !== undefined && lead)
+    await inSavepoint(
+      tx,
+      "crm_hook",
+      () =>
+        onInterestChange(tx, clock, ws, null, [{ leadId: lead.id, from: null, to: interest }], {
+          source: "reply",
+          campaignId: match.campaignId,
+          scheduledMessageId: sm?.id,
+        }),
+      (code) =>
+        audit(tx, { workspaceId: ws, at: now }, "crm.hook_failed", lead.id, { leadId: lead.id, code }),
+    );
 }
 
 /** M17: locks an UNCERTAIN/HELD send that an inbound message proves went out (D21: ScheduledMessage first). */

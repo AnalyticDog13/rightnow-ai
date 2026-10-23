@@ -34,6 +34,8 @@ model Workspace {
   macros               Macro[]
   inboxViews           InboxView[]
   domainChecks         DomainCheck[]
+  pipelineStages       PipelineStage[]
+  opportunities        Opportunity[]
   timezone             String                @default("UTC")
   physicalAddress      String?
   dailyCap             Int? // null = no workspace cap
@@ -49,6 +51,8 @@ model Workspace {
   inactivityDays       Int                   @default(30) // 7 | 14 | 30 | 60 (D33)
   autoRewarm           AutoRewarm            @default(AUTO)
   rewarmExitCleanDays  Int                   @default(3) // 1-30 (D32)
+  currency             String                @default("USD") // ISO 4217, one per workspace (D40)
+  crmAutoOpportunity   Boolean               @default(true) // D40: an interest change opens a deal
 }
 
 // better-auth tables. Roles are stored lowercase: owner | admin | member | viewer.
@@ -461,6 +465,7 @@ model Lead {
   deletedAt            DateTime?
   listMembers          LeadListMember[]
   campaignLeads        CampaignLead[]
+  opportunities        Opportunity[]
 
   @@index([workspaceId, createdAt, id])
   @@index([workspaceId, companyDomain])
@@ -855,6 +860,10 @@ enum EventType {
   CLICK
   INTEREST_CHANGED
   COMPLAINT
+  OPPORTUNITY
+  MEETING
+  DEAL_WON
+  DEAL_LOST
 }
 
 enum SyncMode {
@@ -1120,4 +1129,53 @@ model PlacementTest {
 
   @@index([workspaceId, createdAt])
   @@index([accountId, finishedAt])
+}
+
+// CRM (D40)
+enum StageKind {
+  OPEN
+  WON
+  LOST
+}
+
+model PipelineStage {
+  id            String        @id @default(cuid())
+  workspaceId   String
+  workspace     Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name          String
+  position      Int
+  kind          StageKind
+  interestCodes Int[] // unique across the workspace's stages
+  createdAt     DateTime      @default(now())
+  opportunities Opportunity[]
+
+  @@unique([workspaceId, name])
+  @@index([workspaceId, position])
+}
+
+// unique ("leadId", "campaignId") NULLS NOT DISTINCT lives in the crm migration (raw SQL)
+model Opportunity {
+  id              String        @id @default(cuid())
+  workspaceId     String
+  workspace       Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  leadId          String
+  lead            Lead          @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  campaignId      String? // no FK: campaigns are soft-deleted
+  stageId         String
+  stage           PipelineStage @relation(fields: [stageId], references: [id], onDelete: Restrict)
+  title           String
+  value           Decimal       @default(0) @db.Decimal(14, 2)
+  cashCollected   Decimal       @default(0) @db.Decimal(14, 2)
+  expectedCloseAt DateTime?
+  ownerId         String?
+  closedAt        DateTime?
+  stepId          String?
+  variantId       String?
+  accountId       String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([workspaceId, stageId])
+  @@index([workspaceId, createdAt])
+  @@index([workspaceId, closedAt])
 }

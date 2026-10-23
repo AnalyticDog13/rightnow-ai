@@ -21,6 +21,9 @@ const patch = z.strictObject({
   inactivityDays: z.union([z.literal(7), z.literal(14), z.literal(30), z.literal(60)]).optional(),
   autoRewarm: z.enum(["OFF", "RECOMMEND", "AUTO"]).optional(),
   rewarmExitCleanDays: z.number().int().min(1).max(30).optional(),
+  // D40: one currency per workspace (ISO 4217); fixed while a deal carries money (Rev 2 M12)
+  currency: z.string().regex(/^[A-Z]{3}$/, "invalid_currency").optional(),
+  crmAutoOpportunity: z.boolean().optional(),
 });
 const SELECT = {
   timezone: true,
@@ -34,6 +37,8 @@ const SELECT = {
   inactivityDays: true,
   autoRewarm: true,
   rewarmExitCleanDays: true,
+  currency: true,
+  crmAutoOpportunity: true,
 } as const;
 
 export async function getWorkspaceSettings(prisma: PrismaClient, ws: string) {
@@ -56,6 +61,12 @@ export async function updateWorkspaceSettings(
   if (!r.success) throw new AccountError(400, r.error.issues[0]!.message);
   const { physicalAddress, ...rest } = r.data;
   return prisma.$transaction(async (tx) => {
+    if (rest.currency) {
+      const cur = await tx.workspace.findUniqueOrThrow({ where: { id: ws }, select: { currency: true } });
+      const money = { workspaceId: ws, OR: [{ value: { not: 0 } }, { cashCollected: { not: 0 } }] };
+      if (cur.currency !== rest.currency && (await tx.opportunity.count({ where: money })))
+        throw new AccountError(409, "currency_in_use");
+    }
     const w = await tx.workspace.update({
       where: { id: ws },
       data: {

@@ -70,3 +70,5 @@ export * from "./mail/reply";
 export * from "./mail/tracking";
 export * from "./mail/stoprules";
 export * from "./mail/sync";
+export * from "./crm/stages";
+export * from "./crm/opportunities";

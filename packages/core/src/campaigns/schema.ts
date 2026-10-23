@@ -40,7 +40,7 @@ export const campaignFields = {
   cc: emails,
   bcc: emails,
   ownerId: text(100).nullable(),
-  plValue: z.number().min(0).nullable(),
+  plValue: z.number().min(0).max(1e12).nullable(),
   tags: z.array(text(50)).max(50),
   abAutoOptimize: z.boolean(),
   abWinnerMetric: text(50).nullable(),
