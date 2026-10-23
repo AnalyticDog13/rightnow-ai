@@ -1,7 +1,7 @@
 # Handoff
 
 **Phase:** 6 — CRM & analytics (next). Phase 5 (deliverability, warm-up, re-warm-up) DONE and merged to `main`.
-**Current task:** P6-T04 (Dashboard + Analytics pages + CSV export UI — sonnet) next → then phase-6 gate. Done: P6-T01a 2f2ebbc, P6-T01b 3eaa45c, P6-T02 ff1097a, P6-T03 470161b. Ledger `.superpowers/sdd/phase-6/progress.md`. T04 UI must note that per-row "contacted" can exceed the total (one lead first-mailed by two campaigns in range).
+**Current task:** Phase 6 GATE — gate fix round (opus) running on findings from the opus whole-branch review (PASS WITH FIXES) + ponytail-audit; then scoped re-review, CI, tick PS items, PROGRESS/HANDOFF/REVIEW_LOG/DECISIONS, fast-forward main. Done: P6-T01a 2f2ebbc, P6-T01b 3eaa45c, P6-T02 ff1097a, P6-T03 470161b, P6-T04 ddef453. Ledger `.superpowers/sdd/phase-6/progress.md` (rulings + deferrals).
 **Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 (approved). Done step plans: `docs/plans/phase-1.md` … `phase-5.md` (+ `phase-4-review.md`, `phase-5-review.md`).
 **Tests:** ~1290 vitest + Playwright (auth, accounts*, campaign-create, deliverability, inbox, leads, test-send …) green; CI `check`, `compose-smoke`, `imap-real` green. Parity: 208/316 ticked.
 

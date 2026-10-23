@@ -681,12 +681,12 @@
    "id": "P6-T04",
    "phase": 6,
    "title": "Dashboard + Analytics pages + CSV export (UI)",
-   "status": "todo",
+   "status": "done",
    "deps": [
     "P6-T03"
    ],
    "model": "sonnet",
-   "commit": null,
+   "commit": "ddef453",
    "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-6.md (incl. Revision 2); tests listed there pass"
   },
   {
