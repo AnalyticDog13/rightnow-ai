@@ -37,7 +37,7 @@ export async function runDiagnostics(
   if (!a.credentialsEnc) throw new AccountError(409, "reconnect first");
   let d: Diagnostics;
   try {
-    d = clip(await providerOf(prisma, o)(a).diagnostics());
+    d = clip(await (await providerOf(prisma, o)(a)).diagnostics());
   } catch (e) {
     // A thrown AuthError is a failed token; any other throw is transient and must not look like a broken grant.
     d = {

@@ -1,7 +1,7 @@
 import { fixedClock } from "@rightnow/core";
 import { createTestDb } from "@rightnow/db/test-db";
 import type { MailProvider } from "@rightnow/providers";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { accountsAutoResume } from "../src/jobs/accounts-auto-resume";
 import { accountsAutofix } from "../src/jobs/accounts-autofix";
 
@@ -54,7 +54,24 @@ describe("accountsAutoResume", () => {
       healthCap: 4,
     });
     await accountsAutoResume(db.prisma, fixedClock(T0));
-    expect(await get(a.id)).toMatchObject({ lifecycle: "REWARMING", pausedUntil: null, healthResetAt: T0 });
+    expect(await get(a.id)).toMatchObject({
+      lifecycle: "REWARMING",
+      pausedUntil: null,
+      healthResetAt: T0,
+    });
+  });
+
+  test("one failing account does not stop the others (T05 review Minor 3)", async () => {
+    const a = await mk({ lifecycle: "PAUSED", pausedUntil: min(-1) });
+    const b = await mk({ lifecycle: "PAUSED", pausedUntil: min(-1) });
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
+    const tx = vi.spyOn(db.prisma, "$transaction").mockRejectedValueOnce(new Error("boom"));
+    await accountsAutoResume(db.prisma, fixedClock(T0));
+    tx.mockRestore();
+    expect(quiet).toHaveBeenCalled();
+    quiet.mockRestore();
+    const states = [(await get(a.id)).lifecycle, (await get(b.id)).lifecycle].sort();
+    expect(states).toEqual(["ACTIVE", "PAUSED"]);
   });
 
   test("purges OAuth sessions older than one day, keeps newer ones", async () => {

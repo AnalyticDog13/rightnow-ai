@@ -163,6 +163,8 @@ describe("ramp under real sends", () => {
   test("the first send of a new local day counts once; a second send that day does not", async () => {
     const { A } = await setup({ idle: 1, rows: 2, account: rewarming });
     await sendAt(A, T);
+    await sendAt(A, new Date(T.getTime() + 3600_000));
+    expect(await P().scheduledMessage.count({ where: { accountId: A.id, status: "SENT" } })).toBe(2);
     expect(await acct(A.id)).toMatchObject({
       rewarmSendDays: 2,
       rewarmLastSendDay: new Date("2026-10-20T00:00:00Z"),
@@ -233,7 +235,7 @@ describe("computeLifecycle", () => {
       data: { accountId: A.id, workspaceId: ws, enabled: true, filterTag: "wu" },
     });
     expect(await compute(A.id)).toBe("REWARMING");
-    expect((await acct(A.id)).rewarmPrevious).toEqual({ warmupEnabled: true });
+    expect((await acct(A.id)).rewarmPrevious).toEqual({ warmupEnabled: true, setTo: true });
     const never = (await setup({ account: { lastSentAt: null, createdAt: ago(40) } })).A;
     expect(idleSince(never)).toEqual(ago(40));
     expect(await compute(never.id)).toBe("REWARMING");

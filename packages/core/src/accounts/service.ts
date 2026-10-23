@@ -36,7 +36,7 @@ export type Opts = {
   actorId?: string | null;
   role?: string;
   /** Tests inject a stub; the default builds the real provider (or the Fake under MAIL_PROVIDER_FAKE). */
-  providerFor?: (a: EmailAccount) => MailProvider;
+  providerFor?: (a: EmailAccount) => MailProvider | Promise<MailProvider>;
   resolveCname?: CnameResolver;
   /** DNS checks in diagnostics; omitted = skipped. */
   resolver?: DnsResolver;
@@ -264,7 +264,7 @@ async function detach(
   let revoked = false;
   if (a.credentialsEnc) {
     try {
-      await providerOf(prisma, o)(a).revoke();
+      await (await providerOf(prisma, o)(a)).revoke();
       revoked = true;
     } catch (e) {
       console.warn("provider revoke failed", (e as Error).name); // the user still wants the account detached

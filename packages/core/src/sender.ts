@@ -565,11 +565,13 @@ async function recordSent(
     where: { id: c.accountId },
     data: { lastSentAt: now, lastCampaignActivityAt: now, consecutivePermanentErrors: 0 },
   });
-  // D32: the re-warm ramp counts local days with a send (the claim's usage day); held while health-capped
+  // D32: the re-warm ramp counts local days with a send (the claim's usage day); held while health-capped. Only
+  // a new day since the plan started counts: a send claimed before it (resolved after a wake) or out of order never does
   await tx.$executeRaw`UPDATE "EmailAccount" SET "rewarmSendDays" = "rewarmSendDays" + 1,
       "rewarmLastSendDay" = ${c.usageDay}::date
     WHERE id = ${c.accountId} AND "rewarmStartedAt" IS NOT NULL AND "healthCap" IS NULL
-      AND "rewarmLastSendDay" IS DISTINCT FROM ${c.usageDay}::date`;
+      AND ${c.usageDay}::date >= (("rewarmStartedAt" AT TIME ZONE 'UTC') AT TIME ZONE timezone)::date
+      AND ("rewarmLastSendDay" IS NULL OR ${c.usageDay}::date > "rewarmLastSendDay")`;
   const cl = await tx.campaignLead.findUniqueOrThrow({ where: { id: c.campaignLeadId } });
   await tx.lead.update({
     where: { id: cl.leadId },

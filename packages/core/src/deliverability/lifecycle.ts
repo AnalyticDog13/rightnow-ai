@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import type { EmailAccount, Prisma, PrismaClient } from "@rightnow/db/client";
 import { AccountError } from "../accounts/service";
 import { unwrapPrevious } from "../accounts/status";
@@ -90,18 +91,23 @@ export async function returnToService(
   if (n) await computeLifecycle(tx, clock, a.id, o);
 }
 
-/** D32: starts a re-warm plan (target = today's dailyLimit), keeping what completion restores. */
+/**
+ * D32: starts a re-warm plan (target = today's dailyLimit), keeping what completion restores. `withWarmup` turns
+ * warm-up on for the plan; `rewarmPrevious.setTo` is the value it set, so the restore can tell a later user change
+ * (M12). Returns false when the account was not ACTIVE/INACTIVE without a plan.
+ */
 export async function beginRewarm(
   tx: Tx,
   now: Date,
   a: EmailAccount,
-  o: { startVolume?: number; incrementPerDay?: number } = {},
-): Promise<void> {
+  o: { startVolume?: number; incrementPerDay?: number; withWarmup?: boolean } = {},
+): Promise<boolean> {
   const warmup = await tx.warmupSettings.findUnique({
     where: { accountId: a.id },
     select: { enabled: true },
   });
-  await tx.emailAccount.updateMany({
+  const was = warmup?.enabled ?? false;
+  const r = await tx.emailAccount.updateMany({
     where: {
       id: a.id,
       workspaceId: a.workspaceId,
@@ -117,9 +123,23 @@ export async function beginRewarm(
       rewarmTarget: a.dailyLimit,
       rewarmSendDays: 0,
       rewarmLastSendDay: null,
-      rewarmPrevious: { warmupEnabled: warmup?.enabled ?? false },
+      rewarmPrevious: { warmupEnabled: was, setTo: was || !!o.withWarmup },
     },
   });
+  // WarmupSettings is a leaf write, after the account row (D21)
+  if (r.count && o.withWarmup && !was)
+    await tx.warmupSettings.upsert({
+      where: { accountId: a.id },
+      create: {
+        accountId: a.id,
+        workspaceId: a.workspaceId,
+        enabled: true,
+        filterTag: `rn-${randomBytes(3).toString("hex")}`,
+        startedAt: now,
+      },
+      update: { enabled: true, startedAt: now },
+    });
+  return r.count > 0;
 }
 
 /** D33 "Resume at full volume": INACTIVE → ACTIVE with the idle clock reset, audited. 409 unless INACTIVE. */

@@ -191,6 +191,16 @@ export function AccountsTable({
                           {a.lifecycle === "PAUSED" ? "Resume" : "Pause"}
                         </Button>
                       )}
+                      {!a.rewarm && (a.lifecycle === "INACTIVE" || a.lifecycle === "ACTIVE") && (
+                        <Button
+                          variant="outline"
+                          className={small}
+                          aria-label={`Re-warm ${a.email}`}
+                          onClick={() => setOpenId(a.id)}
+                        >
+                          Re-warm
+                        </Button>
+                      )}
                       <Button
                         variant="outline"
                         className={small}

@@ -19,6 +19,7 @@ import { recoverExpired, resolveUncertain } from "../../src/recovery";
 import { dispatchTick } from "../../src/sender";
 import { unsubscribeKeys } from "../../src/unsubscribe";
 import { seedCampaign } from "../campaign-fixture";
+import { dsn } from "../dsn-fixture";
 
 process.env.FAKE_MAIL_DIR = mkdtempSync(join(tmpdir(), "downtime-"));
 
@@ -71,13 +72,22 @@ async function scenario(P: PrismaClient, days: number, mode: "cold_boot" | "slee
   const start = new Date("2026-10-19T09:00:00Z"); // Monday
   const clock = fixedClock(start);
   const tag = randomBytes(3).toString("hex");
-  const live = { credentialsEnc: "x", lastSyncCompletedAt: null, dailyLimit: 100 };
+  // createdAt explicit (M14): the DB default is the wall clock, not this test's clock
+  const live = {
+    credentialsEnc: "x",
+    lastSyncCompletedAt: null,
+    dailyLimit: 100,
+    createdAt: new Date(start.getTime() - 90 * DAY),
+    lastSentAt: new Date(start.getTime() - DAY), // in regular use until the downtime
+  };
+  const ws = { autoRewarm: "AUTO" as const, inactivityDays: 30 };
 
   // main campaign (company stop): L1..L8, M1/M2 (left mid-flight), S0..S24 silent; rows assigned to A/B below
   const s = await seedCampaign(P, {
     at: start,
     steps: 3,
     rows: 35,
+    workspace: ws,
     accounts: [live, live],
     schedules: [window],
     campaign: { stopOnReply: true, stopForCompanyOnReply: true },
@@ -111,6 +121,7 @@ async function scenario(P: PrismaClient, days: number, mode: "cold_boot" | "slee
     at: start,
     steps: 2,
     rows: 2,
+    workspace: ws,
     accounts: [live, live],
     schedules: [window],
     campaign: { stopForCompanyOnReply: true },
@@ -252,7 +263,9 @@ async function scenario(P: PrismaClient, days: number, mode: "cold_boot" | "slee
   });
   expect(await sentIds(B)).not.toContain(m2.rfcMessageId);
 
-  // (c) the backlog: L7/L8 get step 2; only inside the window, ≥ 600 s apart, ≤ 10 per account-day, spread over days
+  // (c) the backlog: L7/L8 get step 2; only inside the window, ≥ 600 s apart, ≤ 10 per account-day, spread over days.
+  // 30 days idle (≥ inactivityDays, AUTO): the first sync after the wake starts a re-warm, so day 1 sends at most
+  // rewarmStartVolume (5) and day 2 at most 7, never the full limit (master Review Focus 2)
   const after = await P.scheduledMessage.findMany({
     where: { workspaceId: s.ws, status: "SENT", sentAt: { gte: wokeAt } },
     include: { step: true, campaignLead: true },
@@ -271,7 +284,14 @@ async function scenario(P: PrismaClient, days: number, mode: "cold_boot" | "slee
       perDay.set(k, (perDay.get(k) ?? 0) + 1);
     }
     expect(Math.max(...perDay.values())).toBeLessThanOrEqual(10);
-    expect(perDay.get(wokeAt.toISOString().slice(0, 10))).toBe(10); // backlog > quota: the day is full...
+    const [d1, d2] = [...perDay.values()];
+    if (days >= 30) {
+      expect((await P.emailAccount.findUniqueOrThrow({ where: { id: acct.id } })).lifecycle).toBe(
+        "REWARMING",
+      );
+      expect(d1).toBeLessThanOrEqual(5);
+      expect(d2).toBeLessThanOrEqual(7);
+    } else expect(perDay.get(wokeAt.toISOString().slice(0, 10))).toBe(10); // backlog > quota: the day is full...
     expect(perDay.size).toBeGreaterThan(1); // ...and the rest waits for the next days
   }
   // follow-ups leave from the lead's step-1 mailbox
@@ -297,45 +317,4 @@ async function scenario(P: PrismaClient, days: number, mode: "cold_boot" | "slee
     0, 0, 1, 0,
   ]);
   expect((await sentIds(C)).length).toBe(before.get(C.id)! + 1);
-  // 30 days: the re-warm allowance after a long pause arrives with P5-T06, which extends this suite
-}
-
-/** A hard-bounce DSN (5.1.1) for `rfcMessageId`, as Gmail's mailer-daemon sends it. */
-function dsn(to: string, lead: string, rfcMessageId: string, at: Date) {
-  return Buffer.from(
-    [
-      "From: Mail Delivery Subsystem <mailer-daemon@googlemail.com>",
-      `To: ${to}`,
-      "Subject: Delivery Status Notification (Failure)",
-      `Date: ${at.toUTCString()}`,
-      `Message-ID: <dsn-${randomBytes(4).toString("hex")}@mx.test>`,
-      "MIME-Version: 1.0",
-      'Content-Type: multipart/report; report-type=delivery-status; boundary="B1"',
-      "",
-      "--B1",
-      "Content-Type: text/plain; charset=utf-8",
-      "",
-      `Address not found. Your message wasn't delivered to ${lead}.`,
-      "",
-      "--B1",
-      "Content-Type: message/delivery-status",
-      "",
-      "Reporting-MTA: dns; mx.test",
-      "",
-      `Final-Recipient: rfc822; ${lead}`,
-      "Action: failed",
-      "Status: 5.1.1",
-      "Diagnostic-Code: smtp; 550 5.1.1 The email account that you tried to reach does not exist.",
-      "",
-      "--B1",
-      "Content-Type: text/rfc822-headers",
-      "",
-      `From: ${to}`,
-      `To: ${lead}`,
-      `Message-ID: ${rfcMessageId}`,
-      "",
-      "--B1--",
-      "",
-    ].join("\r\n"),
-  );
 }

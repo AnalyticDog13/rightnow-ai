@@ -10,6 +10,7 @@ import { ConnectMenu, type Provider } from "./connect-menu";
 import { ConnectSmtp } from "./connect-smtp";
 import { DomainSection } from "./domain-section";
 import { isNumeric } from "./numeric";
+import { RewarmSection } from "./rewarm-section";
 import { WarmupSection } from "./warmup-section";
 
 type Kind = "text" | "number" | "minutes" | "nullable";
@@ -241,6 +242,7 @@ export function AccountDrawer({
       <SyncStatus sync={account.sync} />
       <DomainSection email={account.email} canEdit={canEdit} />
       <WarmupSection accountId={account.id} canEdit={canEdit} />
+      <RewarmSection account={account} canEdit={canEdit} onChanged={onChanged} />
       {canEdit && (
         <section
           aria-label="Connection"

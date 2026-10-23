@@ -1,6 +1,7 @@
 import type { EmailAccount, Prisma } from "@rightnow/db/client";
 import type { SyncProgress } from "../mail/sync";
 import { idleSince } from "../deliverability/lifecycle";
+import { rewarmPlanView } from "../deliverability/rewarm";
 import { effectiveAllowance } from "../quota";
 import { displayStatus, type DisplayStatus } from "./status";
 
@@ -57,8 +58,8 @@ export type ApiAccount = Pick<EmailAccount, (typeof PUBLIC)[number]> & {
   remainingToday: number;
   /** D33: whole days since the last campaign send, "Resume at full volume" or creation (warm-up does not count). */
   idleDays: number;
-  /** D32 re-warm plan view; P5-T06 fills it (rewarmPlanView). */
-  rewarm: null;
+  /** D32 / PS-REWARM-10: the re-warm plan, null without one. */
+  rewarm: ReturnType<typeof rewarmPlanView>;
   /** PS-ACC-31 / PS-SYNC-07: the import position (page token, cursor) and the lease stay private. */
   sync: {
     state: EmailAccount["syncState"];
@@ -89,7 +90,7 @@ export function toApiAccount(
     reservedToday: usageToday.reserved,
     remainingToday: Math.max(0, effectiveAllowance(a, now) - usageToday.sent - usageToday.reserved),
     idleDays: Math.max(0, Math.floor((now.getTime() - idleSince(a).getTime()) / 86_400_000)),
-    rewarm: null,
+    rewarm: rewarmPlanView(a, now),
     sync: {
       state: a.syncState,
       lastCompletedAt: a.lastSyncCompletedAt,

@@ -15,7 +15,7 @@ import { maxDailyLimit } from "./factory";
  *   the new providerCap, minGapSec to at least the new tier's floor;
  * - provider, tier, providerCap, appendToSent and the names come from this connect;
  * - ALL provider-specific and runtime state is reset: sync cursor and state, last sync, errors, autofix, pause,
- *   health. A cursor of one provider must never be read by another.
+ *   health (score and cap), the re-warm plan. A cursor of one provider must never be read by another.
  * - it returns to service through returnToService (Rev 2 I2), so an old mailbox comes back re-warming or inactive.
  */
 export async function openAccount(
@@ -79,6 +79,14 @@ export async function openAccount(
       autofixState: "NONE",
       autofixAt: null,
       healthScore: null,
+      healthCap: null,
+      healthCapAt: null,
+      // a new plan, if any, is derived from the idle time by returnToService below
+      rewarmStartedAt: null,
+      rewarmTarget: null,
+      rewarmSendDays: 0,
+      rewarmLastSendDay: null,
+      rewarmPrevious: Prisma.DbNull,
     },
   });
   if (!won.count) return null;

@@ -3,6 +3,7 @@ import { dayKey } from "../accounts/daykey";
 import { audit } from "../audit";
 import type { Clock } from "../clock";
 import { effectiveAllowance } from "../quota";
+import { completeRewarms } from "./rewarm";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -334,7 +335,8 @@ async function flipUnhealthy(prisma: PrismaClient, now: Date, to: "ACCOUNTS_UNHE
 
 /**
  * The `deliverability-health` job (every 5 min): accounts (score, snapshot, throttle/restore/pause), then campaigns
- * (ACCOUNTS_UNHEALTHY → ACTIVE, BounceProtect, then ACTIVE → ACCOUNTS_UNHEALTHY). Scans every workspace; every write is conditional on what it read.
+ * (ACCOUNTS_UNHEALTHY → ACTIVE, BounceProtect, then ACTIVE → ACCOUNTS_UNHEALTHY), then re-warm completion (after the
+ * throttle, so a plan capped in this run does not end). Scans every workspace; every write is conditional on what it read.
  */
 export async function evaluateHealth(
   prisma: PrismaClient,
@@ -370,6 +372,6 @@ export async function evaluateHealth(
   const recovered = await flipUnhealthy(prisma, now, "ACTIVE");
   const bounceProtected = await bounceProtect(prisma, now);
   const unhealthy = await flipUnhealthy(prisma, now, "ACCOUNTS_UNHEALTHY");
-  // shortcut: re-warm completion arrives with P5-T06 (completeRewarms), called here
-  return { ...out, bounceProtected, unhealthy, recovered, rewarmsCompleted: 0 };
+  const rewarmsCompleted = await completeRewarms(prisma, clock);
+  return { ...out, bounceProtected, unhealthy, recovered, rewarmsCompleted };
 }

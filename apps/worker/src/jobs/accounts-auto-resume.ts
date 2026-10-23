@@ -15,11 +15,16 @@ export async function accountsAutoResume(prisma: PrismaClient, clock: Clock) {
       pausedUntil: { lte: now },
     },
   });
-  // Rev 2 I2: per account, conditional on the PAUSED state read here (returnToService's WHERE)
+  // Rev 2 I2: per account, conditional on the PAUSED state read here (returnToService's WHERE); one failure
+  // never holds back the others
   for (const a of due)
-    await prisma.$transaction((tx) =>
-      returnToService(tx, clock, a, { lookaheadSec: maxStalenessSec() }),
-    );
+    try {
+      await prisma.$transaction((tx) =>
+        returnToService(tx, clock, a, { lookaheadSec: maxStalenessSec() }),
+      );
+    } catch (e) {
+      console.error(`accounts-auto-resume: account ${a.id} skipped this run`, e);
+    }
   await prisma.oAuthSession.deleteMany({
     where: { createdAt: { lt: new Date(now.getTime() - DAY_MS) } },
   });

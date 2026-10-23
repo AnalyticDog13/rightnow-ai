@@ -13,6 +13,23 @@ type RewarmFields =
   | "rewarmSendDays"
   | "rewarmLastSendDay";
 
+/** D32 re-warm term, null without a plan: min(target, start + increment x local days with a send before today). */
+export function rewarmAllowance(
+  a: Pick<EmailAccount, "timezone"> & Partial<Pick<EmailAccount, RewarmFields>>,
+  now: Date,
+): number | null {
+  if (!a.rewarmStartedAt) return null;
+  const today = dayKey(a.timezone, now);
+  const priorSendDays = Math.max(
+    0,
+    (a.rewarmSendDays ?? 0) - (a.rewarmLastSendDay?.toISOString().slice(0, 10) === today ? 1 : 0),
+  );
+  return Math.min(
+    a.rewarmTarget ?? Infinity,
+    (a.rewarmStartVolume ?? 5) + (a.rewarmIncrementPerDay ?? 2) * priorSendDays,
+  );
+}
+
 /**
  * Sends an account may make today: min(user limit, re-warm, health, ramp, floor(providerCap/2)). Never negative.
  * Ramp: start + increment x whole local days since rampStartedAt (createdAt when never stamped).
@@ -46,22 +63,11 @@ export function effectiveAllowance(
           ),
         )
     : null;
-  const priorSendDays = Math.max(
-    0,
-    (a.rewarmSendDays ?? 0) -
-      (a.rewarmLastSendDay?.toISOString().slice(0, 10) === today ? 1 : 0),
-  );
-  const rewarm = a.rewarmStartedAt
-    ? Math.min(
-        a.rewarmTarget ?? Infinity,
-        (a.rewarmStartVolume ?? 5) + (a.rewarmIncrementPerDay ?? 2) * priorSendDays,
-      )
-    : null;
   const terms = [
     ramp,
     a.dailyLimit,
     maxDailyLimit(a.providerCap),
-    rewarm,
+    rewarmAllowance(a, now),
     a.healthCap, // D34 health throttle (evaluateHealth)
   ];
   return Math.max(0, Math.min(...terms.filter((t): t is number => typeof t === "number")));
