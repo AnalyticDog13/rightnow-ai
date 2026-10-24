@@ -178,6 +178,24 @@ const cancelCampaignRows = (tx: Tx, id: string) =>
 export const pauseCampaign = (p: Db, ws: string, a: Actor, id: string) =>
   move(p, ws, a, id, "pause");
 /**
+ * After restoring an older dump (scripts/restore.sh): rows sent since the dump are SCHEDULED again, so every sending
+ * campaign (any workspace) is paused until the owner has checked the Sent folders. ACCOUNTS_UNHEALTHY is included
+ * because it flips back to ACTIVE by itself. Returns how many were paused.
+ */
+export async function pauseActiveCampaigns(prisma: Db): Promise<number> {
+  const rows = await prisma.campaign.findMany({
+    where: { deletedAt: null, status: { in: ["ACTIVE", "ACCOUNTS_UNHEALTHY"] } },
+    select: { id: true, workspaceId: true },
+  });
+  let n = 0;
+  for (const c of rows)
+    n += await pauseCampaign(prisma, c.workspaceId, null, c.id).then(
+      () => 1,
+      (e) => (e instanceof CampaignError && e.status === 409 ? 0 : Promise.reject(e)), // changed meanwhile
+    );
+  return n;
+}
+/**
  * Archive stops sending at once (the status leaves ACTIVE). Archive and delete cancel the campaign's SCHEDULED and HELD
  * rows in the same transaction and leave SENDING and UNCERTAIN rows alone: the sender's result transaction and
  * resolveUncertain finish those by row id.

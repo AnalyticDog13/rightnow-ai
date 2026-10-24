@@ -92,13 +92,15 @@ jobs:
       - name: Bad dump is rejected and changes nothing
         run: |
           echo junk > backups/bad.dump
-          if sh scripts/restore.sh backups/bad.dump; then echo "bad dump accepted"; exit 1; fi
+          if sh scripts/restore.sh --yes backups/bad.dump; then echo "bad dump accepted"; exit 1; fi
           docker compose exec -T postgres psql -U rightnow -d rightnow -tAc "select count(*) from _prisma_migrations" | grep -qx "$(ls -d packages/db/prisma/migrations/*/ | wc -l)"
           curl -fsS http://localhost:3000/api/healthz
       - name: Restore
         run: |
           if docker compose exec -T postgres psql -U rightnow -d rightnow -tAc "select v from ci_marker"; then echo "marker present before restore"; exit 1; fi
-          sh scripts/restore.sh backups/rightnow-*.dump
+          out=$(sh scripts/restore.sh --yes backups/rightnow-*.dump)
+          echo "$out"
+          echo "$out" | grep -q 'Active campaigns were paused'
           ls -l backups
           test "$(stat -c %a backups)" = 700
           test "$(stat -c %a backups/rightnow-*.dump)" = 600

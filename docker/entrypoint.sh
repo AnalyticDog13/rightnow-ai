@@ -11,5 +11,7 @@ case "$1" in
   live-verify) shift; cd /app && exec node --import tsx scripts/live-verify.ts "$@" ;;
   # seed|verify the PS-DEPLOY-11 fixture (CI compose-smoke)
   migration-check) shift; cd /app && exec node --import tsx scripts/migration-check.ts "$@" ;;
-  *) echo "usage: entrypoint.sh web|worker|migrate|rotate-key|live-verify|migration-check" >&2; exit 2 ;;
+  # pauses every active campaign after a restore (scripts/restore.sh|.ps1)
+  pause-campaigns) cd /app && exec node --import tsx scripts/pause-campaigns.ts ;;
+  *) echo "usage: entrypoint.sh web|worker|migrate|rotate-key|live-verify|migration-check|pause-campaigns" >&2; exit 2 ;;
 esac

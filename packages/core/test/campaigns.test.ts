@@ -12,6 +12,7 @@ import {
   getCampaign,
   listAccountCampaigns,
   listCampaigns,
+  pauseActiveCampaigns,
   pauseCampaign,
   setCampaignAccounts,
   setSchedules,
@@ -368,6 +369,43 @@ describe("status machine", () => {
     });
     await pauseCampaign(P(), ws, null, id);
     await expect(launch(id)).resolves.toMatchObject({ status: "ACTIVE" });
+  });
+
+  test("pauseActiveCampaigns pauses every sending campaign in every workspace, audited, and only those", async () => {
+    const a = (await ready()).id;
+    await launch(a);
+    const draft = await camp();
+    const unhealthy = await camp();
+    await P().campaign.update({ where: { id: unhealthy }, data: { status: "ACCOUNTS_UNHEALTHY" } });
+    const done = await camp();
+    await P().campaign.update({ where: { id: done }, data: { status: "COMPLETED" } });
+    const foreign = (
+      await P().campaign.create({ data: { workspaceId: other, name: "x", status: "ACTIVE" } })
+    ).id;
+    const gone = (
+      await P().campaign.create({
+        data: { workspaceId: ws, name: "g", status: "ACTIVE", deletedAt: new Date() },
+      })
+    ).id;
+    const before = await P().campaign.count({
+      where: { deletedAt: null, status: { in: ["ACTIVE", "ACCOUNTS_UNHEALTHY"] } },
+    });
+    expect(before).toBeGreaterThanOrEqual(3);
+    expect(await pauseActiveCampaigns(P())).toBe(before);
+    const st = async (id: string) =>
+      (await P().campaign.findUniqueOrThrow({ where: { id } })).status;
+    expect(await Promise.all([a, unhealthy, foreign].map(st))).toEqual([
+      "PAUSED",
+      "PAUSED",
+      "PAUSED",
+    ]);
+    expect(await Promise.all([draft, done, gone].map(st))).toEqual([
+      "DRAFT",
+      "COMPLETED",
+      "ACTIVE",
+    ]);
+    expect((await audits("campaign.pause")).filter((x) => x.target === a)).toHaveLength(1);
+    expect(await pauseActiveCampaigns(P())).toBe(0);
   });
 
   test("displayCampaignStatus", () => {

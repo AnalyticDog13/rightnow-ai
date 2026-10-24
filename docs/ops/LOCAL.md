@@ -22,8 +22,10 @@
 | Start | `scripts/start.sh` |
 | Stop (data is kept) | `scripts/stop.sh` |
 | Backup | `scripts/backup.sh` writes `backups/rightnow-<timestamp>.dump` |
-| Restore | `scripts/restore.sh backups/rightnow-<timestamp>.dump` (replaces current data) |
-| Upgrade | `scripts/upgrade.sh`: git pull, rebuild, run migrations, restart. Back up first. |
+| Restore | `scripts/restore.sh backups/rightnow-<timestamp>.dump` (replaces current data; asks for `yes`, or pass `--yes`) |
+| Upgrade | `scripts/upgrade.sh`: backs up, then git pull, rebuild, run migrations, restart. |
+
+**Restore pauses every active campaign.** Messages sent after the dump was taken are `SCHEDULED` again in the restored data and would be sent a second time. After a restore, check each mailbox's Sent folder, then resume the campaigns yourself. The script keeps a `pre-restore-*` dump of the data it replaced and prints its path (also if the restore fails).
 
 Data lives in the Docker volume `pgdata`. `docker compose down -v` deletes it; the scripts never do.
 

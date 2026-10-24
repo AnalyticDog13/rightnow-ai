@@ -36,10 +36,10 @@ Webhook URLs, the AI base URL and the verifier URL must be public by default. `A
 ## 3. Backups (cron)
 
 ```
-0 3 * * * cd /home/you/rightnow-ai && scripts/backup.sh >> backups/cron.log 2>&1 && find backups -name '*.dump' -mtime +14 -delete
+0 3 * * * cd /home/you/rightnow-ai && mkdir -p backups && scripts/backup.sh >> backups/cron.log 2>&1 && find backups -name '*.dump' -mtime +14 -delete
 ```
 
-Copy `backups/` off the server (rsync, object storage); a backup on the same disk does not survive losing the VPS. **Store `ENCRYPTION_KEY` with them, in a password manager or other separate secure place.** Without the key, restored mailbox credentials are unreadable. Test a restore occasionally: `scripts/restore.sh backups/<file>.dump`.
+Copy `backups/` off the server (rsync, object storage); a backup on the same disk does not survive losing the VPS. **Store `ENCRYPTION_KEY` with them, in a password manager or other separate secure place.** Without the key, restored mailbox credentials are unreadable. Test a restore occasionally on a separate machine or volume, never over the live stack: a restore replaces the data and pauses every active campaign (messages sent after the dump would otherwise be sent again), and the live stack then needs `--yes` or a typed `yes` to proceed. After a real restore, check the Sent folders before resuming the campaigns.
 
 ## 3b. Tracking domain (optional)
 
@@ -53,7 +53,7 @@ Proven in CI (`compose-smoke`): a seeded mailbox credential and a 4096-byte atta
 2. [ ] On the laptop run `scripts/backup.sh`.
 3. [ ] Copy `backups/*.dump` and the `.env` `ENCRYPTION_KEY` to the server out of band (the restore succeeds under any key, but with a different key the app cannot decrypt the stored credentials).
 4. [ ] Set up a fresh VPS per sections 1-2 with the same `ENCRYPTION_KEY`; do not start it before the restore.
-5. [ ] Run `scripts/restore.sh <dump>`, then start the stack.
+5. [ ] Run `scripts/restore.sh <dump>` (it pauses every active campaign; check the Sent folders of the old mailboxes, then resume), then start the stack.
 6. [ ] Verify: sign in, `/api/readyz` is green, each mailbox shows its state, and **manually** download one attachment from the inbox.
 7. [ ] Add the new domain's redirect URI in the Google and Microsoft consoles ([GOOGLE_SETUP.md](GOOGLE_SETUP.md), [MICROSOFT_SETUP.md](MICROSOFT_SETUP.md)) and reconnect any account that shows `NEEDS_ATTENTION`.
 8. [ ] Switch DNS and tracking-domain CNAMEs only after the checks above pass.
@@ -64,7 +64,7 @@ First start: an account syncs before it sends (the freshness gate, `SYNC_MAX_STA
 ## 4. Updating
 
 ```
-scripts/backup.sh && scripts/upgrade.sh
+scripts/upgrade.sh
 ```
 
-`upgrade.sh` pulls the code, rebuilds the image, runs database migrations, and restarts the services. Check with `docker compose ps` (all `healthy`) and `docker compose logs -f web worker`.
+`upgrade.sh` backs up first, then pulls the code, rebuilds the image, runs database migrations, and restarts the services. Check with `docker compose ps` (all `healthy`) and `docker compose logs -f web worker`.
