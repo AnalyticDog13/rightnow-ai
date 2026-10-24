@@ -81,6 +81,7 @@ jobs:
       - name: Backup
         run: |
           docker compose exec -T postgres psql -U rightnow -d rightnow -c "create table ci_marker as select 42 as v"
+          docker compose run --rm --no-deps migrate migration-check seed
           sh scripts/backup.sh
       - name: Fresh volume
         run: |
@@ -121,12 +122,20 @@ jobs:
             test -n "$ok" || { echo "$svc not healthy"; exit 1; }
           done
           docker compose exec -T web id -u | grep -vqx 0
+      - name: Migration fixture survives restore
+        run: docker compose run --rm --no-deps migrate migration-check verify
+      - name: Wrong key is detected
+        run: |
+          if docker compose run --rm --no-deps -e ENCRYPTION_KEY="$(openssl rand -base64 32)" migrate migration-check verify; then echo "wrong key accepted"; exit 1; fi
       - name: Rotate key runs in Compose
         run: |
-          # limit: CI has no seeded credential rows (0 re-encrypted); correctness is packages/core/test/rotate.test.ts
+          # limit: the only credential row is the migration fixture (1 re-encrypted); correctness is packages/core/test/rotate.test.ts
           out=$(sh scripts/rotate-key.sh)
           echo "$out" | grep -v -e '^New ENCRYPTION_KEY' -e '^Next:'
-          echo "$out" | grep -qx "EmailAccount.credentialsEnc: re-encrypted 0"
+          echo "$out" | grep -qx "EmailAccount.credentialsEnc: re-encrypted 1"
+          new=$(echo "$out" | sed -n 's/^New ENCRYPTION_KEY[^:]*: //p')
+          test -n "$new"
+          docker compose run --rm --no-deps -e ENCRYPTION_KEY="$new" migrate migration-check verify
           # .env still holds the old key: start again on it and check readiness
           docker compose up -d
           ok=

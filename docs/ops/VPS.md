@@ -45,6 +45,21 @@ Copy `backups/` off the server (rsync, object storage); a backup on the same dis
 
 Open and click links use `APP_URL` by default. To send them from your own domain per mailbox, create a `CNAME` record (e.g. `track.example.com`) pointing at `DOMAIN`, set it on the mailbox and run the check in the app. Once it is `VERIFIED`, Caddy requests a certificate for that host on first use (it asks `/api/tracking-domain/check` first, so unknown hostnames get none) and serves only `/t/*` and `/u/*` there. Until it verifies, links keep using `APP_URL`; with a non-https `APP_URL` and no verified domain nothing is tracked.
 
+## 3c. Moving from local to a VPS
+
+Proven in CI (`compose-smoke`): a seeded mailbox credential and a 4096-byte attachment survive backup, fresh volume and restore, still decrypt under the same `ENCRYPTION_KEY`, are rejected under another key, and still verify after key rotation. The rest is procedure; tick each checkpoint.
+
+1. [ ] On the laptop run `scripts/backup.sh`.
+2. [ ] Copy `backups/*.dump` and the `.env` `ENCRYPTION_KEY` to the server out of band (a restore under another key fails loudly, it never decrypts to garbage).
+3. [ ] Set up a fresh VPS per sections 1-2 with the same `ENCRYPTION_KEY`.
+4. [ ] Run `scripts/restore.sh <dump>`.
+5. [ ] Verify: sign in, `/api/readyz` is green, each mailbox shows its state, and **manually** download one attachment from the inbox.
+6. [ ] Add the new domain's redirect URI in the Google and Microsoft consoles ([GOOGLE_SETUP.md](GOOGLE_SETUP.md), [MICROSOFT_SETUP.md](MICROSOFT_SETUP.md)) and reconnect any account that shows `NEEDS_ATTENTION`.
+7. [ ] Switch DNS and tracking-domain CNAMEs only after the checks above pass.
+8. [ ] Stop the local stack (`scripts/stop.sh`) so two instances never send from one mailbox.
+
+First start: an account syncs before it sends (the freshness gate, `SYNC_MAX_STALENESS_SEC`), proved by `packages/core/test/dispatch.test.ts` and `packages/core/test/e2e/downtime.test.ts`; it is not re-tested in CI.
+
 ## 4. Updating
 
 ```

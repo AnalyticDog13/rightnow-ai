@@ -5,6 +5,7 @@ export * from "./env";
 export * from "./apikeys";
 export * from "./audit";
 export * from "./rotate";
+export * from "./migration-check";
 export * from "./accounts/credentials";
 export * from "./push/handle";
 export * from "./push/renew";

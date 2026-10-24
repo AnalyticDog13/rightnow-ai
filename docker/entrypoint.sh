@@ -9,5 +9,7 @@ case "$1" in
   rotate-key) cd /app && exec node --import tsx scripts/rotate-key.ts ;;
   # real-mailbox smoke run; args are --account <id> --to <address> (docs/ops/LIVE_VERIFICATION.md)
   live-verify) shift; cd /app && exec node --import tsx scripts/live-verify.ts "$@" ;;
-  *) echo "usage: entrypoint.sh web|worker|migrate|rotate-key|live-verify" >&2; exit 2 ;;
+  # seed|verify the PS-DEPLOY-11 fixture (CI compose-smoke)
+  migration-check) shift; cd /app && exec node --import tsx scripts/migration-check.ts "$@" ;;
+  *) echo "usage: entrypoint.sh web|worker|migrate|rotate-key|live-verify|migration-check" >&2; exit 2 ;;
 esac

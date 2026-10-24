@@ -436,7 +436,7 @@ Instantly has no dedicated reactivation product: users lower limits manually, re
 - [x] PS-DEPLOY-08: Local: Docker Compose runs web, workers, scheduler, Postgres, Redis; named volumes; Redis AOF persistence; start/stop commands; no work while machine asleep, correct recovery afterwards (SYNC).
 - [x] PS-DEPLOY-09: VPS: same compose with health checks, restart policies (`unless-stopped`), durable volumes, HTTPS via reverse proxy (Caddy or Traefik with automatic certs), secrets via env files/Docker secrets, ops runbook.
 - [x] PS-DEPLOY-10: Scripts for both modes: start, stop, upgrade (migrate then restart), backup (pg_dump + Redis snapshot + encryption-key note), restore; tested.
-- [ ] PS-DEPLOY-11: Tested local-to-VPS migration procedure (dump, transfer, restore, verify checkpoints, rotate OAuth redirect URIs, DNS/tracking-domain switch, first-start sync gate). (DEFERRED → P8-T02)
+- [x] PS-DEPLOY-11: Tested local-to-VPS migration procedure (dump, transfer, restore, verify checkpoints, rotate OAuth redirect URIs, DNS/tracking-domain switch, first-start sync gate).
 - [x] PS-DEPLOY-12: Health endpoints `/healthz` (liveness) and `/readyz` (db, redis, queue, sync gate status).
 - [x] PS-DEPLOY-13: Tracking endpoint must be publicly reachable to record opens/clicks; local mode documents tunnel/limitations.
 - [x] PS-DEPLOY-14: Provider Compliance Gate: before enabling live sending, document each provider's current API acceptable-use rules; do not assume a Gmail OAuth app may send unsolicited commercial mail; unsupported channels sit behind a disabled integration interface; campaign creation and tests (dry-run / local SMTP sink) work without live provider access.
