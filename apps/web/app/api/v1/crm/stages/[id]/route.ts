@@ -1,4 +1,4 @@
-import { deleteStage, updateStage } from "@rightnow/core";
+import { deleteStage, updateStage, stagePatch } from "@rightnow/core";
 import { prisma } from "@rightnow/db";
 import { z } from "zod";
 import { run } from "../../../../../../lib/accounts-http";
@@ -6,7 +6,7 @@ import { route } from "../../../../../../lib/api";
 
 export const dynamic = "force-dynamic";
 
-export const PATCH = route({ auth: "session", role: "ADMIN", body: z.unknown() }, (c) =>
+export const PATCH = route({ auth: "session", role: "ADMIN", body: stagePatch }, (c) =>
   run(async () => ({
     stages: await updateStage(prisma, c.workspaceId, c.userId, c.params.id!, c.body),
   })),

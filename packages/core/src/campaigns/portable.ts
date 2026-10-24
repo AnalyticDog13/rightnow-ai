@@ -29,7 +29,7 @@ const portableStep = z.strictObject({
     .refine((v) => new Set(v.map((x) => x.label)).size === v.length, "duplicate_label"),
 });
 const steps = z.array(portableStep).max(100);
-const portableSchema = z.strictObject({
+export const portableSchema = z.strictObject({
   version: z.literal(1),
   campaign: z.strictObject(settingFields).partial().required({ name: true }),
   schedules: z.array(scheduleSchema).max(10),

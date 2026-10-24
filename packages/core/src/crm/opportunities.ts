@@ -468,12 +468,12 @@ const fields = {
   expectedCloseAt: z.coerce.date().nullable(),
   ownerId: id.max(100).nullable(),
 };
-const createInput = z
+export const opportunityInput = z
   .strictObject({ leadId: id, campaignId: id.nullable() })
   .extend(fields)
   .partial()
   .required({ leadId: true });
-const patchInput = z.strictObject(fields).partial();
+export const opportunityPatch = z.strictObject(fields).partial();
 
 const opportunityQuery = z.strictObject({
   campaignId: id.optional(),
@@ -583,7 +583,7 @@ export async function createOpportunity(
   actor: Actor,
   input: unknown,
 ): Promise<ApiOpportunity> {
-  const d = createInput.parse(input);
+  const d = opportunityInput.parse(input);
   try {
     return await prisma.$transaction(async (tx) => {
       // KEY SHARE waits for a merge or delete holding the lead, then the re-read sees it gone
@@ -641,7 +641,7 @@ export async function updateOpportunity(
   id: string,
   input: unknown,
 ): Promise<ApiOpportunity> {
-  const { stageId, ...p } = patchInput.parse(input);
+  const { stageId, ...p } = opportunityPatch.parse(input);
   return prisma.$transaction(async (tx) => {
     if (!(await lockDeal(tx, ws, id))) throw notFound();
     if (p.ownerId) await assertMembers(tx, ws, [p.ownerId]);

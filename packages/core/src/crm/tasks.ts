@@ -31,7 +31,7 @@ const fields = {
   dueAt: z.coerce.date().nullable(),
   assigneeId: id.nullable(),
 };
-const createInput = z.strictObject({
+export const taskInput = z.strictObject({
   ...fields,
   body: fields.body.optional(),
   dueAt: fields.dueAt.optional(),
@@ -39,7 +39,7 @@ const createInput = z.strictObject({
   leadId: id.optional(),
   opportunityId: id.optional(),
 });
-const updateInput = z.strictObject({
+export const taskPatch = z.strictObject({
   title: fields.title.optional(),
   body: fields.body.optional(),
   dueAt: fields.dueAt.optional(),
@@ -109,7 +109,7 @@ export async function createTask(
   actor: Actor,
   input: unknown,
 ): Promise<ApiTask> {
-  const d = createInput.parse(input);
+  const d = taskInput.parse(input);
   const now = clock.now();
   try {
     return await prisma.$transaction(async (tx) => {
@@ -159,7 +159,7 @@ export function updateTask(
   taskId: string,
   input: unknown,
 ): Promise<ApiTask> {
-  const d = updateInput.parse(input);
+  const d = taskPatch.parse(input);
   const now = clock.now();
   return prisma.$transaction(async (tx) => {
     // row lock: two concurrent completions both see the same old status and write one consistent state

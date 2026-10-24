@@ -1,6 +1,11 @@
-import { createOpportunity, listOpportunities, pipelineBoard, systemClock } from "@rightnow/core";
+import {
+  createOpportunity,
+  listOpportunities,
+  pipelineBoard,
+  systemClock,
+  opportunityInput,
+} from "@rightnow/core";
 import { prisma } from "@rightnow/db";
-import { z } from "zod";
 import { run } from "../../../../../lib/accounts-http";
 import { route } from "../../../../../lib/api";
 
@@ -15,6 +20,6 @@ export const GET = route({ auth: "session-or-apikey", scope: "crm:read" }, (c) =
 });
 
 export const POST = route(
-  { auth: "session-or-apikey", scope: "crm:create", body: z.unknown() },
+  { auth: "session-or-apikey", scope: "crm:create", body: opportunityInput },
   (c) => run(() => createOpportunity(prisma, systemClock, c.workspaceId, c.userId, c.body)),
 );

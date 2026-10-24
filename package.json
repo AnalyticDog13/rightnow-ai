@@ -18,7 +18,8 @@
     "e2e": "npm run e2e --workspaces --if-present",
     "db:migrate": "npm run db:migrate -w @rightnow/db",
     "db:deploy": "npm run db:deploy -w @rightnow/db",
-    "db:generate": "npm run db:generate -w @rightnow/db"
+    "db:generate": "npm run db:generate -w @rightnow/db",
+    "openapi": "tsx scripts/openapi.ts"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

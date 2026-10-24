@@ -1,4 +1,4 @@
-import { createNote, listNotes } from "@rightnow/core";
+import { createNote, listNotes, noteInput } from "@rightnow/core";
 import { prisma } from "@rightnow/db";
 import { z } from "zod";
 import { run } from "../../../../../lib/accounts-http";
@@ -19,6 +19,6 @@ export const GET = route(
 );
 
 export const POST = route(
-  { auth: "session-or-apikey", scope: "inbox:write", body: z.unknown() },
+  { auth: "session-or-apikey", scope: "inbox:write", body: noteInput },
   (c) => run(() => createNote(prisma, c.workspaceId, c.userId, c.body)),
 );

@@ -29,8 +29,8 @@ const fields = {
     .max(9)
     .transform((a) => [...new Set(a)]),
 };
-const stageInput = z.strictObject({ ...fields, interestCodes: fields.interestCodes.default([]) });
-const stagePatch = z.strictObject({ ...fields, position: z.number().int().min(0) }).partial();
+export const stageInput = z.strictObject({ ...fields, interestCodes: fields.interestCodes.default([]) });
+export const stagePatch = z.strictObject({ ...fields, position: z.number().int().min(0) }).partial();
 
 const ORDER = { orderBy: [{ position: "asc" as const }, { id: "asc" as const }] };
 // a raw statement's foreign key violation surfaces as 23503 in the message, not as P2003

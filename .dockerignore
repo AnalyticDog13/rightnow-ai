@@ -16,3 +16,4 @@ coverage
 packages/db/src/generated
 docs
 *.md
+!docs/openapi.json

@@ -35,6 +35,14 @@ type Ctx<B extends z.ZodType, Q extends z.ZodType, A extends Auth> = {
   req: Request;
 } & (A extends "public" ? unknown : { workspaceId: string; role: Role; scopes?: string[] });
 
+/** What `route()` declares, read by `scripts/openapi.ts` and the scope audit. */
+export type RouteMeta = Pick<
+  Opts<z.ZodType, z.ZodType, Auth>,
+  "body" | "query" | "role" | "scope"
+> & {
+  auth: Auth;
+};
+
 export type ApiKeyResolver = (req: Request, scope?: string) => Promise<SessionInfo | null>;
 
 /** Verifies a workspace API key (Authorization: Bearer) for `scope`: null = no valid key (401), HttpError(403) = scope missing. */
@@ -65,7 +73,7 @@ export function route<
   getSession: SessionGetter = defaultGetSession,
   keyResolver: ApiKeyResolver = resolveApiKey,
 ) {
-  return async (
+  const handle = async (
     req: Request,
     rc?: { params: Promise<Record<string, string | undefined>> },
   ): Promise<Response> => {
@@ -110,4 +118,12 @@ export function route<
       return Response.json({ error: "Internal error" }, { status: 500 });
     }
   };
+  const meta: RouteMeta = {
+    auth: opts.auth ?? "session",
+    role: opts.role,
+    scope: opts.scope,
+    body: opts.body,
+    query: opts.query,
+  };
+  return Object.assign(handle, { meta });
 }

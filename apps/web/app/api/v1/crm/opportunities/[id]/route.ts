@@ -1,6 +1,11 @@
-import { deleteOpportunity, getOpportunity, systemClock, updateOpportunity } from "@rightnow/core";
+import {
+  deleteOpportunity,
+  getOpportunity,
+  systemClock,
+  updateOpportunity,
+  opportunityPatch,
+} from "@rightnow/core";
 import { prisma } from "@rightnow/db";
-import { z } from "zod";
 import { run } from "../../../../../../lib/accounts-http";
 import { route } from "../../../../../../lib/api";
 
@@ -11,7 +16,7 @@ export const GET = route({ auth: "session-or-apikey", scope: "crm:read" }, (c) =
 );
 
 export const PATCH = route(
-  { auth: "session-or-apikey", scope: "crm:update", body: z.unknown() },
+  { auth: "session-or-apikey", scope: "crm:update", body: opportunityPatch },
   (c) =>
     run(() =>
       updateOpportunity(prisma, systemClock, c.workspaceId, c.userId, c.params.id!, c.body),

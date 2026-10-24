@@ -25,6 +25,8 @@ export const noteInput = z
   })
   .refine((v) => (v.threadId === undefined) !== (v.leadId === undefined), "threadId or leadId");
 
+export const notePatch = z.strictObject({ body: noteBody });
+
 export const listNotes = (db: Db, ws: string, q: { threadId?: string; leadId?: string }) =>
   db.note.findMany({
     where: {
@@ -45,7 +47,7 @@ export async function createNote(db: Db, ws: string, actorId: Actor, input: unkn
 }
 
 export async function updateNote(db: Db, ws: string, id: string, input: unknown) {
-  const { body } = z.strictObject({ body: noteBody }).parse(input);
+  const { body } = notePatch.parse(input);
   const r = await db.note.updateMany({ where: { id, workspaceId: ws }, data: { body } });
   if (!r.count) throw notFound();
   return db.note.findUniqueOrThrow({ where: { id } });
