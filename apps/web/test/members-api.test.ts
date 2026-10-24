@@ -160,6 +160,10 @@ describe("invites", () => {
 
   it("an email that already has a user is 409 user_exists, and the invite stays pending", async () => {
     await db.prisma.user.create({ data: { id: "ghost", name: "G", email: "ghost@x.com" } });
+    const elsewhere = await db.prisma.workspace.create({ data: { name: "E", slug: "e-ghost" } });
+    await db.prisma.member.create({
+      data: { id: "m-ghost", workspaceId: elsewhere.id, userId: "ghost", role: "member" },
+    });
     const { id } = await json(await inviteAs("admin", "ghost@x.com"));
     const r = await doAccept(acceptBody(id));
     expect(r.status).toBe(409);
@@ -363,5 +367,47 @@ describe("fix round 1", () => {
     expect(labels.get("u-leaver")).toBe("removed user (leaver@x.io)");
     expect(labels.get("u-unknown")).toBe("removed user (u-unknown)");
     expect(labels.has("null")).toBe(false);
+  });
+
+  it("scrub: the migration removes invitation ids from old-shape audit rows", async () => {
+    const { readFileSync, readdirSync } = await import("node:fs");
+    const dir = join(__dirname, "../../../packages/db/prisma/migrations");
+    const name = readdirSync(dir).find((d) => d.endsWith("_two_factor"))!;
+    const sql = readFileSync(join(dir, name, "migration.sql"), "utf8");
+    const stmts = sql.split(";").filter((s) => /UPDATE "AuditLog"/.test(s));
+    expect(stmts).toHaveLength(3);
+    const inv = await db.prisma.invitation.create({
+      data: {
+        id: "OLDINVITEID1234567890",
+        workspaceId,
+        email: "old@x.com",
+        role: "member",
+        expiresAt: new Date(Date.now() + 1e6),
+        inviterId: "u-admin",
+      },
+    });
+    const mk = (action: string, target: string | null, meta?: object) =>
+      db.prisma.auditLog.create({ data: { workspaceId, action, target, meta } });
+    await mk("member.invite", inv.id, { email: "old@x.com", role: "member" });
+    await mk("member.invite_cancel", inv.id);
+    await mk("member.invite_cancel", "GONEINVITEID999"); // its invitation no longer exists
+    for (const s of stmts) await db.prisma.$executeRawUnsafe(s);
+    const rows = await db.prisma.auditLog.findMany({
+      where: { action: { in: ["member.invite", "member.invite_cancel"] } },
+    });
+    expect(JSON.stringify(rows)).not.toMatch(/OLDINVITEID|GONEINVITEID/);
+    expect(rows.every((r) => r.target === null || r.target.includes("@"))).toBe(true);
+    expect(
+      rows.find((r) => r.meta && "role" in (r.meta as object) && r.target === "old@x.com")?.meta,
+    ).toEqual({ role: "member" });
+  });
+
+  it("an orphan user (removal stopped after removeMember) no longer blocks a new invite", async () => {
+    await db.prisma.user.create({ data: { id: "orphan", name: "O", email: "orphan@x.com" } });
+    const { id } = await json(await inviteAs("admin", "orphan@x.com"));
+    expect((await doAccept(acceptBody(id))).status).toBe(200);
+    expect(await db.prisma.user.count({ where: { email: "orphan@x.com" } })).toBe(1);
+    expect(await db.prisma.user.count({ where: { id: "orphan" } })).toBe(0);
+    expect(await db.prisma.member.count({ where: { user: { email: "orphan@x.com" } } })).toBe(1);
   });
 });

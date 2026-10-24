@@ -39,8 +39,13 @@ export const POST = route({ auth: "public", body }, async ({ body, req }) => {
       if (inv.status !== "pending") throw new HttpError(409, "invite_used");
       if (inv.expiresAt.getTime() <= Date.now()) throw new HttpError(410, "invite_expired");
       const email = inv.email.toLowerCase();
-      if (await tx.user.findUnique({ where: { email }, select: { id: true } }))
-        throw new HttpError(409, "user_exists");
+      const old = await tx.user.findUnique({
+        where: { email },
+        select: { id: true, _count: { select: { members: true } } },
+      });
+      if (old && old._count.members > 0) throw new HttpError(409, "user_exists");
+      // a user left without any membership (a removal that stopped half way) must not block the address
+      if (old) await tx.user.delete({ where: { id: old.id } });
       const user = await tx.user.create({ data: { id: generateId(), name: body.name, email } });
       await tx.account.create({
         data: {

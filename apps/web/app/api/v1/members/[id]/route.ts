@@ -60,6 +60,7 @@ export const DELETE = route({ role: "ADMIN" }, async (c) => {
       body: { memberIdOrEmail: m.id, organizationId: c.workspaceId },
     }),
   );
-  // single-workspace deployment: the user goes too (sessions cascade), so the address can be invited again
+  // single-workspace deployment: the user goes too (sessions cascade). If this fails, the user is left without a
+  // membership and the invite accept route deletes it, so the address can still be invited again
   await prisma.user.deleteMany({ where: { id: m.userId, members: { none: {} } } });
 });
