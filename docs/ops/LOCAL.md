@@ -45,6 +45,10 @@ To try tracking from a laptop, start a tunnel to port 3000 (for example `cloudfl
 
 `MAIL_PROVIDER_FAKE=1` in `.env` replaces Gmail, Microsoft and IMAP/SMTP with an in-process fake mailbox (state in `FAKE_MAIL_DIR`). Connect an account of any type, build a campaign, launch it, and the whole pipeline (planner, send queue, sync, replies, bounces, warm-up, placement tests) runs against it without contacting a provider. Read a fake mailbox through `GET /api/v1/_fake/mailbox/<address>`. The app refuses this flag when `MODE=vps`. Real providers stay off for campaign sending until `scripts/live-verify.ts` passes ([LIVE_VERIFICATION.md](LIVE_VERIFICATION.md), D17).
 
+## Private hosts for webhooks, the AI base URL and the verifier
+
+By default a webhook URL, the AI base URL (Settings, AI) and the email-verifier URL must resolve to public addresses. Set `ALLOW_PRIVATE_HTTP_HOSTS=1` in `.env` to let them reach a LAN or loopback host, for example a local Ollama or LM Studio server or a webhook receiver on your network. Cloud metadata endpoints (169.254.169.254 and similar) and link-local addresses stay blocked whatever the setting. It does not affect mail hosts (`ALLOW_PRIVATE_MAIL_HOSTS`).
+
 ## Sending limits per account
 
 The daily limit you set is never allowed above half of the provider's rolling 24-hour cap. Calendar-day

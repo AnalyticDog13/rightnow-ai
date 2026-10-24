@@ -29,6 +29,10 @@ POSTGRES_PASSWORD=<long random string>   # set before the first start
 
 Then `scripts/start.sh`, open `https://app.example.com/sign-up` and create the owner with `SETUP_TOKEN`.
 
+## 2b. Private hosts (optional)
+
+Webhook URLs, the AI base URL and the verifier URL must be public by default. `ALLOW_PRIVATE_HTTP_HOSTS=1` in `.env` lets them reach hosts on the server's private network (an Ollama or LM Studio box, an internal webhook receiver). Cloud metadata (169.254.169.254) and link-local addresses stay blocked whatever the setting; leave it unset unless you need it, since it widens what a user-supplied URL can reach.
+
 ## 3. Backups (cron)
 
 ```
