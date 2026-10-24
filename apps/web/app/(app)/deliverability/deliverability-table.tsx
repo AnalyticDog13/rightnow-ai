@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "../../../components/ui/button";
 import { call, errorText } from "../accounts/api-client";
+import { HealthTrend } from "./health-trend";
 
 const BADGE: Record<AccountDeliverability["status"], string> = {
   Active: "bg-green-100 text-green-900",
@@ -21,25 +22,6 @@ const WARMUP: Record<string, string> = {
   PLACEMENT_UNKNOWN: "No peers",
   SUSPENDED: "Suspended",
 };
-
-/** Score history as a line; the numbers are in the label for screen readers. */
-function Sparkline({ trend }: { trend: { day: string; score: number }[] }) {
-  if (trend.length < 2) return null;
-  const step = 80 / (trend.length - 1);
-  const pts = trend.map(
-    (t, i) => `${(i * step).toFixed(1)},${(23 - (t.score / 100) * 22).toFixed(1)}`,
-  );
-  return (
-    <svg
-      role="img"
-      aria-label={`Health score, last ${trend.length} days: ${trend.map((t) => t.score).join(", ")}`}
-      viewBox="0 0 80 24"
-      className="h-6 w-20"
-    >
-      <polyline points={pts.join(" ")} fill="none" stroke="currentColor" strokeWidth="1.5" />
-    </svg>
-  );
-}
 
 export function DeliverabilityTable({
   rows,
@@ -143,7 +125,7 @@ export function DeliverabilityTable({
                 </td>
                 <td className="p-2">
                   {r.health.score ?? "-"}
-                  <Sparkline trend={r.health.trend} />
+                  <HealthTrend trend={r.health.trend} />
                   {r.health.cap !== null && (
                     <span className="block text-xs">Throttled to {r.health.cap}/day</span>
                   )}
@@ -170,8 +152,8 @@ export function DeliverabilityTable({
                 <td className="p-2">
                   {r.dns ? (
                     <Link
-                      href="/accounts"
-                      aria-label={`DNS ${r.dns.level} for ${r.dns.domain}, open the accounts page`}
+                      href={`/deliverability?domain=${encodeURIComponent(r.dns.domain)}#dns`}
+                      aria-label={`DNS ${r.dns.level} for ${r.dns.domain}, show the DNS checks`}
                       className="rounded-full border border-border px-2 py-0.5 text-xs"
                     >
                       {r.dns.level}

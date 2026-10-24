@@ -1,47 +1,23 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
-import { useAiOn } from "../../../components/ai-assist";
+import { useEffect, useState, type FormEvent } from "react";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
 import { call } from "../accounts/api-client";
-import type { Member, Named } from "../leads/bulk-bar";
+import type { Member } from "../leads/bulk-bar";
 import { ActivityList, useActivity } from "./activity-tab";
+import { NotesSection, TasksSection } from "./deal-sections";
+import {
+  checkMoney,
+  type Note,
+  num,
+  sel,
+  type Task,
+  useAttribution,
+  useDialog,
+} from "./drawer-kit";
 import { friendly, type Opp, type StageOption } from "./types";
-
-const sel = "h-10 rounded-md border border-border bg-card px-3 text-sm";
-const MAX = 999_999_999_999.99;
-const dialogCls =
-  "m-auto max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-border bg-card p-6 text-foreground backdrop:bg-black/40";
-
-/** A modal <dialog> that reports its own close (Escape, Close button). */
-function useDialog(onClose: () => void) {
-  const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    ref.current?.showModal();
-  }, []);
-  return {
-    ref,
-    props: { ref, onClose, className: dialogCls },
-    close: () => ref.current?.close(),
-  };
-}
-
-const num = (v: string) => String(Number(v));
-/** "Value must be 0 or more" and friends; empty string means valid. */
-const checkMoney = (label: string, v: string) =>
-  v.trim() === "" || Number.isNaN(Number(v))
-    ? `${label} must be a number`
-    : Number(v) < 0
-      ? `${label} must be 0 or more`
-      : Number(v) > MAX
-        ? `${label} is too large`
-        : "";
-
-type Note = { id: string; kind: string; body: string; createdAt: string };
-type Task = { id: string; title: string; dueAt: string | null };
-type Step = { id: string; order: number; variants: { id: string; label: string }[] };
 
 export function OpportunityDrawer({
   opp: initial,
@@ -73,12 +49,9 @@ export function OpportunityDrawer({
   const [errors, setErrors] = useState<{ value?: string; cash?: string }>({});
   const [error, setError] = useState("");
   const [msg, setMsg] = useState("");
-  const [attribution, setAttribution] = useState("");
   const [notes, setNotes] = useState<Note[]>([]);
-  const [noteText, setNoteText] = useState("");
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [taskTitle, setTaskTitle] = useState("");
-  const [taskDue, setTaskDue] = useState("");
+  const attribution = useAttribution(opp);
   const activity = useActivity(initial.id);
   const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -90,48 +63,10 @@ export function OpportunityDrawer({
     setTasks(
       ((await call(`/api/v1/crm/tasks?opportunityId=${opp.id}`, "GET")).json.tasks ?? []) as Task[],
     );
-  const [rec, setRec] = useState("");
-  const aiOn = useAiOn();
-  async function recommend() {
-    setRec("");
-    const r = await call("/api/v1/ai/recommend", "POST", { opportunityId: opp.id });
-    setRec(
-      r.ok
-        ? `${(r.json as unknown as unknown[]).length} suggested task(s) wait for your approval under Tasks, Awaiting approval.`
-        : r.status === 412
-          ? "AI is not set up. An admin can add a model in Settings."
-          : friendly(r),
-    );
-  }
   useEffect(() => {
     void loadNotes();
     void loadTasks();
   }, []);
-
-  // "From {campaign} · step {n} · variant {label} · {account}"
-  useEffect(() => {
-    let live = true;
-    void (async () => {
-      const parts = [opp.campaign ? `From ${opp.campaign.name}` : "Created manually"];
-      if (opp.campaign && opp.stepId) {
-        const r = await call(`/api/v1/campaigns/${opp.campaign.id}/steps`, "GET");
-        const subs = (r.json.subsequences ?? []) as { steps: Step[] }[];
-        const all = [...((r.json.steps ?? []) as Step[]), ...subs.flatMap((s) => s.steps)];
-        const step = all.find((s) => s.id === opp.stepId);
-        if (step) parts.push(`step ${step.order}`);
-        const v = step?.variants.find((x) => x.id === opp.variantId);
-        if (v) parts.push(`variant ${v.label}`);
-      }
-      if (opp.accountId) {
-        const r = await call(`/api/v1/accounts/${opp.accountId}`, "GET");
-        if (typeof r.json.email === "string") parts.push(r.json.email);
-      }
-      if (live) setAttribution(parts.join(" · "));
-    })();
-    return () => {
-      live = false;
-    };
-  }, [opp.campaign?.id, opp.stepId, opp.variantId, opp.accountId]);
 
   async function save(e: FormEvent) {
     e.preventDefault();
@@ -165,34 +100,26 @@ export function OpportunityDrawer({
     onChanged();
   }
 
-  async function log(kind: string) {
-    if (!noteText.trim()) return;
-    const r = await call("/api/v1/inbox/notes", "POST", {
-      leadId: opp.lead.id,
-      kind,
-      body: noteText.trim(),
-    });
-    if (!r.ok) return setError(friendly(r));
+  async function log(kind: string, body: string) {
+    const r = await call("/api/v1/inbox/notes", "POST", { leadId: opp.lead.id, kind, body });
+    if (!r.ok) return (setError(friendly(r)), false);
     setError("");
-    setNoteText("");
     void loadNotes();
     void activity.reload();
+    return true;
   }
 
-  async function addTask(e: FormEvent) {
-    e.preventDefault();
-    if (!taskTitle.trim()) return;
+  async function addTask(title: string, due: string) {
     const r = await call("/api/v1/crm/tasks", "POST", {
-      title: taskTitle.trim(),
+      title,
       opportunityId: opp.id,
-      ...(taskDue && { dueAt: new Date(taskDue).toISOString() }),
+      ...(due && { dueAt: new Date(due).toISOString() }),
     });
-    if (!r.ok) return setError(friendly(r));
+    if (!r.ok) return (setError(friendly(r)), false);
     setError("");
-    setTaskTitle("");
-    setTaskDue("");
     void loadTasks();
     void activity.reload();
+    return true;
   }
 
   async function complete(t: Task) {
@@ -342,117 +269,15 @@ export function OpportunityDrawer({
         )}
       </form>
 
-      <section aria-label="Notes" className="mt-4 border-t border-border pt-4">
-        <h3 className="mb-2 text-sm font-medium">Notes and calls</h3>
-        <ul aria-label="Notes" className="mb-2 flex flex-col gap-1 text-sm">
-          {notes.map((n) => (
-            <li key={n.id}>
-              <span className="text-muted-foreground">
-                {new Date(n.createdAt).toLocaleString()}
-              </span>{" "}
-              {n.kind !== "note" && (
-                <strong className="font-medium">{n.kind.toUpperCase()} </strong>
-              )}
-              {n.body}
-            </li>
-          ))}
-        </ul>
-        {canEdit && (
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="opp-note">Note or call summary</Label>
-            <textarea
-              id="opp-note"
-              rows={2}
-              value={noteText}
-              onChange={(e) => setNoteText(e.target.value)}
-              className="rounded-md border border-border bg-card p-2 text-sm"
-            />
-            <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="outline" onClick={() => void log("note")}>
-                Add note
-              </Button>
-              <Button type="button" variant="outline" onClick={() => void log("call")}>
-                Log call
-              </Button>
-              <Button type="button" variant="outline" onClick={() => void log("sms")}>
-                Log SMS
-              </Button>
-              <Button type="button" variant="outline" onClick={() => void log("meeting")}>
-                Log meeting
-              </Button>
-            </div>
-          </div>
-        )}
-      </section>
+      <NotesSection notes={notes} canEdit={canEdit} onLog={log} />
 
-      <section aria-label="Tasks" className="mt-4 border-t border-border pt-4">
-        <h3 className="mb-2 text-sm font-medium">Tasks</h3>
-        <ul aria-label="Tasks" className="mb-2 flex flex-col gap-1 text-sm">
-          {tasks.map((t) => (
-            <li key={t.id} className="flex items-center gap-2">
-              <span>{t.title}</span>
-              {t.dueAt && (
-                <span className="text-muted-foreground">
-                  due {new Date(t.dueAt).toLocaleString()}
-                </span>
-              )}
-              {canEdit && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-8 px-2 text-xs"
-                  aria-label={`Complete ${t.title}`}
-                  onClick={() => void complete(t)}
-                >
-                  Complete
-                </Button>
-              )}
-            </li>
-          ))}
-        </ul>
-        {canEdit && (
-          <form onSubmit={addTask} className="flex flex-wrap items-end gap-2">
-            <div className="flex flex-col gap-1">
-              <Label htmlFor="task-title">Task title</Label>
-              <Input
-                id="task-title"
-                value={taskTitle}
-                onChange={(e) => setTaskTitle(e.target.value)}
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <Label htmlFor="task-due">Task due</Label>
-              <Input
-                id="task-due"
-                type="datetime-local"
-                value={taskDue}
-                onChange={(e) => setTaskDue(e.target.value)}
-              />
-            </div>
-            <Button type="submit">Add task</Button>
-          </form>
-        )}
-        {canEdit && aiOn && (
-          <div className="mt-2 flex flex-col gap-1">
-            <Button
-              type="button"
-              variant="outline"
-              className="self-start"
-              onClick={() => void recommend()}
-            >
-              Recommend next actions
-            </Button>
-            {rec && (
-              <p role="status" className="text-sm">
-                {rec}
-              </p>
-            )}
-          </div>
-        )}
-        <p className="mt-1 text-xs text-muted-foreground">
-          Reminders are due dates only. Nothing is emailed or pushed.
-        </p>
-      </section>
+      <TasksSection
+        tasks={tasks}
+        canEdit={canEdit}
+        opportunityId={opp.id}
+        onAdd={addTask}
+        onComplete={(t) => void complete(t)}
+      />
 
       <section aria-label="Deal activity" className="mt-4 border-t border-border pt-4">
         <h3 className="mb-2 text-sm font-medium">Activity</h3>
@@ -463,160 +288,6 @@ export function OpportunityDrawer({
           </Button>
         )}
       </section>
-    </dialog>
-  );
-}
-
-type Found = { id: string; email: string };
-
-/** Create a deal for a lead found with `GET /api/v1/leads?q=`. */
-export function NewOpportunity({
-  stages,
-  campaigns,
-  onClose,
-  onCreated,
-}: {
-  stages: StageOption[];
-  campaigns: Named[];
-  onClose: () => void;
-  onCreated: () => void;
-}) {
-  const dlg = useDialog(onClose);
-  const [q, setQ] = useState("");
-  const [found, setFound] = useState<Found[]>([]);
-  const [leadId, setLeadId] = useState("");
-  const [title, setTitle] = useState("");
-  const [value, setValue] = useState("");
-  const [campaignId, setCampaignId] = useState("");
-  const [stageId, setStageId] = useState(stages.find((s) => s.kind === "OPEN")?.id ?? "");
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    if (!q.trim()) return setFound([]);
-    let live = true;
-    const t = setTimeout(async () => {
-      const r = await call(`/api/v1/leads?${new URLSearchParams({ q: q.trim() })}`, "GET");
-      if (live) setFound(((r.json.leads ?? []) as Found[]).slice(0, 50));
-    }, 250);
-    return () => {
-      live = false;
-      clearTimeout(t);
-    };
-  }, [q]);
-
-  async function create(e: FormEvent) {
-    e.preventDefault();
-    if (!leadId) return setError("Choose a lead first.");
-    const bad = value.trim() ? checkMoney("Value", value) : "";
-    if (bad) return setError(bad);
-    const r = await call("/api/v1/crm/opportunities", "POST", {
-      leadId,
-      stageId,
-      ...(title.trim() && { title: title.trim() }),
-      ...(value.trim() && { value: Number(value) }),
-      ...(campaignId && { campaignId }),
-    });
-    if (!r.ok) return setError(friendly(r));
-    onCreated();
-    dlg.close();
-  }
-
-  return (
-    <dialog {...dlg.props} aria-labelledby="new-opp-title">
-      <div className="mb-4 flex items-start justify-between gap-4">
-        <h2 id="new-opp-title" className="text-lg font-semibold">
-          New opportunity
-        </h2>
-        <Button variant="outline" onClick={dlg.close}>
-          Close
-        </Button>
-      </div>
-      <form onSubmit={create} noValidate className="grid gap-3 sm:grid-cols-2">
-        <div className="flex flex-col gap-1">
-          <Label htmlFor="new-find">Find a lead</Label>
-          <Input
-            id="new-find"
-            type="search"
-            placeholder="Email, name or company"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
-        </div>
-        <div className="flex flex-col gap-1">
-          <Label htmlFor="new-lead">Lead</Label>
-          <select
-            id="new-lead"
-            className={sel}
-            value={leadId}
-            onChange={(e) => setLeadId(e.target.value)}
-          >
-            <option value="">{found.length ? "Choose a lead" : "Search first"}</option>
-            {found.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.email}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex flex-col gap-1">
-          <Label htmlFor="new-title">Title</Label>
-          <Input
-            id="new-title"
-            placeholder="Defaults to the company or email"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-          />
-        </div>
-        <div className="flex flex-col gap-1">
-          <Label htmlFor="new-value">Value</Label>
-          <Input
-            id="new-value"
-            type="number"
-            step="0.01"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-          />
-        </div>
-        <div className="flex flex-col gap-1">
-          <Label htmlFor="new-stage">Stage</Label>
-          <select
-            id="new-stage"
-            className={sel}
-            value={stageId}
-            onChange={(e) => setStageId(e.target.value)}
-          >
-            {stages.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex flex-col gap-1">
-          <Label htmlFor="new-campaign">Campaign (optional)</Label>
-          <select
-            id="new-campaign"
-            className={sel}
-            value={campaignId}
-            onChange={(e) => setCampaignId(e.target.value)}
-          >
-            <option value="">None</option>
-            {campaigns.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        {error && (
-          <p role="alert" className="text-sm text-destructive sm:col-span-2">
-            {error}
-          </p>
-        )}
-        <div className="sm:col-span-2">
-          <Button type="submit">Create opportunity</Button>
-        </div>
-      </form>
     </dialog>
   );
 }

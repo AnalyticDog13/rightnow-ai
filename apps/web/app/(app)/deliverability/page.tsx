@@ -12,14 +12,21 @@ import { redirect } from "next/navigation";
 import { getWebEnv } from "../../../lib/env";
 import { getSessionInfo } from "../../../lib/workspace";
 import { DeliverabilitySettings } from "./deliverability-settings";
+import { DomainSection } from "../accounts/domain-section";
 import { DeliverabilityTable } from "./deliverability-table";
+import { HealthFormula } from "./health-trend";
 
 export const metadata: Metadata = { title: "Deliverability" };
 export const dynamic = "force-dynamic";
 
-export default async function Page() {
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<{ domain?: string | string[] }>;
+}) {
   const info = await getSessionInfo(await headers());
   if (!info) redirect("/sign-in");
+  const wanted = [(await searchParams).domain].flat()[0]?.toLowerCase();
   const admin = info.role === "OWNER" || info.role === "ADMIN";
   const [rows, settings] = await Promise.all([
     deliverabilityOverview(
@@ -30,6 +37,7 @@ export default async function Page() {
     ),
     admin ? getWorkspaceSettings(prisma, info.workspaceId) : null,
   ]);
+  const account = wanted ? rows.find((r) => r.dns?.domain === wanted) : undefined;
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -54,6 +62,13 @@ export default async function Page() {
         </li>
       </ul>
       <DeliverabilityTable rows={rows} canEdit={info.role !== "VIEWER"} />
+      <HealthFormula />
+      {/* the DNS chip links here; only a domain of one of the accounts above is shown */}
+      {account && (
+        <div id="dns" className="max-w-3xl scroll-mt-4">
+          <DomainSection email={account.email} canEdit={info.role !== "VIEWER"} />
+        </div>
+      )}
       {settings && <DeliverabilitySettings {...settings} />}
     </div>
   );

@@ -64,7 +64,7 @@ describe("whyNotSending", () => {
       reasons: [
         {
           code: "leads_verifying",
-          message: "2 lead(s) are waiting for email verification.",
+          message: "Verifying leads: sending waits for verification (2 lead(s)).",
           blocking: false,
         },
       ],

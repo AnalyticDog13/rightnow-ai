@@ -20,6 +20,7 @@ export const GET = route({ role: "ADMIN" }, async (c) => {
       from: m.from,
       to: m.to,
       text: m.text,
+      html: m.html,
       headers: m.headers,
     }));
   return { address: box.address, inbox: await list("INBOX"), sent: await list("SENT") };

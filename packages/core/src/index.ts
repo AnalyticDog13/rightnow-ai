@@ -71,6 +71,7 @@ export * from "./mail/ingest";
 export * from "./mail/inbox";
 export * from "./mail/inbox-library";
 export * from "./mail/reply";
+export * from "./mail/sanitize";
 export * from "./mail/tracking";
 export * from "./mail/stoprules";
 export * from "./mail/sync";

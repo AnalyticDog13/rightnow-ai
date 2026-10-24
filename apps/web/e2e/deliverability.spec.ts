@@ -124,3 +124,75 @@ test("verifier settings: write-only key, new host needs a key, last error shown"
   await page.reload();
   await expect(page.getByText(/Last verifier error: HTTP 503 from verifier \(.+\)/)).toBeVisible();
 });
+
+test("health sparkline (7 snapshots), score formula disclosure and the DNS chip deep link", async ({
+  page,
+}) => {
+  const prisma = createPrisma(process.env.E2E_DATABASE_URL!, 2);
+  const a = await prisma.emailAccount.findFirstOrThrow({ where: { email: ACTIVE } });
+  for (let i = 0; i < 7; i++) {
+    const day = new Date(new Date().toISOString().slice(0, 10) + "T00:00:00Z");
+    day.setUTCDate(day.getUTCDate() - 6 + i);
+    await prisma.healthSnapshot.upsert({
+      where: { accountId_day: { accountId: a.id, day } },
+      update: { score: 80 + i },
+      create: { accountId: a.id, day, score: 80 + i },
+    });
+  }
+  await prisma.domainCheck.upsert({
+    where: { workspaceId_domain: { workspaceId: a.workspaceId, domain: "dl-e2e.io" } },
+    update: {},
+    create: {
+      workspaceId: a.workspaceId,
+      domain: "dl-e2e.io",
+      checkedAt: new Date(),
+      level: "ok",
+      selectors: [],
+      report: {
+        domain: "dl-e2e.io",
+        managed: true,
+        checkedAt: new Date().toISOString(),
+        spf: null,
+        dkim: null,
+        dmarc: null,
+        mx: null,
+        dnsbl: null,
+        ptr: null,
+      },
+    },
+  });
+  await prisma.$disconnect();
+
+  await page.goto("/deliverability");
+  const trend = row(page, ACTIVE).getByRole("img", { name: /Health score, last 7 days/ });
+  await expect(trend).toBeVisible();
+  const d = await trend.locator("path.recharts-line-curve").getAttribute("d");
+  expect(d!.match(/[ML]/g)).toHaveLength(7); // one point per snapshot
+
+  const formula = page.getByText("How the score is computed");
+  await formula.click();
+  for (const term of [
+    "Hard bounces",
+    "Soft bounces",
+    "Complaints",
+    "Provider errors",
+    "sync failing",
+    "DNS",
+    "Warm-up",
+    "placement",
+  ])
+    await expect(
+      page
+        .getByRole("listitem")
+        .filter({ hasText: new RegExp(term, "i") })
+        .first(),
+    ).toBeVisible();
+
+  await row(page, ACTIVE)
+    .getByRole("link", { name: /DNS ok for dl-e2e.io/ })
+    .click();
+  await expect(page).toHaveURL(/\/deliverability\?domain=dl-e2e\.io#dns/);
+  await expect(
+    page.locator("#dns").getByRole("heading", { name: "Domain: dl-e2e.io" }),
+  ).toBeVisible();
+});

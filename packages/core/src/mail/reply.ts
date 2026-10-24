@@ -23,6 +23,7 @@ import { parseEmail } from "../leads/validate";
 import { SEND_TIMEOUT_MS } from "../sender";
 import type { SyncDeps } from "./sync";
 import { domainOf } from "../leads/domain";
+import { sanitizeReplyHtml } from "./sanitize";
 
 type Db = PrismaClient;
 type Actor = string | null | undefined;
@@ -73,7 +74,10 @@ export async function sendReply(
   input: ReplyInput,
 ): Promise<{ messageId: string }> {
   const { attachments = [], ...rest } = input;
-  const r = replyInput.parse(rest);
+  const parsed = replyInput.parse(rest);
+  // the editor html is untrusted: only the allowlist is sent and stored; text is derived from it
+  const r = { ...parsed, html: sanitizeReplyHtml(parsed.html) };
+  if (!r.html.trim()) throw new AccountError(400, "invalid_message");
   const t = await prisma.thread.findFirst({
     where: { id: r.threadId, workspaceId: ws, deletedAt: null },
   });

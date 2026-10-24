@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { AiAssist } from "../../../components/ai-assist";
+import { RichText } from "../../../components/rich-text";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { call } from "../accounts/api-client";
@@ -21,6 +22,9 @@ export const toHtml = (text: string) =>
           .replace(/https?:\/\/[^\s<]+/g, (u) => `<a href="${u}">${u}</a>`)}</p>`,
     )
     .join("");
+
+/** An emptied editor leaves tags behind (<br>, <div><br></div>): only text counts. */
+const hasText = (html: string) => !!html.replace(/<[^>]*>|&nbsp;/g, " ").trim();
 
 const MESSAGES: Record<string, string> = {
   provider_cap:
@@ -58,7 +62,7 @@ export function Composer({
 }) {
   const [mode, setMode] = useState("reply");
   const [to, setTo] = useState("");
-  const [body, setBody] = useState("");
+  const [body, setBody] = useState(""); // editor html: the server sanitizes it and derives the text part
   const [files, setFiles] = useState<File[]>([]);
   const [macros, setMacros] = useState<Macro[]>([]);
   const [busy, setBusy] = useState(false);
@@ -76,7 +80,7 @@ export function Composer({
   async function macro(id: string) {
     if (!id) return;
     const r = await call(`/api/v1/inbox/macros/${id}/render`, "POST", { threadId });
-    if (r.ok) setBody((b) => (b ? `${b}\n\n` : "") + String(r.json.text));
+    if (r.ok) setBody((b) => b + toHtml(String(r.json.text)));
     else onResult("", "The macro could not be filled in for this conversation.");
   }
 
@@ -86,7 +90,7 @@ export function Composer({
     onResult("", "");
     const f = new FormData();
     f.set("mode", mode);
-    f.set("html", toHtml(body));
+    f.set("html", body);
     if (mode === "forward") f.set("to", JSON.stringify(to.split(/[,;\s]+/).filter(Boolean)));
     files.forEach((x) => f.append("attachments", x));
     const res = await fetch(`/api/v1/inbox/threads/${threadId}/reply`, {
@@ -158,16 +162,7 @@ export function Composer({
             label="Suggest reply"
             path="reply-draft"
             body={{ threadId }}
-            onUse={(t) =>
-              setBody(
-                (b) =>
-                  (b
-                    ? `${b}
-
-`
-                    : "") + t,
-              )
-            }
+            onUse={(t) => setBody((b) => b + toHtml(t))}
           />
           <AiAssist label="Summarize" path="summary" body={{ threadId }} />
         </div>
@@ -179,16 +174,7 @@ export function Composer({
             onChange={(e) => setTo(e.target.value)}
           />
         )}
-        <label htmlFor="reply-body" className="text-sm">
-          Reply
-        </label>
-        <textarea
-          id="reply-body"
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          rows={5}
-          className="rounded-md border border-border bg-card p-3 text-sm focus-visible:outline-2 focus-visible:outline-primary"
-        />
+        <RichText id="reply-body" label="Reply" value={body} onChange={setBody} />
         <label htmlFor="reply-files" className="text-sm">
           Attachments
         </label>
@@ -200,14 +186,14 @@ export function Composer({
           onChange={(e) => setFiles([...(e.target.files ?? [])])}
         />
         <div className="flex gap-2">
-          <Button type="submit" disabled={busy || held || !body.trim()}>
+          <Button type="submit" disabled={busy || held || !hasText(body)}>
             {busy ? "Sending..." : mode === "forward" ? "Send forward" : "Send reply"}
           </Button>
           {held && (
             <Button
               type="button"
               variant="outline"
-              disabled={busy || !body.trim()}
+              disabled={busy || !hasText(body)}
               onClick={() => void send()}
             >
               Send anyway

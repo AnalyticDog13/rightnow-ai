@@ -12057,7 +12057,8 @@
                 "FAILED",
                 "CANCELLED",
                 "UNCERTAIN",
-                "HELD"
+                "HELD",
+                "DEAD_LETTER"
               ]
             }
           },

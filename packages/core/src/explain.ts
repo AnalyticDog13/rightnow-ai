@@ -250,7 +250,7 @@ export async function whyNotSending(
   if (suppressed)
     add("leads_suppressed", `${suppressed} lead(s) were stopped because they are suppressed.`);
   if (pausedLeads) add("leads_paused", `${pausedLeads} lead(s) are paused.`);
-  if (verifying) add("leads_verifying", `${verifying} lead(s) are waiting for email verification.`);
+  if (verifying) add("leads_verifying", `Verifying leads: sending waits for verification (${verifying} lead(s)).`);
   // D23 / gate I-3: follow-ups only go out from the lead's first sender; housekeeping paused these leads (D39 N-2)
   const sticky = await db.campaignLead.groupBy({
     by: ["accountId"],

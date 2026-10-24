@@ -166,6 +166,25 @@ test("thread, reply with attachment, inert rendering, notes, bulk unread, remind
   const mine = mb.sent.find((m) => m.subject === "Re: Quick question")!;
   expect(mine.headers["in-reply-to"]?.[0]).toBeTruthy();
 
+  // PS-INBOX-08: bold and a link made in the editor are sent as html, and the text part carries the URL
+  const editor = conv.getByLabel("Reply", { exact: true });
+  await editor.click();
+  await page.keyboard.type("See the details");
+  await page.keyboard.press("ControlOrMeta+A");
+  await conv.getByRole("button", { name: "Bold" }).click();
+  page.once("dialog", (d) => void d.accept("https://x.test"));
+  await conv.getByRole("button", { name: "Link" }).click();
+  await conv.getByRole("button", { name: "Send reply" }).click();
+  await expect(msgs).toHaveCount(4);
+  const rich = (
+    (await (await page.request.get(`/api/v1/_fake/mailbox/${ACCOUNT}`)).json()) as {
+      sent: { html: string; text: string }[];
+    }
+  ).sent.find((m) => m.text.includes("https://x.test"))!;
+  expect(rich.html).toMatch(/<(b|strong)>/);
+  expect(rich.html).toContain('<a href="https://x.test">');
+  expect(rich.html).not.toMatch(/<script|onerror|style=/i);
+
   // FR I3: an unknown outcome keeps the draft but blocks Send until "Send anyway"; an unrecorded send clears it
   const replyRoute = "**/api/v1/inbox/threads/*/reply";
   const answer = (error: string) => (r: Route) =>
@@ -179,13 +198,13 @@ test("thread, reply with attachment, inert rendering, notes, bulk unread, remind
   await draft.fill("One more thing.");
   await conv.getByRole("button", { name: "Send reply" }).click();
   await expect(conv.getByRole("alert")).toContainText("send_uncertain message");
-  await expect(draft).toHaveValue("One more thing.");
+  await expect(draft).toHaveText("One more thing.");
   await expect(conv.getByRole("button", { name: "Send reply" })).toBeDisabled();
   await page.unroute(replyRoute);
   await page.route(replyRoute, answer("sent_not_recorded"));
   await conv.getByRole("button", { name: "Send anyway" }).click();
   await expect(conv.getByRole("alert")).toContainText("sent_not_recorded message");
-  await expect(draft).toHaveValue("");
+  await expect(draft).toHaveText("");
   await expect(conv.getByRole("button", { name: "Send reply" })).toBeDisabled();
   await page.unroute(replyRoute);
 
@@ -201,7 +220,7 @@ test("thread, reply with attachment, inert rendering, notes, bulk unread, remind
   await expect(dlg.getByRole("button", { name: "Edit Thank you" })).toBeVisible();
   await dlg.getByRole("button", { name: "Close" }).click();
   await conv.getByLabel("Insert macro").selectOption({ label: "Thank you" });
-  await expect(draft).toHaveValue("Thanks Ann!");
+  await expect(draft).toHaveText("Thanks Ann!");
   await draft.fill("");
   await conv.getByRole("button", { name: "Manage macros" }).click();
   await dlg.getByRole("button", { name: "Delete Thank you" }).click();
@@ -255,7 +274,8 @@ test("thread, reply with attachment, inert rendering, notes, bulk unread, remind
 <style>@import url(${REMOTE}/import.css); body{background:url(${REMOTE}/bg.png)}</style></head><body>
 <p id="hello">Hostile hello</p><script>window.__pwned=1</script><img src="x" onerror="window.__pwned=2">
 <img id="px" src="${REMOTE}/pixel.png"><form action="${REMOTE}/post" method="post"><input name="a"></form>
-<a href="javascript:window.__pwned=3">click</a></body></html>`;
+<a href="javascript:window.__pwned=3">click</a>
+<a id="mismatch" href="https://evil.test/login">https://bank.test</a></body></html>`;
   await box.receiveRaw(
     await buildMime({
       from: { email: "stranger@e2e-inbox.io" },
@@ -292,4 +312,27 @@ test("thread, reply with attachment, inert rendering, notes, bulk unread, remind
   await page.getByRole("button", { name: "Show images" }).click();
   await expect.poll(() => remote.some((u) => u.endsWith("/pixel.png"))).toBe(true);
   expect(remote.some((u) => /refresh|import\.css|post/.test(u))).toBe(false);
+  // PS-INBOX-21 (R22): a link whose text shows another host opens the warning page, not the target
+  const evil: string[] = [];
+  await page.context().route("**://evil.test/**", (r) => {
+    evil.push(r.request().url());
+    return r.abort();
+  });
+  const popup = page.waitForEvent("popup");
+  await inner.locator("#mismatch").click();
+  const warn = await popup;
+  await expect(warn).toHaveURL(/link-check/);
+  await expect(warn.getByRole("status")).toContainText("This link goes to evil.test");
+  await expect(warn.getByRole("link", { name: "Continue" })).toHaveAttribute(
+    "href",
+    "https://evil.test/login",
+  );
+  await expect(warn.getByRole("link", { name: "Continue" })).toHaveAttribute(
+    "rel",
+    "noopener noreferrer",
+  );
+  await warn.getByRole("button", { name: "Cancel" }).click();
+  await page.waitForTimeout(500); // a tab the app opened closes itself; otherwise the page says nothing was opened
+  if (!warn.isClosed()) await expect(warn.getByRole("status")).toContainText("Nothing was opened");
+  expect(evil).toEqual([]);
 });

@@ -111,7 +111,16 @@ export async function retryFailed(
 
 export const scheduledQuery = z.strictObject({
   status: z
-    .enum(["SCHEDULED", "SENDING", "SENT", "FAILED", "CANCELLED", "UNCERTAIN", "HELD"])
+    .enum([
+      "SCHEDULED",
+      "SENDING",
+      "SENT",
+      "FAILED",
+      "CANCELLED",
+      "UNCERTAIN",
+      "HELD",
+      "DEAD_LETTER",
+    ])
     .optional(),
   campaignId: z.string().min(1).optional(),
   accountId: z.string().min(1).optional(),
@@ -129,7 +138,10 @@ export async function listScheduled(
   const found = await db.scheduledMessage.findMany({
     where: {
       workspaceId: ws,
-      ...(q.status && { status: q.status }),
+      // DEAD_LETTER: everything the sender gave up on or parked (FAILED and HELD)
+      ...(q.status && {
+        status: q.status === "DEAD_LETTER" ? { in: ["FAILED", "HELD"] } : q.status,
+      }),
       ...(q.campaignId && { campaignId: q.campaignId }),
       ...(q.accountId && { accountId: q.accountId }),
     },

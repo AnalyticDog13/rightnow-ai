@@ -27,11 +27,12 @@ type Row = {
   accountEmail: string;
   leadEmail: string;
 };
-// Tab id = the API status filter. UNCERTAIN is what the sender could not confirm: shown to people as "Outcome unknown".
+// Tab id = the API status filter; "Failed" is the dead-letter view: FAILED and HELD rows with their error.
+// UNCERTAIN is what the sender could not confirm: shown to people as "Outcome unknown".
 const TABS = [
   { id: "SCHEDULED", label: "Scheduled" },
   { id: "HELD", label: "Held" },
-  { id: "FAILED", label: "Failed" },
+  { id: "DEAD_LETTER", label: "Failed" },
   { id: "UNCERTAIN", label: "Outcome unknown" },
   { id: "CANCELLED", label: "Cancelled" },
 ];
@@ -128,6 +129,12 @@ export function ScheduledView({ canEdit, isAdmin }: { canEdit: boolean; isAdmin:
             Release tries again and can send a second copy.
           </p>
         )}
+        {tab === "DEAD_LETTER" && (
+          <p className="text-sm text-muted-foreground">
+            Failed emails were not sent: Retry sends them again. Held emails may or may not have
+            been delivered: Release can send a second copy.
+          </p>
+        )}
         {tab === "UNCERTAIN" && (
           <p className="text-sm text-muted-foreground">
             The provider did not confirm these. The sender is checking the Sent folder and will not
@@ -144,12 +151,12 @@ export function ScheduledView({ canEdit, isAdmin }: { canEdit: boolean; isAdmin:
         />
         {canEdit && sel.selected.size > 0 && (
           <BulkToolbar count={sel.selected.size}>
-            {(tab === "SCHEDULED" || tab === "HELD") && (
+            {(tab === "SCHEDULED" || tab === "HELD" || tab === "DEAD_LETTER") && (
               <Button variant="outline" onClick={() => void bulk("cancel")}>
                 Cancel selected
               </Button>
             )}
-            {tab === "FAILED" && (
+            {tab === "DEAD_LETTER" && (
               <Button variant="outline" onClick={() => void bulk("retry")}>
                 Retry selected
               </Button>

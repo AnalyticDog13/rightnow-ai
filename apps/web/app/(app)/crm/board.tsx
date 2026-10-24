@@ -6,7 +6,8 @@ import { Button } from "../../../components/ui/button";
 import { Card } from "../../../components/ui/card";
 import { call, errorText } from "../accounts/api-client";
 import type { Member, Named } from "../leads/bulk-bar";
-import { NewOpportunity, OpportunityDrawer } from "./opportunity-drawer";
+import { NewOpportunity } from "./new-opportunity";
+import { OpportunityDrawer } from "./opportunity-drawer";
 import { money, type BoardData, type Opp } from "./types";
 
 export function Board({

@@ -486,3 +486,26 @@ describe("sendReply", () => {
     }
   });
 });
+
+describe("sendReply sanitizes the editor html", () => {
+  test("hostile markup is stripped before it is sent and stored; the text part is derived from the clean html", async () => {
+    const s = await setup();
+    const r = await sendReply(
+      P(),
+      clock,
+      deps,
+      s.ws,
+      "u1",
+      input(s, {
+        html: '<p><b>Hi</b> <a href="https://x.test" onclick="x()">link</a> <a href="javascript:alert(1)">bad</a><img src=x onerror=alert(1)><script>alert(2)</script></p>',
+      }),
+    );
+    const sent = await sentRaw(s.a);
+    expect(sent.html).toContain("<b>Hi</b>");
+    expect(sent.html).toContain('<a href="https://x.test">link</a>');
+    expect(sent.html).not.toMatch(/javascript|onclick|onerror|<script|<img/i);
+    expect(sent.text).toContain("https://x.test");
+    const m = await P().message.findUniqueOrThrow({ where: { id: r.messageId } });
+    expect(m.html).not.toMatch(/javascript|onerror|<script/i);
+  });
+});

@@ -201,6 +201,14 @@ test("create, preview, launch gate, launch, held rows, keyboard", async ({ page 
   await expect(held.locator("tbody tr")).toHaveCount(2);
   await expect(held).toContainText("Sent folder searched 2 time(s)");
 
+  // dead-letter view (PS-SEND-17): Failed lists the held rows with their error and Release (admin)
+  await tab(page, "Failed").click();
+  const dead = page.getByRole("table", { name: "Failed emails" });
+  await expect(dead.locator("tbody tr")).toHaveCount(2);
+  await expect(dead).toContainText("lease_expired");
+  await expect(dead.getByRole("button", { name: `Release email to ${releaseRow}` })).toBeVisible();
+  await tab(page, "Held").click();
+
   // release asks first, traps focus, and "Keep held" changes nothing
   await held.getByRole("button", { name: `Release email to ${releaseRow}` }).click();
   const dialog = page.getByRole("dialog", { name: "Release this email?" });

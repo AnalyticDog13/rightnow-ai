@@ -142,3 +142,30 @@ it("list, release, cancel, retry: roles, confirm, 409, 404 and one audit row per
   expect(await P.auditLog.count({ where: { workspaceId: foreign.ws } })).toBe(0);
   await setRole("OWNER");
 });
+
+it("DEAD_LETTER lists FAILED and HELD rows with their error and nothing else", async () => {
+  const P = db.prisma;
+  const at = new Date();
+  const s = await seedCampaign(P, { at, workspaceId, rows: 3, steps: 2, accounts: [{}] });
+  const [held, failed, scheduled] = s.rows.map((r) => r.id) as [string, string, string];
+  await P.scheduledMessage.update({
+    where: { id: held },
+    data: { status: "HELD", error: "lease_expired" },
+  });
+  await P.scheduledMessage.update({
+    where: { id: failed },
+    data: { status: "FAILED", error: "mailbox full" },
+  });
+  const l = await list.GET(
+    req("GET", `/api/v1/scheduled-messages?status=DEAD_LETTER&campaignId=${s.campaign.id}`),
+  );
+  expect(l.status).toBe(200);
+  const rows = ((await l.json()) as { rows: { id: string; status: string; error: string }[] }).rows;
+  expect(rows.map((r) => [r.id, r.status, r.error]).sort()).toEqual(
+    [
+      [held, "HELD", "lease_expired"],
+      [failed, "FAILED", "mailbox full"],
+    ].sort(),
+  );
+  expect(rows.map((r) => r.id)).not.toContain(scheduled);
+});
