@@ -813,12 +813,12 @@
    "id": "P7-T06b",
    "phase": 7,
    "title": "Push endpoints with JWT/clientState verification, sync request flag, non-lead mail setting",
-   "status": "todo",
+   "status": "done",
    "deps": [
     "P7-T06a"
    ],
    "model": "opus",
-   "commit": null,
+   "commit": "ced2573",
    "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md (incl. Revision 2); tests listed there pass"
   },
   {
