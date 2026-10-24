@@ -134,12 +134,10 @@ describe("placement-test routes", () => {
   });
 
   it("the 4th run for an account within an hour is 429 with Retry-After", async () => {
-    // the previous test used 1 of 3 runs on this account
-    for (let i = 0; i < 2; i++)
-      expect(
-        (await list.POST(req("POST", { accountId: sender, subject: "S", body: "B" }))).status,
-      ).toBe(202);
-    const res = await list.POST(req("POST", { accountId: sender, subject: "S", body: "B" }));
+    const own = (await mk(workspaceId, "own@acme4.io")).id; // its own bucket: independent of test order
+    const post = () => list.POST(req("POST", { accountId: own, subject: "S", body: "B" }));
+    for (let i = 0; i < 3; i++) expect((await post()).status).toBe(202);
+    const res = await post();
     expect(res.status).toBe(429);
     expect(Number(res.headers.get("Retry-After"))).toBeGreaterThan(0);
   });

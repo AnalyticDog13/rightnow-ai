@@ -73,9 +73,7 @@ export async function sendTestEmail(
   const body =
     "This is a test message sent from RightNow to check this account. No reply is needed.";
   try {
-    const r = await (
-      await providerOf(prisma, { clock, providerFor: deps.providerFor })(a)
-    ).send({
+    const r = await (await providerOf(prisma, { clock, providerFor: deps.providerFor })(a)).send({
       from: { email: a.email, name: a.fromName },
       to: [{ email: to.data }],
       replyTo: a.replyTo ? { email: a.replyTo } : undefined,

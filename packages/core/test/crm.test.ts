@@ -855,6 +855,8 @@ describe("deal lifecycle", () => {
 });
 
 describe("currency race on a deal edited from 0 (D51)", () => {
+  // Regression guard, not a discriminating test: the contended order (value written before the audit insert, invisible
+  // to the currency tx's count) cannot be forced from outside, so this only pins that the edit waits for the lock.
   test("a value edit waits for an in-flight currency change, so a valued deal never sits in a changed currency", async () => {
     const w = await world();
     const l = await newLead(w.ws);

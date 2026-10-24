@@ -354,11 +354,11 @@ describe("state changes", () => {
     }) as never;
     const list = await listThreads(counted, s.ws, { view: "all" });
     expect(list.length).toBeGreaterThan(20);
-    expect(q).toBeLessThanOrEqual(6);
+    expect(q, `list used ${q} queries`).toBeLessThanOrEqual(6);
     q = 0;
     const got = await getThread(counted, s.ws, open.id);
     expect(got.messages.filter((m) => m.html?.startsWith('<img src="data:'))).toHaveLength(10);
-    expect(q).toBeLessThanOrEqual(6);
+    expect(q, `open used ${q} queries`).toBeLessThanOrEqual(6);
   });
 
   test("local delete hides the thread and the lead stays in its campaign", async () => {
@@ -396,11 +396,7 @@ describe("state changes", () => {
       );
     });
     // FR M3 / D20: a MEMBER (or API key) changes the category, but only an ADMIN lifts the suppression
-    const m = await thread(ws, a, {
-      leadId: l.id,
-      category: "NOT_INTERESTED",
-      categorySource: "RULE",
-    });
+    const m = await thread(ws, a, { leadId: l.id, category: "NOT_INTERESTED", categorySource: "RULE" });
     expect(await updateThread(P(), ws, "u2", m.id, { category: "NEUTRAL" })).toMatchObject({
       category: "NEUTRAL",
     });

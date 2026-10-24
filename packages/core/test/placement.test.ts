@@ -88,6 +88,7 @@ async function world(o: { cap?: number; seeds?: boolean; failM?: boolean } = {})
     startPlacementTest(P(), clock, d as typeof deps, s.ws, null, input as never);
   const runJob = async (p: typeof providerFor = providerFor) => {
     placementRuntime.providerFor = p;
+    placementRuntime.env = FAKE;
     // other tests of this file leave PENDING jobs of their own workspaces: stop at this world's job
     const mine = await P().backgroundJob.findFirst({
       where: { workspaceId: s.ws, status: "PENDING" },
@@ -322,6 +323,52 @@ describe("placement runs as a background job (D51)", () => {
     await w.queue();
     expect((await usage(w.T))?.sent).toBe(10);
   });
+
+  test("a run refused for quota gives its rate-limit hit back", async () => {
+    const w = await world();
+    await P().emailAccount.update({
+      where: { id: w.T.id },
+      data: { healthCap: 10, healthCapAt: TUE_8 },
+    });
+    await P().accountDailyUsage.create({ data: { accountId: w.T.id, day: DAY0, sent: 9 } });
+    for (let i = 0; i < 4; i++) expect((await rejects(w.queue()))?.message).toBe("provider_cap");
+    await P().accountDailyUsage.update({
+      where: { accountId_day: { accountId: w.T.id, day: DAY0 } },
+      data: { sent: 0 },
+    });
+    await expect(w.queue()).resolves.toMatchObject({ jobId: expect.any(String) });
+  });
+
+  test.each([
+    ["paused", { lifecycle: "PAUSED" as const }],
+    ["needs attention", { lifecycle: "NEEDS_ATTENTION" as const }],
+    ["deleted", { deletedAt: TUE_8 }],
+    ["disconnected", { status: "DISCONNECTED" as const }],
+  ])(
+    "an account that is %s by the time the job runs sends nothing; its rows are MISSING",
+    async (_, change) => {
+      const w = await world();
+      sent.length = 0;
+      const { id, jobId } = await w.queue();
+      await P().emailAccount.update({ where: { id: w.T.id }, data: change });
+      await w.runJob();
+      expect(
+        sent.filter((m) => (m as unknown as { from: { email: string } }).from.email === w.T.email),
+      ).toHaveLength(0);
+      const rows = await P().warmupMessage.findMany({ where: { placementTestId: id } });
+      expect(rows.map((r) => [r.status, r.error])).toEqual([
+        ["FAILED", "account_unavailable"],
+        ["FAILED", "account_unavailable"],
+      ]);
+      expect((await P().backgroundJob.findUniqueOrThrow({ where: { id: jobId } })).status).toBe(
+        "DONE",
+      );
+      expect((await placementReport(P(), w.ws, id)).seeds.map((x) => x.folder)).toEqual([
+        "MISSING",
+        "MISSING",
+      ]);
+    },
+  );
 
   test("the 4th run for an account within an hour is 429 with Retry-After seconds; the next hour is fine", async () => {
     const w = await world();

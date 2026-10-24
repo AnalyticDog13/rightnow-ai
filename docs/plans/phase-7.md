@@ -813,7 +813,7 @@ Files:
 - **Tests:** additions to `placement.test.ts`, `warmup.test.ts`, `health.test.ts`, `rewarm.test.ts`, `diagnostics` (in `accounts-service.test.ts`), `analytics.test.ts`, `crm.test.ts`, `inbox.test.ts`.
 
 - [ ] Write the failing tests:
-  - **`placement`:** POST returns 202 with a job id. A throttled account (`healthCap` 10, 9 used) sends at most 1 seed. The 4th run in an hour → 429.
+  - **`placement`:** POST returns 202 with a job id. A throttled account (`healthCap` 10, 9 used, 2 seeds) → 409 `provider_cap`, nothing queued. The 4th run in an hour → 429.
   - **`warm-up`:** an account with `healthCap` set and target 20 at `healthSlowdownPct` 50 → 10 sends planned that day.
   - **`BounceProtect`:** 60 accepts in the last 24 h, 2000 in 30 days and 3 complaints → the complaint floor reads the 30-day count (complaint% = 3 / max(2000, 1000) = 0.15 > 0.1 → BOUNCE_PROTECT); before the fix the 24 h count kept it ACTIVE.
   - **`re-warm exit`:** `rewarmExitBouncePct` 1 with a 1.5 % bounce day → no exit; the same day at the default 2 → exits after the clean days.

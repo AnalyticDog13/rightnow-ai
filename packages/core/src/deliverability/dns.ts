@@ -7,8 +7,7 @@ import { decryptCredentials } from "../accounts/credentials";
 import { audit } from "../audit";
 import type { DnsFinding, LaunchDeps } from "../campaigns/launch";
 import type { Clock } from "../clock";
-import { FREE_MAIL_DOMAINS } from "../leads/domain";
-import { domainOf } from "../leads/domain";
+import { FREE_MAIL_DOMAINS, domainOf } from "../leads/domain";
 
 type Db = PrismaClient;
 

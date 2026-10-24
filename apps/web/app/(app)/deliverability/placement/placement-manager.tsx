@@ -28,7 +28,8 @@ const ERRORS: Record<string, string> = {
     "No seed mailboxes: mark at least one other connected account as an inbox placement seed.",
   account_unavailable:
     "This account cannot send right now (paused, disconnected or its provider is not live-verified).",
-  provider_cap: "Today's quota for this account has no room for a placement test.",
+  provider_cap:
+    "Today's quota for this account has no room for a placement test (ramp, health throttle or re-warm may be limiting it).",
   rate_limited: "At most 3 placement tests per account per hour. Try again later.",
 };
 
@@ -41,6 +42,7 @@ export function PlacementManager({ isAdmin }: { isAdmin: boolean }) {
   const [body, setBody] = useState("");
   const [shown, setShown] = useState("");
   const [msg, setMsg] = useState("");
+  const [reload, setReload] = useState(0);
 
   const loadTests = useCallback(async () => {
     const r = await call("/api/v1/placement-tests", "GET");
@@ -71,18 +73,35 @@ export function PlacementManager({ isAdmin }: { isAdmin: boolean }) {
       live = false;
       clearInterval(t);
     };
-  }, [shown]);
+  }, [shown, reload]);
 
   async function start(e: React.FormEvent) {
     e.preventDefault();
     setMsg("Sending...");
     const r = await call("/api/v1/placement-tests", "POST", { accountId, subject, body });
     if (!r.ok) return setMsg(ERRORS[errorText(r)] ?? errorText(r));
-    setMsg(
-      "Queued. The messages go out within a minute; results appear in about 10 minutes after that.",
-    );
+    setMsg("Queued. Sending the test messages...");
     setShown(r.json.id as string);
     await loadTests();
+    // poll the placement_run job with a growing delay, for about 5 minutes
+    for (
+      let wait = 2000, left = 300_000;
+      left > 0;
+      left -= wait, wait = Math.min(wait * 1.5, 15_000)
+    ) {
+      await new Promise((res) => setTimeout(res, wait));
+      const j = await call(`/api/v1/jobs/${r.json.jobId as string}`, "GET");
+      if (!j.ok) continue;
+      if (j.json.status === "FAILED")
+        return setMsg(
+          `Sending failed: ${ERRORS[String(j.json.error)] ?? String(j.json.error ?? "unknown error")}`,
+        );
+      if (j.json.status === "DONE") {
+        setMsg("Sent. Results appear in about 10 minutes.");
+        return setReload((n) => n + 1);
+      }
+    }
+    setMsg("Still sending. The report below updates when the messages are out.");
   }
 
   const email = (id: string) => accounts.find((a) => a.id === id)?.email ?? id;

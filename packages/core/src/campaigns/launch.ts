@@ -126,10 +126,7 @@ async function activate(
   if (c.minGapSec < 300) warnings.push(warn("gap_below_5_min", "Gap below 5 minutes"));
   if (links.some((l) => l.account.lifecycle === "INACTIVE"))
     warnings.push(
-      warn(
-        "accounts_inactive",
-        "Some accounts are inactive: re-warm them or resume at full volume",
-      ),
+      warn("accounts_inactive", "Some accounts are inactive: re-warm them or resume at full volume"),
     );
   const send = (c.espRoutingRules as EspRule[]).filter((r) => r.action === "send");
   if (

@@ -12,7 +12,7 @@ import { sendableProviders } from "../dispatch";
 import { getEnv, type Env } from "../env";
 import { codeOf } from "../mail/ingest";
 import { effectiveAllowance } from "../quota";
-import { hit } from "../ratelimit";
+import { hit, release } from "../ratelimit";
 import type { SyncDeps } from "../mail/sync";
 import type { RenderEnv } from "../unsubscribe";
 import type { DomainReport } from "./dns";
@@ -31,7 +31,10 @@ export const placementInput = z.union([
 export type PlacementInput = z.infer<typeof placementInput>;
 
 /** Tests replace the provider factory; the worker uses the real one (as `aiRuntime` does for the AI jobs). */
-export const placementRuntime: { providerFor?: SyncDeps["providerFor"] } = {};
+export const placementRuntime: {
+  providerFor?: SyncDeps["providerFor"];
+  env?: Pick<Env, "MAIL_PROVIDER_FAKE">; // tests: the D17 gate without a ProviderVerification row
+} = {};
 
 /** At most 3 placement runs per account per hour (D51, T07a `hit`). */
 const RUNS_PER_HOUR = 3;
@@ -121,7 +124,7 @@ export async function startPlacementTest(
   const units = seeds.length;
   const cap = effectiveAllowance(a, now); // the health cap and a re-warm plan count, like any send
   const domain = domainOf(a.email);
-  return prisma.$transaction(async (tx) => {
+  const book = prisma.$transaction(async (tx) => {
     const ok = await tx.$queryRaw<unknown[]>`
       INSERT INTO "AccountDailyUsage" ("accountId", day, sent, reserved)
       SELECT ${a.id}, ${day}, ${units}::int, 0 WHERE ${units}::int <= ${cap}::int
@@ -160,6 +163,12 @@ export async function startPlacementTest(
     });
     return { id: test.id, jobId: job.id };
   });
+  // a run refused for quota did not happen: it must not use one of the 3 hourly runs
+  return book.catch(async (e) => {
+    if (e instanceof AccountError && e.message === "provider_cap")
+      await release(prisma, `placement:${a.id}`, 3600, now);
+    throw e;
+  });
 }
 
 const runInput = z.object({
@@ -183,10 +192,27 @@ export async function placementRunJob(
   const { testId, text, html } = runInput.parse(job.input);
   const ws = job.workspaceId;
   const t = await prisma.placementTest.findFirstOrThrow({ where: { id: testId, workspaceId: ws } });
-  const a = await prisma.emailAccount.findFirstOrThrow({
-    where: { id: t.accountId, workspaceId: ws },
+  // the job may have waited in the queue: re-check what startPlacementTest checked
+  const sendable = await sendableProviders(prisma, placementRuntime.env ?? getEnv());
+  const a = await prisma.emailAccount.findFirst({
+    where: {
+      id: t.accountId,
+      workspaceId: ws,
+      deletedAt: null,
+      status: "CONNECTED",
+      credentialsEnc: { not: null },
+      lifecycle: { in: ["ACTIVE", "REWARMING"] },
+      provider: { in: sendable },
+    },
   });
   await progress(0);
+  if (!a) {
+    await prisma.warmupMessage.updateMany({
+      where: { placementTestId: testId, status: { in: ["PLANNED", "SENDING"] } },
+      data: { status: "FAILED", error: "account_unavailable" },
+    });
+    return { sent: 0 };
+  }
   await prisma.warmupMessage.updateMany({
     where: { placementTestId: testId, status: "SENDING" },
     data: { status: "SENT", error: "ambiguous_send" },
