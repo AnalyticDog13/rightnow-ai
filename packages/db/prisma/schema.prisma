@@ -604,6 +604,7 @@ model Campaign {
   tags                  String[]
   abAutoOptimize        Boolean              @default(false)
   abWinnerMetric        String?
+  abResetDaily          Boolean              @default(false)
   launchedAt            DateTime?
   bounceProtectResetAt  DateTime? // D34: BounceProtect counts only sends after the last resume out of it
   createdAt             DateTime             @default(now())
@@ -712,6 +713,8 @@ model StepVariant {
   weight            Int                @default(1)
   active            Boolean            @default(true)
   assigned          Int                @default(0)
+  assignedDay       DateTime?          @db.Date // workspace-local day of assignedToday (D46)
+  assignedToday     Int                @default(0)
   scheduledMessages ScheduledMessage[]
 
   @@unique([stepId, label])

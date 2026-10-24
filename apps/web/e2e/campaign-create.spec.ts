@@ -63,6 +63,21 @@ test("create, preview, launch gate, launch, held rows, keyboard", async ({ page 
     3,
   );
 
+  // A/B options (D46): auto-optimize, a metric and the daily reset persist
+  await tab(page, "Options").click();
+  await page.getByLabel("Auto-optimize A/Z").check();
+  await page.getByLabel("Reset variant balance daily").check();
+  await page.getByLabel("Winner metric").selectOption({ label: "Open rate (estimated)" });
+  await expect(page.getByText("Needs at least 100 sends per variant.")).toBeVisible();
+  await page.getByRole("button", { name: "Save options" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Options saved." })).toBeVisible();
+  expect(
+    await prisma.campaign.findUniqueOrThrow({
+      where: { id: campaignId },
+      select: { abAutoOptimize: true, abResetDaily: true, abWinnerMetric: true },
+    }),
+  ).toEqual({ abAutoOptimize: true, abResetDaily: true, abWinnerMetric: "open" });
+
   // sequence: step 1 and step 2, two variants each
   await tab(page, "Sequences").click();
   const variantForm = async (n: "first" | "last", subject: string, body: string) => {

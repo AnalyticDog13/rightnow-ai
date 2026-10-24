@@ -396,7 +396,18 @@ async function planCampaign(tx: Tx, campaignId: string, now: Date, o: PlanOpts) 
     where: { stepId: { in: steps.map((s) => s.id) }, active: true },
     orderBy: { label: "asc" },
   });
-  const assigned = new Map(variants.map((v) => [v.id, v.assigned]));
+  const day = dayKey(w.timezone, now);
+  // D46: with abResetDaily the balance key is today's counter (0 when it was last written on an earlier local day)
+  const assigned = new Map(
+    variants.map((v) => [
+      v.id,
+      !c.abResetDaily
+        ? v.assigned
+        : v.assignedDay?.toISOString().slice(0, 10) === day
+          ? v.assignedToday
+          : 0,
+    ]),
+  );
   const inc = new Map<string, number>();
   const subs = new Map(
     (await tx.subsequence.findMany({ where: { campaignId } })).map((s) => [s.id, s]),
@@ -418,7 +429,6 @@ async function planCampaign(tx: Tx, campaignId: string, now: Date, o: PlanOpts) 
     if (!accounts.has(id)) accounts.set(id, await tx.emailAccount.findUnique({ where: { id } }));
     return accounts.get(id)!;
   };
-  const day = dayKey(w.timezone, now);
   const from = localMidnightUtc(day, w.timezone).toISOString();
   const to = startOfNextDay(w.timezone, now).toISOString();
   const usage = await tx.campaignDailyUsage.findUnique({
@@ -631,7 +641,11 @@ async function planCampaign(tx: Tx, campaignId: string, now: Date, o: PlanOpts) 
     }
   }
   for (const [id, n] of [...inc].sort(([a], [b]) => (a < b ? -1 : 1)))
-    await tx.stepVariant.update({ where: { id }, data: { assigned: { increment: n } } });
+    await tx.$executeRaw`
+      UPDATE "StepVariant" SET assigned = assigned + ${n}::int,
+        "assignedToday" = CASE WHEN "assignedDay" = ${day}::date THEN "assignedToday" + ${n}::int ELSE ${n}::int END,
+        "assignedDay" = ${day}::date
+      WHERE id = ${id}`;
   if (newLeads)
     await tx.$executeRaw`
       INSERT INTO "CampaignDailyUsage" ("campaignId", day, "newLeads") VALUES (${campaignId}, ${day}::date, ${newLeads}::int)

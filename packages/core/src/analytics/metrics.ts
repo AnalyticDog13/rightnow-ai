@@ -14,6 +14,9 @@ import {
 
 type Db = PrismaClient | Prisma.TransactionClient;
 const sql = Prisma.sql;
+/** D34: an open from a mail-client proxy and a click from a link scanner are not the lead (Event alias `e`). Shared with A/B (D46). */
+export const HUMAN_SQL = sql`(e.meta->>'machine') IS DISTINCT FROM 'true'`;
+export const PERSON_SQL = sql`(e.meta->>'scanner') IS DISTINCT FROM 'true'`;
 
 export type Metrics = {
   sent: number;
@@ -125,8 +128,7 @@ function eventStatement(db: Db, ws: string, q: AnalyticsQuery, bys: By[]) {
       at: sql`e."occurredAt"`,
     }),
   );
-  const human = sql`(e.meta->>'machine') IS DISTINCT FROM 'true'`;
-  const person = sql`(e.meta->>'scanner') IS DISTINCT FROM 'true'`;
+  const [human, person] = [HUMAN_SQL, PERSON_SQL];
   const replies = q.includeAutoReplies
     ? sql`e.type IN ('REPLY', 'AUTO_REPLY')`
     : sql`e.type = 'REPLY'`;

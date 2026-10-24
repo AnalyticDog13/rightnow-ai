@@ -14,6 +14,7 @@ export type Variant = {
   body: string;
   weight: number;
   active: boolean;
+  autoPausedMetric?: string | null;
 };
 export type Step = {
   id: string;
@@ -145,6 +146,15 @@ function VariantEditor({
             />
             Active
           </label>
+        )}
+        {variant && !variant.active && variant.autoPausedMetric && (
+          <span className="rounded bg-muted px-2 py-0.5 text-xs">
+            Auto-paused (
+            {variant.autoPausedMetric === "open"
+              ? "open rate, estimated"
+              : `${variant.autoPausedMetric} rate`}
+            )
+          </span>
         )}
         <Button onClick={() => void save()} disabled={!subject.trim() || !body.trim()}>
           {variant ? "Save variant" : "Add variant"}

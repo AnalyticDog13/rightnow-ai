@@ -1,4 +1,5 @@
 import type { JobDef } from "../boss";
+import { abOptimizeJob } from "./ab-optimize";
 import { accountsAutoResumeJob } from "./accounts-auto-resume";
 import { accountsAutofixJob } from "./accounts-autofix";
 import { backgroundJobsJob } from "./background-jobs";
@@ -29,6 +30,7 @@ export const jobs: JobDef[] = [
   deliverabilityHealthJob,
   warmupTickJob,
   eventDispatchJob,
+  abOptimizeJob,
   webhookDeliverJob,
   backgroundJobsJob,
   retentionJob,

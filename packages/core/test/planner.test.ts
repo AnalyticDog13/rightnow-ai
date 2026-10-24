@@ -897,6 +897,62 @@ describe("caps", () => {
     expect(await P().scheduledMessage.count({ where: { variantId: c.id } })).toBe(4);
   });
 
+  describe("abResetDaily", () => {
+    const setup = async (abResetDaily: boolean) => {
+      const s = await seedCampaign(P(), {
+        at: T,
+        leads: 2,
+        accounts: [{ dailyLimit: 100 }],
+        campaign: { abResetDaily },
+      });
+      await queue(s);
+      const a = s.steps[0]!.variant;
+      const b = await P().stepVariant.create({
+        data: { stepId: s.steps[0]!.id, label: "B", subject: "B", body: "b" },
+      });
+      await P().stepVariant.update({
+        where: { id: a.id },
+        data: { assigned: 500, assignedToday: 3, assignedDay: new Date("2026-10-20") },
+      });
+      await P().stepVariant.update({
+        where: { id: b.id },
+        data: { assignedToday: 3, assignedDay: new Date("2026-10-20") },
+      });
+      return { s, a, b };
+    };
+    const used = async (s: Seeded) => (await rowsOf(s.campaign.id)).map((r) => r.variantId).sort();
+
+    test("balances on today's counters: the next two leads go one to each variant", async () => {
+      const { s, a, b } = await setup(true);
+      expect((await plan()).planned).toBe(2);
+      expect(await used(s)).toEqual([a.id, b.id].sort());
+      const v = await P().stepVariant.findMany({ where: { stepId: s.steps[0]!.id } });
+      expect(Object.fromEntries(v.map((x) => [x.label, [x.assigned, x.assignedToday]]))).toEqual({
+        A: [501, 4],
+        B: [1, 4],
+      });
+    });
+
+    test("without the reset both go to the emptier lifetime variant", async () => {
+      const { s, b } = await setup(false);
+      expect((await plan()).planned).toBe(2);
+      expect(await used(s)).toEqual([b.id, b.id]);
+    });
+
+    test("a new day in the workspace timezone restarts the counters", async () => {
+      const { s, a, b } = await setup(true);
+      await P().workspace.update({ where: { id: s.ws }, data: { timezone: "Pacific/Kiritimati" } });
+      // 10:00Z is 00:00 on the 21st in Kiritimati (UTC+14): the stored 20th is yesterday there, both counters read 0 and restart
+      expect((await plan()).planned).toBe(2);
+      expect(await used(s)).toEqual([a.id, b.id].sort());
+      const v = await P().stepVariant.findMany({ where: { stepId: s.steps[0]!.id } });
+      expect(v.map((x) => [x.assignedToday, x.assignedDay?.toISOString().slice(0, 10)])).toEqual([
+        [1, "2026-10-21"],
+        [1, "2026-10-21"],
+      ]);
+    });
+  });
+
   test("overdue backlog after downtime is planned only up to the sticky account's remaining quota", async () => {
     const s = await seedCampaign(P(), {
       at: T,

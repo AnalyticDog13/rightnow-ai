@@ -6,7 +6,12 @@ import { Input } from "../../../../components/ui/input";
 import { call, errorText } from "../../accounts/api-client";
 import type { CampaignView } from "./campaign-builder";
 
-type Kind = "bool" | "int" | "list" | "text";
+type Kind = "bool" | "int" | "list" | "text" | "metric";
+const METRICS = [
+  ["reply", "Reply rate"],
+  ["click", "Click rate"],
+  ["open", "Open rate (estimated)"],
+];
 const FIELDS: { k: string; label: string; kind: Kind; hint?: string }[] = [
   { k: "name", label: "Campaign name", kind: "text" },
   { k: "tags", label: "Tags (comma separated)", kind: "list" },
@@ -35,8 +40,14 @@ const FIELDS: { k: string; label: string; kind: Kind; hint?: string }[] = [
   { k: "cc", label: "CC (comma separated)", kind: "list" },
   { k: "bcc", label: "BCC (comma separated)", kind: "list" },
   { k: "plValue", label: "Pipeline value per lead", kind: "int" },
-  { k: "abAutoOptimize", label: "A/B auto-optimize", kind: "bool" },
-  { k: "abWinnerMetric", label: "A/B winner metric", kind: "text" },
+  { k: "abAutoOptimize", label: "Auto-optimize A/Z", kind: "bool" },
+  {
+    k: "abWinnerMetric",
+    label: "Winner metric",
+    kind: "metric",
+    hint: "Needs at least 100 sends per variant.",
+  },
+  { k: "abResetDaily", label: "Reset variant balance daily", kind: "bool" },
 ];
 type Rule = { action: string; recipientEsp: string; senderEsp: string };
 const ESP = ["all", "google", "outlook", "other"];
@@ -44,6 +55,8 @@ const sel = "h-10 rounded-md border border-border bg-card px-3 text-sm";
 
 const show = (v: unknown, kind: Kind) =>
   kind === "list" ? ((v as string[]) ?? []).join(", ") : v == null ? "" : String(v);
+const initial = (v: unknown, kind: Kind) =>
+  kind === "metric" ? String(v ?? "reply") : show(v, kind);
 const split = (s: string) =>
   s
     .split(",")
@@ -67,7 +80,7 @@ export function OptionsTab({
     Object.fromEntries(
       FIELDS.map((f) => [
         f.k,
-        f.kind === "bool" ? Boolean(campaign[f.k]) : show(campaign[f.k], f.kind),
+        f.kind === "bool" ? Boolean(campaign[f.k]) : initial(campaign[f.k], f.kind),
       ]),
     ),
   );
@@ -122,15 +135,31 @@ export function OptionsTab({
               <label htmlFor={`opt-${f.k}`} className="text-sm font-medium">
                 {f.label}
               </label>
-              <Input
-                id={`opt-${f.k}`}
-                type={f.kind === "int" ? "number" : "text"}
-                min={f.kind === "int" ? 0 : undefined}
-                step={f.k === "plValue" ? "any" : undefined}
-                value={form[f.k] as string}
-                onChange={(e) => set(f.k, e.target.value)}
-                aria-describedby={f.hint ? `opt-${f.k}-hint` : undefined}
-              />
+              {f.kind === "metric" ? (
+                <select
+                  id={`opt-${f.k}`}
+                  className={sel}
+                  value={form[f.k] as string}
+                  onChange={(e) => set(f.k, e.target.value)}
+                  aria-describedby={`opt-${f.k}-hint`}
+                >
+                  {METRICS.map(([v, l]) => (
+                    <option key={v} value={v}>
+                      {l}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <Input
+                  id={`opt-${f.k}`}
+                  type={f.kind === "int" ? "number" : "text"}
+                  min={f.kind === "int" ? 0 : undefined}
+                  step={f.k === "plValue" ? "any" : undefined}
+                  value={form[f.k] as string}
+                  onChange={(e) => set(f.k, e.target.value)}
+                  aria-describedby={f.hint ? `opt-${f.k}-hint` : undefined}
+                />
+              )}
               {f.hint && (
                 <p id={`opt-${f.k}-hint`} className="text-xs text-muted-foreground">
                   {f.hint}

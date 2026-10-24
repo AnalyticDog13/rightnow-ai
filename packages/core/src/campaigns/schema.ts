@@ -43,7 +43,8 @@ export const campaignFields = {
   plValue: z.number().min(0).max(1e12).nullable(),
   tags: z.array(text(50)).max(50),
   abAutoOptimize: z.boolean(),
-  abWinnerMetric: text(50).nullable(),
+  abWinnerMetric: z.enum(["reply", "click", "open"]).nullable(),
+  abResetDaily: z.boolean(),
 };
 
 const combined = (v: { cc?: string[]; bcc?: string[] }) =>

@@ -421,7 +421,7 @@ export async function setSubsequenceActive(
   });
 }
 
-/** The whole sequence tree: live steps with variants, and subsequences with their steps. */
+/** The whole sequence tree: live steps with variants, and subsequences with their steps. An inactive variant carries `autoPausedMetric` when the optimizer paused it (D46). */
 export async function getSequence(db: Db | Tx, ws: string, campaignId: string) {
   await liveCampaign(db, ws, campaignId);
   const include = { variants: { orderBy: { label: "asc" as const } } };
@@ -438,7 +438,26 @@ export async function getSequence(db: Db | Tx, ws: string, campaignId: string) {
       include: { steps: { where: { deletedAt: null }, orderBy, include } },
     }),
   ]);
-  return { steps, subsequences };
+  const off = [...steps, ...subsequences.flatMap((s) => s.steps)]
+    .flatMap((s) => s.variants)
+    .filter((v) => !v.active)
+    .map((v) => v.id);
+  const paused = new Map<string, string>();
+  if (off.length)
+    for (const a of await db.auditLog.findMany({
+      where: { workspaceId: ws, action: "variant.auto_paused", target: { in: off } },
+      orderBy: { createdAt: "desc" },
+    }))
+      if (!paused.has(a.target!)) paused.set(a.target!, (a.meta as { metric: string }).metric);
+  const mark = <V extends { id: string }>(vs: V[]) =>
+    vs.map((v) => ({ ...v, autoPausedMetric: paused.get(v.id) ?? null }));
+  return {
+    steps: steps.map((s) => ({ ...s, variants: mark(s.variants) })),
+    subsequences: subsequences.map((sub) => ({
+      ...sub,
+      steps: sub.steps.map((s) => ({ ...s, variants: mark(s.variants) })),
+    })),
+  };
 }
 
 /** Launch/resume content checks (PS-CAMP-08): every problem at once. */
