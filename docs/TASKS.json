@@ -753,12 +753,12 @@
    "id": "P7-T03b",
    "phase": 7,
    "title": "OpenAPI from route zod schemas, API-key scope audit, strict bodies, docs/API.md",
-   "status": "todo",
+   "status": "done",
    "deps": [
     "P7-T03a"
    ],
    "model": "sonnet",
-   "commit": null,
+   "commit": "520a9ec",
    "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md (incl. Revision 2); tests listed there pass"
   },
   {
