@@ -1473,3 +1473,12 @@ model PushSubscription {
 
   @@index([externalId])
 }
+
+// D49: fixed-window rate-limit counters (one atomic upsert per hit); `retention` deletes windows older than 1 day
+model RateLimitBucket {
+  key         String
+  windowStart DateTime
+  count       Int
+
+  @@id([key, windowStart])
+}

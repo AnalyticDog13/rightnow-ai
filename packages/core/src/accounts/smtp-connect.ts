@@ -13,7 +13,6 @@ import { returnToService } from "../deliverability/lifecycle";
 import { getEnv, maxStalenessSec } from "../env";
 import { applyLimits } from "./caps";
 import { setCredentials } from "./credentials";
-import { clip } from "./diagnostics";
 import { hostPolicy, TIER_CAP } from "./factory";
 import { openAccount } from "./open-account";
 import { AccountError, getAccount } from "./service";
@@ -63,11 +62,27 @@ function providerFor(i: SmtpConnectInput, deps: SmtpDeps): MailProvider {
   });
 }
 
+export type TestedConnection = {
+  ok: boolean;
+  checks: (Pick<Diagnostics["checks"][number], "name" | "ok" | "code" | "message"> & {
+    reply?: string;
+  })[];
+};
+
+/** D49: a check keeps its name, result, code and our message, plus the server reply's first line cut to 120 characters (no banners, no commands). */
+const trim = (d: Diagnostics): TestedConnection => ({
+  ok: d.ok,
+  checks: d.checks.map(({ name, ok, code, message, response }) => {
+    const reply = response?.split(/\r?\n/, 1)[0]!.slice(0, 120);
+    return { name, ok, code, message, ...(reply && { reply }) };
+  }),
+});
+
 /** The same checks the saved account will pass later, run on unsaved credentials. Nothing is stored. */
-export async function testSmtpConnection(deps: SmtpDeps, raw: unknown): Promise<Diagnostics> {
+export async function testSmtpConnection(deps: SmtpDeps, raw: unknown): Promise<TestedConnection> {
   const i = smtpConnectInput.parse(raw);
   try {
-    return clip(await providerFor(i, deps).diagnostics());
+    return trim(await providerFor(i, deps).diagnostics());
   } catch (e) {
     return {
       ok: false,

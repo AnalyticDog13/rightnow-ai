@@ -8,10 +8,18 @@ import {
 } from "@rightnow/core";
 import { prisma } from "@rightnow/db";
 import { route } from "./api";
+import { clientIp, limitOrThrow } from "./ratelimit";
 
 /** D48: a push body is small; 1 MB covers 100 Graph notifications with room to spare. */
 const MAX_BODY = 1024 * 1024;
 const MAX_VALIDATION_TOKEN = 1024;
+/**
+ * Per client IP, before any verification work. Generous for real Google / Microsoft bursts; past it the 429 makes
+ * Pub/Sub and Graph redeliver later (nothing is dropped silently), and polling still covers every mailbox.
+ */
+const PUSH_PER_MIN = 600;
+const limitPush = (req: Request, name: string) =>
+  limitOrThrow(name, `ip:${clientIp(req, getEnv().MODE)}`, PUSH_PER_MIN, 60);
 
 /** The body as text, or null past `max` bytes: Content-Length is checked when sent and the stream is counted anyway. */
 async function readCapped(req: Request, max: number): Promise<string | null> {
@@ -47,10 +55,10 @@ async function jsonBody(req: Request): Promise<{ body: unknown } | Response> {
 /**
  * Pub/Sub push (public: the OIDC JWT is the auth). Only sets the sync request flag; an unknown mailbox is a 204 too,
  * so the response says nothing about which addresses exist.
- * shortcut: no per-IP rate limit here yet; T07a adds route-level limits.
  */
 export const gmailPush = (jwks = googleJwks) =>
   route({ auth: "public" }, async ({ req }) => {
+    await limitPush(req, "push-gmail");
     const env = getEnv();
     const token = /^Bearer ([\w-]+\.[\w-]+\.[\w-]*)$/.exec(
       req.headers.get("authorization") ?? "",
@@ -79,6 +87,7 @@ export const gmailPush = (jwks = googleJwks) =>
  */
 export const graphPush = () =>
   route({ auth: "public" }, async ({ req }) => {
+    await limitPush(req, "push-graph");
     const v = new URL(req.url).searchParams.get("validationToken");
     if (v !== null) {
       if (v.length > MAX_VALIDATION_TOKEN) return new Response(null, { status: 400 });

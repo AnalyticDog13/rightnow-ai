@@ -320,7 +320,7 @@ describe("testSmtpConnection", () => {
     expect(await db.prisma.emailAccount.count()).toBe(before);
   });
 
-  test("diagnostic responses are clipped to 200 characters", async () => {
+  test("diagnostic replies are cut to 120 characters (D49)", async () => {
     const d = await testSmtpConnection(
       {
         providerFor: () =>
@@ -333,7 +333,7 @@ describe("testSmtpConnection", () => {
       },
       input(),
     );
-    expect(d.checks[0]!.response).toHaveLength(200);
+    expect(d.checks[0]!.reply).toHaveLength(120);
   });
 });
 

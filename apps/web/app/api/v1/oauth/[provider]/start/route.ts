@@ -2,6 +2,7 @@ import { OAuthStartError, startOAuth, systemClock } from "@rightnow/core";
 import { prisma } from "@rightnow/db";
 import { z } from "zod";
 import { HttpError, route } from "../../../../../../lib/api";
+import { limitOrThrow } from "../../../../../../lib/ratelimit";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,7 @@ const body = z.strictObject({
 export const POST = route(
   { role: "ADMIN", body },
   async ({ workspaceId, userId, body, params }) => {
+    await limitOrThrow("oauth-start", `user:${userId}`, 20, 60);
     const provider = z.enum(["google", "microsoft"]).safeParse(params.provider);
     if (!provider.success) throw new HttpError(404, "Unknown provider");
     try {

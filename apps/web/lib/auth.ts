@@ -14,12 +14,8 @@ export const auth = betterAuth({
   database: prismaAdapter(prisma, { provider: "postgresql" }),
   // Sign-up is closed: the first owner is created by /api/setup (lib/setup.ts), everyone else by invite.
   emailAndPassword: { enabled: true, disableSignUp: true, minPasswordLength: 12 },
-  rateLimit: {
-    enabled: true,
-    window: 60,
-    max: 100,
-    customRules: { "/sign-in/email": { window: 60, max: 5 } },
-  },
+  // D49: the Postgres buckets in app/api/auth/[...all]/route.ts replace the in-memory limiter (one mechanism)
+  rateLimit: { enabled: false },
   databaseHooks: {
     session: {
       // PS-SEC-07: every sign-in is audited. A failing audit write must not lock users out.

@@ -60,7 +60,32 @@ per workspace at a time; a job that makes no progress for 5 minutes is requeued,
 
 ## Rate limits
 
-Filled in with the rate-limit work (P7-T07a). A limited request gets 429.
+A limited request gets `429` with a `Retry-After` header (seconds until the window ends) and the body
+`{"error": "rate_limited"}`. Limits are fixed windows counted in Postgres, so a burst of up to twice a limit is possible
+across a window edge.
+
+| What | Limit | Counted per |
+|---|---|---|
+| Any request with an API key | `API_RATE_LIMIT_PER_MIN` (default 600) per minute | workspace (all its keys share it; session requests are not counted) |
+| `POST /webhooks/{id}/test` | 10 per minute | workspace |
+| AI calls (`/ai/*` features, the reply classifier, AI jobs) | 30 per minute | workspace |
+| `POST /accounts/test-connection` | 10 per minute | user |
+| `POST /oauth/{provider}/start` | 20 per minute | user |
+| Sign-in (`/api/auth/sign-in/email`) | 5 per minute | client IP |
+| Sign-in, failed attempts | 10 per 15 minutes | email address |
+| 2FA verify (`/api/auth/two-factor/verify-*`) | 5 per minute; 10 per 15 minutes | client IP; user |
+| Other `/api/auth` POSTs | 100 per minute | client IP |
+| `POST /api/setup` | 10 per 15 minutes | client IP |
+| Push endpoints (`/api/push/gmail`, `/api/push/graph`) | 600 per minute each | client IP |
+
+- The AI limit refuses before the model is called. A feature route answers 429 with `Retry-After`; an AI job waits and
+  retries; a reply the classifier could not reach stays `UNCERTAIN` (AI runs only when a message is first imported).
+- The failed-sign-in limit is per address, so an attacker who keeps guessing can lock the owner out of password sign-in
+  for up to 15 minutes. A successful sign-in does not count.
+- Client IP: with `MODE=vps` it is the `X-Real-IP` header that Caddy sets from the TCP peer (the web container only
+  listens on `127.0.0.1`). A request without it counts as `unknown`, so all of them share one bucket (fails closed). With
+  `MODE=local` no header is trusted and every caller is one client, `local`.
+- A push endpoint's 429 makes Pub/Sub or Graph redeliver later; polling keeps every mailbox in sync meanwhile.
 
 ## Webhooks
 

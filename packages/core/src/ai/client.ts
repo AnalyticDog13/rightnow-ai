@@ -3,6 +3,7 @@ import type { PrismaClient } from "@rightnow/db/client";
 import { HttpOutError, safeRequest } from "@rightnow/providers";
 import { AccountError } from "../accounts/service";
 import type { Clock } from "../clock";
+import { hit } from "../ratelimit";
 import type { OutEnv } from "../webhooks/deliver";
 import { loadAiConfig } from "./settings";
 
@@ -14,12 +15,25 @@ export type AiEnv = OutEnv & { signal?: AbortSignal; fetchFn?: typeof safeReques
 /** Fail with a short code: never a response body, a prompt or the key (D47). */
 const fail = (code: string) => new AccountError(502, code);
 
-/** R13: the model asked us to slow down; `retryAfterSec` comes from `Retry-After` (default 5, capped at 120). */
+/**
+ * R13: the model asked us to slow down; `retryAfterSec` comes from `Retry-After` (default 5, capped at 120).
+ * `local`: our own 30-per-minute workspace bucket refused the call (D49), a 429 the route passes on with `Retry-After`.
+ */
 export class AiRateLimited extends AccountError {
-  constructor(readonly retryAfterSec: number) {
-    super(502, "ai_http_429");
+  constructor(
+    readonly retryAfterSec: number,
+    local = false,
+  ) {
+    super(
+      local ? 429 : 502,
+      local ? "rate_limited" : "ai_http_429",
+      local ? { retryAfterSec } : undefined,
+    );
   }
 }
+
+/** D49: AI calls per workspace per minute. */
+const AI_PER_MIN = 30;
 
 /**
  * One OpenAI-compatible `POST <baseUrl>/chat/completions` through the shared outbound guard (pinned IP, no redirects,
@@ -35,6 +49,9 @@ export async function aiComplete(
 ): Promise<{ text: string; callId: string }> {
   const cfg = await loadAiConfig(prisma, ws);
   if (!cfg) throw new AccountError(412, "ai_not_configured");
+  // R16: a classifier call refused here leaves the reply UNCERTAIN; the personalize job sleeps retryAfterSec (R13)
+  const rl = await hit(prisma, `ws:${ws}:ai`, AI_PER_MIN, 60, clock.now());
+  if (!rl.ok) throw new AiRateLimited(rl.retryAfterSec, true);
   const log = (status: string, errorCode: string | null, inT = 0, outT = 0) =>
     prisma.aiCall.create({
       data: {

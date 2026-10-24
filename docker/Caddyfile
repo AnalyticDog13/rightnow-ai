@@ -4,8 +4,12 @@
 	}
 }
 
+# D49: X-Real-IP is replaced with the real peer (web trusts it only in vps mode); HSTS only here, where TLS is certain
 {$DOMAIN} {
-	reverse_proxy web:3000
+	header Strict-Transport-Security "max-age=31536000"
+	reverse_proxy web:3000 {
+		header_up X-Real-IP {remote_host}
+	}
 }
 
 # Verified tracking domains (a CNAME to {$DOMAIN}): certificates on demand, tracking and unsubscribe paths only
@@ -15,7 +19,9 @@ https:// {
 	}
 	@track path /t/* /u/*
 	handle @track {
-		reverse_proxy web:3000
+		reverse_proxy web:3000 {
+			header_up X-Real-IP {remote_host}
+		}
 	}
 	handle {
 		respond 404

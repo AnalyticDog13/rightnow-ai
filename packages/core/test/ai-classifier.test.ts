@@ -182,6 +182,24 @@ describe("AI reply classifier", () => {
     });
   });
 
+  test("R16: a classification refused by the 30-per-minute AI bucket leaves the reply UNCERTAIN", async () => {
+    const { A, ws, leads } = await setup();
+    await reply(A, leads[0]!.lead.email);
+    // this minute's 30 calls are already spent (D49)
+    await P().rateLimitBucket.create({ data: { key: `ws:${ws}:ai`, windowStart: T, count: 30 } });
+    const clock = fixedClock(T);
+    const calls = { n: 0 };
+    expect(
+      await sync(
+        clock,
+        A,
+        depsWith(clock, () => '{"category":"INTERESTED"}', calls),
+      ),
+    ).toBe("caught_up");
+    expect(calls.n).toBe(0);
+    expect(await thread(A)).toMatchObject({ category: "UNCERTAIN" });
+  });
+
   test("a historical import never calls the AI", async () => {
     const { A, leads } = await setup({ historical: true });
     await reply(A, leads[0]!.lead.email);

@@ -722,7 +722,7 @@ Model: **opus** (rate limiting design, IP trust, CSP compatibility with the D30 
 **Owns:** PS-DEPLOY-04; PS-SEC-03 (login rate limit), PS-SEC-08 (CSP; CSRF exists); P2-T06 carry-forwards (test-connection rate limit and banner trim); D49.
 
 Files:
-- **Schema:** migration `20261113000000_rate_limit`.
+- **Schema:** migration `20261115000000_rate_limit` (`20261113000000` and `20261114000000` were taken by T06a/T06b).
 - **Core:** `packages/core/src/ratelimit.ts`; `retention` purge; `env.ts` (`API_RATE_LIMIT_PER_MIN`).
 - **Web:**
   - `apps/web/lib/ratelimit.ts` (`clientIp(req, mode)`, `limitOrThrow(name, subject, max, windowSec)` → `HttpError(429)` carrying `retryAfter`; `route()` maps it to the `Retry-After` header);

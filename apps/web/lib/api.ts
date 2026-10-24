@@ -5,6 +5,8 @@ export class HttpError extends Error {
   constructor(
     public status: number,
     message: string,
+    /** Seconds for the `Retry-After` header (a 429 from `limitOrThrow`). */
+    public retryAfter?: number,
   ) {
     super(message);
   }
@@ -111,7 +113,14 @@ export function route<
       if (out instanceof Response) return out;
       return Response.json(out ?? { ok: true });
     } catch (e) {
-      if (e instanceof HttpError) return Response.json({ error: e.message }, { status: e.status });
+      if (e instanceof HttpError)
+        return Response.json(
+          { error: e.message },
+          {
+            status: e.status,
+            ...(e.retryAfter && { headers: { "Retry-After": String(e.retryAfter) } }),
+          },
+        );
       if (e instanceof z.ZodError)
         return Response.json({ error: "Invalid request", issues: e.issues }, { status: 400 });
       console.error("Unhandled API error", e);

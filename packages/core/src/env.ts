@@ -39,6 +39,8 @@ export const envSchema = z.object({
   GMAIL_PUBSUB_TOPIC: z.string().optional(),
   GMAIL_PUSH_SA_EMAIL: z.string().optional(),
   GMAIL_PUSH_AUDIENCE: z.string().optional(),
+  // D49: requests per minute per workspace for API keys (sessions are not counted)
+  API_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().default(600),
   FAKE_MAIL_DIR: z.string().optional(),
   MAIL_PROVIDER_FAKE: z
     .union([z.literal("1"), z.literal("").transform(() => undefined)])
