@@ -1,7 +1,7 @@
 # Handoff
 
 **Phase:** 8 — Final verification (branch `phase-8-final`). Phase 7 DONE and merged to `main`.
-**Current task:** write `docs/plans/phase-8.md` (writing-plans), independent review → Revision 2, then P8-T01. Phase 8 debt list (fold into the plan): buildPayload (APP_URL) / createProvider (factory.ts) call getEnv() directly — thread env through; failed API-key lookup rate limit; push sync spacing floor; recommend dedupe + PENDING non-recipient suggestions; test-only exports BACKOFF_SEC/resetStaleJobs/zScore; shortcuts warmup.ts DST, import.ts:78, push/renew.ts; WebhookDelivery ILIKE erasure scan; ≥BATCH stuck events starve outbox; $connect duck-typing (Prisma 7.10.1); flakes (vitest 3221226505, warmup A-7); placement polling has no e2e; D17 live verification needs user creds.
+**Current task:** P8-T00 (Phase 7 debt fixes), INTERRUPTED mid-implementation: uncommitted partial changes in 10 files (apikey-auth, ai/features, automations/engine, push/handle, webhooks/deliver + tests); backup patch + notes in ledger .superpowers/sdd/phase-8/progress.md. Resume: re-dispatch the T00 implementer (sonnet) on the tree as-is, it re-runs RED/GREEN per test, then review → commit → push → CI. Plan: docs/plans/phase-8.md Revision 2 (committed 886b498); its Debt disposition table supersedes the old debt list.
 **Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 (approved). Done step plans: `docs/plans/phase-1.md` … `phase-5.md` (+ `phase-4-review.md`, `phase-5-review.md`).
 **Tests:** ~1290 vitest + Playwright (auth, accounts*, campaign-create, deliverability, inbox, leads, test-send …) green; CI `check`, `compose-smoke`, `imap-real` green. Parity: 310/316 ticked.
 
