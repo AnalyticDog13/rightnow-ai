@@ -62,7 +62,7 @@ export function AiSettings(s: Props) {
           text waits for your approval. Usage is billed by your provider.
         </p>
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="aiBaseUrl">Base URL</Label>
+          <Label htmlFor="aiBaseUrl">AI base URL</Label>
           <Input
             id="aiBaseUrl"
             name="baseUrl"
@@ -73,11 +73,11 @@ export function AiSettings(s: Props) {
           />
         </div>
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="aiModel">Model</Label>
+          <Label htmlFor="aiModel">AI model</Label>
           <Input id="aiModel" name="model" defaultValue={s.model} required />
         </div>
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="aiKey">API key</Label>
+          <Label htmlFor="aiKey">AI provider key</Label>
           <Input
             id="aiKey"
             name="apiKey"

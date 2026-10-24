@@ -39,7 +39,7 @@ export async function createSuggestion(
 
 /**
  * The ONLY writer of `AiSuggestion.status` and the only code that copies AI text into a lead (D47): PERSONALIZATION
- * becomes `Lead.personalization` (template-neutralized); the drafts are returned for a human to save or send.
+ * becomes `Lead.personalization` exactly as written (templates do not re-parse merge values, R16); the drafts are returned for a human to save or send.
  * Conditional on PENDING, so a second review is 409. Runs in one transaction; no network call.
  */
 export async function reviewSuggestion(
@@ -59,11 +59,13 @@ export async function reviewSuggestion(
     const s = await tx.aiSuggestion.findFirst({ where: { id, workspaceId: ws } });
     if (!s) throw notFound();
     if (!won.count) throw new AccountError(409, "already_reviewed");
-    if (status === "APPROVED" && s.kind === "PERSONALIZATION" && s.leadId)
-      await tx.lead.updateMany({
+    if (status === "APPROVED" && s.kind === "PERSONALIZATION" && s.leadId) {
+      const wrote = await tx.lead.updateMany({
         where: { id: s.leadId, workspaceId: ws, deletedAt: null },
         data: { personalization: s.text },
       });
+      if (!wrote.count) throw new AccountError(404, "lead_not_found"); // rolls the approval back
+    }
     await audit(
       tx,
       { workspaceId: ws, actorId: actor, at },

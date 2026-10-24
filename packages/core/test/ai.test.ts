@@ -430,6 +430,22 @@ describe("approval invariant", () => {
     ).toMatchObject({ status: 404 });
   });
 
+  test("approving a personalization whose lead is gone is 404 lead_not_found and stays PENDING", async () => {
+    const s = await seedCampaign(P(), { at: T, leads: 1 });
+    const L = s.leads[0]!.lead.id;
+    const sug = await P().aiSuggestion.create({
+      data: { workspaceId: s.ws, kind: "PERSONALIZATION", text: "x", leadId: L },
+    });
+    await P().lead.update({ where: { id: L }, data: { deletedAt: T } });
+    expect(await code(reviewSuggestion(P(), clock, s.ws, "u", sug.id, "APPROVED"))).toEqual({
+      status: 404,
+      message: "lead_not_found",
+    });
+    expect((await P().aiSuggestion.findUniqueOrThrow({ where: { id: sug.id } })).status).toBe(
+      "PENDING",
+    );
+  });
+
   test("two concurrent approvals: one wins, one is 409", async () => {
     const s = await seedCampaign(P(), { at: T, leads: 1 });
     const sug = await P().aiSuggestion.create({
@@ -452,9 +468,20 @@ describe("approval invariant", () => {
     );
   });
 
-  test("only suggestions.ts writes AiSuggestion status or copies it into a lead", () => {
+  test("only suggestions.ts writes AiSuggestion status or copies suggestion text into a lead", () => {
     const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
-    const dirs = ["packages/core/src", "apps/web/app", "apps/web/lib", "apps/worker/src"];
+    const dirs = [
+      "packages/core/src",
+      "apps/web/app",
+      "apps/web/lib",
+      "apps/web/components",
+      "apps/worker/src",
+    ];
+    // leads/service.ts only deletes suggestions on erasure and names the lead field in its own schema
+    const SKIP = new Set([
+      "packages/core/src/ai/suggestions.ts",
+      "packages/core/src/leads/service.ts",
+    ]);
     const hits: string[] = [];
     for (const d of dirs)
       for (const f of readdirSync(join(root, d), { recursive: true }) as string[]) {
@@ -462,10 +489,17 @@ describe("approval invariant", () => {
         const rel = relative(root, join(root, d, f))
           .split(sep)
           .join("/");
-        if (rel === "packages/core/src/ai/suggestions.ts") continue;
         const src = readFileSync(join(root, d, f), "utf8");
-        if (/aiSuggestion\s*\.\s*(update|updateMany|upsert)\b|"AiSuggestion"\s+SET/.test(src))
-          hits.push(rel);
+        const mentions = /aiSuggestion/i.test(src);
+        if (rel !== "packages/core/src/ai/suggestions.ts") {
+          if (/aiSuggestion\s*\.\s*(update|updateMany|upsert)\b|"AiSuggestion"\s+SET/.test(src))
+            hits.push(`${rel}: update`);
+          for (const m of src.matchAll(/aiSuggestion\s*\.\s*create(Many)?\b/g))
+            if (/\bstatus\b/.test(src.slice(m.index, m.index + 400)))
+              hits.push(`${rel}: create with status`);
+        }
+        if (!SKIP.has(rel) && mentions && /personalization/.test(src))
+          hits.push(`${rel}: suggestion + personalization`);
       }
     expect(hits).toEqual([]);
   });

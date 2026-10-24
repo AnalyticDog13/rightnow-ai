@@ -19,7 +19,13 @@ export async function mailSync(
   signal?: AbortSignal,
 ) {
   const allowPrivate = getEnv().ALLOW_PRIVATE_HTTP_HOSTS === "1";
-  const aiClassifyFor = (ws: string) => aiClassifierFor(prisma, clock, ws, { allowPrivate });
+  // one classifier per workspace for the whole run, not per mailbox (D47)
+  const classifiers = new Map<string, ReturnType<typeof aiClassifierFor>>();
+  const aiClassifyFor = (ws: string) => {
+    if (!classifiers.has(ws))
+      classifiers.set(ws, aiClassifierFor(prisma, clock, ws, { allowPrivate }));
+    return classifiers.get(ws)!;
+  };
   return syncDue(prisma, clock, { providerFor, env, aiClassifyFor }, { maxMs: 50_000, signal });
 }
 

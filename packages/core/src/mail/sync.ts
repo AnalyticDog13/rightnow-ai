@@ -377,7 +377,7 @@ async function ingestOne(
       : c.kind === "AUTO_REPLY" && c.category === "OUT_OF_OFFICE" && !c.oooUntil
         ? "ooo"
         : null;
-  if (ai && want && !(await stored())) {
+  if (ai && want && !historical && !(await stored())) {
     // raced, not trusted to honour the signal: a hung classifier must not hold the run
     let timer: NodeJS.Timeout | undefined;
     const r = await Promise.race([

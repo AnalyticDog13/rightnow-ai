@@ -40,7 +40,7 @@ const ok = (content: string): SafeResponse => ({
 });
 
 let n = 0;
-async function setup(o: { classifierEnabled?: boolean } = {}) {
+async function setup(o: { classifierEnabled?: boolean; historical?: boolean } = {}) {
   const s = await seedCampaign(P(), {
     at: T,
     leads: 1,
@@ -62,7 +62,14 @@ async function setup(o: { classifierEnabled?: boolean } = {}) {
     },
     OUT,
   );
-  return { ...s, A: s.accounts[0]! as EmailAccount };
+  const A = s.accounts[0]! as EmailAccount;
+  // the first sync of a mailbox is a HISTORICAL import (no AI); settle it so the replies below arrive incrementally
+  if (!o.historical)
+    await reconcileAccount(P(), fixedClock(T), A.id, {
+      providerFor: async (a) => fake(a),
+      env: { SYNC_POLL_SEC: 120, SYNC_MAX_STALENESS_SEC: 300 },
+    });
+  return { ...s, A };
 }
 type Chat = { messages: { content: string }[] };
 /** Sync deps whose AI classifier talks to `answer` instead of a provider. */
@@ -173,6 +180,20 @@ describe("AI reply classifier", () => {
       status: "error",
       errorCode: "ai_timeout",
     });
+  });
+
+  test("a historical import never calls the AI", async () => {
+    const { A, leads } = await setup({ historical: true });
+    await reply(A, leads[0]!.lead.email);
+    const clock = fixedClock(T);
+    const calls = { n: 0 };
+    await sync(
+      clock,
+      A,
+      depsWith(clock, () => '{"category":"INTERESTED"}', calls),
+    );
+    expect(calls.n).toBe(0);
+    expect(await thread(A)).toMatchObject({ category: "UNCERTAIN" });
   });
 
   test("classifierEnabled false: the AI is never called", async () => {
