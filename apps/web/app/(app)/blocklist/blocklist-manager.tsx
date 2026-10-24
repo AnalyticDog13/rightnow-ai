@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { BulkToolbar, NextPage, SortTh, useSort } from "../../../components/table-kit";
 import { Button } from "../../../components/ui/button";
 import { Card } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
@@ -124,6 +125,17 @@ export function BlocklistManager({ canEdit, isAdmin }: { canEdit: boolean; isAdm
     refresh(r.ok ? `Removed ${r.json.deleted}. Kept ${r.json.kept} (not manual).` : errorText(r));
   }
 
+  const {
+    sorted,
+    sort,
+    toggle: sortBy,
+  } = useSort(rows, {
+    value: (r) => r.value?.toLowerCase() ?? null,
+    kind: (r) => r.kind,
+    reason: (r) => r.reason,
+    source: (r) => r.source,
+    added: (r) => r.createdAt,
+  });
   const ids = rows.map((r) => r.id);
   const allOn = ids.length > 0 && ids.every((id) => selected.has(id));
   const toggle = (id: string) =>
@@ -193,15 +205,19 @@ export function BlocklistManager({ canEdit, isAdmin }: { canEdit: boolean; isAdm
         </Button>
         {isAdmin && (
           <>
-            <Button variant="outline" disabled={selected.size === 0} onClick={bulkRemove}>
-              Remove selected
-            </Button>
             <Button variant="outline" onClick={clearAll}>
               Remove all
             </Button>
           </>
         )}
       </div>
+      {isAdmin && selected.size > 0 && (
+        <BulkToolbar count={selected.size}>
+          <Button variant="outline" onClick={bulkRemove}>
+            Remove selected
+          </Button>
+        </BulkToolbar>
+      )}
       {msg && (
         <p role="status" className="text-sm">
           {msg}
@@ -225,15 +241,28 @@ export function BlocklistManager({ canEdit, isAdmin }: { canEdit: boolean; isAdm
                   onChange={() => setSelected(allOn ? new Set() : new Set(ids))}
                 />
               </th>
-              {["Value", "Type", "Reason", "Source", "Added", "Actions"].map((h) => (
-                <th key={h} className="p-3 font-medium">
-                  {h}
-                </th>
-              ))}
+              <SortTh col="value" sort={sort} onSort={sortBy}>
+                Value
+              </SortTh>
+              <SortTh col="kind" sort={sort} onSort={sortBy}>
+                Type
+              </SortTh>
+              <SortTh col="reason" sort={sort} onSort={sortBy}>
+                Reason
+              </SortTh>
+              <SortTh col="source" sort={sort} onSort={sortBy}>
+                Source
+              </SortTh>
+              <SortTh col="added" sort={sort} onSort={sortBy}>
+                Added
+              </SortTh>
+              <th scope="col" className="p-3 font-medium">
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
+            {sorted.map((r) => (
               <tr key={r.id} className="border-b border-border">
                 <td className="p-3">
                   <input
@@ -274,18 +303,14 @@ export function BlocklistManager({ canEdit, isAdmin }: { canEdit: boolean; isAdm
         </table>
       </Card>
       {next && (
-        <Button
-          variant="outline"
-          className="self-start"
+        <NextPage
           onClick={async () => {
             const r = await call(url(next), "GET");
             if (!r.ok) return setMsg(errorText(r));
             setRows((o) => [...o, ...((r.json.rows ?? []) as Row[])]);
             setNext((r.json.nextCursor as string | null) ?? null);
           }}
-        >
-          Load more
-        </Button>
+        />
       )}
     </div>
   );

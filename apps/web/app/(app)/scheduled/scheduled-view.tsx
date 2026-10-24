@@ -1,8 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Tabs } from "../../../components/tabs";
+import {
+  BulkToolbar,
+  NextPage,
+  SortTh,
+  useSelection,
+  useSort,
+} from "../../../components/table-kit";
 import { Button } from "../../../components/ui/button";
+import { Input } from "../../../components/ui/input";
 import { Card } from "../../../components/ui/card";
 import { call, errorText } from "../accounts/api-client";
 
@@ -36,6 +44,33 @@ export function ScheduledView({ canEdit, isAdmin }: { canEdit: boolean; isAdmin:
   const [loaded, setLoaded] = useState(false);
   const [msg, setMsg] = useState("");
   const [release, setRelease] = useState<Row | null>(null);
+  const [q, setQ] = useState("");
+  const sel = useSelection();
+  const shown = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return rows.filter(
+      (r) =>
+        !needle ||
+        [r.leadEmail, r.accountEmail, r.renderedSubject].some((v) =>
+          v.toLowerCase().includes(needle),
+        ),
+    );
+  }, [rows, q]);
+  const {
+    sorted,
+    sort,
+    toggle: sortBy,
+  } = useSort(shown, {
+    lead: (r) => r.leadEmail.toLowerCase(),
+    account: (r) => r.accountEmail.toLowerCase(),
+    subject: (r) => r.renderedSubject.toLowerCase(),
+    due: (r) => r.sentAt ?? r.dueAt,
+  });
+  const ids = sorted.map((r) => r.id);
+  const allOn = ids.length > 0 && ids.every((id) => sel.selected.has(id));
+  // "Cancel" and "Retry" only apply to some states; a bulk call over the chosen rows skips the others
+  const verbFor = (r: Row, verb: "cancel" | "retry") =>
+    verb === "cancel" ? r.status === "HELD" || r.status === "SCHEDULED" : r.status === "FAILED";
 
   const current = useRef(tab); // the tab being shown; a slower response for an earlier tab is dropped
   current.current = tab;
@@ -57,6 +92,7 @@ export function ScheduledView({ canEdit, isAdmin }: { canEdit: boolean; isAdmin:
     setLoaded(false);
     setRows([]);
     setMsg("");
+    sel.clear();
     void load();
   }, [load]);
 
@@ -67,6 +103,19 @@ export function ScheduledView({ canEdit, isAdmin }: { canEdit: boolean; isAdmin:
       verb === "release" ? { confirm: true } : undefined,
     );
     setMsg(r.ok ? "" : errorText(r));
+    void load();
+  }
+
+  async function bulk(verb: "cancel" | "retry") {
+    const chosen = rows.filter((r) => sel.selected.has(r.id) && verbFor(r, verb));
+    const results = await Promise.all(
+      chosen.map((r) => call(`/api/v1/scheduled-messages/${r.id}/${verb}`, "POST")),
+    );
+    const failed = results.filter((r) => !r.ok);
+    setMsg(
+      failed.length ? `${failed.length} of ${chosen.length} failed: ${errorText(failed[0]!)}` : "",
+    );
+    sel.clear();
     void load();
   }
 
@@ -85,6 +134,28 @@ export function ScheduledView({ canEdit, isAdmin }: { canEdit: boolean; isAdmin:
             resend by itself.
           </p>
         )}
+        <Input
+          type="search"
+          aria-label="Search scheduled emails"
+          placeholder="Search lead, account or subject"
+          className="max-w-xs"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+        />
+        {canEdit && sel.selected.size > 0 && (
+          <BulkToolbar count={sel.selected.size}>
+            {(tab === "SCHEDULED" || tab === "HELD") && (
+              <Button variant="outline" onClick={() => void bulk("cancel")}>
+                Cancel selected
+              </Button>
+            )}
+            {tab === "FAILED" && (
+              <Button variant="outline" onClick={() => void bulk("retry")}>
+                Retry selected
+              </Button>
+            )}
+          </BulkToolbar>
+        )}
         {msg && (
           <p role="alert" className="text-sm text-destructive">
             {msg}
@@ -97,16 +168,47 @@ export function ScheduledView({ canEdit, isAdmin }: { canEdit: boolean; isAdmin:
           >
             <thead>
               <tr className="border-b border-border">
-                {["Lead", "Sending account", "Subject", "Due", "Details", "Actions"].map((h) => (
-                  <th key={h} className="p-3 font-medium">
-                    {h}
-                  </th>
-                ))}
+                <th scope="col" className="w-10 p-3">
+                  <input
+                    type="checkbox"
+                    aria-label={`Select all ${ids.length} loaded emails`}
+                    checked={allOn}
+                    disabled={!canEdit || ids.length === 0}
+                    onChange={() => sel.setAll(ids, !allOn)}
+                  />
+                </th>
+                <SortTh col="lead" sort={sort} onSort={sortBy}>
+                  Lead
+                </SortTh>
+                <SortTh col="account" sort={sort} onSort={sortBy}>
+                  Sending account
+                </SortTh>
+                <SortTh col="subject" sort={sort} onSort={sortBy}>
+                  Subject
+                </SortTh>
+                <SortTh col="due" sort={sort} onSort={sortBy}>
+                  Due
+                </SortTh>
+                <th scope="col" className="p-3 font-medium">
+                  Details
+                </th>
+                <th scope="col" className="p-3 font-medium">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
+              {sorted.map((r) => (
                 <tr key={r.id} className="border-b border-border align-top">
+                  <td className="p-3">
+                    <input
+                      type="checkbox"
+                      aria-label={`Select email to ${r.leadEmail}`}
+                      checked={sel.selected.has(r.id)}
+                      disabled={!canEdit}
+                      onChange={() => sel.toggle(r.id)}
+                    />
+                  </td>
                   <td className="p-3">{r.leadEmail}</td>
                   <td className="p-3">{r.accountEmail}</td>
                   <td className="p-3">{r.renderedSubject}</td>
@@ -160,9 +262,9 @@ export function ScheduledView({ canEdit, isAdmin }: { canEdit: boolean; isAdmin:
                   </td>
                 </tr>
               ))}
-              {loaded && rows.length === 0 && (
+              {loaded && shown.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="p-6 text-center text-muted-foreground">
+                  <td colSpan={7} className="p-6 text-center text-muted-foreground">
                     Nothing here.
                   </td>
                 </tr>
@@ -170,11 +272,7 @@ export function ScheduledView({ canEdit, isAdmin }: { canEdit: boolean; isAdmin:
             </tbody>
           </table>
         </Card>
-        {next && (
-          <Button variant="outline" className="self-start" onClick={() => void load(next)}>
-            Load more
-          </Button>
-        )}
+        {next && <NextPage onClick={() => void load(next)} />}
       </div>
       {release && (
         <ReleaseDialog

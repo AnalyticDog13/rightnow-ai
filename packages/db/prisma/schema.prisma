@@ -1084,11 +1084,12 @@ model InboxView {
   id          String    @id @default(cuid())
   workspaceId String
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  scope       String    @default("inbox") // "inbox" or "leads": which list the saved filter belongs to
   name        String
   filters     Json
   createdAt   DateTime  @default(now())
 
-  @@unique([workspaceId, name])
+  @@unique([workspaceId, scope, name])
 }
 
 // Latest DNS check per sending domain (D35); selectors are the user's extra DKIM selectors.

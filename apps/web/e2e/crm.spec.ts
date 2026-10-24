@@ -172,7 +172,7 @@ test("interest creates a card; move by select and drag; tasks; activity", async 
 
   await page.getByRole("tab", { name: "Tasks" }).click();
   await page.getByLabel("Due", { exact: true }).selectOption({ label: "Due today" });
-  const row = page.getByRole("listitem").filter({ hasText: "Send proposal" });
+  const row = page.getByRole("row").filter({ hasText: "Send proposal" });
   await expect(row).toBeVisible();
   await row.getByRole("button", { name: "Complete Send proposal" }).click();
   await expect(row).toHaveCount(0);
@@ -191,7 +191,7 @@ test("interest creates a card; move by select and drag; tasks; activity", async 
       ? r.fulfill({ status: 500, contentType: "application/json", body: '{"error":"boom"}' })
       : r.fallback(),
   );
-  const stuckRow = page.getByRole("listitem").filter({ hasText: "Stuck task" });
+  const stuckRow = page.getByRole("row").filter({ hasText: "Stuck task" });
   await stuckRow.getByRole("button", { name: "Complete Stuck task" }).click();
   await expect(page.getByRole("alert").filter({ hasText: "boom" })).toBeVisible();
   await expect(stuckRow).toBeVisible();

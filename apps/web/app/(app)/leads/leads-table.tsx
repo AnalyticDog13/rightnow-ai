@@ -2,6 +2,7 @@
 
 import type { ApiLead } from "@rightnow/core";
 import { useCallback, useEffect, useState } from "react";
+import { NextPage, SortTh, TagSelect, useSort } from "../../../components/table-kit";
 import { Button } from "../../../components/ui/button";
 import { Card } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
@@ -11,6 +12,7 @@ import { BulkBar, type Member, type Named } from "./bulk-bar";
 import { ImportWizard } from "./import-wizard";
 import { ESP, INTEREST, REASON, VERIFICATION } from "./labels";
 import { LeadDrawer } from "./lead-drawer";
+import { SavedFilters } from "./saved-filters";
 
 type Filters = Record<string, string>;
 type Bounced = {
@@ -125,6 +127,18 @@ export function LeadsTable({
       if (!n.delete(id)) n.add(id);
       return n;
     });
+  const {
+    sorted,
+    sort,
+    toggle: sortBy,
+  } = useSort(leads, {
+    email: (l) => l.email.toLowerCase(),
+    name: (l) => fullName(l).toLowerCase() || null,
+    company: (l) => l.companyName?.toLowerCase() ?? null,
+    interest: (l) => l.interestStatus,
+    verification: (l) => VERIFICATION[l.verificationStatus] ?? null,
+    esp: (l) => ESP[l.espType] ?? null,
+  });
   const open = leads.find((l) => l.id === openId);
   const shown = bounced ? rows.length : leads.length;
 
@@ -201,17 +215,12 @@ export function LeadsTable({
           </a>
         </Button>
       </div>
+      {!bounced && <SavedFilters filters={f} onApply={setF} />}
       {!bounced && (
         <details className="text-sm">
           <summary className="cursor-pointer">More filters</summary>
           <div className="mt-2 flex flex-wrap items-center gap-2">
-            <Input
-              aria-label="Filter by tag"
-              placeholder="Tag"
-              className="max-w-32"
-              value={f.tag ?? ""}
-              onChange={(e) => set("tag", e.target.value)}
-            />
+            <TagSelect kind="lead" value={f.tag ?? ""} onChange={(t) => set("tag", t)} />
             <select
               aria-label="Filter by label"
               className={sel}
@@ -393,15 +402,28 @@ export function LeadsTable({
                     onChange={() => setSelected(allOn ? new Set() : new Set(ids))}
                   />
                 </th>
-                {["Email", "Name", "Company", "Interest", "Verification", "ESP"].map((h) => (
-                  <th key={h} className="p-3 font-medium">
-                    {h}
-                  </th>
-                ))}
+                <SortTh col="email" sort={sort} onSort={sortBy}>
+                  Email
+                </SortTh>
+                <SortTh col="name" sort={sort} onSort={sortBy}>
+                  Name
+                </SortTh>
+                <SortTh col="company" sort={sort} onSort={sortBy}>
+                  Company
+                </SortTh>
+                <SortTh col="interest" sort={sort} onSort={sortBy}>
+                  Interest
+                </SortTh>
+                <SortTh col="verification" sort={sort} onSort={sortBy}>
+                  Verification
+                </SortTh>
+                <SortTh col="esp" sort={sort} onSort={sortBy}>
+                  ESP
+                </SortTh>
               </tr>
             </thead>
             <tbody>
-              {leads.map((l) => (
+              {sorted.map((l) => (
                 <tr
                   key={l.id}
                   tabIndex={0}
@@ -449,11 +471,7 @@ export function LeadsTable({
           </table>
         )}
       </Card>
-      {next && (
-        <Button variant="outline" className="self-start" onClick={more}>
-          Load more
-        </Button>
-      )}
+      {next && <NextPage onClick={more} />}
       {open && (
         <LeadDrawer
           key={open.id}

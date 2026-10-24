@@ -54,7 +54,7 @@ test("a rule created in the UI runs on a reply; built-ins show their reasons", a
   await expect(page.getByRole("table", { name: "Runs" })).toContainText("OK");
 
   await page.goto("/crm?tab=tasks");
-  await expect(page.getByRole("list", { name: "Task list" })).toContainText(TITLE);
+  await expect(page.getByRole("table", { name: "Tasks" })).toContainText(TITLE);
 
   await page.goto("/automations?tab=builtin");
   const builtin = page.getByRole("list", { name: "Built-in rules" });

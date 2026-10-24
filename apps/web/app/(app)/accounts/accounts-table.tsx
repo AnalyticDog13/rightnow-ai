@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import { Button } from "../../../components/ui/button";
 import { Card } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
+import { Pager, SortTh, TagSelect, usePage, useSort } from "../../../components/table-kit";
 import { AccountDrawer } from "./account-drawer";
 import { call, errorText } from "./api-client";
 import { BulkBar } from "./bulk-bar";
@@ -41,6 +42,7 @@ export function AccountsTable({
   const router = useRouter();
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("ALL");
+  const [tag, setTag] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [openId, setOpenId] = useState<string | null>(null);
   const [msg, setMsg] = useState("");
@@ -51,10 +53,23 @@ export function AccountsTable({
       (a) =>
         (status === "ALL" ||
           (status === "DISCONNECTED" ? a.status === "DISCONNECTED" : a.displayStatus === status)) &&
+        (!tag || a.tags.includes(tag)) &&
         (!needle || [a.email, a.fromName, ...a.tags].some((s) => s.toLowerCase().includes(needle))),
     );
-  }, [accounts, q, status]);
-  const ids = shown.map((a) => a.id);
+  }, [accounts, q, status, tag]);
+  const {
+    sorted,
+    sort,
+    toggle: sortBy,
+  } = useSort(shown, {
+    email: (a) => a.email.toLowerCase(),
+    provider: (a) => a.provider,
+    status: (a) => label(a),
+    sent: (a) => a.sentToday,
+    tags: (a) => a.tags.join(", ") || null,
+  });
+  const pager = usePage(sorted);
+  const ids = pager.rows.map((a) => a.id);
   const allOn = ids.length > 0 && ids.every((id) => selected.has(id));
   const toggle = (id: string) =>
     setSelected((s) => {
@@ -109,6 +124,7 @@ export function AccountsTable({
           ))}
           <option value="DISCONNECTED">Disconnected</option>
         </select>
+        <TagSelect kind="account" value={tag} onChange={setTag} />
       </div>
       {canEdit && selected.size > 0 && (
         <BulkBar
@@ -140,17 +156,28 @@ export function AccountsTable({
                   onChange={() => setSelected(allOn ? new Set() : new Set(ids))}
                 />
               </th>
-              {["Email", "Provider", "Status", "Today: sent / limit / left", "Tags", "Actions"].map(
-                (h) => (
-                  <th key={h} className="p-3 font-medium">
-                    {h}
-                  </th>
-                ),
-              )}
+              <SortTh col="email" sort={sort} onSort={sortBy}>
+                Email
+              </SortTh>
+              <SortTh col="provider" sort={sort} onSort={sortBy}>
+                Provider
+              </SortTh>
+              <SortTh col="status" sort={sort} onSort={sortBy}>
+                Status
+              </SortTh>
+              <SortTh col="sent" sort={sort} onSort={sortBy}>
+                Today: sent / limit / left
+              </SortTh>
+              <SortTh col="tags" sort={sort} onSort={sortBy}>
+                Tags
+              </SortTh>
+              <th scope="col" className="p-3 font-medium">
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody>
-            {shown.map((a) => (
+            {pager.rows.map((a) => (
               <tr key={a.id} className="border-b border-border" aria-selected={selected.has(a.id)}>
                 <td className="p-3">
                   <input
@@ -254,6 +281,7 @@ export function AccountsTable({
           </tbody>
         </table>
       </Card>
+      <Pager page={pager.page} pages={pager.pages} onPage={pager.setPage} />
       {open && (
         <AccountDrawer
           key={open.id}

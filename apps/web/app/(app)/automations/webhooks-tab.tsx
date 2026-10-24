@@ -11,6 +11,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { focusOnMount, useInlineEditor } from "../../../components/inline-editor";
 import { Button } from "../../../components/ui/button";
 import { Card } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
@@ -65,7 +66,7 @@ export function WebhooksTab({
   events: string[];
   labels: string[];
 }) {
-  const [editing, setEditing] = useState<Hook | "new" | null>(null);
+  const { editing, open: openEditor, close: closeEditor } = useInlineEditor<Hook>();
   const [viewing, setViewing] = useState<Hook | null>(null);
   const [secret, setSecret] = useState<{ name: string; value: string } | null>(null);
   const [notice, setNotice] = useState("");
@@ -113,9 +114,9 @@ export function WebhooksTab({
         campaigns={campaigns}
         events={events}
         labels={labels}
-        onCancel={() => setEditing(null)}
+        onCancel={closeEditor}
         onSaved={(created) => {
-          setEditing(null);
+          closeEditor();
           if (created) setSecret(created);
           reload();
         }}
@@ -128,7 +129,9 @@ export function WebhooksTab({
       </p>
       {canEdit && (
         <div>
-          <Button onClick={() => setEditing("new")}>New webhook</Button>
+          <Button data-opener="new" onClick={() => openEditor("new", "new")}>
+            New webhook
+          </Button>
         </div>
       )}
       {secret && (
@@ -213,7 +216,8 @@ export function WebhooksTab({
                           variant="outline"
                           className="h-8 px-2 text-xs"
                           aria-label={`Edit ${label(h)}`}
-                          onClick={() => setEditing(h)}
+                          data-opener={h.id}
+                          onClick={() => openEditor(h, h.id)}
                         >
                           Edit
                         </Button>
@@ -318,7 +322,9 @@ function HookForm({
         className="flex flex-col gap-4"
         aria-label={hook ? "Edit webhook" : "New webhook"}
       >
-        <h2 className="text-lg font-medium">{hook ? "Edit webhook" : "New webhook"}</h2>
+        <h2 ref={focusOnMount} tabIndex={-1} className="text-lg font-medium outline-none">
+          {hook ? "Edit webhook" : "New webhook"}
+        </h2>
         <Err text={error} />
         <div className="flex flex-wrap gap-3">
           <div className="flex flex-col gap-1">

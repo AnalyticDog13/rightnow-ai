@@ -283,10 +283,17 @@ export function AnalyticsClient({
     const cell = (m: Metrics, d: (typeof METRICS)[number]) => {
       const rate = d.rate?.(m, b);
       return (
-        <td key={d.id} className={td} title={rate?.tip}>
-          {d.count(m)}
-          {rate && ` (${pct(rate.value)})`}
-          {rate && <span className="sr-only"> {rate.tip}</span>}
+        <td key={d.id} className={td}>
+          {/* the tooltip is for the mouse; screen readers get the same words once, from the sr-only span */}
+          <span aria-hidden={rate ? true : undefined} title={rate?.tip}>
+            {d.count(m)}
+            {rate && ` (${pct(rate.value)})`}
+          </span>
+          {rate && (
+            <span className="sr-only">
+              {d.count(m)} ({pct(rate.value)}) {rate.tip}
+            </span>
+          )}
         </td>
       );
     };

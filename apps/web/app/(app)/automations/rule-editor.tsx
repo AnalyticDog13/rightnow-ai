@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { focusOnMount } from "../../../components/inline-editor";
 import { Button } from "../../../components/ui/button";
 import { Card } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
@@ -96,7 +97,9 @@ export function RuleEditor({
         className="flex flex-col gap-4"
         aria-label={rule ? "Edit rule" : "New rule"}
       >
-        <h2 className="text-lg font-medium">{rule ? "Edit rule" : "New rule"}</h2>
+        <h2 ref={focusOnMount} tabIndex={-1} className="text-lg font-medium outline-none">
+          {rule ? "Edit rule" : "New rule"}
+        </h2>
         {error && (
           <p role="alert" className="text-sm text-destructive">
             {error}

@@ -833,7 +833,7 @@ Model: sonnet.
 Files:
 - `apps/web/e2e/a11y.spec.ts` (new; `@axe-core/playwright` dev dependency in `apps/web/package.json`);
 - fixes in components and pages that axe or the table checks flag;
-- `InboxView.scope` (migration `20261116000000_saved_views`) + saved filters on Leads (reusing the inbox-view routes with `scope`);
+- `InboxView.scope` (migration `20261118000000_saved_views` (`20261116000000` was taken by `two_factor`)) + saved filters on Leads (reusing the inbox-view routes with `scope`);
 - tag filter selects (from `GET /tags`) on Accounts, Campaigns and Leads;
 - a skip link in `app/(app)/layout.tsx`.
 

@@ -114,7 +114,12 @@ export function Board({
       {!board ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : (
-        <div className="flex items-start gap-3 overflow-x-auto pb-2">
+        <div
+          tabIndex={0}
+          role="group"
+          aria-label="Pipeline board"
+          className="flex items-start gap-3 overflow-x-auto pb-2"
+        >
           {board.stages.map((s) => (
             <section
               key={s.id}

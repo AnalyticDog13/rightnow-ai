@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useInlineEditor } from "../../../components/inline-editor";
 import { Tabs } from "../../../components/tabs";
 import { Button } from "../../../components/ui/button";
 import { Card } from "../../../components/ui/card";
@@ -43,7 +44,7 @@ function RulesTab({
   rules: Rule[] | null;
   reload: () => void;
 }) {
-  const [editing, setEditing] = useState<Rule | "new" | null>(null);
+  const { editing, open: openEditor, close: closeEditor } = useInlineEditor<Rule>();
   const [error, setError] = useState("");
 
   // one request per rule at a time, so a double click cannot race
@@ -63,9 +64,9 @@ function RulesTab({
       <RuleEditor
         rule={editing === "new" ? null : editing}
         refs={refs}
-        onCancel={() => setEditing(null)}
+        onCancel={closeEditor}
         onSaved={() => {
-          setEditing(null);
+          closeEditor();
           reload();
         }}
       />
@@ -74,7 +75,9 @@ function RulesTab({
     <div className="flex flex-col gap-3">
       {canEdit && (
         <div>
-          <Button onClick={() => setEditing("new")}>New rule</Button>
+          <Button data-opener="new" onClick={() => openEditor("new", "new")}>
+            New rule
+          </Button>
         </div>
       )}
       <Err text={error} />
@@ -104,7 +107,8 @@ function RulesTab({
                       className="h-8 px-2 text-xs"
                       aria-label={`Edit ${r.name}`}
                       disabled={!canEdit}
-                      onClick={() => setEditing(r)}
+                      data-opener={r.id}
+                      onClick={() => openEditor(r, r.id)}
                     >
                       Edit
                     </Button>

@@ -249,6 +249,7 @@ export async function campaignOverview(prisma: Db, ws: string, now: Date) {
     return {
       id: c.id,
       name: c.name,
+      tags: c.tags,
       status: displayCampaignStatus(
         c,
         subs.some((s) => s.campaignId === c.id),

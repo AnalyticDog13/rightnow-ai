@@ -105,7 +105,9 @@ export function AppShell({
           <ThemeToggle />
         </div>
       </aside>
-      <main className="min-w-0 flex-1 p-4 md:p-8">{children}</main>
+      <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 p-4 outline-none md:p-8">
+        {children}
+      </main>
     </div>
   );
 }

@@ -2,6 +2,7 @@ import type { Prisma, PrismaClient } from "@rightnow/db/client";
 import { z } from "zod";
 import { AccountError, isPrismaCode, notFound } from "../accounts/service";
 import { audit } from "../audit";
+import { leadQuery } from "../leads/service";
 import { RENDER_LEAD_FIELDS } from "../planner";
 import { TemplateError, render } from "../template";
 import { threadFilterSchema } from "./inbox";
@@ -60,18 +61,40 @@ export async function deleteNote(db: Db, ws: string, id: string) {
 // ---- Macros (PS-INBOX-09) and saved views (PS-INBOX-07)
 const name = z.string().trim().min(1).max(100);
 export const macroInput = z.strictObject({ name, body: z.string().min(1).max(10_000) });
+const threadView = threadFilterSchema.omit({ cursor: true });
+// Leads scope: the Leads page's flat filter fields (strings, as in its query string); `leadQuery` is the real check.
+const leadView = z.strictObject(
+  Object.fromEntries(
+    [
+      ..."q tag label interestStatus verificationStatus ownerId listId openedNoReply".split(" "),
+      ..."lastContactedFrom lastContactedTo customKey customContains".split(" "),
+    ].map((k) => [k, z.string().max(200).optional()]),
+  ),
+);
+const SCOPES = ["inbox", "leads"] as const;
 export const viewInput = z.strictObject({
   name,
-  filters: threadFilterSchema.omit({ cursor: true }),
+  scope: z.enum(SCOPES).default("inbox"),
+  filters: z.union([leadView, threadView]), // leadView first: it adds no defaults, so lead filters pass through unchanged,
 });
 
-const filtersOf = (f: z.output<typeof viewInput>["filters"]) =>
-  f as unknown as Prisma.InputJsonObject;
+/** The filters parsed for the view's scope, so an inbox view never holds lead fields and the reverse. */
+function filtersFor(scope: (typeof SCOPES)[number], raw: unknown): Prisma.InputJsonObject {
+  const bad = () => new AccountError(400, "invalid_filters");
+  if (scope === "inbox") {
+    const r = threadView.safeParse(raw);
+    if (!r.success) throw bad();
+    return r.data as unknown as Prisma.InputJsonObject;
+  }
+  const r = leadView.safeParse(raw);
+  if (!r.success || !leadQuery.safeParse(r.data).success) throw bad();
+  return r.data as Prisma.InputJsonObject;
+}
 
 export const listMacros = (db: Db, ws: string) =>
   db.macro.findMany({ where: { workspaceId: ws }, orderBy: { name: "asc" } });
-export const listViews = (db: Db, ws: string) =>
-  db.inboxView.findMany({ where: { workspaceId: ws }, orderBy: { name: "asc" } });
+export const listViews = (db: Db, ws: string, scope: (typeof SCOPES)[number] = "inbox") =>
+  db.inboxView.findMany({ where: { workspaceId: ws, scope }, orderBy: { name: "asc" } });
 
 export async function createMacro(db: Db, ws: string, actorId: Actor, input: unknown) {
   const row = await db.macro
@@ -95,16 +118,27 @@ export async function deleteMacro(db: Db, ws: string, actorId: Actor, id: string
 export async function createView(db: Db, ws: string, actorId: Actor, input: unknown) {
   const v = viewInput.parse(input);
   const row = await db.inboxView
-    .create({ data: { name: v.name, filters: filtersOf(v.filters), workspaceId: ws } })
+    .create({
+      data: {
+        name: v.name,
+        scope: v.scope,
+        filters: filtersFor(v.scope, v.filters),
+        workspaceId: ws,
+      },
+    })
     .catch(taken);
   await audit(db, { workspaceId: ws, actorId }, "inbox_view.create", row.id);
   return row;
 }
 export async function updateView(db: Db, ws: string, actorId: Actor, id: string, input: unknown) {
   const v = viewInput.partial().parse(input);
+  const cur = await db.inboxView.findFirst({ where: { id, workspaceId: ws } });
+  if (!cur) throw notFound();
   const data = {
     ...(v.name && { name: v.name }),
-    ...(v.filters && { filters: filtersOf(v.filters) }),
+    ...(v.filters && {
+      filters: filtersFor(cur.scope as (typeof SCOPES)[number], v.filters),
+    }),
   };
   if (!(await db.inboxView.updateMany({ where: { id, workspaceId: ws }, data }).catch(taken)).count)
     throw notFound();

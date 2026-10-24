@@ -8885,6 +8885,21 @@
         ],
         "x-role": "VIEWER",
         "x-scope": "inbox:read",
+        "parameters": [
+          {
+            "name": "scope",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": "inbox",
+              "type": "string",
+              "enum": [
+                "inbox",
+                "leads"
+              ]
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "OK",
@@ -8918,105 +8933,171 @@
                     "minLength": 1,
                     "maxLength": 100
                   },
+                  "scope": {
+                    "default": "inbox",
+                    "type": "string",
+                    "enum": [
+                      "inbox",
+                      "leads"
+                    ]
+                  },
                   "filters": {
-                    "type": "object",
-                    "properties": {
-                      "view": {
-                        "default": "primary",
-                        "type": "string",
-                        "enum": [
-                          "primary",
-                          "others",
-                          "unread",
-                          "reminders",
-                          "sent",
-                          "scheduled",
-                          "all"
-                        ]
-                      },
-                      "accountId": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "campaignId": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "interestStatus": {
-                        "type": "integer",
-                        "minimum": -4,
-                        "maximum": 4
-                      },
-                      "leadLabel": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 200
-                      },
-                      "category": {
-                        "type": "string",
-                        "enum": [
-                          "INTERESTED",
-                          "MEETING_REQUESTED",
-                          "NOT_INTERESTED",
-                          "WRONG_PERSON",
-                          "NEUTRAL",
-                          "OUT_OF_OFFICE",
-                          "UNSUBSCRIBE",
-                          "AUTOMATED",
-                          "UNCERTAIN"
-                        ]
-                      },
-                      "q": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 200
-                      },
-                      "from": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 200
-                      },
-                      "to": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 200
-                      },
-                      "subject": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 200
-                      },
-                      "after": {},
-                      "before": {},
-                      "hasAttachment": {
-                        "anyOf": [
-                          {
-                            "type": "boolean"
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "q": {
+                            "type": "string",
+                            "maxLength": 200
                           },
-                          {
+                          "tag": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "label": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "interestStatus": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "verificationStatus": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "ownerId": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "listId": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "openedNoReply": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "lastContactedFrom": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "lastContactedTo": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "customKey": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "customContains": {
+                            "type": "string",
+                            "maxLength": 200
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "view": {
+                            "default": "primary",
                             "type": "string",
                             "enum": [
-                              "true",
-                              "false"
+                              "primary",
+                              "others",
+                              "unread",
+                              "reminders",
+                              "sent",
+                              "scheduled",
+                              "all"
                             ]
+                          },
+                          "accountId": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "campaignId": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "interestStatus": {
+                            "type": "integer",
+                            "minimum": -4,
+                            "maximum": 4
+                          },
+                          "leadLabel": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "category": {
+                            "type": "string",
+                            "enum": [
+                              "INTERESTED",
+                              "MEETING_REQUESTED",
+                              "NOT_INTERESTED",
+                              "WRONG_PERSON",
+                              "NEUTRAL",
+                              "OUT_OF_OFFICE",
+                              "UNSUBSCRIBE",
+                              "AUTOMATED",
+                              "UNCERTAIN"
+                            ]
+                          },
+                          "q": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "from": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "to": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "subject": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "after": {},
+                          "before": {},
+                          "hasAttachment": {
+                            "anyOf": [
+                              {
+                                "type": "boolean"
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "true",
+                                  "false"
+                                ]
+                              }
+                            ]
+                          },
+                          "direction": {
+                            "type": "string",
+                            "enum": [
+                              "received",
+                              "sent"
+                            ]
+                          },
+                          "limit": {
+                            "default": 50,
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100
                           }
-                        ]
-                      },
-                      "direction": {
-                        "type": "string",
-                        "enum": [
-                          "received",
-                          "sent"
-                        ]
-                      },
-                      "limit": {
-                        "default": 50,
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 100
+                        },
+                        "additionalProperties": false
                       }
-                    },
-                    "additionalProperties": false
+                    ]
                   }
                 },
                 "required": [
@@ -9073,105 +9154,171 @@
                     "minLength": 1,
                     "maxLength": 100
                   },
+                  "scope": {
+                    "default": "inbox",
+                    "type": "string",
+                    "enum": [
+                      "inbox",
+                      "leads"
+                    ]
+                  },
                   "filters": {
-                    "type": "object",
-                    "properties": {
-                      "view": {
-                        "default": "primary",
-                        "type": "string",
-                        "enum": [
-                          "primary",
-                          "others",
-                          "unread",
-                          "reminders",
-                          "sent",
-                          "scheduled",
-                          "all"
-                        ]
-                      },
-                      "accountId": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "campaignId": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "interestStatus": {
-                        "type": "integer",
-                        "minimum": -4,
-                        "maximum": 4
-                      },
-                      "leadLabel": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 200
-                      },
-                      "category": {
-                        "type": "string",
-                        "enum": [
-                          "INTERESTED",
-                          "MEETING_REQUESTED",
-                          "NOT_INTERESTED",
-                          "WRONG_PERSON",
-                          "NEUTRAL",
-                          "OUT_OF_OFFICE",
-                          "UNSUBSCRIBE",
-                          "AUTOMATED",
-                          "UNCERTAIN"
-                        ]
-                      },
-                      "q": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 200
-                      },
-                      "from": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 200
-                      },
-                      "to": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 200
-                      },
-                      "subject": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 200
-                      },
-                      "after": {},
-                      "before": {},
-                      "hasAttachment": {
-                        "anyOf": [
-                          {
-                            "type": "boolean"
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "q": {
+                            "type": "string",
+                            "maxLength": 200
                           },
-                          {
+                          "tag": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "label": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "interestStatus": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "verificationStatus": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "ownerId": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "listId": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "openedNoReply": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "lastContactedFrom": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "lastContactedTo": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "customKey": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "customContains": {
+                            "type": "string",
+                            "maxLength": 200
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "view": {
+                            "default": "primary",
                             "type": "string",
                             "enum": [
-                              "true",
-                              "false"
+                              "primary",
+                              "others",
+                              "unread",
+                              "reminders",
+                              "sent",
+                              "scheduled",
+                              "all"
                             ]
+                          },
+                          "accountId": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "campaignId": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "interestStatus": {
+                            "type": "integer",
+                            "minimum": -4,
+                            "maximum": 4
+                          },
+                          "leadLabel": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "category": {
+                            "type": "string",
+                            "enum": [
+                              "INTERESTED",
+                              "MEETING_REQUESTED",
+                              "NOT_INTERESTED",
+                              "WRONG_PERSON",
+                              "NEUTRAL",
+                              "OUT_OF_OFFICE",
+                              "UNSUBSCRIBE",
+                              "AUTOMATED",
+                              "UNCERTAIN"
+                            ]
+                          },
+                          "q": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "from": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "to": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "subject": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "after": {},
+                          "before": {},
+                          "hasAttachment": {
+                            "anyOf": [
+                              {
+                                "type": "boolean"
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "true",
+                                  "false"
+                                ]
+                              }
+                            ]
+                          },
+                          "direction": {
+                            "type": "string",
+                            "enum": [
+                              "received",
+                              "sent"
+                            ]
+                          },
+                          "limit": {
+                            "default": 50,
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100
                           }
-                        ]
-                      },
-                      "direction": {
-                        "type": "string",
-                        "enum": [
-                          "received",
-                          "sent"
-                        ]
-                      },
-                      "limit": {
-                        "default": 50,
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 100
+                        },
+                        "additionalProperties": false
                       }
-                    },
-                    "additionalProperties": false
+                    ]
                   }
                 },
                 "additionalProperties": false

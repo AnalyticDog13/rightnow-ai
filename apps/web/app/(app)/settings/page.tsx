@@ -1,4 +1,9 @@
-import { getAiSettings, getVerifierSettings, getWorkspaceSettings } from "@rightnow/core";
+import {
+  getAiSettings,
+  getVerifierSettings,
+  getWorkspaceSettings,
+  listLabels,
+} from "@rightnow/core";
 import { prisma } from "@rightnow/db";
 import type { Metadata } from "next";
 import { headers } from "next/headers";
@@ -6,6 +11,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AiSettings } from "../../../components/ai-settings";
 import { AuditLog } from "../../../components/audit-log";
+import { LabelsSettings } from "../../../components/labels-settings";
 import { MembersSettings } from "../../../components/members-settings";
 import { SecuritySettings } from "../../../components/security-settings";
 import { VerifierSettings } from "../../../components/verifier-settings";
@@ -73,6 +79,7 @@ export default async function Page({
           invites={invites.map((i) => ({ ...i, expiresAt: i.expiresAt.toISOString() }))}
         />
       )}
+      {info.role !== "VIEWER" && <LabelsSettings labels={await listLabels(prisma, ws)} />}
       <SecuritySettings enabled={me.twoFactorEnabled} />
       {admin && <AiSettings {...(ai ?? {})} />}
       {verifier && <VerifierSettings {...verifier} />}

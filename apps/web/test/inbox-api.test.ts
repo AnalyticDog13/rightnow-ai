@@ -348,6 +348,36 @@ it("notes, macros and views: CRUD, validation, and the macro render fills the fi
   expect((await r.macro!.DELETE!(req("DELETE", "x"), p(macro.id))).status).toBe(200);
 });
 
+it("saved views carry a scope: lead views take lead filters and stay out of the inbox list", async () => {
+  const mk = (body: unknown) => r.views!.POST!(req("POST", "x", body));
+  const eu = await json(
+    await mk({
+      name: "EU leads",
+      scope: "leads",
+      filters: { tag: "eu", verificationStatus: "VERIFIED" },
+    }),
+  );
+  expect(eu).toMatchObject({
+    scope: "leads",
+    filters: { tag: "eu", verificationStatus: "VERIFIED" },
+  });
+  const inbox = await mk({ name: "EU leads", filters: { view: "all" } }); // same name, other scope
+  expect(inbox.status).toBe(200);
+  expect((await mk({ name: "Bad", scope: "leads", filters: { view: "all" } })).status).toBe(400);
+  expect((await mk({ name: "Bad", filters: { tag: "eu" } })).status).toBe(400);
+  expect((await mk({ name: "EU leads", scope: "leads", filters: {} })).status).toBe(409);
+  const names = async (q: string) =>
+    (await json(await r.views!.GET!(req("GET", `views${q}`)))).views.map(
+      (v: { id: string }) => v.id,
+    );
+  expect(await names("?scope=leads")).toEqual([eu.id]);
+  expect(await names("")).not.toContain(eu.id);
+  expect(
+    (await r.view!.PATCH!(req("PATCH", "x", { filters: { view: "all" } }), p(eu.id))).status,
+  ).toBe(400); // a lead view cannot take inbox filters
+  await db.prisma.inboxView.deleteMany({ where: { name: "EU leads" } });
+});
+
 it("workspace isolation on every route", async () => {
   const other = (
     await db.prisma.workspace.create({

@@ -1,7 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  BulkToolbar,
+  Pager,
+  SortTh,
+  usePage,
+  useSelection,
+  useSort,
+} from "../../../components/table-kit";
 import { Button } from "../../../components/ui/button";
+import { Input } from "../../../components/ui/input";
+import { Card } from "../../../components/ui/card";
 import { Label } from "../../../components/ui/label";
 import { call } from "../accounts/api-client";
 import type { Member } from "../leads/bulk-bar";
@@ -23,6 +33,8 @@ export function TasksTab({ members, canEdit }: { members: Member[]; canEdit: boo
   const [assigneeId, setAssigneeId] = useState("");
   const [tasks, setTasks] = useState<Task[] | null>(null);
   const [error, setError] = useState("");
+  const [q, setQ] = useState("");
+  const pick = useSelection();
 
   const load = useCallback(async () => {
     const p = new URLSearchParams({ status });
@@ -31,6 +43,7 @@ export function TasksTab({ members, canEdit }: { members: Member[]; canEdit: boo
     const r = await call(`/api/v1/crm/tasks?${p}`, "GET");
     if (!r.ok) return setError((e) => e || friendly(r));
     setTasks(r.json.tasks as Task[]);
+    pick.clear();
   }, [status, due, assigneeId]);
   useEffect(() => {
     setError(""); // new filters, new list; a reload after an action keeps that action's error
@@ -46,6 +59,38 @@ export function TasksTab({ members, canEdit }: { members: Member[]; canEdit: boo
   }
 
   const name = (id: string | null) => members.find((m) => m.userId === id)?.name ?? "Unassigned";
+  const shown = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return (tasks ?? []).filter(
+      (t) =>
+        !needle || [t.title, t.lead?.email ?? ""].some((v) => v.toLowerCase().includes(needle)),
+    );
+  }, [tasks, q]);
+  const {
+    sorted,
+    sort,
+    toggle: sortBy,
+  } = useSort(shown, {
+    title: (t) => t.title.toLowerCase(),
+    lead: (t) => t.lead?.email.toLowerCase() ?? null,
+    due: (t) => t.dueAt,
+    assignee: (t) => name(t.assigneeId),
+  });
+  const pager = usePage(sorted);
+  const ids = pager.rows.map((t) => t.id);
+  const allOn = ids.length > 0 && ids.every((id) => pick.selected.has(id));
+
+  // the single-task action for every chosen task of the filtered status
+  async function bulk() {
+    const to = status === "AWAITING_APPROVAL" ? "OPEN" : "DONE";
+    setError("");
+    const rs = await Promise.all(
+      [...pick.selected].map((id) => call(`/api/v1/crm/tasks/${id}`, "PATCH", { status: to })),
+    );
+    const bad = rs.find((r) => !r.ok);
+    if (bad) setError(friendly(bad));
+    void load();
+  }
 
   return (
     <div className="flex flex-col gap-3">
@@ -102,43 +147,107 @@ export function TasksTab({ members, canEdit }: { members: Member[]; canEdit: boo
           {error}
         </p>
       )}
-      {tasks && !tasks.length && <p className="text-sm text-muted-foreground">No tasks match.</p>}
-      <ul aria-label="Task list" className="flex flex-col gap-2">
-        {tasks?.map((t) => (
-          <li
-            key={t.id}
-            className="flex flex-wrap items-center gap-3 rounded-md border border-border p-3 text-sm"
-          >
-            <span className="font-medium">{t.title}</span>
-            {t.lead && <span className="text-muted-foreground">{t.lead.email}</span>}
-            <span className="text-muted-foreground">
-              {t.dueAt ? `due ${new Date(t.dueAt).toLocaleString()}` : "no due date"}
-              {t.dueAt && t.status === "OPEN" && new Date(t.dueAt) < new Date() ? " (overdue)" : ""}
-            </span>
-            <span className="text-muted-foreground">{name(t.assigneeId)}</span>
-            {canEdit && t.status === "OPEN" && (
-              <Button
-                variant="outline"
-                className="ml-auto h-8 px-2 text-xs"
-                aria-label={`Complete ${t.title}`}
-                onClick={() => void setTo(t, "DONE")}
-              >
-                Complete
-              </Button>
+      <Input
+        type="search"
+        aria-label="Search tasks"
+        placeholder="Search title or lead"
+        className="max-w-xs"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+      />
+      {canEdit && pick.selected.size > 0 && status !== "DONE" && (
+        <BulkToolbar count={pick.selected.size}>
+          <Button variant="outline" onClick={() => void bulk()}>
+            {status === "AWAITING_APPROVAL" ? "Approve selected" : "Complete selected"}
+          </Button>
+        </BulkToolbar>
+      )}
+      <Card className="overflow-x-auto p-0">
+        <table aria-label="Tasks" className="w-full text-left text-sm">
+          <thead>
+            <tr className="border-b border-border">
+              <th scope="col" className="w-10 p-3">
+                <input
+                  type="checkbox"
+                  aria-label="Select all tasks"
+                  checked={allOn}
+                  disabled={!canEdit || ids.length === 0}
+                  onChange={() => pick.setAll(ids, !allOn)}
+                />
+              </th>
+              <SortTh col="title" sort={sort} onSort={sortBy}>
+                Task
+              </SortTh>
+              <SortTh col="lead" sort={sort} onSort={sortBy}>
+                Lead
+              </SortTh>
+              <SortTh col="due" sort={sort} onSort={sortBy}>
+                Due
+              </SortTh>
+              <SortTh col="assignee" sort={sort} onSort={sortBy}>
+                Assignee
+              </SortTh>
+              <th scope="col" className="p-3 font-medium">
+                Actions
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {pager.rows.map((t) => (
+              <tr key={t.id} className="border-b border-border">
+                <td className="p-3">
+                  <input
+                    type="checkbox"
+                    aria-label={`Select ${t.title}`}
+                    checked={pick.selected.has(t.id)}
+                    disabled={!canEdit}
+                    onChange={() => pick.toggle(t.id)}
+                  />
+                </td>
+                <td className="p-3 font-medium">{t.title}</td>
+                <td className="p-3 text-muted-foreground">{t.lead?.email}</td>
+                <td className="p-3 text-muted-foreground">
+                  {t.dueAt ? new Date(t.dueAt).toLocaleString() : "No due date"}
+                  {t.dueAt && t.status === "OPEN" && new Date(t.dueAt) < new Date()
+                    ? " (overdue)"
+                    : ""}
+                </td>
+                <td className="p-3 text-muted-foreground">{name(t.assigneeId)}</td>
+                <td className="p-3">
+                  {canEdit && t.status === "OPEN" && (
+                    <Button
+                      variant="outline"
+                      className="h-8 px-2 text-xs"
+                      aria-label={`Complete ${t.title}`}
+                      onClick={() => void setTo(t, "DONE")}
+                    >
+                      Complete
+                    </Button>
+                  )}
+                  {canEdit && t.status === "AWAITING_APPROVAL" && (
+                    <Button
+                      variant="outline"
+                      className="h-8 px-2 text-xs"
+                      aria-label={`Approve ${t.title}`}
+                      onClick={() => void setTo(t, "OPEN")}
+                    >
+                      Approve
+                    </Button>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {tasks && shown.length === 0 && (
+              <tr>
+                <td colSpan={6} className="p-6 text-center text-muted-foreground">
+                  No tasks match.
+                </td>
+              </tr>
             )}
-            {canEdit && t.status === "AWAITING_APPROVAL" && (
-              <Button
-                variant="outline"
-                className="ml-auto h-8 px-2 text-xs"
-                aria-label={`Approve ${t.title}`}
-                onClick={() => void setTo(t, "OPEN")}
-              >
-                Approve
-              </Button>
-            )}
-          </li>
-        ))}
-      </ul>
+          </tbody>
+        </table>
+      </Card>
+      <Pager page={pager.page} pages={pager.pages} onPage={pager.setPage} />
     </div>
   );
 }
