@@ -28,10 +28,16 @@ Executed by an agent. The fresh subagent is read-only: told it is a drill, it on
    (a) which task is next and (b) which uncommitted change you believe was interrupted, and what you
    would do first."
 5. Compare the answer with the step 1 record.
-6. Cleanup: revert only the marker edit (`git diff` first, then undo that one line), confirm
-   `git status --short` equals the step 1 record minus the marker, stop any `node`/`next` process the
-   drill started, and end orphaned `postgres.exe` whose command line contains `embedded-postgres` and
-   this repo, except the dev database.
+6. Cleanup, deterministic:
+   - Marker: run `git diff <file>`, then delete exactly the marker line with an editor or `sed -i '/DRILL-MARKER/d' <file>`.
+     Never `git checkout` or `git restore` a whole file: other uncommitted work may be real.
+   - Confirm `git status --short` equals the step 1 record minus the marker.
+   - Stop the `node`/`next` processes the drill started (the taskkill in step 3 covers the tree).
+   - Never kill anything listening on 5433 (the dev database). Kill a `postgres.exe` only if its parent
+     process is dead, or its data dir is a temp dir the drill itself created (record it when created).
+
+The drill must not start its own Postgres on 5433. If none is running, start one on another port and point
+`DATABASE_URL` at it for the drill; if it must use 5433, record its data dir and stop exactly that one.
 
 ## Results
 
@@ -43,3 +49,5 @@ Notes (2026-10-24): `npm run dev` was killed with `taskkill /PID <scripts/dev.mj
 before and were closed after. The marker named the next-after task (P8-T02) on purpose, so the answer also shows the
 agent does not mistake a marker for the interrupted task. The dev database on 5433 was not running at the start, so
 the drill started a throwaway embedded Postgres there and left it up.
+
+The subagent prompt added drill and read-only wording on top of "keep going" (a deliberate safety deviation).
