@@ -825,12 +825,12 @@
    "id": "P7-T07a",
    "phase": 7,
    "title": "Rate limits in Postgres, trusted-proxy IP, strict CSP + security headers, test-connection limit + banner trim",
-   "status": "todo",
+   "status": "done",
    "deps": [
     "P7-T06b"
    ],
    "model": "opus",
-   "commit": null,
+   "commit": "5c9f564",
    "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md (incl. Revision 2); tests listed there pass"
   },
   {
