@@ -21,7 +21,10 @@ import { applyInbound } from "./stoprules";
 
 export type SyncDeps = {
   providerFor: (a: EmailAccount) => Promise<MailProvider>;
-  aiClassify?: AiClassifier;
+  /** The workspace's AI classifier (D47); memoized per run. */
+  aiClassifyFor?: (ws: string) => Promise<AiClassifier | undefined>;
+  /** Test-only: the sync lease length, default 10 min. */
+  leaseMs?: number;
   env: { SYNC_POLL_SEC: number; SYNC_MAX_STALENESS_SEC: number };
   /** Test-only (M9): provider pages per run, default 10. */
   maxPages?: number;
@@ -46,6 +49,7 @@ export type SyncProgress = {
 };
 
 const LEASE_MS = 10 * 60_000;
+const OOO_MAX_MS = 90 * 86_400_000;
 const MAX_PAGES = 10;
 const PARALLEL = 4;
 const ESCALATE_AT = 5;
@@ -63,7 +67,6 @@ class IngestFailed extends Error {
   }
 }
 
-
 /**
  * One sync run of a mailbox under a row lease (`syncLeaseId`, 10 min, renewed after every page). Branch order (C1):
  * an import in progress resumes; no cursor starts a HISTORICAL import; otherwise incremental, and an expired cursor
@@ -79,7 +82,7 @@ export async function reconcileAccount(
 ): Promise<SyncResult> {
   const lease = randomUUID();
   const start = clock.now();
-  const leaseUntil = () => new Date(clock.now().getTime() + LEASE_MS);
+  const leaseUntil = () => new Date(clock.now().getTime() + (deps.leaseMs ?? LEASE_MS));
   const got = await prisma.emailAccount.updateMany({
     where: {
       id: accountId,
@@ -108,18 +111,35 @@ export async function reconcileAccount(
   const stats = { mode: "INCREMENTAL" as SyncMode, fetched: 0, note: null as string | null };
   const limit = deps.pageSize ? { limit: deps.pageSize } : {};
 
+  let aiFor: Promise<AiClassifier | undefined> | undefined;
+  const ai = () =>
+    (aiFor ??= (deps.aiClassifyFor?.(acct.workspaceId) ?? Promise.resolve(undefined)).catch(
+      () => undefined,
+    ));
   const ingestAll = async (msgs: RemoteMessage[], historical: boolean) => {
     for (const raw of msgs) {
       if (deps.signal?.aborted) throw new Stopped();
       const m = sanitizeRemote(raw, start);
       const tag = `msg=${m.providerMessageId || m.rfcMessageId || syntheticMessageId(m)}`;
       try {
-        await ingestOne(prisma, clock, acct, m, historical, deps.aiClassify, { random: deps.random });
+        await ingestOne(prisma, clock, acct, m, historical, await ai(), {
+          random: deps.random,
+          renew: () => save({}),
+        });
       } catch (e) {
+        if (e instanceof LeaseLost) throw e;
         if (!(await failedTwice(tag))) throw new IngestFailed(`${codeOf(e)} ${tag}`);
         // 3rd run failing on it (PA #1): store the headers only, so the cursor moves and its stop rules still run
         // the warm-up check still sees the original ids (a placeholder has no Message-ID to match)
-        await ingestOne(prisma, clock, acct, { ...m, rfcMessageId: null, text: null, html: null, attachments: [] }, historical, undefined, { random: deps.random, original: m });
+        await ingestOne(
+          prisma,
+          clock,
+          acct,
+          { ...m, rfcMessageId: null, text: null, html: null, attachments: [] },
+          historical,
+          undefined,
+          { random: deps.random, original: m },
+        );
         stats.note = `placeholder ${codeOf(e)} ${tag}`;
         console.error(`sync: account ${acct.id} stored a header-only placeholder (${stats.note})`);
       }
@@ -336,27 +356,51 @@ async function ingestOne(
   m: RemoteMessage,
   historical: boolean,
   ai?: AiClassifier,
-  o: { random?: () => number; original?: RemoteMessage } = {},
+  o: { random?: () => number; original?: RemoteMessage; renew?: () => Promise<void> } = {},
 ) {
   const direction = m.from.email.toLowerCase() === acct.email.toLowerCase() ? "OUT" : "IN";
   let c = classify(m, { now: m.date, direction });
   // warm-up / placement traffic (D36, Rev 2 I1) is stored nowhere else: before the AI hook, matching and stop rules
-  if (await prisma.$transaction((tx) => warmupReceipt(tx, clock, acct, o.original ?? m, c, o.random))) return;
+  if (
+    await prisma.$transaction((tx) => warmupReceipt(tx, clock, acct, o.original ?? m, c, o.random))
+  )
+    return;
   const rfc = m.rfcMessageId ?? syntheticMessageId(m);
   const stored = () =>
     prisma.message.findUnique({
       where: { accountId_rfcMessageId: { accountId: acct.id, rfcMessageId: rfc } },
       select: { id: true },
     });
-  if (ai && c.kind === "REPLY" && c.category === "UNCERTAIN" && !(await stored())) {
+  const want =
+    c.kind === "REPLY" && c.category === "UNCERTAIN"
+      ? "reply"
+      : c.kind === "AUTO_REPLY" && c.category === "OUT_OF_OFFICE" && !c.oooUntil
+        ? "ooo"
+        : null;
+  if (ai && want && !(await stored())) {
     // raced, not trusted to honour the signal: a hung classifier must not hold the run
     let timer: NodeJS.Timeout | undefined;
-    const category = await Promise.race([
-      ai(m, AbortSignal.timeout(AI_TIMEOUT_MS)).catch(() => null),
-      new Promise<null>((r) => (timer = setTimeout(() => r(null), AI_TIMEOUT_MS))),
+    const r = await Promise.race([
+      ai(m, AbortSignal.timeout(AI_TIMEOUT_MS), want).catch(() => null),
+      new Promise<null>((res) => (timer = setTimeout(() => res(null), AI_TIMEOUT_MS))),
     ]);
     clearTimeout(timer);
-    if (category) c = { kind: "REPLY", category, source: "AI" };
+    await o.renew?.(); // the model call took seconds: keep the lease (a lost one stops the run)
+    if (c.kind === "REPLY" && r && (r.category || r.label))
+      c = {
+        kind: "REPLY",
+        category: r.category ?? c.category,
+        source: r.category && r.category !== "UNCERTAIN" ? "AI" : "RULE",
+        ...(r.label && { label: r.label }),
+      };
+    // a smart-pause date is used only when it is ahead of the message and within 90 days (PS-AI-10)
+    else if (
+      c.kind === "AUTO_REPLY" &&
+      r?.oooUntil &&
+      r.oooUntil > m.date &&
+      r.oooUntil.getTime() - m.date.getTime() <= OOO_MAX_MS
+    )
+      c = { ...c, oooUntil: r.oooUntil };
   }
   // withTxRetry: a P2034 from a twin ingest in another mailbox reruns the whole transaction (D26 counters)
   const once = () =>

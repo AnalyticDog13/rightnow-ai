@@ -89,3 +89,8 @@ export * from "./webhooks/deliver";
 export * from "./webhooks/service";
 export * from "./retention";
 export * from "./jobs";
+export * from "./ai/settings";
+export * from "./ai/client";
+export * from "./ai/suggestions";
+export * from "./ai/classifier";
+export * from "./ai/prompts";

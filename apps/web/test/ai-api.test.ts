@@ -1,0 +1,228 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createTestDb } from "@rightnow/db/test-db";
+import { createFirstOwner } from "../lib/setup";
+
+const TOKEN = "t".repeat(20);
+const PASSWORD = "correct horse battery";
+const ORIGIN = "http://localhost:3100";
+let db: Awaited<ReturnType<typeof createTestDb>>;
+let workspaceId: string;
+let cookie: string;
+let settings: typeof import("../app/api/v1/settings/ai/route");
+let list: typeof import("../app/api/v1/ai/suggestions/route");
+let one: typeof import("../app/api/v1/ai/suggestions/[id]/route");
+let feedback: typeof import("../app/api/v1/inbox/messages/[id]/ai-feedback/route");
+
+const req = (
+  method: string,
+  url: string,
+  body?: unknown,
+  headers: Record<string, string> = { cookie },
+) =>
+  new Request(`${ORIGIN}/api/v1/${url}`, {
+    method,
+    headers: { origin: ORIGIN, "content-type": "application/json", ...headers },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+const p = (id: string) => ({ params: Promise.resolve({ id }) });
+const setRole = (role: string) =>
+  db.prisma.member.updateMany({ where: { workspaceId }, data: { role } });
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- test helper: bodies are asserted field by field
+const json = async (res: Response) => (await res.json()) as Record<string, any>;
+const CFG = { baseUrl: "https://93.184.216.34/v1", apiKey: "sk-secret-xyz", model: "gpt-x" };
+const put = (b: unknown, h?: Record<string, string>) =>
+  settings.PUT(req("PUT", "settings/ai", b, h));
+
+beforeAll(async () => {
+  db = await createTestDb();
+  Object.assign(process.env, {
+    MODE: "local",
+    MAIL_PROVIDER_FAKE: "1",
+    FAKE_MAIL_DIR: mkdtempSync(join(tmpdir(), "rn-web-ai-")),
+    DATABASE_URL: db.url,
+    APP_URL: ORIGIN,
+    ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64"),
+    BETTER_AUTH_SECRET: "x".repeat(40),
+    SETUP_TOKEN: TOKEN,
+  });
+  const { auth } = await import("../lib/auth");
+  settings = await import("../app/api/v1/settings/ai/route");
+  list = await import("../app/api/v1/ai/suggestions/route");
+  one = await import("../app/api/v1/ai/suggestions/[id]/route");
+  feedback = await import("../app/api/v1/inbox/messages/[id]/ai-feedback/route");
+  ({ workspaceId } = await createFirstOwner(
+    db.prisma,
+    { name: "O", email: "owner@x.io", password: PASSWORD, workspaceName: "Acme", token: TOKEN },
+    TOKEN,
+  ));
+  const { headers } = await auth.api.signInEmail({
+    body: { email: "owner@x.io", password: PASSWORD },
+    returnHeaders: true,
+  });
+  cookie = headers
+    .getSetCookie()
+    .map((c) => c.split(";")[0])
+    .join("; ");
+});
+afterAll(() => db.drop());
+
+describe("settings/ai", () => {
+  it("is ADMIN and session-only: MEMBER 403, an API key 401", async () => {
+    const { createApiKey } = await import("@rightnow/core");
+    const key = (await createApiKey(db.prisma, workspaceId, "all", ["all:all"])).token;
+    const bearer = { authorization: `Bearer ${key}` };
+    expect((await put(CFG, bearer)).status).toBe(401);
+    expect((await settings.GET(req("GET", "settings/ai", undefined, bearer))).status).toBe(401);
+    await setRole("MEMBER");
+    expect((await put(CFG)).status).toBe(403);
+    expect((await settings.GET(req("GET", "settings/ai"))).status).toBe(403);
+    await setRole("OWNER");
+  });
+
+  it("stores the key encrypted and never returns it; a changed host needs a new key", async () => {
+    expect(await json(await settings.GET(req("GET", "settings/ai")))).toEqual({ settings: null });
+    expect((await put({ ...CFG, classifierEnabled: true, inputPricePerMTok: 1.5 })).status).toBe(
+      200,
+    );
+    const got = await json(await settings.GET(req("GET", "settings/ai")));
+    expect(got.settings).toMatchObject({
+      baseUrl: CFG.baseUrl,
+      model: "gpt-x",
+      hasApiKey: true,
+      classifierEnabled: true,
+      inputPricePerMTok: 1.5,
+    });
+    expect(JSON.stringify(got)).not.toContain("sk-secret");
+    const raw = (await db.prisma.workspace.findUniqueOrThrow({ where: { id: workspaceId } }))
+      .aiConfigEnc!;
+    expect(raw).not.toContain("sk-secret");
+    // key omitted: kept
+    expect((await put({ baseUrl: CFG.baseUrl, model: "gpt-y" })).status).toBe(200);
+    const moved = await put({ baseUrl: "https://93.184.216.35/v1", model: "gpt-y" });
+    expect(moved.status).toBe(400);
+    expect(await json(moved)).toMatchObject({ error: "api_key_required" });
+    expect((await put({ ...CFG, bogus: 1 })).status).toBe(400);
+  });
+
+  it("refuses a private or metadata base URL", async () => {
+    expect(await json(await put({ ...CFG, baseUrl: "http://10.0.0.5/v1" }))).toMatchObject({
+      error: "ai_host_not_public",
+    });
+    expect((await put({ ...CFG, baseUrl: "http://169.254.169.254/v1" })).status).toBe(400);
+    expect((await put({ ...CFG, baseUrl: "http://localhost:11434/v1" })).status).toBe(400);
+  });
+});
+
+describe("suggestions and feedback", () => {
+  async function seed() {
+    const P = db.prisma;
+    const lead = await P.lead.create({ data: { workspaceId, email: `l${Date.now()}@lead.test` } });
+    const sug = (kind: "PERSONALIZATION" | "DRAFT", text: string) =>
+      P.aiSuggestion.create({ data: { workspaceId, kind, text, leadId: lead.id } });
+    return { lead, sug };
+  }
+
+  it("lists, approves as MEMBER (personalization copied once, 409 after), a VIEWER cannot", async () => {
+    const { lead, sug } = await seed();
+    const a = await sug("PERSONALIZATION", "Nice post");
+    const b = await sug("PERSONALIZATION", "Other");
+    const got = await json(
+      await list.GET(req("GET", `ai/suggestions?leadId=${lead.id}&status=PENDING`)),
+    );
+    expect(got.suggestions.map((s: { id: string }) => s.id).sort()).toEqual([a.id, b.id].sort());
+    expect((await list.GET(req("GET", "ai/suggestions?bogus=1"))).status).toBe(400);
+
+    await setRole("VIEWER");
+    expect((await one.PATCH(req("PATCH", "x", { status: "APPROVED" }), p(a.id))).status).toBe(403);
+    expect((await list.GET(req("GET", "ai/suggestions"))).status).toBe(200);
+    await setRole("MEMBER");
+    const ok = await one.PATCH(req("PATCH", "x", { status: "APPROVED" }), p(a.id));
+    expect(ok.status).toBe(200);
+    expect(await json(ok)).toMatchObject({ text: "Nice post", suggestion: { status: "APPROVED" } });
+    expect(
+      (await db.prisma.lead.findUniqueOrThrow({ where: { id: lead.id } })).personalization,
+    ).toBe("Nice post");
+    const again = await one.PATCH(req("PATCH", "x", { status: "REJECTED" }), p(a.id));
+    expect(again.status).toBe(409);
+    expect(await json(again)).toMatchObject({ error: "already_reviewed" });
+    expect((await one.PATCH(req("PATCH", "x", { status: "REJECTED" }), p(b.id))).status).toBe(200);
+    expect(
+      (await db.prisma.lead.findUniqueOrThrow({ where: { id: lead.id } })).personalization,
+    ).toBe("Nice post");
+    expect((await one.PATCH(req("PATCH", "x", { status: "NOPE" }), p(b.id))).status).toBe(400);
+    expect((await one.PATCH(req("PATCH", "x", { status: "APPROVED" }), p("missing"))).status).toBe(
+      404,
+    );
+    await setRole("OWNER");
+  });
+
+  it("an API key needs ai:write to review and inbox:write to give feedback", async () => {
+    const { createApiKey } = await import("@rightnow/core");
+    const key = async (scopes: string[]) => ({
+      authorization: `Bearer ${(await createApiKey(db.prisma, workspaceId, scopes.join(","), scopes)).token}`,
+    });
+    const { sug } = await seed();
+    const s = await sug("DRAFT", "Hi");
+    expect(
+      (await one.PATCH(req("PATCH", "x", { status: "APPROVED" }, await key(["ai:read"])), p(s.id)))
+        .status,
+    ).toBe(403);
+    expect(
+      (await one.PATCH(req("PATCH", "x", { status: "APPROVED" }, await key(["ai:write"])), p(s.id)))
+        .status,
+    ).toBe(200);
+    expect(
+      (await list.GET(req("GET", "ai/suggestions", undefined, await key(["ai:read"])))).status,
+    ).toBe(200);
+  });
+
+  it("thumbs: 1 and -1 are stored and audited; anything else is 400; a VIEWER cannot", async () => {
+    const P = db.prisma;
+    const a = await P.emailAccount.create({
+      data: {
+        workspaceId,
+        provider: "SMTP",
+        email: "fb@send.test",
+        fromName: "F",
+        firstName: "F",
+        lastName: "B",
+        capTier: "SMTP",
+        providerCap: 100,
+      },
+    });
+    const t = await P.thread.create({
+      data: { workspaceId, accountId: a.id, subject: "S", lastMessageAt: new Date() },
+    });
+    const m = await P.message.create({
+      data: {
+        workspaceId,
+        accountId: a.id,
+        threadId: t.id,
+        rfcMessageId: "<fb@x>",
+        direction: "IN",
+        folder: "INBOX",
+        fromEmail: "x@y.test",
+        to: [a.email],
+        subject: "S",
+        sentAt: new Date(),
+        kind: "REPLY",
+        category: "INTERESTED",
+      },
+    });
+    const vote = (v: unknown) => feedback.POST(req("POST", "x", { vote: v }), p(m.id));
+    expect((await vote(-1)).status).toBe(200);
+    expect((await P.message.findUniqueOrThrow({ where: { id: m.id } })).aiFeedback).toBe(-1);
+    expect((await vote(1)).status).toBe(200);
+    expect(
+      await P.auditLog.count({ where: { workspaceId, action: "ai.feedback", target: m.id } }),
+    ).toBe(2);
+    expect((await vote(2)).status).toBe(400);
+    expect((await feedback.POST(req("POST", "x", { vote: 1 }), p("missing"))).status).toBe(404);
+    await setRole("VIEWER");
+    expect((await vote(1)).status).toBe(403);
+    await setRole("OWNER");
+  });
+});

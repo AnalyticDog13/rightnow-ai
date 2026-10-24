@@ -157,6 +157,8 @@ An official SDK, a CLI and an MCP server are not provided (PS-AUTO-14); generate
 | GET | `/accounts/{id}/warmup/stats` | VIEWER | `accounts:read` |
 | POST | `/accounts/bulk` | MEMBER | `accounts:update` |
 | POST | `/accounts/test-connection` | ADMIN | session only |
+| GET | `/ai/suggestions` | VIEWER | `ai:read` |
+| PATCH | `/ai/suggestions/{id}` | MEMBER | `ai:write` |
 | GET | `/analytics` | VIEWER | `analytics:read` |
 | GET | `/analytics/accounts` | VIEWER | `analytics:read` |
 | GET | `/analytics/activity` | VIEWER | `analytics:read` |
@@ -239,6 +241,7 @@ An official SDK, a CLI and an MCP server are not provided (PS-AUTO-14); generate
 | PATCH | `/inbox/macros/{id}` | MEMBER | `inbox:write` |
 | DELETE | `/inbox/macros/{id}` | MEMBER | `inbox:write` |
 | POST | `/inbox/macros/{id}/render` | VIEWER | `inbox:read` |
+| POST | `/inbox/messages/{id}/ai-feedback` | MEMBER | `inbox:write` |
 | GET | `/inbox/notes` | VIEWER | `inbox:read` |
 | POST | `/inbox/notes` | MEMBER | `inbox:write` |
 | PATCH | `/inbox/notes/{id}` | MEMBER | `inbox:write` |
@@ -295,6 +298,8 @@ An official SDK, a CLI and an MCP server are not provided (PS-AUTO-14); generate
 | POST | `/scheduled-messages/{id}/cancel` | MEMBER | `campaigns:update` |
 | POST | `/scheduled-messages/{id}/release` | ADMIN | session only |
 | POST | `/scheduled-messages/{id}/retry` | MEMBER | `campaigns:update` |
+| GET | `/settings/ai` | ADMIN | session only |
+| PUT | `/settings/ai` | ADMIN | session only |
 | GET | `/settings/verifier` | ADMIN | session only |
 | PUT | `/settings/verifier` | ADMIN | session only |
 | GET | `/settings/workspace` | ADMIN | session only |

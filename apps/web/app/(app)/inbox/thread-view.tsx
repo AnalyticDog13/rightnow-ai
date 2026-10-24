@@ -1,6 +1,6 @@
 "use client";
 
-import { Paperclip } from "lucide-react";
+import { Paperclip, ThumbsDown, ThumbsUp } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "../../../components/ui/button";
 import { call, errorText } from "../accounts/api-client";
@@ -115,7 +115,11 @@ export function ThreadView({
     );
   const lead = d.lead;
   return (
-    <div role="region" aria-label="Conversation" className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_18rem]">
+    <div
+      role="region"
+      aria-label="Conversation"
+      className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_18rem]"
+    >
       <div className="flex min-w-0 flex-col gap-4">
         <div className="flex flex-col gap-3">
           <h2 className="text-lg font-semibold">{d.subject}</h2>
@@ -146,7 +150,14 @@ export function ThreadView({
                 </label>
               )}
               <label className="flex flex-col gap-1 text-xs">
-                Category
+                <span>
+                  Category
+                  {d.categorySource === "AI" && (
+                    <span className="ml-1 rounded bg-muted px-1 text-[10px] font-medium uppercase">
+                      AI
+                    </span>
+                  )}
+                </span>
                 <select
                   className={sel}
                   value={d.category ?? ""}
@@ -279,6 +290,33 @@ export function ThreadView({
               </span>
             </header>
             <MessageFrame html={m.html} text={m.text} />
+            {canEdit && d.categorySource === "AI" && m.direction === "IN" && m.category && (
+              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                AI tagged this {CATEGORIES[m.category]?.toLowerCase() ?? "reply"}. Right?
+                {([1, -1] as const).map((vote) => (
+                  <Button
+                    key={vote}
+                    variant="outline"
+                    aria-label={vote === 1 ? "Good AI tag" : "Wrong AI tag"}
+                    aria-pressed={m.aiFeedback === vote}
+                    onClick={() =>
+                      void act(
+                        `/api/v1/inbox/messages/${m.id}/ai-feedback`,
+                        "POST",
+                        { vote },
+                        "Thanks for the feedback.",
+                      )
+                    }
+                  >
+                    {vote === 1 ? (
+                      <ThumbsUp className="size-3" />
+                    ) : (
+                      <ThumbsDown className="size-3" />
+                    )}
+                  </Button>
+                ))}
+              </div>
+            )}
             {m.attachments.length > 0 && (
               <ul className="flex flex-wrap gap-2 text-sm">
                 {m.attachments.map((a) => (

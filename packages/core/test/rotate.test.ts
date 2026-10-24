@@ -45,6 +45,7 @@ test("A to B re-encrypts, keeps nulls, is idempotent; a value under a third key 
     "Workspace.verifierConfigEnc": 0,
     "Webhook.secretEnc": 0,
     "Webhook.headersEnc": 0,
+    "Workspace.aiConfigEnc": 0,
   });
   const acc = async (id: string) =>
     (await db.prisma.emailAccount.findUniqueOrThrow({ where: { id } })).credentialsEnc;
@@ -60,6 +61,7 @@ test("A to B re-encrypts, keeps nulls, is idempotent; a value under a third key 
     "Workspace.verifierConfigEnc": 0,
     "Webhook.secretEnc": 0,
     "Webhook.headersEnc": 0,
+    "Workspace.aiConfigEnc": 0,
   });
 
   // two rows back on A plus one under a third key: the column is left exactly as it was
@@ -90,6 +92,16 @@ test("Workspace.verifierConfigEnc is rotated", async () => {
   await rotateColumns(db.prisma, [{ model: "Workspace", field: "verifierConfigEnc" }], A, B);
   const got = await db.prisma.workspace.findUniqueOrThrow({ where: { id: w.id } });
   expect(decrypt(got.verifierConfigEnc!, B)).toBe("{}");
+});
+
+test("Workspace.aiConfigEnc is rotated", async () => {
+  const w = await db.prisma.workspace.create({
+    data: { name: "AI", slug: "w-rot-ai", aiConfigEnc: encrypt("{}", A) },
+  });
+  expect(ENCRYPTED_COLUMNS).toContainEqual({ model: "Workspace", field: "aiConfigEnc" });
+  await rotateColumns(db.prisma, [{ model: "Workspace", field: "aiConfigEnc" }], A, B);
+  const got = await db.prisma.workspace.findUniqueOrThrow({ where: { id: w.id } });
+  expect(decrypt(got.aiConfigEnc!, B)).toBe("{}");
 });
 
 test("Webhook.secretEnc and headersEnc are rotated", async () => {

@@ -40,6 +40,8 @@ model Workspace {
   automationRules      AutomationRule[]
   automationRuns       AutomationRun[]
   webhooks             Webhook[]
+  aiSuggestions        AiSuggestion[]
+  aiCalls              AiCall[]
   webhookDeliveries    WebhookDelivery[]
   backgroundJobs       BackgroundJob[]
   timezone             String                @default("UTC")
@@ -52,6 +54,7 @@ model Workspace {
   healthSlowdownPct    Int                   @default(50) // 10-90 (D34)
   verifierKind         String                @default("mx") // "mx" | "http" (D38)
   verifierConfigEnc    String? // encrypted {url, apiKey, statusPath}
+  aiConfigEnc          String? // encrypted AiConfig {baseUrl, apiKey, model, prices?, classifierEnabled} (D47)
   verifierLastError    String? // short reason code of the last verifier failure, never a body or key
   verifierLastErrorAt  DateTime?
   inactivityDays       Int                   @default(30) // 7 | 14 | 30 | 60 (D33)
@@ -477,6 +480,7 @@ model Lead {
   opportunities        Opportunity[]
   tasks                Task[]
   webhookDeliveries    WebhookDelivery[]
+  aiSuggestions        AiSuggestion[]
 
   @@index([workspaceId, createdAt, id])
   @@index([workspaceId, companyDomain])
@@ -492,6 +496,7 @@ model LeadLabel {
   color         String
   positive      Boolean   @default(false)
   aiDescription String?
+  aiSelectable  Boolean   @default(false) // the AI classifier may choose this label (PS-INBOX-20)
 
   @@unique([workspaceId, name])
 }
@@ -949,6 +954,7 @@ model Message {
   bounceType         BounceType?
   bounceRecipient    String?
   oooUntil           DateTime?
+  aiFeedback         Int? // +1 / -1 thumbs on an AI-tagged message (PS-AI-04)
   scheduledMessageId String?
   outsideApp         Boolean          @default(false)
   leadId             String?
@@ -1371,4 +1377,64 @@ model BackgroundJob {
   finishedAt  DateTime?
 
   @@index([status, createdAt])
+}
+
+enum AiSuggestionKind {
+  DRAFT
+  PERSONALIZATION
+  FOLLOWUP
+  REPLY_DRAFT
+  SUMMARY
+  SCORE
+  RECOMMENDATION
+  CAMPAIGN_ANALYSIS
+}
+
+enum SuggestionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// Model output lives here until a human approves it (D47); reviewSuggestion is the only writer of `status`.
+model AiSuggestion {
+  id          String           @id @default(cuid())
+  workspaceId String
+  workspace   Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  kind        AiSuggestionKind
+  status      SuggestionStatus @default(PENDING)
+  text        String
+  data        Json             @default("{}")
+  leadId      String?
+  lead        Lead?            @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  threadId    String?
+  campaignId  String?
+  stepId      String?
+  jobId       String?
+  reviewerId  String?
+  reviewedAt  DateTime?
+  createdAt   DateTime         @default(now())
+
+  @@unique([jobId, leadId])
+  @@index([workspaceId, status, kind])
+  @@index([threadId])
+}
+
+// One row per model call; the prompt is stored as a hash only (PS-AI-11).
+model AiCall {
+  id           String    @id @default(cuid())
+  workspaceId  String
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  feature      String
+  model        String
+  promptHash   String
+  inputTokens  Int
+  outputTokens Int
+  costMicros   BigInt?
+  status       String
+  errorCode    String?
+  suggestionId String?
+  createdAt    DateTime  @default(now())
+
+  @@index([workspaceId, createdAt])
 }

@@ -1,4 +1,5 @@
 import {
+  aiClassifierFor,
   createProvider,
   getEnv,
   syncDue,
@@ -17,7 +18,9 @@ export async function mailSync(
   providerFor: SyncDeps["providerFor"] = async (a) => createProvider(a, { prisma, clock }),
   signal?: AbortSignal,
 ) {
-  return syncDue(prisma, clock, { providerFor, env }, { maxMs: 50_000, signal });
+  const allowPrivate = getEnv().ALLOW_PRIVATE_HTTP_HOSTS === "1";
+  const aiClassifyFor = (ws: string) => aiClassifierFor(prisma, clock, ws, { allowPrivate });
+  return syncDue(prisma, clock, { providerFor, env, aiClassifyFor }, { maxMs: 50_000, signal });
 }
 
 export const mailSyncJob: JobDef = {

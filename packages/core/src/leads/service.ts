@@ -105,7 +105,7 @@ async function assertNoSendInFlight(tx: Tx, ws: string, leadIds: string[]) {
 }
 
 /** D43: one LABEL_ADDED Event per label the write added. */
-async function labelsAdded(
+export async function labelsAdded(
   tx: Tx,
   ws: string,
   leadId: string,
@@ -452,6 +452,12 @@ export async function gdprDeleteLead(
       data: { reason: "GDPR_ERASURE" },
     });
     // Mail: the lead's threads (cascading messages and attachments), anything they sent, and their events' lead link
+    const leadThreads = (
+      await tx.thread.findMany({
+        where: { workspaceId: ws, leadId: { in: ids } },
+        select: { id: true },
+      })
+    ).map((t) => t.id);
     await tx.thread.deleteMany({ where: { workspaceId: ws, leadId: { in: ids } } }); // cascades the threads' own notes
     await tx.note.deleteMany({ where: { workspaceId: ws, leadId: { in: ids } } });
     // FR I2: also mail to the address (a cc, an "Others" thread from before the import), DSNs naming it, and threads left empty
@@ -469,6 +475,13 @@ export async function gdprDeleteLead(
     const threads = uniq(
       (await tx.message.findMany({ where, select: { threadId: true } })).map((m) => m.threadId),
     );
+    // R17: AI drafts and summaries on those threads (null leadId) hold the conversation; the lead's own cascade
+    await tx.aiSuggestion.deleteMany({
+      where: {
+        workspaceId: ws,
+        OR: [{ leadId: { in: ids } }, { threadId: { in: [...leadThreads, ...threads] } }],
+      },
+    });
     await tx.message.deleteMany({ where });
     await tx.thread.deleteMany({ where: { id: { in: threads }, messages: { none: {} } } });
     // events whose meta (a bounce recipient, a clicked URL) holds the address: deleted when the lead's, else redacted
@@ -713,6 +726,7 @@ export const labelInput = z.strictObject({
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
   positive: z.boolean(),
   aiDescription: z.string().max(1000).nullable(),
+  aiSelectable: z.boolean(), // the AI reply classifier may choose it (PS-INBOX-20)
 });
 
 export const listLabels = (prisma: Db, ws: string): Promise<LeadLabel[]> =>
@@ -726,7 +740,9 @@ const reserved = (name?: string) => {
 };
 
 export async function createLabel(prisma: Db, ws: string, actorId: Actor, input: unknown) {
-  const d = labelInput.partial({ positive: true, aiDescription: true }).parse(input);
+  const d = labelInput
+    .partial({ positive: true, aiDescription: true, aiSelectable: true })
+    .parse(input);
   reserved(d.name);
   try {
     return await prisma.$transaction(async (tx) => {

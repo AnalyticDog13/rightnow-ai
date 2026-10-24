@@ -13,7 +13,7 @@ export const POST = route(
   {
     auth: "session-or-apikey",
     scope: "leads:create",
-    body: labelInput.partial({ positive: true, aiDescription: true }),
+    body: labelInput.partial({ positive: true, aiDescription: true, aiSelectable: true }),
   },
   (c) => run(() => createLabel(prisma, c.workspaceId, c.userId, c.body)),
 );

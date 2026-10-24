@@ -14,6 +14,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vite
 import { resumeAccount } from "../src/accounts/service";
 import { fixedClock } from "../src/clock";
 import { evaluateHealth } from "../src/deliverability/health";
+import type { AiClassifier } from "../src/mail/classify";
 import { reconcileAccount, syncDue, type SyncDeps } from "../src/mail/sync";
 import { seedCampaign } from "./campaign-fixture";
 
@@ -620,12 +621,13 @@ describe("reconcileAccount", () => {
     await run(clock, A);
     await reply(A, "a@x.test", "Hmm.");
     let calls = 0;
-    const aiClassify: SyncDeps["aiClassify"] = async () => (calls++, "INTERESTED");
+    const ai: AiClassifier = async () => (calls++, { category: "INTERESTED" });
+    const aiClassify = { aiClassifyFor: async () => ai };
     clock.advance(60_000);
-    await run(clock, A, deps({ aiClassify }));
+    await run(clock, A, deps(aiClassify));
     await fake(A).expireCursors(); // the FULL reconcile lists the same message again
     clock.advance(60_000);
-    expect(await run(clock, A, deps({ aiClassify }))).toBe("caught_up");
+    expect(await run(clock, A, deps(aiClassify))).toBe("caught_up");
     expect(calls).toBe(1);
   });
 
@@ -634,10 +636,10 @@ describe("reconcileAccount", () => {
     const clock = fixedClock(T);
     await run(clock, A);
     await reply(A, "a@x.test", "Hmm.");
-    const aiClassify: SyncDeps["aiClassify"] = () => new Promise(() => {}); // never settles
+    const aiClassify = { aiClassifyFor: async () => (() => new Promise(() => {})) as AiClassifier }; // never settles
     clock.advance(60_000);
     const t0 = Date.now();
-    expect(await run(clock, A, deps({ aiClassify }))).toBe("caught_up");
+    expect(await run(clock, A, deps(aiClassify))).toBe("caught_up");
     expect(Date.now() - t0).toBeGreaterThanOrEqual(9_900);
     expect(await P().message.findFirstOrThrow({ where: { accountId: A.id } })).toMatchObject({
       category: "UNCERTAIN",
@@ -651,13 +653,14 @@ describe("reconcileAccount", () => {
     await reply(A, "a@x.test", "Hmm.");
     await reply(A, "b@x.test", "Hmm?");
     let calls = 0;
-    const aiClassify: SyncDeps["aiClassify"] = async (m) => {
+    const ai: AiClassifier = async (m) => {
       calls++;
       if (m.text?.includes("?")) throw new Error("model down");
-      return "INTERESTED";
+      return { category: "INTERESTED" };
     };
+    const aiClassify = { aiClassifyFor: async () => ai };
     clock.advance(60_000);
-    expect(await run(clock, A, deps({ aiClassify }))).toBe("caught_up");
+    expect(await run(clock, A, deps(aiClassify))).toBe("caught_up");
     expect(calls).toBe(2);
     const cats = await P().message.findMany({
       where: { accountId: A.id },

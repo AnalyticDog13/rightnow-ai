@@ -74,6 +74,7 @@ export const API_SCOPES = [
     "jobs",
     "audit",
     "workspace",
+    "ai",
   ].flatMap((r) => [`${r}:read`, `${r}:write`]),
   "all:all",
 ] as const;

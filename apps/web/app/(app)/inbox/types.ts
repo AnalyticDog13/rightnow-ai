@@ -17,6 +17,8 @@ export type Msg = {
   html: string | null;
   sentAt: string;
   oooUntil: string | null;
+  category: string | null;
+  aiFeedback: number | null;
   attachments: Att[];
 };
 export type ThreadRow = {
@@ -34,6 +36,7 @@ export type ThreadRow = {
 export type Note = { id: string; body: string; createdAt: string };
 export type Detail = Omit<ThreadRow, "messages"> & {
   messages: Msg[];
+  categorySource: string | null;
   campaignLeadId: string | null;
   campaignId: string | null;
   leadId: string | null;

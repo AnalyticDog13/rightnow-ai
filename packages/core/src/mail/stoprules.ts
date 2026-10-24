@@ -5,7 +5,7 @@ import { OPEN_STATES } from "../campaigns/lead-status";
 import type { Clock } from "../clock";
 import { inSavepoint, onInterestChange } from "../crm/opportunities";
 import { companyDomainOf } from "../leads/domain";
-import { applyInterestChange } from "../leads/service";
+import { applyInterestChange, labelsAdded } from "../leads/service";
 import { suppress } from "../leads/suppression";
 import { enterSubsequence, leadStatusTrigger } from "../planner";
 import { acceptTx, refOf } from "../sender";
@@ -162,6 +162,19 @@ export async function applyInbound(
     });
   }
 
+  // PS-INBOX-20: a label the AI chose, only if it is still aiSelectable; added with a LABEL_ADDED Event like a manual one
+  if (
+    c.kind === "REPLY" &&
+    c.label &&
+    fresh &&
+    lead &&
+    (await tx.leadLabel.count({ where: { workspaceId: ws, name: c.label, aiSelectable: true } }))
+  ) {
+    const added =
+      await tx.$executeRaw`UPDATE "Lead" SET labels = array_append(COALESCE(labels, '{}'), ${c.label}) WHERE id = ${lead.id} AND NOT (${c.label} = ANY(COALESCE(labels, '{}')))`;
+    if (added) await labelsAdded(tx, ws, lead.id, [], [c.label], now);
+  }
+
   const inserted = await recordEvent(tx, {
     workspaceId: ws,
     type,
@@ -208,7 +221,10 @@ export async function applyInbound(
           scheduledMessageId: sm?.id,
         }),
       (code) =>
-        audit(tx, { workspaceId: ws, at: now }, "crm.hook_failed", lead.id, { leadId: lead.id, code }),
+        audit(tx, { workspaceId: ws, at: now }, "crm.hook_failed", lead.id, {
+          leadId: lead.id,
+          code,
+        }),
     );
 }
 

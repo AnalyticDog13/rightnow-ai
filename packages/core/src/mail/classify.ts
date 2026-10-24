@@ -20,10 +20,16 @@ export type Classification =
   | { kind: "AUTO_REPLY"; category: "OUT_OF_OFFICE" | "AUTOMATED"; oooUntil: Date | null }
   | { kind: "COMPLAINT"; recipient: string | null; originalMessageId: string | null }
   | { kind: "UNSUBSCRIBE" }
-  | { kind: "REPLY"; category: ReplyCategory; source: "RULE" | "AI" }
+  | { kind: "REPLY"; category: ReplyCategory; source: "RULE" | "AI"; label?: string }
   | { kind: "OUTBOUND" };
-/** P7-T05 implements; called only for REPLY/UNCERTAIN, outside any transaction. */
-export type AiClassifier = (m: ClassifyInput, signal: AbortSignal) => Promise<ReplyCategory | null>;
+/** What the AI may add (D47): a category and an aiSelectable label for an UNCERTAIN reply, or the return date of an OOO. */
+export type AiResult = { category?: ReplyCategory; label?: string; oooUntil?: Date };
+/** Called outside any transaction: `reply` for a rule-UNCERTAIN reply, `ooo` for an OOO auto-reply with no date. */
+export type AiClassifier = (
+  m: ClassifyInput,
+  signal: AbortSignal,
+  want: "reply" | "ooo",
+) => Promise<AiResult | null>;
 
 /** Lead-interest delta per category (PS-INBOX-19). */
 export const INTEREST_OF: Partial<Record<ReplyCategory, number>> = {
