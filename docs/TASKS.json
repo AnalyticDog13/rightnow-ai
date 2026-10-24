@@ -801,12 +801,12 @@
    "id": "P7-T06a",
    "phase": 7,
    "title": "Push sources (Gmail watch, Graph subscriptions), subscription model, renewal job",
-   "status": "todo",
+   "status": "done",
    "deps": [
     "P7-T05b"
    ],
    "model": "sonnet",
-   "commit": null,
+   "commit": "c7a6a0e",
    "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md (incl. Revision 2); tests listed there pass"
   },
   {
