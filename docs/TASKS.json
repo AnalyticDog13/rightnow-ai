@@ -741,12 +741,12 @@
    "id": "P7-T03a",
    "phase": 7,
    "title": "Background jobs (202), audit-log/tags/members endpoints, lead data export",
-   "status": "todo",
+   "status": "done",
    "deps": [
     "P7-T02b"
    ],
    "model": "sonnet",
-   "commit": null,
+   "commit": "2d5dc42",
    "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md (incl. Revision 2); tests listed there pass"
   },
   {
@@ -795,7 +795,7 @@
    ],
    "model": "sonnet",
    "commit": null,
-   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md (incl. Revision 2); tests listed there pass"
+   "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md (incl. Revision 2); tests listed there pass; also R13 carry-over from T03a: an AI job handler that gets a rate-limit refusal sleeps retryAfterSec (abort-aware) before retrying"
   },
   {
    "id": "P7-T06a",
