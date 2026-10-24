@@ -4,12 +4,12 @@ import { z } from "zod";
 import { audit } from "../audit";
 import { stopOpenCampaignLeads } from "../campaigns/hooks";
 import { enrollBatch, moveToSubsequenceTx, noSkips } from "../campaigns/enroll";
-import type { Clock } from "../clock";
+import { sleep, type Clock } from "../clock";
 import { ensureOpportunity, errorCode, inSavepoint } from "../crm/opportunities";
 import { isLockTimeout, isRetryable, withTxRetry } from "../dispatch";
 import { suppress } from "../leads/suppression";
 import { startOfNextDay } from "../schedule";
-import { enqueueDelivery, insertDeliveries, type ActiveHook } from "../webhooks/deliver";
+import { enqueueDelivery, insertDeliveries } from "../webhooks/deliver";
 
 type Tx = Prisma.TransactionClient;
 const DAY = 86_400_000;
@@ -286,11 +286,6 @@ export const BUILTIN_RULES: {
   },
 ];
 
-/** Seam per dispatched Event, inside its savepoint: inserts the WebhookDelivery rows (returns how many). */
-export const dispatchHooks: {
-  deliveries: (tx: Tx, e: Event, now: Date, hooks: ActiveHook[]) => Promise<number>;
-} = { deliveries: insertDeliveries };
-
 type Counts = { events: number; runs: number; deliveries: number };
 type LeadRow = {
   id: string;
@@ -475,7 +470,7 @@ async function runBatch(
               runs += await runRule(tx, clock, now, r, e, sel.failWith);
         // M6: a deleted (merged) lead's Event is not delivered either
         const deliveries =
-          sel.failWith || !liveLead ? 0 : await dispatchHooks.deliveries(tx, e, now, hooks);
+          sel.failWith || !liveLead ? 0 : await insertDeliveries(tx, e, now, hooks);
         out.runs += runs;
         out.deliveries += deliveries;
       }),
@@ -567,12 +562,6 @@ async function dispatchBatch(
     return claimed.length;
   }
 }
-
-const sleep = (ms: number, signal?: AbortSignal) =>
-  new Promise<void>((r) => {
-    const t = setTimeout(r, ms);
-    signal?.addEventListener("abort", () => (clearTimeout(t), r()), { once: true });
-  });
 
 /**
  * D43 outbox dispatch: batches of ≤ `batch` pending Events claimed FOR UPDATE SKIP LOCKED, each Event (its rules and

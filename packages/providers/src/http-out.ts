@@ -11,6 +11,9 @@ export type SafeResponse = {
   latencyMs: number;
 };
 
+/** How a request to a user-supplied URL reaches it: `ALLOW_PRIVATE_HTTP_HOSTS`, and a resolver tests inject. */
+export type OutEnv = { allowPrivate: boolean; resolve?: (h: string) => Promise<string[]> };
+
 /** Codes: bad_url, host_not_public, timeout, connect_failed, response_too_large. Never carries a body. */
 export class HttpOutError extends ProviderError {
   constructor(

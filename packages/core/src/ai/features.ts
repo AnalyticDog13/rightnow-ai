@@ -2,8 +2,9 @@ import type { BackgroundJob, Prisma, PrismaClient } from "@rightnow/db/client";
 import { z } from "zod";
 import { AccountError, isPrismaCode, notFound } from "../accounts/service";
 import { analytics } from "../analytics/metrics";
-import type { Clock } from "../clock";
-import { getEnv } from "../env";
+import { sleep, type Clock } from "../clock";
+import { outEnv } from "../env";
+import type { JobDeps } from "../jobs";
 import { aiComplete, AiRateLimited, type AiEnv } from "./client";
 import {
   analysisPrompt,
@@ -331,18 +332,6 @@ export async function analyzeCampaign(
   );
 }
 
-/** Test hooks for the background handler, which has no request to take its environment from. */
-export const aiRuntime: {
-  fetchFn?: AiEnv["fetchFn"];
-  resolve?: AiEnv["resolve"];
-  sleep?: (ms: number, s: AbortSignal) => Promise<void>;
-} = {};
-const nap = (ms: number, s: AbortSignal) =>
-  new Promise<void>((r) => {
-    const t = setTimeout(r, ms);
-    s.addEventListener("abort", () => (clearTimeout(t), r()), { once: true });
-  });
-
 /**
  * `ai_personalize` (JOB_HANDLERS): one PENDING suggestion per lead, `(jobId, leadId)` unique, so a rerun skips finished
  * leads. A rate-limit refusal sleeps `Retry-After` in 10 s slices that each report progress (R13: the job is not stale)
@@ -354,17 +343,13 @@ export async function personalizeJob(
   job: BackgroundJob,
   progress: (pct: number) => Promise<void>,
   signal: AbortSignal,
+  deps: JobDeps,
 ) {
   const { leadIds: ids, instruction } = personalizeInput.parse(job.input);
   const leadIds = [...new Set(ids)];
   const ws = job.workspaceId;
   await requireAi(prisma, ws);
-  const env: AiEnv = {
-    allowPrivate: getEnv().ALLOW_PRIVATE_HTTP_HOSTS === "1",
-    signal,
-    fetchFn: aiRuntime.fetchFn,
-    resolve: aiRuntime.resolve,
-  };
+  const env: AiEnv = { ...outEnv(deps.env), signal };
   const stored = await prisma.aiSuggestion.findMany({
     where: { workspaceId: ws, jobId: job.id },
     select: { leadId: true },
@@ -404,7 +389,7 @@ export async function personalizeJob(
           } catch (e) {
             if (!(e instanceof AiRateLimited) || attempt >= 4 || signal.aborted) throw e;
             for (let left = e.retryAfterSec * 1000; left > 0 && !signal.aborted; left -= 10_000) {
-              await (aiRuntime.sleep ?? nap)(Math.min(left, 10_000), signal);
+              await sleep(Math.min(left, 10_000), signal);
               await progress(pct); // bumps updatedAt: a sleeping job is not stale
             }
             if (signal.aborted) break;

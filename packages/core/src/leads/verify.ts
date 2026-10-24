@@ -6,7 +6,7 @@ import { AccountError } from "../accounts/service";
 import { audit } from "../audit";
 import type { Clock } from "../clock";
 import { decrypt, encrypt } from "../crypto";
-import { getEnv } from "../env";
+import { getEnv, outEnv } from "../env";
 import { DISPOSABLE_DOMAINS } from "./disposable";
 import type { ResolveMx } from "./esp";
 import { parseEmail } from "./validate";
@@ -340,6 +340,6 @@ export async function workspaceVerifier(
   });
   const c = readConfig(w.verifierConfigEnc);
   return w.verifierKind === "http" && c
-    ? httpVerifier(c, safeRequest, undefined, getEnv().ALLOW_PRIVATE_HTTP_HOSTS === "1")
+    ? httpVerifier(c, safeRequest, undefined, outEnv(getEnv()).allowPrivate)
     : mxVerifier(resolveMx);
 }

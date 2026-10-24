@@ -196,6 +196,14 @@ function validateScopes(actions: { type: string }[], c: Caller, trigger: string)
       !scopeAllows(c.scopes, "inbox:read")
     )
       throw new AccountError(403, "scope_required:inbox:read");
+    // M4: the payload carries lead fields on every trigger that names a lead
+    if (
+      c.scopes &&
+      type === "send_webhook" &&
+      !LEADLESS_TRIGGERS.has(trigger) &&
+      !scopeAllows(c.scopes, "leads:read")
+    )
+      throw new AccountError(403, "scope_required:leads:read");
   }
 }
 

@@ -4,19 +4,13 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient, type Event, type EventType, type Prisma } from "@rightnow/db/client";
 import { createTestDb } from "@rightnow/db/test-db";
 import { AuthError, PermanentSendError } from "@rightnow/providers";
-import { afterAll, afterEach, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { recordProviderError } from "../src/accounts/health";
 import { API_SCOPES } from "../src/apikeys";
 import { analytics } from "../src/analytics/metrics";
 import { exportActivityCsv } from "../src/analytics/export";
 import { analyticsQuery } from "../src/analytics/query";
-import {
-  ACTIONS,
-  BUILTIN_RULES,
-  dispatchEvents,
-  dispatchHooks,
-  TRIGGERS,
-} from "../src/automations/engine";
+import { ACTIONS, BUILTIN_RULES, dispatchEvents, TRIGGERS } from "../src/automations/engine";
 import {
   builtinRules,
   createRule,
@@ -34,7 +28,16 @@ import { claimDue } from "../src/dispatch";
 import { createLead, updateLead } from "../src/leads/service";
 import { planDue } from "../src/planner";
 import { unsubscribeKeys } from "../src/unsubscribe";
+import { insertDeliveries } from "../src/webhooks/deliver";
 import { planRow, seedCampaign } from "./campaign-fixture";
+
+// the dispatcher's insertDeliveries, wrapped so a test can hold, fail or slow it (the real one runs unless replaced)
+vi.mock("../src/webhooks/deliver", async (orig) => {
+  const m = await orig<typeof import("../src/webhooks/deliver")>();
+  return { ...m, insertDeliveries: vi.fn(m.insertDeliveries) };
+});
+const { insertDeliveries: realDeliveries } =
+  await vi.importActual<typeof import("../src/webhooks/deliver")>("../src/webhooks/deliver");
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
 const P = () => db.prisma;
@@ -47,9 +50,8 @@ const client = () => {
 beforeAll(async () => {
   db = await createTestDb();
 });
-const realDeliveries = dispatchHooks.deliveries;
 afterEach(() => {
-  dispatchHooks.deliveries = realDeliveries;
+  vi.mocked(insertDeliveries).mockImplementation(realDeliveries);
 });
 afterAll(async () => {
   await Promise.all(extra.map((p) => p.$disconnect()));
@@ -494,14 +496,14 @@ describe("dispatch races", () => {
     const gate = new Promise<void>((r) => (open = r));
     let inside!: () => void;
     const reached = new Promise<void>((r) => (inside = r));
-    dispatchHooks.deliveries = async () => {
+    vi.mocked(insertDeliveries).mockImplementation(async () => {
       inside();
       await gate;
       return 0;
-    };
+    });
     const first = dispatchEvents(client(), clock, { maxMs: 0 });
     await reached;
-    dispatchHooks.deliveries = async () => 0;
+    vi.mocked(insertDeliveries).mockImplementation(async () => 0);
     const late = [];
     for (let i = 0; i < 5; i++) late.push(await reply(w));
     const second = await dispatchEvents(client(), clock, { maxMs: 0 });
@@ -540,10 +542,10 @@ describe("dispatch races", () => {
     await drain();
     for (let i = 0; i < 3; i++) await reply(w);
     let tries = 0;
-    dispatchHooks.deliveries = async () => {
+    vi.mocked(insertDeliveries).mockImplementation(async () => {
       if (++tries === 1) throw Object.assign(new Error("deadlock detected"), { code: "40P01" });
       return 0;
-    };
+    });
     expect(await drain()).toMatchObject({ events: 3, runs: 3 });
     expect(await P().task.count({ where: { workspaceId: w.ws } })).toBe(3);
     expect((await runs(w.ws)).length).toBe(3);
@@ -556,11 +558,11 @@ describe("dispatch races", () => {
     const es = [];
     for (let i = 0; i < 20; i++) es.push(await reply(w));
     const poison = es[7]!;
-    dispatchHooks.deliveries = async (_tx, e) => {
+    vi.mocked(insertDeliveries).mockImplementation(async (_tx, e) => {
       if (e.id === poison.id)
         throw Object.assign(new Error("bad payload"), { code: "bad_payload" });
       return 0;
-    };
+    });
     expect(await dispatchEvents(P(), clock, { maxMs: 0 })).toMatchObject({ events: 20, runs: 19 });
     expect(await P().event.findUniqueOrThrow({ where: { id: poison.id } })).toMatchObject({
       dispatchedAt: T,
@@ -584,12 +586,12 @@ describe("dispatch races", () => {
     const es = [];
     for (let i = 0; i < 4; i++) es.push(await reply(w));
     const [transient, broken] = [es[1]!, es[2]!];
-    dispatchHooks.deliveries = async (_tx, e) => {
+    vi.mocked(insertDeliveries).mockImplementation(async (_tx, e) => {
       if (e.id === transient.id) throw Object.assign(new Error("deadlock"), { code: "40P01" });
       if (e.id === broken.id)
         throw Object.assign(new Error("bad payload"), { code: "bad_payload" });
       return 0;
-    };
+    });
     // the run reports the transient failure; the events dispatched one by one stay committed
     expect(await err(dispatchEvents(P(), clock, { maxMs: 0 }))).toMatchObject({
       message: "deadlock",
@@ -605,7 +607,7 @@ describe("dispatch races", () => {
     });
     expect(await P().task.count({ where: { workspaceId: w.ws } })).toBe(2);
     // the next tick retries only the pending event
-    dispatchHooks.deliveries = async () => 0;
+    vi.mocked(insertDeliveries).mockImplementation(async () => 0);
     expect(await dispatchEvents(P(), clock, { maxMs: 0 })).toMatchObject({ events: 1, runs: 1 });
     expect(await P().task.count({ where: { workspaceId: w.ws } })).toBe(3);
   });
@@ -616,10 +618,10 @@ describe("dispatch races", () => {
     await drain();
     const es = [await reply(w), await reply(w), await reply(w)];
     const slow = es[1]!;
-    dispatchHooks.deliveries = async (_tx, e) => {
+    vi.mocked(insertDeliveries).mockImplementation(async (_tx, e) => {
       if (e.id === slow.id) await new Promise((ok) => setTimeout(ok, 1_500));
       return 0;
-    };
+    });
     expect(await dispatchEvents(P(), clock, { maxMs: 0, txTimeoutMs: 800 })).toMatchObject({
       events: 3,
       runs: 3,

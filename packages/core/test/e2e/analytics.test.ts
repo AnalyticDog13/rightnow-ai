@@ -9,7 +9,7 @@ import { afterAll, beforeAll, expect, test } from "vitest";
 import { analytics } from "../../src/analytics/metrics";
 import { analyticsQuery } from "../../src/analytics/query";
 import { fixedClock } from "../../src/clock";
-import { placementRuntime, startPlacementTest } from "../../src/deliverability/placement";
+import { startPlacementTest } from "../../src/deliverability/placement";
 import { runNextJob } from "../../src/jobs";
 import { warmupTick } from "../../src/deliverability/warmup";
 import { syncDue } from "../../src/mail/sync";
@@ -199,8 +199,7 @@ test("analytics counts the real pipeline; warm-up and placement mail never count
     subject: "Placement",
     body: "Hello there",
   });
-  placementRuntime.providerFor = providerFor;
-  await runNextJob(P, clock, new AbortController().signal); // the placement_run job does the sends
+  await runNextJob(P, clock, new AbortController().signal, { env: FAKE, providerFor }); // the placement_run job does the sends
   for (let i = 0; i < 3; i++) {
     clock.advance(11 * MIN);
     await sync(); // the warm-up and placement mail reach the other mailbox and its sync

@@ -2,6 +2,7 @@ import {
   aiClassifierFor,
   createProvider,
   getEnv,
+  outEnv,
   syncDue,
   type Clock,
   type Env,
@@ -20,12 +21,11 @@ export async function mailSync(
   signal?: AbortSignal,
   loop = { ms: 50_000, pauseMs: 5_000 },
 ) {
-  const allowPrivate = getEnv().ALLOW_PRIVATE_HTTP_HOSTS === "1";
+  const aiOut = outEnv(getEnv());
   // one classifier per workspace for the whole run, not per mailbox (D47)
   const classifiers = new Map<string, ReturnType<typeof aiClassifierFor>>();
   const aiClassifyFor = (ws: string) => {
-    if (!classifiers.has(ws))
-      classifiers.set(ws, aiClassifierFor(prisma, clock, ws, { allowPrivate }));
+    if (!classifiers.has(ws)) classifiers.set(ws, aiClassifierFor(prisma, clock, ws, aiOut));
     return classifiers.get(ws)!;
   };
   const deps = { providerFor, env, aiClassifyFor };

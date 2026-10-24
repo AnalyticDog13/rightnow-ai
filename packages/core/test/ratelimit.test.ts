@@ -1,7 +1,12 @@
 import { randomBytes } from "node:crypto";
 import { createTestDb } from "@rightnow/db/test-db";
-import type { Diagnostics, MailProvider, SafeResponse } from "@rightnow/providers";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import {
+  safeRequest,
+  type Diagnostics,
+  type MailProvider,
+  type SafeResponse,
+} from "@rightnow/providers";
+import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { aiComplete, AiRateLimited } from "../src/ai/client";
 import { setAiSettings } from "../src/ai/settings";
 import { testSmtpConnection } from "../src/accounts/smtp-connect";
@@ -9,6 +14,12 @@ import { fixedClock } from "../src/clock";
 import { hit, release } from "../src/ratelimit";
 import { purgeRetention } from "../src/retention";
 import { testEnv } from "./accounts-fixture";
+
+// no network: the AI test answers safeRequest
+vi.mock("@rightnow/providers", async (orig) => ({
+  ...(await orig<typeof import("@rightnow/providers")>()),
+  safeRequest: vi.fn(),
+}));
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
 const P = () => db.prisma;
@@ -79,7 +90,7 @@ test("AI: 30 calls per minute per workspace; the 31st is AiRateLimited 429 and n
     return w.id;
   };
   let calls = 0;
-  const fetchFn = async (): Promise<SafeResponse> => {
+  vi.mocked(safeRequest).mockImplementation(async (): Promise<SafeResponse> => {
     calls++;
     return {
       status: 200,
@@ -87,22 +98,12 @@ test("AI: 30 calls per minute per workspace; the 31st is AiRateLimited 429 and n
       latencyMs: 1,
       body: Buffer.from(JSON.stringify({ choices: [{ message: { content: "hi" } }] })),
     };
-  };
+  });
   const a = await ws();
   const b = await ws();
   const clock = fixedClock(T);
   const call = (w: string) =>
-    aiComplete(
-      P(),
-      clock,
-      w,
-      "draft",
-      { system: "s", user: "u", maxTokens: 5 },
-      {
-        ...PUBLIC,
-        fetchFn,
-      },
-    );
+    aiComplete(P(), clock, w, "draft", { system: "s", user: "u", maxTokens: 5 }, PUBLIC);
   for (let i = 0; i < 30; i++) await call(a);
   const err = await call(a).catch((e: unknown) => e);
   expect(err).toBeInstanceOf(AiRateLimited);

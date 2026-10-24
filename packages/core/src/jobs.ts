@@ -4,16 +4,24 @@ import { personalizeJob } from "./ai/features";
 import { audit } from "./audit";
 import { placementRunJob } from "./deliverability/placement";
 import type { Clock } from "./clock";
+import type { Env } from "./env";
+import type { SyncDeps } from "./mail/sync";
 import { bulkInput, bulkLeads, leadWhere } from "./leads/service";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 type Actor = string | null | undefined;
+/** What a handler needs from its caller: handlers never read the global env (the worker passes it). */
+export type JobDeps = {
+  env: Pick<Env, "MAIL_PROVIDER_FAKE" | "ALLOW_PRIVATE_HTTP_HOSTS">;
+  providerFor?: SyncDeps["providerFor"];
+};
 type Handler = (
   prisma: PrismaClient,
   clock: Clock,
   job: BackgroundJob,
   progress: (pct: number) => Promise<void>,
   signal: AbortSignal,
+  deps: JobDeps,
 ) => Promise<unknown>;
 
 /** R13: a RUNNING job is stale after 5 minutes without progress (every progress() call bumps updatedAt). */
@@ -72,7 +80,7 @@ export const JOB_HANDLERS: Record<string, Handler> = {
       ).affected;
       after = ids[ids.length - 1];
       done += ids.length;
-      await progress(Math.min(100, Math.floor((done * 100) / total)));
+      await progress(Math.min(100, Math.floor((done * 100) / Math.max(total, done, 1))));
     }
     return { affected };
   },
@@ -122,6 +130,7 @@ export async function runNextJob(
   prisma: PrismaClient,
   clock: Clock,
   signal: AbortSignal,
+  deps: JobDeps,
 ): Promise<string | null> {
   await resetStaleJobs(prisma, clock);
   const job = await claim(prisma, clock);
@@ -148,6 +157,7 @@ export async function runNextJob(
         if (!r.count) throw new Superseded();
       },
       signal,
+      deps,
     );
     if (!signal.aborted) await end({ status: "DONE", progress: 100, result: result as never });
   } catch (e) {

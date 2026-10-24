@@ -1,13 +1,13 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import type { Prisma, PrismaClient, Webhook, WebhookDelivery } from "@rightnow/db/client";
-import { assertPublicHost } from "@rightnow/providers";
+import { assertPublicHost, type OutEnv } from "@rightnow/providers";
 import { z } from "zod";
 import { AccountError, notFound } from "../accounts/service";
 import { scopeAllows } from "../apikeys";
 import { audit } from "../audit";
 import type { Clock } from "../clock";
 import { decrypt, encrypt } from "../crypto";
-import { postWebhook, type OutEnv } from "./deliver";
+import { postWebhook } from "./deliver";
 import { LEADLESS_EVENTS, REPLY_EVENTS, WEBHOOK_EVENTS } from "./events";
 
 type Db = PrismaClient | Prisma.TransactionClient;
@@ -18,7 +18,7 @@ export type ApiWebhook = Omit<Webhook, "secretEnc" | "headersEnc"> & {
   hasSecret: true;
   headerNames: string[];
 };
-export type ApiDelivery = WebhookDelivery;
+type ApiDelivery = WebhookDelivery;
 
 const bad = (m: string) => new AccountError(400, m);
 const RESERVED = /^(host|content-length|content-type|transfer-encoding|connection|x-rightnow-.*)$/i;

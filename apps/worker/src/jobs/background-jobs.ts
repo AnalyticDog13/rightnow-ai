@@ -1,29 +1,24 @@
-import { runNextJob, type Clock } from "@rightnow/core";
+import { getEnv, runNextJob, sleep, type Clock, type JobDeps } from "@rightnow/core";
 import type { PrismaClient } from "@rightnow/db/client";
 import type { JobDef } from "../boss";
 
 const WORKERS = 2;
 const IDLE_MS = 2_000;
 
-const sleep = (ms: number, signal?: AbortSignal) =>
-  new Promise<void>((r) => {
-    const t = setTimeout(r, ms);
-    signal?.addEventListener("abort", () => (clearTimeout(t), r()), { once: true });
-  });
-
 /** D45/R13: up to 2 jobs at once (one per workspace), claiming until `maxMs` (a 2 s sleep when idle) or `signal`. */
 export async function backgroundJobs(
   prisma: PrismaClient,
   clock: Clock,
-  o: { maxMs?: number; signal?: AbortSignal } = {},
+  o: { maxMs?: number; signal?: AbortSignal; env?: JobDeps["env"] } = {},
 ) {
   const signal = o.signal ?? new AbortController().signal;
+  const env = o.env ?? getEnv();
   const end = Date.now() + (o.maxMs ?? 50_000);
   let ran = 0;
   await Promise.all(
     Array.from({ length: WORKERS }, async () => {
       while (!signal.aborted && Date.now() < end) {
-        if (await runNextJob(prisma, clock, signal)) ran++;
+        if (await runNextJob(prisma, clock, signal, { env })) ran++;
         else await sleep(Math.min(IDLE_MS, end - Date.now()), signal);
       }
     }),

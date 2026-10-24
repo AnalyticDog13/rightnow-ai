@@ -5,13 +5,13 @@ import type { EventType, Prisma, PrismaClient } from "@rightnow/db/client";
 import { createPrisma } from "@rightnow/db/create";
 import { createTestDb } from "@rightnow/db/test-db";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
-import { dispatchEvents, dispatchHooks } from "../src/automations/engine";
-import { createRule } from "../src/automations/rules";
+import { dispatchEvents } from "../src/automations/engine";
+import { createRule, updateRule } from "../src/automations/rules";
 import { fixedClock } from "../src/clock";
 import { decrypt } from "../src/crypto";
 import { gdprDeleteLead } from "../src/leads/service";
 import { purgeRetention } from "../src/retention";
-import { BACKOFF_SEC, deliverDue, sign } from "../src/webhooks/deliver";
+import { BACKOFF_SEC, deliverDue, insertDeliveries, sign } from "../src/webhooks/deliver";
 import { webhookEventName } from "../src/webhooks/events";
 import { buildPayload } from "../src/webhooks/payload";
 import {
@@ -30,6 +30,12 @@ import {
 import { testEnv } from "./accounts-fixture";
 import { seedCampaign } from "./campaign-fixture";
 
+// the dispatcher's insertDeliveries, wrapped so a test can hold it (the real one runs unless a test replaces it)
+vi.mock("../src/webhooks/deliver", async (orig) => {
+  const m = await orig<typeof import("../src/webhooks/deliver")>();
+  return { ...m, insertDeliveries: vi.fn(m.insertDeliveries) };
+});
+
 let db: Awaited<ReturnType<typeof createTestDb>>;
 const P = () => db.prisma;
 const extra: PrismaClient[] = [];
@@ -45,6 +51,8 @@ type Hit = {
   ts: string;
   body: string;
   headers: http.IncomingHttpHeaders;
+  path: string;
+  at: number;
 };
 type Answer = { status: number; headers?: Record<string, string>; hold?: Promise<void> };
 let hits: Hit[] = [];
@@ -67,6 +75,8 @@ beforeAll(async () => {
         ts: String(req.headers["x-rightnow-timestamp"]),
         body,
         headers: req.headers,
+        path: String(req.url),
+        at: Date.now(),
       };
       hits.push(h);
       const a = answer(h, hits.length - 1);
@@ -78,9 +88,10 @@ beforeAll(async () => {
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   port = (server.address() as AddressInfo).port;
 });
-const realHook = dispatchHooks.deliveries;
+const { insertDeliveries: realHook } =
+  await vi.importActual<typeof import("../src/webhooks/deliver")>("../src/webhooks/deliver");
 afterEach(() => {
-  dispatchHooks.deliveries = realHook;
+  vi.mocked(insertDeliveries).mockImplementation(realHook);
 });
 // deliverDue scans every workspace: an earlier test's leftovers must not be sent
 beforeEach(async () => {
@@ -992,6 +1003,22 @@ describe("concurrency", () => {
     expect(b.delivered).toBeGreaterThan(0);
   });
 
+  test("A2: a slow endpoint holding many due rows does not delay another webhook in the same batch", async () => {
+    const w = await world({ leads: 0 });
+    const slow = await hook(w, ["email_sent"], { url: `${URL_()}/slow` });
+    const fast = await hook(w, ["email_sent"], { url: `${URL_()}/fast` });
+    for (let i = 0; i < 10; i++)
+      await pending(w, slow.id, { nextAttemptAt: new Date(T.getTime() - S) });
+    await pending(w, fast.id); // sorts last: without a per-webhook cap it waits for the third wave
+    answer = (h) =>
+      h.path.endsWith("/slow")
+        ? { status: 200, hold: new Promise((r) => setTimeout(r, 400)) }
+        : { status: 200 };
+    const start = Date.now();
+    expect(await deliver(fixedClock(T))).toEqual({ delivered: 11, failed: 0 });
+    expect(hits.find((h) => h.path.endsWith("/fast"))!.at - start).toBeLessThan(300);
+  });
+
   test("no tx around network: the claimed row can be updated while its POST is held 2 s", async () => {
     const w = await world({ leads: 0 });
     const W = await hook(w, ["email_sent"]);
@@ -1032,12 +1059,12 @@ describe("gdpr purges deliveries", () => {
     const didInsert = new Promise<void>((r) => (inserted = r));
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
-    dispatchHooks.deliveries = async (...a) => {
+    vi.mocked(insertDeliveries).mockImplementation(async (...a) => {
       const k = await realHook(...a);
       inserted();
       await gate;
       return k;
-    };
+    });
     const d = dispatchEvents(P(), fixedClock(T), { maxMs: 0 });
     await didInsert;
     const g = gdprDeleteLead(client(), fixedClock(T), w.ws, w.lead.id, "u1");
@@ -1156,21 +1183,46 @@ describe("fix round 1", () => {
       trigger: "reply_received",
       actions: [{ type: "send_webhook", webhookId: W.id }],
     };
-    expect(
-      await err(
-        createRule(P(), w.ws, null, input, { scopes: ["automations:write", "webhooks:write"] }),
-      ),
-    ).toEqual({ status: 403, message: "scope_required:inbox:read" });
-    await createRule(P(), w.ws, null, input, {
-      scopes: ["automations:write", "webhooks:write", "inbox:read"],
+    const base = ["automations:write", "webhooks:write", "leads:read"];
+    expect(await err(createRule(P(), w.ws, null, input, { scopes: base }))).toEqual({
+      status: 403,
+      message: "scope_required:inbox:read",
     });
+    await createRule(P(), w.ws, null, input, { scopes: [...base, "inbox:read"] });
     // another trigger carries no reply body: no inbox:read needed
-    await createRule(
+    await createRule(P(), w.ws, null, { ...input, trigger: "bounced" }, { scopes: base });
+  });
+
+  test("M4: a send_webhook rule needs leads:read for an API key unless the trigger carries no lead", async () => {
+    const w = await world({ leads: 0 });
+    const W = await hook(w, ["email_sent"]);
+    const base = { scopes: ["automations:write", "webhooks:write", "inbox:read"] };
+    const input = (trigger: string) => ({
+      name: "m4",
+      trigger,
+      actions: [{ type: "send_webhook", webhookId: W.id }],
+    });
+    for (const t of ["bounced", "reply_received"])
+      expect(await err(createRule(P(), w.ws, null, input(t), base))).toEqual({
+        status: 403,
+        message: "scope_required:leads:read",
+      });
+    for (const t of ["account_error", "campaign_completed", "quota_reached"])
+      await createRule(P(), w.ws, null, input(t), base);
+    const r = await createRule(P(), w.ws, null, input("quota_reached"), base);
+    expect(await err(updateRule(P(), w.ws, null, r.id, { trigger: "bounced" }, base))).toEqual({
+      status: 403,
+      message: "scope_required:leads:read",
+    });
+    await updateRule(
       P(),
       w.ws,
       null,
-      { ...input, trigger: "bounced" },
-      { scopes: ["automations:write", "webhooks:write"] },
+      r.id,
+      { trigger: "bounced" },
+      {
+        scopes: [...base.scopes, "leads:read"],
+      },
     );
   });
 

@@ -16,7 +16,7 @@ const LEAD_FIELDS = [
   ["country", "country"],
 ] as const;
 /** Every key the payload sets itself, present or not: a lead custom field with one of these names is dropped, never passed off as standard. */
-export const STANDARD_FIELDS: ReadonlySet<string> = new Set([
+const STANDARD_FIELDS: ReadonlySet<string> = new Set([
   "event_id",
   "timestamp",
   "event_type",

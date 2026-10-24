@@ -9,11 +9,11 @@ import { audit } from "../audit";
 import { previewMessage } from "../campaigns/preview";
 import type { Clock } from "../clock";
 import { sendableProviders } from "../dispatch";
+import type { JobDeps } from "../jobs";
 import { getEnv, type Env } from "../env";
 import { codeOf } from "../mail/ingest";
 import { effectiveAllowance } from "../quota";
 import { hit, release } from "../ratelimit";
-import type { SyncDeps } from "../mail/sync";
 import type { RenderEnv } from "../unsubscribe";
 import type { DomainReport } from "./dns";
 import { domainOf } from "../leads/domain";
@@ -29,12 +29,6 @@ export const placementInput = z.union([
   }),
 ]);
 export type PlacementInput = z.infer<typeof placementInput>;
-
-/** Tests replace the provider factory; the worker uses the real one (as `aiRuntime` does for the AI jobs). */
-export const placementRuntime: {
-  providerFor?: SyncDeps["providerFor"];
-  env?: Pick<Env, "MAIL_PROVIDER_FAKE">; // tests: the D17 gate without a ProviderVerification row
-} = {};
 
 /** At most 3 placement runs per account per hour (D51, T07a `hit`). */
 const RUNS_PER_HOUR = 3;
@@ -188,12 +182,13 @@ export async function placementRunJob(
   job: BackgroundJob,
   progress: (pct: number) => Promise<void>,
   signal: AbortSignal,
+  deps: JobDeps,
 ) {
   const { testId, text, html } = runInput.parse(job.input);
   const ws = job.workspaceId;
   const t = await prisma.placementTest.findFirstOrThrow({ where: { id: testId, workspaceId: ws } });
   // the job may have waited in the queue: re-check what startPlacementTest checked
-  const sendable = await sendableProviders(prisma, placementRuntime.env ?? getEnv());
+  const sendable = await sendableProviders(prisma, deps.env);
   const a = await prisma.emailAccount.findFirst({
     where: {
       id: t.accountId,
@@ -229,9 +224,7 @@ export async function placementRunJob(
     });
   let provider;
   try {
-    provider = await (
-      placementRuntime.providerFor ?? ((x) => createProvider(x, { prisma, clock }))
-    )(a);
+    provider = await (deps.providerFor ?? ((x) => createProvider(x, { prisma, clock })))(a);
   } catch (e) {
     for (const r of rows) await fail(r.id, e);
     if (e instanceof AuthError) await recordProviderError(prisma, clock, a.id, e);

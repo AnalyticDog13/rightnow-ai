@@ -11,3 +11,11 @@ export function fixedClock(d: Date): Clock & { advance(ms: number): void } {
     },
   };
 }
+
+/** Resolves after `ms`, or at once when `signal` aborts. */
+export const sleep = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((r) => {
+    if (signal?.aborted) return r();
+    const t = setTimeout(r, ms);
+    signal?.addEventListener("abort", () => (clearTimeout(t), r()), { once: true });
+  });

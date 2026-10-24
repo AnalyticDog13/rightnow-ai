@@ -1,9 +1,8 @@
 import { randomBytes } from "node:crypto";
 import { createTestDb } from "@rightnow/db/test-db";
-import type { SafeResponse } from "@rightnow/providers";
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
+import { safeRequest, type SafeResponse } from "@rightnow/providers";
+import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import {
-  aiRuntime,
   analyzeCampaign,
   draft,
   followup,
@@ -26,12 +25,22 @@ import {
 } from "../src/ai/prompts";
 import { setAiSettings } from "../src/ai/settings";
 import { reviewSuggestion, setAiFeedback } from "../src/ai/suggestions";
-import { fixedClock } from "../src/clock";
+import { fixedClock, sleep } from "../src/clock";
 import { encrypt } from "../src/crypto";
 import { updateTask } from "../src/crm/tasks";
 import { createJob, JOB_HANDLERS, runNextJob } from "../src/jobs";
 import { testEnv } from "./accounts-fixture";
 import { seedCampaign } from "./campaign-fixture";
+
+// no network and no real waiting: tests answer safeRequest and see what the job slept
+vi.mock("@rightnow/providers", async (orig) => {
+  const m = await orig<typeof import("@rightnow/providers")>();
+  return { ...m, safeRequest: vi.fn() };
+});
+vi.mock("../src/clock", async (orig) => {
+  const m = await orig<typeof import("../src/clock")>();
+  return { ...m, sleep: vi.fn(m.sleep) };
+});
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
 const P = () => db.prisma;
@@ -40,9 +49,8 @@ beforeAll(async () => {
   db = await createTestDb();
 });
 afterAll(() => db.drop());
-beforeEach(() => {
-  aiRuntime.fetchFn = undefined;
-  aiRuntime.sleep = undefined;
+afterEach(() => {
+  vi.mocked(sleep).mockReset();
 });
 
 const T = new Date("2026-10-20T10:00:00Z");
@@ -68,7 +76,8 @@ function model(answer: string | ((n: number) => SafeResponse)) {
     prompts.push((JSON.parse(String(o.body)) as Req).messages.map((m) => m.content).join("\n"));
     return typeof answer === "string" ? ok(answer) : answer(prompts.length);
   };
-  return { prompts, env: { ...OUT, fetchFn } };
+  vi.mocked(safeRequest).mockImplementation(fetchFn);
+  return { prompts, env: OUT };
 }
 const code = (p: Promise<unknown>) =>
   p.then(
@@ -163,10 +172,8 @@ describe("personalize job", () => {
     const ids = s.leads.map((l) => l.lead.id);
     await P().lead.update({ where: { id: ids[0]! }, data: { personalization: "old" } });
     const m = model("Loved your post");
-    aiRuntime.fetchFn = m.env.fetchFn;
-    aiRuntime.resolve = m.env.resolve;
     const { jobId } = await createJob(P(), s.ws, "u1", "ai_personalize", { leadIds: ids });
-    expect(await runNextJob(P(), clock, signal)).toBe(jobId);
+    expect(await runNextJob(P(), clock, signal, { env: {} })).toBe(jobId);
     expect(await P().backgroundJob.findUniqueOrThrow({ where: { id: jobId } })).toMatchObject({
       status: "DONE",
       progress: 100,
@@ -182,7 +189,7 @@ describe("personalize job", () => {
 
     const job = await P().backgroundJob.findUniqueOrThrow({ where: { id: jobId } });
     const calls = m.prompts.length;
-    await personalizeJob(P(), clock, job, async () => {}, signal);
+    await personalizeJob(P(), clock, job, async () => {}, signal, { env: {} });
     expect(await P().aiSuggestion.count({ where: { workspaceId: s.ws, jobId } })).toBe(3);
     expect(m.prompts.length).toBe(calls); // finished leads are skipped without a model call
   });
@@ -199,9 +206,7 @@ describe("personalize job", () => {
       },
     });
     const m = model("Hi");
-    aiRuntime.fetchFn = m.env.fetchFn;
-    aiRuntime.resolve = m.env.resolve;
-    await personalizeJob(P(), clock, job, async () => {}, signal);
+    await personalizeJob(P(), clock, job, async () => {}, signal, { env: {} });
     expect(m.prompts).toHaveLength(1);
   });
 
@@ -217,14 +222,14 @@ describe("personalize job", () => {
       },
     });
     const sleeps: number[] = [];
-    aiRuntime.sleep = async (ms) => void sleeps.push(ms);
-    aiRuntime.resolve = OUT.resolve;
-    aiRuntime.fetchFn = async () =>
+    vi.mocked(sleep).mockImplementation(async (ms) => void sleeps.push(ms));
+    vi.mocked(safeRequest).mockImplementation(async () =>
       sleeps.length
         ? ok("done")
-        : { status: 429, headers: { "retry-after": "25" }, latencyMs: 1, body: Buffer.from("") };
+        : { status: 429, headers: { "retry-after": "25" }, latencyMs: 1, body: Buffer.from("") },
+    );
     const beats: number[] = [];
-    await personalizeJob(P(), clock, job, async (p) => void beats.push(p), signal);
+    await personalizeJob(P(), clock, job, async (p) => void beats.push(p), signal, { env: {} });
     expect(sleeps).toEqual([10_000, 10_000, 5_000]);
     expect(beats.length).toBeGreaterThanOrEqual(5); // 0, three sleep beats, 100
     expect(await P().aiSuggestion.count({ where: { workspaceId: s.ws, jobId: job.id } })).toBe(1);
@@ -240,12 +245,14 @@ describe("personalize job", () => {
     });
     const ac = new AbortController();
     let calls = 0;
-    aiRuntime.sleep = async () => ac.abort();
-    aiRuntime.fetchFn = async () => (
-      calls++,
-      { status: 429, headers: { "retry-after": "60" }, latencyMs: 1, body: Buffer.from("") }
+    vi.mocked(sleep).mockImplementation(async () => ac.abort());
+    vi.mocked(safeRequest).mockImplementation(
+      async () => (
+        calls++,
+        { status: 429, headers: { "retry-after": "60" }, latencyMs: 1, body: Buffer.from("") }
+      ),
     );
-    await personalizeJob(P(), clock, job2, async () => {}, ac.signal);
+    await personalizeJob(P(), clock, job2, async () => {}, ac.signal, { env: {} });
     expect(calls).toBe(1);
     expect(await P().aiSuggestion.count({ where: { workspaceId: s.ws, jobId: job2.id } })).toBe(0);
   });
@@ -256,7 +263,7 @@ describe("personalize job", () => {
       data: { name: "W", slug: `nf-${randomBytes(3).toString("hex")}` },
     });
     const { jobId } = await createJob(P(), w.id, null, "ai_personalize", { leadIds: ["x"] });
-    await runNextJob(P(), clock, signal);
+    await runNextJob(P(), clock, signal, { env: {} });
     expect(await P().backgroundJob.findUniqueOrThrow({ where: { id: jobId } })).toMatchObject({
       status: "FAILED",
       error: "ai_not_configured",

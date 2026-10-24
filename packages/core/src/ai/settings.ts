@@ -4,7 +4,7 @@ import { z } from "zod";
 import { AccountError } from "../accounts/service";
 import { audit } from "../audit";
 import { decrypt, encrypt } from "../crypto";
-import type { OutEnv } from "../webhooks/deliver";
+import type { OutEnv } from "@rightnow/providers";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 type Actor = string | null | undefined;

@@ -37,7 +37,7 @@ test("one tick drains two workspaces' jobs and returns once idle time runs out",
     );
   }
   const t0 = Date.now();
-  expect(await backgroundJobs(P, fixedClock(new Date()), { maxMs: 400 })).toBe(2);
+  expect(await backgroundJobs(P, fixedClock(new Date()), { maxMs: 400, env: {} })).toBe(2);
   expect(Date.now() - t0).toBeLessThan(3_000);
   const rows = await P.backgroundJob.findMany({ where: { id: { in: ids } } });
   expect(rows.map((r) => [r.status, r.result])).toEqual([

@@ -1,6 +1,6 @@
 import type { PrismaClient } from "@rightnow/db/client";
 
-export type AuditCtx = { workspaceId: string; actorId?: string | null; at?: Date };
+type AuditCtx = { workspaceId: string; actorId?: string | null; at?: Date };
 
 /** PS-SEC-07: append an AuditLog row. `meta` must never contain secrets. */
 export async function audit(

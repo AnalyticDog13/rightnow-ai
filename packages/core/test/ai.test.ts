@@ -3,8 +3,8 @@ import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createTestDb } from "@rightnow/db/test-db";
-import { HttpOutError, type SafeResponse } from "@rightnow/providers";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { HttpOutError, safeRequest, type SafeResponse } from "@rightnow/providers";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { aiComplete } from "../src/ai/client";
 import { classifyPrompt, leadFields, oooPrompt } from "../src/ai/prompts";
 import { getAiSettings, loadAiConfig, setAiSettings } from "../src/ai/settings";
@@ -17,6 +17,12 @@ import { unsubscribeKeys, type RenderEnv } from "../src/unsubscribe";
 import { testEnv } from "./accounts-fixture";
 import { seedCampaign } from "./campaign-fixture";
 
+// no network: tests answer safeRequest through `withFetch`
+vi.mock("@rightnow/providers", async (orig) => ({
+  ...(await orig<typeof import("@rightnow/providers")>()),
+  safeRequest: vi.fn(),
+}));
+
 let db: Awaited<ReturnType<typeof createTestDb>>;
 const P = () => db.prisma;
 beforeAll(async () => {
@@ -28,6 +34,10 @@ afterAll(() => db.drop());
 const T = new Date("2026-10-20T10:00:00Z");
 const clock = fixedClock(T);
 const PUBLIC = { allowPrivate: false, resolve: async () => ["93.184.216.34"] };
+const withFetch = (fn: typeof safeRequest) => (
+  vi.mocked(safeRequest).mockImplementation(fn),
+  PUBLIC
+);
 const CFG = { baseUrl: "https://llm.example.com/v1", apiKey: "sk-secret-123", model: "m" };
 let n = 0;
 const workspace = async (config = true) => {
@@ -156,13 +166,10 @@ describe("client", () => {
       ws,
       "draft",
       { system: "S", user: "U", maxTokens: 50 },
-      {
-        ...PUBLIC,
-        fetchFn: async (url, o) => {
-          seen.push({ url, auth: o.headers?.authorization, body: String(o.body) });
-          return reply("hi");
-        },
-      },
+      withFetch(async (url, o) => {
+        seen.push({ url, auth: o.headers?.authorization, body: String(o.body) });
+        return reply("hi");
+      }),
     );
     expect(out.text).toBe("hi");
     expect(seen[0]).toMatchObject({
@@ -192,15 +199,12 @@ describe("client", () => {
         ws,
         "draft",
         { system: "S", user: "U", maxTokens: 5 },
-        {
-          ...PUBLIC,
-          fetchFn: async () => ({
-            status: 500,
-            headers: {},
-            latencyMs: 1,
-            body: Buffer.from("SECRET BODY sk-secret-123"),
-          }),
-        },
+        withFetch(async () => ({
+          status: 500,
+          headers: {},
+          latencyMs: 1,
+          body: Buffer.from("SECRET BODY sk-secret-123"),
+        })),
       ),
     );
     expect(e).toEqual({ status: 502, message: "ai_http_500" });
@@ -219,15 +223,12 @@ describe("client", () => {
         ws,
         "f",
         { system: "S", user: "U", maxTokens: 5 },
-        {
-          ...PUBLIC,
-          fetchFn: async () => ({
-            status: 429,
-            headers: (h === undefined ? {} : { "retry-after": h }) as Record<string, string>,
-            latencyMs: 1,
-            body: Buffer.alloc(0),
-          }),
-        },
+        withFetch(async () => ({
+          status: 429,
+          headers: (h === undefined ? {} : { "retry-after": h }) as Record<string, string>,
+          latencyMs: 1,
+          body: Buffer.alloc(0),
+        })),
       ).catch((x: { retryAfterSec?: number }) => x);
       return (e as { retryAfterSec?: number }).retryAfterSec;
     };
@@ -240,7 +241,7 @@ describe("client", () => {
 
   test("a 2 MB answer, a malformed answer and a transport failure map to codes", async () => {
     const ws = await workspace();
-    const run = (fetchFn: NonNullable<Parameters<typeof aiComplete>[5]["fetchFn"]>) =>
+    const run = (fetchFn: typeof safeRequest) =>
       code(
         aiComplete(
           P(),
@@ -248,7 +249,7 @@ describe("client", () => {
           ws,
           "f",
           { system: "S", user: "U", maxTokens: 5 },
-          { ...PUBLIC, fetchFn },
+          withFetch(fetchFn),
         ),
       );
     expect(
@@ -298,7 +299,7 @@ describe("client", () => {
         ws,
         "f",
         { system: "S", user: "U", maxTokens: 5 },
-        { ...PUBLIC, fetchFn: async () => ((called = true), reply("x")) },
+        withFetch(async () => ((called = true), reply("x"))),
       ),
     );
     expect(e).toEqual({ status: 412, message: "ai_not_configured" });

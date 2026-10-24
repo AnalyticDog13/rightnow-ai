@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { EmailAccount } from "@rightnow/db/client";
 import { createTestDb } from "@rightnow/db/test-db";
-import { getFakeProvider, HttpOutError, type SafeResponse } from "@rightnow/providers";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { getFakeProvider, HttpOutError, safeRequest, type SafeResponse } from "@rightnow/providers";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { aiClassifierFor } from "../src/ai/classifier";
 import { setAiSettings } from "../src/ai/settings";
 import { setAiFeedback } from "../src/ai/suggestions";
@@ -12,6 +12,12 @@ import { fixedClock } from "../src/clock";
 import { reconcileAccount, type SyncDeps } from "../src/mail/sync";
 import { testEnv } from "./accounts-fixture";
 import { seedCampaign } from "./campaign-fixture";
+
+// no network: tests answer safeRequest through `depsWith`
+vi.mock("@rightnow/providers", async (orig) => ({
+  ...(await orig<typeof import("@rightnow/providers")>()),
+  safeRequest: vi.fn(),
+}));
 
 process.env.FAKE_MAIL_DIR = mkdtempSync(join(tmpdir(), "ai-cls-"));
 
@@ -81,14 +87,13 @@ const depsWith = (
 ): SyncDeps => ({
   providerFor: async (a) => fake(a),
   env: { SYNC_POLL_SEC: 120, SYNC_MAX_STALENESS_SEC: 300 },
-  aiClassifyFor: (ws) =>
-    aiClassifierFor(P(), clock, ws, {
-      ...OUT,
-      fetchFn: async (_u, o) => {
-        calls.n++;
-        return ok(await answer(JSON.parse(String(o.body)) as Chat));
-      },
+  aiClassifyFor: (ws) => (
+    vi.mocked(safeRequest).mockImplementation(async (_u, o) => {
+      calls.n++;
+      return ok(await answer(JSON.parse(String(o.body)) as Chat));
     }),
+    aiClassifierFor(P(), clock, ws, OUT)
+  ),
   ...extra,
 });
 const sync = (clock: ReturnType<typeof fixedClock>, A: EmailAccount, d: SyncDeps) =>

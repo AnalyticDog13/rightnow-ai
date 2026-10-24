@@ -1,16 +1,15 @@
 import { createHash } from "node:crypto";
 import type { PrismaClient } from "@rightnow/db/client";
-import { HttpOutError, parseRetryAfter, safeRequest } from "@rightnow/providers";
+import { HttpOutError, parseRetryAfter, safeRequest, type OutEnv } from "@rightnow/providers";
 import { AccountError } from "../accounts/service";
 import type { Clock } from "../clock";
 import { hit } from "../ratelimit";
-import type { OutEnv } from "../webhooks/deliver";
 import { loadAiConfig } from "./settings";
 
 const TIMEOUT_MS = 30_000;
 const MAX_RESPONSE = 1024 * 1024;
 
-export type AiEnv = OutEnv & { signal?: AbortSignal; fetchFn?: typeof safeRequest };
+export type AiEnv = OutEnv & { signal?: AbortSignal };
 
 /** Fail with a short code: never a response body, a prompt or the key (D47). */
 const fail = (code: string) => new AccountError(502, code);
@@ -81,26 +80,23 @@ export async function aiComplete(
   };
   let res;
   try {
-    res = await (env.fetchFn ?? safeRequest)(
-      `${cfg.baseUrl.replace(/\/+$/, "")}/chat/completions`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${cfg.apiKey}` },
-        body: JSON.stringify({
-          model: cfg.model,
-          max_tokens: p.maxTokens,
-          messages: [
-            { role: "system", content: p.system },
-            { role: "user", content: p.user },
-          ],
-        }),
-        timeoutMs: TIMEOUT_MS,
-        maxResponseBytes: MAX_RESPONSE,
-        allowPrivate: env.allowPrivate,
-        resolve: env.resolve,
-        signal: env.signal,
-      },
-    );
+    res = await safeRequest(`${cfg.baseUrl.replace(/\/+$/, "")}/chat/completions`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${cfg.apiKey}` },
+      body: JSON.stringify({
+        model: cfg.model,
+        max_tokens: p.maxTokens,
+        messages: [
+          { role: "system", content: p.system },
+          { role: "user", content: p.user },
+        ],
+      }),
+      timeoutMs: TIMEOUT_MS,
+      maxResponseBytes: MAX_RESPONSE,
+      allowPrivate: env.allowPrivate,
+      resolve: env.resolve,
+      signal: env.signal,
+    });
   } catch (e) {
     const code = e instanceof HttpOutError ? e.code : "";
     return refuse(

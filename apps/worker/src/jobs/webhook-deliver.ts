@@ -1,4 +1,4 @@
-import { deliverDue, getEnv, type Clock } from "@rightnow/core";
+import { deliverDue, getEnv, outEnv, type Clock } from "@rightnow/core";
 import type { PrismaClient } from "@rightnow/db/client";
 import type { JobDef } from "../boss";
 
@@ -9,7 +9,7 @@ export const webhookDeliver = (
   o: { maxMs?: number; signal?: AbortSignal; resolve?: (h: string) => Promise<string[]> } = {},
 ) =>
   deliverDue(prisma, clock, {
-    allowPrivate: getEnv().ALLOW_PRIVATE_HTTP_HOSTS === "1",
+    ...outEnv(getEnv()),
     resolve: o.resolve,
     maxMs: o.maxMs ?? 50_000,
     signal: o.signal,

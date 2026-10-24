@@ -1,3 +1,4 @@
+import type { OutEnv } from "@rightnow/providers";
 import { z } from "zod";
 
 const key32 = z
@@ -77,3 +78,8 @@ export const maxStalenessSec = () =>
 export function resetEnvCache(): void {
   cached = undefined;
 }
+
+/** The one reading of ALLOW_PRIVATE_HTTP_HOSTS (D44): LAN hosts for webhooks, the AI URL and the verifier; metadata stays blocked. */
+export const outEnv = (env: Pick<Env, "ALLOW_PRIVATE_HTTP_HOSTS">): OutEnv => ({
+  allowPrivate: env.ALLOW_PRIVATE_HTTP_HOSTS === "1",
+});

@@ -1,16 +1,14 @@
 import { createHmac } from "node:crypto";
 import type { Event, Prisma, PrismaClient } from "@rightnow/db/client";
-import { HttpOutError, mapLimit, parseRetryAfter, safeRequest } from "@rightnow/providers";
+import { HttpOutError, parseRetryAfter, safeRequest, type OutEnv } from "@rightnow/providers";
 import { audit } from "../audit";
-import type { Clock } from "../clock";
+import { sleep, type Clock } from "../clock";
 import { decrypt } from "../crypto";
 import { getEnv } from "../env";
 import { webhookEventName } from "./events";
 import { buildPayload } from "./payload";
 
 type Tx = Prisma.TransactionClient;
-/** How a delivery reaches the user's URL: `ALLOW_PRIVATE_HTTP_HOSTS`, and a resolver tests inject. */
-export type OutEnv = { allowPrivate: boolean; resolve?: (h: string) => Promise<string[]> };
 /** The ACTIVE webhooks a dispatch batch loaded once. */
 export type ActiveHook = {
   id: string;
@@ -24,9 +22,12 @@ export const BACKOFF_SEC = [60, 300, 1800, 7200, 18000, 28800, 28800];
 const MAX_ATTEMPTS = BACKOFF_SEC.length + 1;
 const DISABLE_AT = 20;
 const RETRY_AFTER_MAX = 8 * 3600;
-const LEASE_MS = 60_000;
+// The slowest honest batch is one dead endpoint holding all BATCH rows at PER_HOOK at a time, each timing out:
+// BATCH / PER_HOOK × 10 s (the POST timeout) = 100 s. The lease must outlast that, or a live POST is requeued.
+const LEASE_MS = 120_000;
 const BATCH = 20;
 const PARALLEL = 5;
+const PER_HOOK = 2;
 const IDLE_MS = 2_000;
 
 /** "t=<unix s>,v1=<hex HMAC-SHA256(secret, '<t>.<raw body>')>" (PS-AUTO-09). */
@@ -211,16 +212,30 @@ async function record(prisma: PrismaClient, now: Date, d: Claimed, o: Outcome): 
   });
 }
 
-const sleep = (ms: number, signal?: AbortSignal) =>
-  new Promise<void>((r) => {
-    const t = setTimeout(r, ms);
-    signal?.addEventListener("abort", () => (clearTimeout(t), r()), { once: true });
-  });
+/** Runs `fn` over `rows`, ≤ PARALLEL at once and ≤ PER_HOOK per webhook, so one dead endpoint cannot hold every slot. */
+async function runCapped<T extends { webhookId: string }>(rows: T[], fn: (r: T) => Promise<void>) {
+  const queue = [...rows];
+  const busy = new Map<string, number>();
+  const worker = async () => {
+    for (;;) {
+      const i = queue.findIndex((r) => (busy.get(r.webhookId) ?? 0) < PER_HOOK);
+      if (i < 0) return; // the rest wait on a webhook whose own workers will take them
+      const [r] = queue.splice(i, 1);
+      busy.set(r!.webhookId, (busy.get(r!.webhookId) ?? 0) + 1);
+      try {
+        await fn(r!);
+      } finally {
+        busy.set(r!.webhookId, busy.get(r!.webhookId)! - 1);
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: PARALLEL }, worker));
+}
 
 /**
  * D44 `webhook-deliver`: expired leases go back to PENDING (the attempt counts), then ≤ `limit` due rows of ACTIVE
- * webhooks are claimed in one statement (`FOR UPDATE OF d SKIP LOCKED`, SENDING, lease 60 s, attempts + 1) and POSTed
- * 5 at a time outside any transaction. Loops until `maxMs` (a 2 s sleep when idle) or `signal`.
+ * webhooks are claimed in one statement (`FOR UPDATE OF d SKIP LOCKED`, SENDING, lease 120 s, attempts + 1) and POSTed
+ * 5 at a time (2 per webhook) outside any transaction. Loops until `maxMs` (a 2 s sleep when idle) or `signal`.
  */
 export async function deliverDue(
   prisma: PrismaClient,
@@ -254,7 +269,7 @@ export async function deliverDue(
           })
         ).map((w) => [w.id, w]),
       );
-      await mapLimit(claimed, PARALLEL, async (d) => {
+      await runCapped(claimed, async (d) => {
         const w = hooks.get(d.webhookId);
         if (!w) return; // deleted mid-run: its deliveries cascaded away
         const r = await postWebhook(w, d.eventId, JSON.stringify(d.payload), clock.now(), { ...o });

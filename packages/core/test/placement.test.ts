@@ -8,11 +8,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import type { AccountError } from "../src/accounts/service";
 import { fixedClock } from "../src/clock";
 import { healthInputs, healthScore } from "../src/deliverability/health";
-import {
-  placementReport,
-  placementRuntime,
-  startPlacementTest,
-} from "../src/deliverability/placement";
+import { placementReport, startPlacementTest } from "../src/deliverability/placement";
 import { runNextJob } from "../src/jobs";
 import { warmupTick } from "../src/deliverability/warmup";
 import { reconcileAccount, type SyncDeps } from "../src/mail/sync";
@@ -87,14 +83,15 @@ async function world(o: { cap?: number; seeds?: boolean; failM?: boolean } = {})
   const queue = (input: object = { accountId: T.id }, d: object = deps) =>
     startPlacementTest(P(), clock, d as typeof deps, s.ws, null, input as never);
   const runJob = async (p: typeof providerFor = providerFor) => {
-    placementRuntime.providerFor = p;
-    placementRuntime.env = FAKE;
     // other tests of this file leave PENDING jobs of their own workspaces: stop at this world's job
     const mine = await P().backgroundJob.findFirst({
       where: { workspaceId: s.ws, status: "PENDING" },
     });
     for (;;) {
-      const id = await runNextJob(P(), clock, new AbortController().signal);
+      const id = await runNextJob(P(), clock, new AbortController().signal, {
+        env: FAKE,
+        providerFor: p,
+      });
       if (!id || id === mine?.id) return id;
     }
   };

@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { runNextJob, systemClock } from "@rightnow/core";
+import { getEnv, runNextJob, systemClock } from "@rightnow/core";
 import { createPrisma } from "@rightnow/db/create";
 import { ensureSession, STATE } from "./session";
 
@@ -74,7 +74,7 @@ test("draft with AI fills the editor after Use; bulk personalization is applied 
     i < 10 && (await prisma.backgroundJob.count({ where: { status: "PENDING" } }));
     i++
   )
-    await runNextJob(prisma, systemClock, signal);
+    await runNextJob(prisma, systemClock, signal, { env: getEnv() });
   const review = page.getByRole("region", { name: "AI personalization review" });
   await review.getByRole("button", { name: "Refresh" }).click();
   await expect(review.getByRole("listitem")).toHaveCount(2);

@@ -49,10 +49,10 @@ test("leads_bulk over 1200 filtered leads: 3 chunks, progress 0, 41, 83, 100, DO
   const orig = JOB_HANDLERS.leads_bulk!;
   const spy = vi
     .spyOn(JOB_HANDLERS, "leads_bulk")
-    .mockImplementation((p, c, j, progress, s) =>
-      orig(p, c, j, async (pct) => (seen.push(pct), progress(pct)), s),
+    .mockImplementation((p, c, j, progress, s, d) =>
+      orig(p, c, j, async (pct) => (seen.push(pct), progress(pct)), s, d),
     );
-  expect(await runNextJob(P(), fixedClock(T), signal)).toBe(jobId);
+  expect(await runNextJob(P(), fixedClock(T), signal, { env: {} })).toBe(jobId);
   spy.mockRestore();
 
   expect(seen).toEqual([0, 41, 83, 100]);
@@ -64,13 +64,13 @@ test("leads_bulk over 1200 filtered leads: 3 chunks, progress 0, 41, 83, 100, DO
   });
   expect(await P().lead.count({ where: { workspaceId: w, tags: { has: "y" } } })).toBe(1200);
   expect(await P().auditLog.count({ where: { workspaceId: w, action: "lead.bulk" } })).toBe(3);
-  expect(await runNextJob(P(), fixedClock(T), signal)).toBeNull();
+  expect(await runNextJob(P(), fixedClock(T), signal, { env: {} })).toBeNull();
 });
 
 test("an unknown kind fails with unknown_kind", async () => {
   const w = await ws();
   const { jobId } = await createJob(P(), w, null, "nope", {});
-  expect(await runNextJob(P(), fixedClock(T), signal)).toBe(jobId);
+  expect(await runNextJob(P(), fixedClock(T), signal, { env: {} })).toBe(jobId);
   expect(await row(jobId)).toMatchObject({ status: "FAILED", error: "unknown_kind" });
 });
 
@@ -110,7 +110,7 @@ test("R13: a job reporting progress every 10 s for 40 min is never reset", async
     }
     return { ok: true };
   };
-  await runNextJob(P(), clock, signal);
+  await runNextJob(P(), clock, signal, { env: {} });
   delete JOB_HANDLERS.slow;
   expect(checked).toEqual(["RUNNING", "RUNNING", "RUNNING"]);
   expect(await row(jobId)).toMatchObject({ status: "DONE", attempts: 0, result: { ok: true } });
@@ -123,9 +123,9 @@ test("R13: one RUNNING job per workspace; another workspace's job still runs", a
   const long = await running(a, { updatedAt: new Date(T.getTime() - MIN) });
   await createJob(P(), a, null, "leads_bulk", tagAll);
   const { jobId: mine } = await createJob(P(), b, null, "leads_bulk", tagAll);
-  expect(await runNextJob(P(), fixedClock(T), signal)).toBe(mine);
+  expect(await runNextJob(P(), fixedClock(T), signal, { env: {} })).toBe(mine);
   expect(await row(mine)).toMatchObject({ status: "DONE", result: { affected: 3 } });
-  expect(await runNextJob(P(), fixedClock(T), signal)).toBeNull(); // A's second job waits
+  expect(await runNextJob(P(), fixedClock(T), signal, { env: {} })).toBeNull(); // A's second job waits
   expect((await row(long.id)).status).toBe("RUNNING");
 });
 
@@ -135,7 +135,9 @@ test("concurrent claims never run the same job twice", async () => {
     ...tagAll,
     filter: { tag: "none" },
   });
-  const got = await Promise.all([1, 2, 3].map(() => runNextJob(P(), fixedClock(T), signal)));
+  const got = await Promise.all(
+    [1, 2, 3].map(() => runNextJob(P(), fixedClock(T), signal, { env: {} })),
+  );
   expect(got.filter(Boolean)).toEqual([jobId]);
 });
 
@@ -235,7 +237,7 @@ test("fencing: a run that was reset and re-claimed writes neither progress nor D
   };
   for (const kind of ["stall_progress", "stall_done"]) {
     const id = (await createJob(P(), w, null, kind, {})).jobId;
-    expect(await runNextJob(P(), clock, signal)).toBe(id);
+    expect(await runNextJob(P(), clock, signal, { env: {} })).toBe(id);
     expect(await row(id)).toMatchObject({
       status: "RUNNING",
       attempts: 1,
