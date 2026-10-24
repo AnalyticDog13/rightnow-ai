@@ -241,3 +241,96 @@ release-ready for self-hosted use with the Fake provider and for real sending **
 (live verification per provider with real credentials, `docs/ops/LIVE_VERIFICATION.md`), which no agent can do.
 MINOR items: fix the trivial ones (m3, m6, m7, m8, m9, m10, m14, m15) with the round, the rest may be accepted with
 the reasons above.
+
+## Round 2 (2026-10-24) · opus final reviewer · fixes `a78b8bd`, `d79fb20`
+
+### Method
+
+I read both fix commits, then the code each one depends on: `campaigns/service.ts` `move`/`FROM`, resume in
+`campaigns/launch.ts`, `deliverability/health.ts` flips, `docker-compose.yml` restart policies and dependencies,
+`scripts/_mode.ps1` `X`, and the Gmail/Graph/IMAP send sequences. I ran
+`packages/providers/test/{gmail,graph}.test.ts` (104 passed) and `apps/web/test/{imports-api,inbox-api}.test.ts`
+(15 passed) with `--maxWorkers=2`. No Postgres process was left over. CI is green on `47d6c07`. The run on `d79fb20`
+was in progress at review time.
+
+### Status of every round-1 finding
+
+| Finding | Status | Verification |
+|---|---|---|
+| S1 restore re-sends | **Partly fixed, see S1-R** | The automatic duplicate is gone. Both `restore.sh` and `restore.ps1` run `migrate`, then `pause-campaigns`, then `up -d web worker`. `set -e` and `X` abort before `up` if the pause fails, so web and worker stay stopped (fail closed). Web and worker are `restart: unless-stopped`, and `docker compose stop` keeps them stopped across a daemon restart. `migrate` depends only on postgres, so neither `run` starts web or worker. `pauseActiveCampaigns` covers every workspace and both `ACTIVE` and `ACCOUNTS_UNHEALTHY`. The second matters because the health job flips that status back to `ACTIVE` on its own, while it never touches `PAUSED`. `BOUNCE_PROTECT` is left alone, which is correct: it only leaves through a manual resume. The core test covers foreign-workspace, deleted, draft and completed campaigns, the audit row, and idempotence. What remains is S1-R below |
+| S2 import enroll scope | Fixed | `imports/route.ts` calls `requireScopes(campaigns:update)` when `options.campaignId` is set. The test is discriminating: a `leads:create` key gets 403 `scope_required:campaigns:update`, and with `campaigns:update` added it gets 202. Before the fix that same request returned 202 |
+| m1 pre-request errors | Fixed (Gmail, Graph) | `beforeRequest()` wraps only `store.get()` and `store.refresh()`, and both run before the request they serve. A send failing this way never reached the provider: Gmail send is a single call, and Graph's send step fails before its POST, deletes the draft, and retries. Nothing after a possibly-sent request is wrapped, and a `ProviderError` (e.g. `AuthError` from the token endpoint) passes through unchanged. Both tests are discriminating (a plain `Error` used to propagate, and they assert 0 fetch calls). IMAP/SMTP `credentials()` is not wrapped: n2 |
+| m2 | Accepted | Controller: the wrong error type only affects reads (sync), never a send or account health |
+| m3 | Fixed | `test-send.ts` takes `pg_advisory_xact_lock(726002, hashtext(id))`, matching the registry |
+| m4, m5 | Accepted | Controller: rotation runbook edge cases; the script stops web and worker, backs up first, and prints the new key first |
+| m6 | Fixed | CLAUDE.md names the refresh write and `rotate.ts` as the only exceptions |
+| m7 | Fixed | `upgrade.sh` and `upgrade.ps1` run the backup first and abort if it fails. VPS.md is updated |
+| m8, m9 | Fixed | OFFLINE_RECOVERY.md push line; PS-AUTO-03 annotated |
+| m10 | Fixed | The VPS cron line now runs `mkdir -p backups` first |
+| m11 | Fixed | Prompt with `--yes`/`-Yes` (non-interactive input cancels). The safety-dump path is printed, including on a failed `pg_restore` |
+| m12 | Accepted | Controller: needs two concurrent ADMIN PUTs |
+| m13 | Fixed | Per-action `requireScopes` (`blocklist:create`, `leads:update`). The test is discriminating (403 with `inbox:write` alone, 200 with all three scopes) |
+| m14 | Fixed | `ai/draft` requires `campaigns:read`, and `campaign-analysis` requires `campaigns:read` and `analytics:read`. Both were added to the existing `needs` table, which asserts 403 for each missing scope |
+| m15 | Fixed | The activity CSV requires `leads:read`. The test is discriminating: an `analytics:read` key gets 403, and 200 once `leads:read` is added |
+| m16 | Accepted | Controller: single owner today |
+
+### New findings
+
+#### SIGNIFICANT
+
+**S1-R · After a restore, resuming the campaigns as the docs say still sends the duplicates.**
+`scripts/restore.sh:26-27`, `scripts/restore.ps1`, `docs/ops/LOCAL.md:28`, `docs/ops/VPS.md:42,56`,
+`packages/core/src/campaigns/launch.ts:209-216`.
+
+Scenario: the owner restores the 03:00 dump at 15:00. The script prints "Active campaigns were paused: sends after
+this dump would otherwise repeat. Resume them after checking the Sent folders." The owner checks Sent and then
+clicks Resume. Resume only sets the status back to `ACTIVE`. It never touches `ScheduledMessage`, and nothing else
+reconciles them either: the rows sent between 03:00 and 15:00 are still `SCHEDULED` with no `rfcMessageId`, and the
+Sent copies that sync imports match nothing (`ingest.ts:253-259`). Every one of those leads therefore gets the
+step a second time, exactly as in round 1, just later and after a human click. The wording implies that checking
+Sent is enough. Avoiding the duplicate actually requires cancelling each affected row in Scheduled messages by hand,
+which no doc says, and the app gives no help finding those rows (could be hundreds after a day of sending).
+
+Suggested fix (preferred, removes the hazard): when sync ingests an outbound copy that matches no send
+(`out && !own`) for a lead that has a `SCHEDULED` row on the same account whose `renderedSubject` equals the copy's
+subject, settle that row as sent through the existing late-accept path (`creditSent` + `advanceLead`, as for a
+HELD row). The freshness gate already guarantees this sync runs before any claim. Add a core test: restore an
+older state, sync imports the Sent copy, and the claim sends nothing for that lead.
+
+Minimum alternative (docs only): the script output, LOCAL.md and VPS.md give the exact procedure ("before
+resuming, open Scheduled messages for each campaign and cancel the rows of every lead that already has a message
+in the Sent folder after <dump time>"), plus the audit meta in n4. This is acceptable only if the controller judges
+manual cancellation workable.
+
+#### MINOR
+
+- **n1 · API.md does not list the new handler-level scopes.** The route table shows only the route's own scope
+  (`/imports` `leads:create`, `/inbox/threads/bulk` `inbox:write`, `/ai/draft` and `/ai/campaign-analysis`
+  `ai:write`, `/analytics/activity` `analytics:read`). The "Some routes also need the scopes of the data they read or
+  write" sentence (`docs/API.md:24-27`) already lists the older AI handler checks but not the five new ones.
+  `x-also-scopes` is not the right carrier: it means "either scope", and these mean "this one as well", so the
+  OpenAPI file should stay as it is. Impact is small, because the 403 body names the missing scope
+  (`scope_required:<scope>`). Fix: extend that sentence (`campaigns:update` for an import with `campaignId`,
+  `blocklist:create` / `leads:update` for bulk `blocklist` / `set_interest`, `campaigns:read` (+`analytics:read`)
+  for draft/analysis, `leads:read` for the activity CSV).
+- **n2 · m1 residual on IMAP/SMTP.** `packages/providers/src/imap-smtp/provider.ts:229`: a plain error from
+  `this.o.credentials()` (and the `buildMime` line after it) still reaches the sender as unclassified, so the row
+  goes `UNCERTAIN` and then `HELD`. This is the safe direction, and the sender pre-builds MIME (`sender.ts:303`), so
+  only a DB or decrypt error mid-send triggers it. Fix: wrap both lines in `beforeRequest()`.
+- **n3 · The CI restore step asserts an unconditional echo.** `.github/workflows/ci.yml` greps
+  `Active campaigns were paused`, which `restore.sh` prints whether or not anything was paused. Only the step's exit
+  code proves `pause-campaigns` ran. The behaviour itself is proven by the core test. Fix: grep the script's
+  `paused <n> active campaign(s)` line, or query a seeded campaign's status after the restore.
+- **n4 · An admin is not told why campaigns are paused.** `pauseActiveCampaigns` audits `campaign.pause` with a null
+  actor and no reason, so the UI shows a system pause with no explanation. Fix: audit meta `{ reason: "restore" }`
+  (and show it in the campaign's status line), which also makes the S1-R procedure findable later.
+
+### Round 2 verdict
+
+Counts: 1 SIGNIFICANT (S1-R), 4 MINOR (n1-n4), 0 BLOCKER. All other round-1 findings are fixed or accepted with
+the controller's reasons. S2 and m13-m15 are closed and tested discriminatingly, and m1 never turns a
+possibly-sent request into a transient one.
+
+**Not release-ready yet: fix S1-R, then round 3 (the last one under the 3-round cap).** n1-n4 are trivial and
+should ride along. After that, the round-1 verdict stands: ready for self-hosted use with the Fake provider, and for
+real sending only after the user completes D17 live verification with real credentials.
