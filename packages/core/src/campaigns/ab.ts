@@ -63,7 +63,7 @@ async function optimizeCampaign(tx: Tx, campaignId: string, now: Date): Promise<
   const variants = await tx.$queryRaw<{ id: string; stepId: string; label: string }[]>`
     SELECT v.id, v."stepId", v.label FROM "StepVariant" v JOIN "SequenceStep" s ON s.id = v."stepId"
     WHERE s."campaignId" = ${campaignId} AND s."deletedAt" IS NULL AND v.active
-    ORDER BY v.id FOR UPDATE OF v`;
+    ORDER BY v.id FOR NO KEY UPDATE OF v`;
   const byStep = new Map<string, typeof variants>();
   for (const v of variants) byStep.set(v.stepId, [...(byStep.get(v.stepId) ?? []), v]);
   const ids = [...byStep.values()]
@@ -100,10 +100,12 @@ async function optimizeCampaign(tx: Tx, campaignId: string, now: Date): Promise<
       k: counts.get(v.id)?.k ?? 0,
     }));
     // the highest rate, the lowest id on a tie; it is never paused, so the step keeps an active variant
-    const best = rows.reduce((b, r) => (r.k * b.n > b.k * r.n ? r : b));
-    if (rows.length < 2 || best.n < MIN_N) continue;
-    for (const v of rows) {
-      if (v === best || v.n < MIN_N || v.n < (prior.get(v.id) ?? -Infinity) + MIN_N) continue;
+    // only variants with enough sends are compared; the highest rate wins (lowest id on a tie) and is never paused
+    const ok = rows.filter((r) => r.n >= MIN_N);
+    if (ok.length < 2) continue;
+    const best = ok.reduce((b, r) => (r.k * b.n > b.k * r.n ? r : b));
+    for (const v of ok) {
+      if (v === best || v.n < (prior.get(v.id) ?? -Infinity) + MIN_N) continue;
       if (zScore(best.k, best.n, v.k, v.n) < Z) continue;
       const r = await tx.stepVariant.updateMany({
         where: { id: v.id, active: true },

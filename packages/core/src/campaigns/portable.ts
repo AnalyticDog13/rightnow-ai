@@ -31,7 +31,17 @@ const portableStep = z.strictObject({
 const steps = z.array(portableStep).max(100);
 export const portableSchema = z.strictObject({
   version: z.literal(1),
-  campaign: z.strictObject(settingFields).partial().required({ name: true }),
+  campaign: z
+    .strictObject({
+      ...settingFields,
+      // exports from before the metric became an enum carried free text: read as "no metric" (reply)
+      abWinnerMetric: z.preprocess(
+        (v) => (["reply", "click", "open"].includes(v as string) ? v : null),
+        settingFields.abWinnerMetric,
+      ),
+    })
+    .partial()
+    .required({ name: true }),
   schedules: z.array(scheduleSchema).max(10),
   steps,
   subsequences: z

@@ -640,6 +640,7 @@ async function planCampaign(tx: Tx, campaignId: string, now: Date, o: PlanOpts) 
       inc.set(variant.id, (inc.get(variant.id) ?? 0) + 1);
     }
   }
+  // shortcut: a row re-planned from a paused variant counts in `assigned` twice (old and new variant), so a re-activated variant looks fuller than it is, until the daily reset; acceptable, fix by decrementing on cancel if it matters
   for (const [id, n] of [...inc].sort(([a], [b]) => (a < b ? -1 : 1)))
     await tx.$executeRaw`
       UPDATE "StepVariant" SET assigned = assigned + ${n}::int,

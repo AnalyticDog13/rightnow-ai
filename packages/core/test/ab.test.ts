@@ -4,6 +4,7 @@ import type { EventType, PrismaClient } from "@rightnow/db/client";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { optimizeVariants, zScore } from "../src/campaigns/ab";
 import { campaignPatchSchema } from "../src/campaigns/schema";
+import { exportCampaign, importCampaign } from "../src/campaigns/portable";
 import { getSequence, updateVariant } from "../src/campaigns/sequence";
 import { fixedClock } from "../src/clock";
 import { planDue } from "../src/planner";
@@ -93,6 +94,15 @@ test("campaign options: metric is reply|click|open, abResetDaily is a boolean", 
   expect(campaignPatchSchema.safeParse({ abWinnerMetric: "bounce" }).success).toBe(false);
 });
 
+test("importing an old export with a free-text metric maps it to null (M2)", async () => {
+  const s = await seedCampaign(P(), { at: T, campaign: { abWinnerMetric: "reply" } });
+  const doc = JSON.parse(JSON.stringify(await exportCampaign(P(), s.ws, s.campaign.id)));
+  doc.campaign.abWinnerMetric = "Reply Rate";
+  const copy = await importCampaign(P(), s.ws, null, doc);
+  const row = await P().campaign.findUniqueOrThrow({ where: { id: copy.id } });
+  expect(row.abWinnerMetric).toBeNull();
+});
+
 describe("optimizeVariants", () => {
   test("a clear loser is paused and audited", async () => {
     const { s, v } = await setup();
@@ -130,6 +140,26 @@ describe("optimizeVariants", () => {
     await seed(s, v.C!.id, 100, 5);
     expect(await run()).toEqual({ paused: 2 });
     expect(await active(s.steps[0]!.id)).toEqual(["A"]);
+  });
+
+  test("a variant under 100 sends never wins or freezes the step (I1)", async () => {
+    const { s, v } = await setup(["B", "C"]);
+    await seed(s, v.A!.id, 100, 30);
+    await seed(s, v.B!.id, 100, 10);
+    await seed(s, v.C!.id, 5, 5); // 100% on 5 sends
+    expect(await run()).toEqual({ paused: 1 });
+    expect(await active(s.steps[0]!.id)).toEqual(["A", "C"]);
+  });
+
+  test("the first variant by id with no sends does not freeze the step (I1)", async () => {
+    const { s, v } = await setup(["B", "C"]);
+    const [first, ...rest] = [v.A!.id, v.B!.id, v.C!.id].sort();
+    const [mid, last] = rest;
+    await seed(s, mid!, 100, 30);
+    await seed(s, last!, 100, 10);
+    expect(first).toBeTruthy(); // n = 0
+    expect(await run()).toEqual({ paused: 1 });
+    expect((await active(s.steps[0]!.id)).length).toBe(2);
   });
 
   test("only one active variant: unchanged", async () => {
