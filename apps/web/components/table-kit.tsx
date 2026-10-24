@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowDown, ArrowUp } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "./ui/button";
 
 // PS-UI-02: the conventions every list table follows: sortable headers (aria-sort), a Next control past one
@@ -10,29 +10,27 @@ import { Button } from "./ui/button";
 export type Sort = { col: string; dir: "ascending" | "descending" } | null;
 type Key<T> = (r: T) => string | number | null;
 
+/** A first click on a column sorts ascending, a second descending. */
+export const nextSort = (s: Sort, col: string): Sort =>
+  s?.col === col && s.dir === "ascending" ? { col, dir: "descending" } : { col, dir: "ascending" };
+
 /** Sorts the given rows by one column: a first click sorts ascending, a second descending. Empty values go last. */
 export function useSort<T>(rows: T[], keys: Record<string, Key<T>>) {
   const [sort, setSort] = useState<Sort>(null);
-  const sorted = useMemo(() => {
-    const key = sort && keys[sort.col];
-    if (!sort || !key) return rows;
-    const m = sort.dir === "ascending" ? 1 : -1;
-    return [...rows].sort((a, b) => {
-      const x = key(a);
-      const y = key(b);
-      if (x === y) return 0;
-      if (x === null) return 1;
-      if (y === null) return -1;
-      return (x < y ? -1 : 1) * m;
-    });
-    // `keys` is a literal rebuilt every render; the column name identifies it
-  }, [rows, sort]);
-  const toggle = (col: string) =>
-    setSort((s) =>
-      s?.col === col && s.dir === "ascending"
-        ? { col, dir: "descending" }
-        : { col, dir: "ascending" },
-    );
+  // computed on every render: `keys` closes over props (the assignee name in Tasks), and the lists are small
+  const key = sort && keys[sort.col];
+  const m = sort?.dir === "descending" ? -1 : 1;
+  const sorted = !key
+    ? rows
+    : [...rows].sort((a, b) => {
+        const x = key(a);
+        const y = key(b);
+        if (x === y) return 0;
+        if (x === null) return 1;
+        if (y === null) return -1;
+        return (x < y ? -1 : 1) * m;
+      });
+  const toggle = (col: string) => setSort((s) => nextSort(s, col));
   return { sorted, sort, toggle };
 }
 

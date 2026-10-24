@@ -258,6 +258,16 @@ export async function updateLead(
   });
 }
 
+/** Columns the list can be sorted by: the ones whose database order is the order the user reads. */
+export const LEAD_SORTS = [
+  "email",
+  "createdAt",
+  "lastName",
+  "companyName",
+  "interestStatus",
+] as const;
+const NULLABLE_SORTS: readonly string[] = ["lastName", "companyName", "interestStatus"];
+
 export const leadQuery = z
   .strictObject({
     q: z.string().trim().min(1).optional(),
@@ -292,6 +302,8 @@ export const leadQuery = z
       .optional(), // comma separated in a query string: "export selected"
     cursor: z.string().min(1).optional(),
     take: z.coerce.number().int().min(1).max(100).optional(),
+    sort: z.enum(LEAD_SORTS).optional(),
+    dir: z.enum(["asc", "desc"]).optional(),
   })
   .transform(({ customKey, customContains, ids, ...q }) => ({
     ...q,
@@ -353,9 +365,16 @@ export async function listLeads(prisma: Db, ws: string, query: LeadQuery) {
   const q = leadQuery.parse(query);
   const take = q.take ?? 50;
   const where = leadWhere(ws, q);
+  const dir = q.dir ?? "asc";
   const rows = await prisma.lead.findMany({
     where,
-    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    // `id` last keeps the cursor stable; empty values sort last in both directions
+    orderBy: [
+      q.sort
+        ? { [q.sort]: NULLABLE_SORTS.includes(q.sort) ? { sort: dir, nulls: "last" } : dir }
+        : { createdAt: dir },
+      { id: dir },
+    ],
     take: take + 1,
     ...(q.cursor && { cursor: { id: q.cursor } }),
   });

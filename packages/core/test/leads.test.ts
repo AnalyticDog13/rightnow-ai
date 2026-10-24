@@ -146,6 +146,51 @@ describe("lead list", () => {
     expect(new Set(seen).size).toBe(120);
     await expect(listLeads(db.prisma, w, { take: 101 })).rejects.toThrow();
   });
+
+  test("server-side sort: 3 pages come back globally ordered, nulls last, no repeats or gaps", async () => {
+    const w = (await db.prisma.workspace.create({ data: { name: "S", slug: "w-sort" } })).id;
+    const pad = (n: number) => String(n).padStart(3, "0");
+    await db.prisma.lead.createMany({
+      data: Array.from({ length: 120 }, (_, i) => ({
+        workspaceId: w,
+        email: `s${pad((i * 37) % 120)}@acme.test`,
+        lastName: i % 7 === 0 ? null : `ln${pad(i % 17)}`,
+        companyName: i % 11 === 0 ? null : `co${pad(i % 13)}`,
+        interestStatus: i % 5 === 0 ? null : (i % 9) - 4,
+        createdAt: new Date(T0.getTime() + ((i * 53) % 120) * 1000),
+      })),
+    });
+    const cols = ["email", "createdAt", "lastName", "companyName", "interestStatus"] as const;
+    for (const sort of cols)
+      for (const dir of ["asc", "desc"] as const) {
+        const seen: { id: string; v: unknown }[] = [];
+        let cursor: string | undefined;
+        let pages = 0;
+        do {
+          const r = await listLeads(db.prisma, w, { take: 50, cursor, sort, dir });
+          seen.push(...r.leads.map((l) => ({ id: l.id, v: (l as Record<string, unknown>)[sort] })));
+          cursor = r.nextCursor ?? undefined;
+          pages++;
+        } while (cursor);
+        const label = `${sort} ${dir}`;
+        expect(pages, label).toBe(3);
+        expect(new Set(seen.map((x) => x.id)).size, label).toBe(120);
+        const vals = seen.map((x) => (x.v === null ? null : x.v instanceof Date ? +x.v : x.v));
+        const firstNull = vals.indexOf(null);
+        const present = firstNull < 0 ? vals : vals.slice(0, firstNull);
+        expect(
+          vals.slice(present.length).every((v) => v === null),
+          `${label} nulls last`,
+        ).toBe(true);
+        const sorted = [...present].sort((a, b) => (a! < b! ? -1 : a! > b! ? 1 : 0));
+        expect(present, label).toEqual(dir === "asc" ? sorted : sorted.reverse());
+      }
+  });
+
+  test("an unknown sort column is rejected", async () => {
+    await expect(listLeads(db.prisma, ws, { sort: "passwordHash" as never })).rejects.toThrow();
+    await expect(listLeads(db.prisma, ws, { dir: "sideways" as never })).rejects.toThrow();
+  });
 });
 
 describe("bulk", () => {

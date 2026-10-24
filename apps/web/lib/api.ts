@@ -27,6 +27,11 @@ type Opts<B extends z.ZodType, Q extends z.ZodType, A extends Auth> = {
   role?: Role;
   /** API key scope, e.g. "leads:read". */
   scope?: string;
+  /**
+   * Further scopes that also pass the key check, for a route whose real scope depends on the request (saved views:
+   * `inbox:*` or `leads:*`). The handler MUST then enforce the one that applies. The audit reads `scope` only.
+   */
+  alsoScopes?: string[];
 };
 type Ctx<B extends z.ZodType, Q extends z.ZodType, A extends Auth> = {
   userId?: string;
@@ -45,11 +50,19 @@ export type RouteMeta = Pick<
   auth: Auth;
 };
 
-export type ApiKeyResolver = (req: Request, scope?: string) => Promise<SessionInfo | null>;
+export type ApiKeyResolver = (
+  req: Request,
+  scope?: string,
+  alsoScopes?: string[],
+) => Promise<SessionInfo | null>;
 
 /** Verifies a workspace API key (Authorization: Bearer) for `scope`: null = no valid key (401), HttpError(403) = scope missing. */
-export const resolveApiKey: ApiKeyResolver = async (req, scope) =>
-  (await import("./apikey-auth")).apiKeyResolver((await import("@rightnow/db")).prisma)(req, scope);
+export const resolveApiKey: ApiKeyResolver = async (req, scope, also) =>
+  (await import("./apikey-auth")).apiKeyResolver((await import("@rightnow/db")).prisma)(
+    req,
+    scope,
+    also,
+  );
 
 async function defaultGetSession(req: Request) {
   return (await import("./workspace")).getSessionInfo(req.headers);
@@ -87,7 +100,8 @@ export function route<
         info = await getSession(req);
         if (info && !read && !sameOrigin(req))
           throw new HttpError(403, "Cross-origin request blocked");
-        if (!info && auth === "session-or-apikey") info = await keyResolver(req, opts.scope);
+        if (!info && auth === "session-or-apikey")
+          info = await keyResolver(req, opts.scope, opts.alsoScopes);
         if (!info) throw new HttpError(401, "Unauthorized");
         const min = opts.role ?? (read ? "VIEWER" : "MEMBER");
         if (ROLES.indexOf(info.role) < ROLES.indexOf(min)) throw new HttpError(403, "Forbidden");

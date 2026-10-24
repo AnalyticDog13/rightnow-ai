@@ -43,6 +43,8 @@ export function SavedFilters({
     }
   }
   async function remove() {
+    const name = saved.find((s) => s.id === chosen)?.name;
+    if (!confirm(`Delete the saved filter ${name}?`)) return;
     const r = await call(`/api/v1/inbox/views/${chosen}`, "DELETE");
     setMsg(r.ok ? "Deleted." : errorText(r));
     setChosen("");

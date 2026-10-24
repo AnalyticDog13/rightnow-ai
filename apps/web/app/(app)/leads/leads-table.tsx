@@ -2,7 +2,7 @@
 
 import type { ApiLead } from "@rightnow/core";
 import { useCallback, useEffect, useState } from "react";
-import { NextPage, SortTh, TagSelect, useSort } from "../../../components/table-kit";
+import { NextPage, nextSort, SortTh, TagSelect, type Sort } from "../../../components/table-kit";
 import { Button } from "../../../components/ui/button";
 import { Card } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
@@ -49,6 +49,7 @@ export function LeadsTable({
 }) {
   const [f, setF] = useState<Filters>(initialListId ? { listId: initialListId } : {});
   const [bounced, setBounced] = useState(false);
+  const [sort, setSort] = useState<Sort>(null); // server-side: the API orders the whole result
   const [leads, setLeads] = useState<ApiLead[]>([]);
   const [rows, setRows] = useState<Bounced[]>([]);
   const [total, setTotal] = useState<number | null>(null);
@@ -73,9 +74,13 @@ export function LeadsTable({
         p.set("kind", "EMAIL");
       }
       if (cursor) p.set("cursor", cursor);
+      if (sort && !bounced) {
+        p.set("sort", sort.col);
+        p.set("dir", sort.dir === "ascending" ? "asc" : "desc");
+      }
       return `${bounced ? "/api/v1/blocklist" : "/api/v1/leads"}?${p}`;
     },
-    [f, bounced],
+    [f, bounced, sort],
   );
 
   useEffect(() => {
@@ -127,18 +132,6 @@ export function LeadsTable({
       if (!n.delete(id)) n.add(id);
       return n;
     });
-  const {
-    sorted,
-    sort,
-    toggle: sortBy,
-  } = useSort(leads, {
-    email: (l) => l.email.toLowerCase(),
-    name: (l) => fullName(l).toLowerCase() || null,
-    company: (l) => l.companyName?.toLowerCase() ?? null,
-    interest: (l) => l.interestStatus,
-    verification: (l) => VERIFICATION[l.verificationStatus] ?? null,
-    esp: (l) => ESP[l.espType] ?? null,
-  });
   const open = leads.find((l) => l.id === openId);
   const shown = bounced ? rows.length : leads.length;
 
@@ -402,28 +395,36 @@ export function LeadsTable({
                     onChange={() => setSelected(allOn ? new Set() : new Set(ids))}
                   />
                 </th>
-                <SortTh col="email" sort={sort} onSort={sortBy}>
-                  Email
-                </SortTh>
-                <SortTh col="name" sort={sort} onSort={sortBy}>
-                  Name
-                </SortTh>
-                <SortTh col="company" sort={sort} onSort={sortBy}>
-                  Company
-                </SortTh>
-                <SortTh col="interest" sort={sort} onSort={sortBy}>
-                  Interest
-                </SortTh>
-                <SortTh col="verification" sort={sort} onSort={sortBy}>
-                  Verification
-                </SortTh>
-                <SortTh col="esp" sort={sort} onSort={sortBy}>
-                  ESP
-                </SortTh>
+                {/* sortable = columns whose database order is the order shown (Name shows first name first) */}
+                {(
+                  [
+                    ["Email", "email"],
+                    ["Name", null],
+                    ["Company", "companyName"],
+                    ["Interest", "interestStatus"],
+                    ["Verification", null],
+                    ["ESP", null],
+                  ] as const
+                ).map(([h, col]) =>
+                  col ? (
+                    <SortTh
+                      key={h}
+                      col={col}
+                      sort={sort}
+                      onSort={(c) => setSort((s) => nextSort(s, c))}
+                    >
+                      {h}
+                    </SortTh>
+                  ) : (
+                    <th key={h} scope="col" className="p-3 font-medium">
+                      {h}
+                    </th>
+                  ),
+                )}
               </tr>
             </thead>
             <tbody>
-              {sorted.map((l) => (
+              {leads.map((l) => (
                 <tr
                   key={l.id}
                   tabIndex={0}

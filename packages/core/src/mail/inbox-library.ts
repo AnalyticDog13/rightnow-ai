@@ -1,6 +1,7 @@
 import type { Prisma, PrismaClient } from "@rightnow/db/client";
 import { z } from "zod";
 import { AccountError, isPrismaCode, notFound } from "../accounts/service";
+import { scopeAllows } from "../apikeys";
 import { audit } from "../audit";
 import { leadQuery } from "../leads/service";
 import { RENDER_LEAD_FIELDS } from "../planner";
@@ -72,11 +73,23 @@ const leadView = z.strictObject(
   ),
 );
 const SCOPES = ["inbox", "leads"] as const;
+export type ViewScope = (typeof SCOPES)[number];
 export const viewInput = z.strictObject({
   name,
   scope: z.enum(SCOPES).default("inbox"),
   filters: z.union([leadView, threadView]), // leadView first: it adds no defaults, so lead filters pass through unchanged,
 });
+
+/** An API key (`scopes` set) needs `inbox:*` for inbox views and `leads:*` for leads views; a session is not checked. */
+export function requireViewScope(
+  scopes: string[] | undefined,
+  scope: (typeof SCOPES)[number],
+  verb: "read" | "create" | "update" | "delete",
+) {
+  const needed = `${scope === "leads" ? "leads" : "inbox"}:${verb === "read" ? "read" : scope === "leads" ? verb : "write"}`;
+  if (scopes && !scopeAllows(scopes, needed))
+    throw new AccountError(403, `scope_required:${needed}`);
+}
 
 /** The filters parsed for the view's scope, so an inbox view never holds lead fields and the reverse. */
 function filtersFor(scope: (typeof SCOPES)[number], raw: unknown): Prisma.InputJsonObject {

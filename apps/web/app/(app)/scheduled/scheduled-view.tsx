@@ -137,7 +137,7 @@ export function ScheduledView({ canEdit, isAdmin }: { canEdit: boolean; isAdmin:
         <Input
           type="search"
           aria-label="Search scheduled emails"
-          placeholder="Search lead, account or subject"
+          placeholder="Searches loaded rows: lead, account, subject"
           className="max-w-xs"
           value={q}
           onChange={(e) => setQ(e.target.value)}
@@ -272,6 +272,11 @@ export function ScheduledView({ canEdit, isAdmin }: { canEdit: boolean; isAdmin:
             </tbody>
           </table>
         </Card>
+        {sort && next && (
+          <p role="status" className="text-sm text-muted-foreground">
+            Sorted within the {rows.length} rows loaded.
+          </p>
+        )}
         {next && <NextPage onClick={() => void load(next)} />}
       </div>
       {release && (

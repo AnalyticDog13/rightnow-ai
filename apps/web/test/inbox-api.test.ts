@@ -378,6 +378,59 @@ it("saved views carry a scope: lead views take lead filters and stay out of the 
   await db.prisma.inboxView.deleteMany({ where: { name: "EU leads" } });
 });
 
+it("saved views: the key scope follows the view's scope (inbox:* for inbox views, leads:* for leads views)", async () => {
+  const { createApiKey } = await import("@rightnow/core");
+  const bearer = async (name: string, scopes: string[]) => ({
+    authorization: `Bearer ${(await createApiKey(db.prisma, workspaceId, name, scopes)).token}`,
+  });
+  const inboxKey = await bearer("vi", ["inbox:read", "inbox:write"]);
+  const leadsKey = await bearer("vl", ["leads:read", "leads:write"]);
+  const lv = await json(
+    await r.views!.POST!(
+      req("POST", "x", { name: "Scoped leads", scope: "leads", filters: { tag: "eu" } }),
+    ),
+  );
+  const iv = await json(
+    await r.views!.POST!(req("POST", "x", { name: "Scoped inbox", filters: { view: "all" } })),
+  );
+  const st = async (res: Promise<Response>) => (await res).status;
+
+  // an inbox-only key is refused on leads views, on every verb
+  expect(await st(r.views!.GET!(req("GET", "views?scope=leads", undefined, inboxKey)))).toBe(403);
+  expect(
+    await st(
+      r.views!.POST!(req("POST", "x", { name: "k", scope: "leads", filters: {} }, inboxKey)),
+    ),
+  ).toBe(403);
+  expect(await st(r.view!.PATCH!(req("PATCH", "x", { name: "k2" }, inboxKey), p(lv.id)))).toBe(403);
+  expect(await st(r.view!.DELETE!(req("DELETE", "x", undefined, inboxKey), p(lv.id)))).toBe(403);
+  // ...and keeps working on inbox views
+  expect(await st(r.views!.GET!(req("GET", "views", undefined, inboxKey)))).toBe(200);
+  expect(
+    await st(r.view!.PATCH!(req("PATCH", "x", { name: "Scoped inbox 2" }, inboxKey), p(iv.id))),
+  ).toBe(200);
+
+  // a leads-only key is refused on inbox views and allowed on leads views
+  expect(await st(r.views!.GET!(req("GET", "views", undefined, leadsKey)))).toBe(403);
+  expect(
+    await st(r.views!.POST!(req("POST", "x", { name: "k", filters: { view: "all" } }, leadsKey))),
+  ).toBe(403);
+  expect(await st(r.view!.PATCH!(req("PATCH", "x", { name: "k3" }, leadsKey), p(iv.id)))).toBe(403);
+  expect(await st(r.view!.DELETE!(req("DELETE", "x", undefined, leadsKey), p(iv.id)))).toBe(403);
+  expect(await st(r.views!.GET!(req("GET", "views?scope=leads", undefined, leadsKey)))).toBe(200);
+  const made = await r.views!.POST!(
+    req("POST", "x", { name: "By key", scope: "leads", filters: { q: "a" } }, leadsKey),
+  );
+  expect(made.status).toBe(200);
+  expect(
+    await st(r.view!.PATCH!(req("PATCH", "x", { name: "By key 2" }, leadsKey), p(lv.id))),
+  ).toBe(200);
+  expect(await st(r.view!.DELETE!(req("DELETE", "x", undefined, leadsKey), p(lv.id)))).toBe(200);
+  await db.prisma.inboxView.deleteMany({
+    where: { name: { in: ["Scoped inbox 2", "By key"] } },
+  });
+});
+
 it("workspace isolation on every route", async () => {
   const other = (
     await db.prisma.workspace.create({

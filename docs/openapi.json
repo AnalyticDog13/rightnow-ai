@@ -4877,6 +4877,33 @@
               "minimum": 1,
               "maximum": 100
             }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "email",
+                "createdAt",
+                "lastName",
+                "companyName",
+                "interestStatus"
+              ]
+            }
+          },
+          {
+            "name": "dir",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
           }
         ],
         "responses": {
@@ -5041,6 +5068,23 @@
                         "type": "integer",
                         "minimum": 1,
                         "maximum": 100
+                      },
+                      "sort": {
+                        "type": "string",
+                        "enum": [
+                          "email",
+                          "createdAt",
+                          "lastName",
+                          "companyName",
+                          "interestStatus"
+                        ]
+                      },
+                      "dir": {
+                        "type": "string",
+                        "enum": [
+                          "asc",
+                          "desc"
+                        ]
                       }
                     },
                     "additionalProperties": false
@@ -10302,6 +10346,33 @@
               "minimum": 1,
               "maximum": 100
             }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "email",
+                "createdAt",
+                "lastName",
+                "companyName",
+                "interestStatus"
+              ]
+            }
+          },
+          {
+            "name": "dir",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
           }
         ],
         "responses": {
@@ -11132,6 +11203,23 @@
                         "type": "integer",
                         "minimum": 1,
                         "maximum": 100
+                      },
+                      "sort": {
+                        "type": "string",
+                        "enum": [
+                          "email",
+                          "createdAt",
+                          "lastName",
+                          "companyName",
+                          "interestStatus"
+                        ]
+                      },
+                      "dir": {
+                        "type": "string",
+                        "enum": [
+                          "asc",
+                          "desc"
+                        ]
                       }
                     },
                     "additionalProperties": false
@@ -11398,6 +11486,33 @@
               "type": "integer",
               "minimum": 1,
               "maximum": 100
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "email",
+                "createdAt",
+                "lastName",
+                "companyName",
+                "interestStatus"
+              ]
+            }
+          },
+          {
+            "name": "dir",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
             }
           }
         ],

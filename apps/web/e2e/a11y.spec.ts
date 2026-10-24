@@ -429,6 +429,8 @@ test.describe("tables", () => {
     await expect(next(page)).toBeVisible(); // 55 leads, 50 per page
     await conventions(page, { search: "Search leads", term: "lead07@", sortBy: "Email" });
     await page.getByLabel("Search leads").fill("");
+    // the sort is the server's: descending puts the last of all 55 first, though only 50 are loaded
+    await expect(rows(page).first()).toContainText("lead55@");
     await next(page).click();
     await expect(page.getByText(/Showing 55/)).toBeVisible();
   });
@@ -437,6 +439,7 @@ test.describe("tables", () => {
     await page.goto("/blocklist");
     await expect(next(page)).toBeVisible();
     await conventions(page, { search: "Search blocklist", term: "blocked07@", sortBy: "Value" });
+    await expect(page.getByText("Sorted within the 50 rows loaded.")).toBeVisible();
   });
 
   test("Scheduled", async ({ page }) => {
@@ -447,6 +450,7 @@ test.describe("tables", () => {
       term: "lead07@",
       sortBy: "Lead",
     });
+    await expect(page.getByText("Sorted within the 50 rows loaded.")).toBeVisible();
   });
 
   test("CRM Tasks", async ({ page }) => {
@@ -469,6 +473,9 @@ test.describe("tables", () => {
     await page.getByLabel("Saved filters").selectOption({ label: "My filter" });
     await expect(page.getByLabel("Search leads")).toHaveValue("lead07@");
     await expect(rows(page)).toHaveCount(1);
+    page.once("dialog", (d) => void d.accept()); // asks before deleting
+    await page.getByRole("button", { name: "Delete saved filter" }).click();
+    await expect(page.getByRole("option", { name: "My filter" })).toHaveCount(0);
   });
 });
 
