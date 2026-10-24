@@ -126,7 +126,8 @@ jobs:
         run: docker compose run --rm --no-deps migrate migration-check verify
       - name: Wrong key is detected
         run: |
-          if docker compose run --rm --no-deps -e ENCRYPTION_KEY="$(openssl rand -base64 32)" migrate migration-check verify; then echo "wrong key accepted"; exit 1; fi
+          out=$(docker compose run --rm --no-deps -e ENCRYPTION_KEY="$(openssl rand -base64 32)" migrate migration-check verify 2>&1) && { echo "wrong key accepted"; exit 1; }
+          echo "$out" | grep -q "do not decrypt with this ENCRYPTION_KEY" || { echo "failed for the wrong reason:"; echo "$out"; exit 1; }
       - name: Rotate key runs in Compose
         run: |
           # limit: the only credential row is the migration fixture (1 re-encrypted); correctness is packages/core/test/rotate.test.ts

@@ -1,16 +1,15 @@
-import { createHash } from "node:crypto";
 import type { PrismaClient } from "@rightnow/db/client";
 import type { Clock } from "./clock";
 import { setCredentials } from "./accounts/credentials";
 import { openAccount } from "./accounts/open-account";
 import { decrypt } from "./crypto";
+import { getEnv } from "./env";
 
 // PS-DEPLOY-11 fixture, seeded before a backup and verified after a restore (CI compose-smoke).
 const SLUG = "migration-check";
 const EMAIL = "mig@migration-check.test";
 const ACCESS = "mig-access";
 const bytes = () => Buffer.from(Array.from({ length: 4096 }, (_, i) => i % 251));
-const sha = (b: Uint8Array) => createHash("sha256").update(b).digest("hex");
 
 /**
  * Idempotent. The account is NEEDS_ATTENTION and status ERROR so no worker job contacts a provider for it:
@@ -87,9 +86,10 @@ export async function verifyMigrationFixture(prisma: PrismaClient, key?: Buffer)
   const acc =
     ws && (await prisma.emailAccount.findFirst({ where: { workspaceId: ws.id, email: EMAIL } }));
   if (!acc?.credentialsEnc) throw new Error("migration fixture account or credentials missing");
+  const k = key ?? Buffer.from(getEnv().ENCRYPTION_KEY, "base64"); // outside the try: missing env is not a decrypt failure
   let token: string | undefined;
   try {
-    token = (JSON.parse(decrypt(acc.credentialsEnc, key)) as { accessToken?: string }).accessToken;
+    token = (JSON.parse(decrypt(acc.credentialsEnc, k)) as { accessToken?: string }).accessToken;
   } catch {
     throw new Error("migration fixture credentials do not decrypt with this ENCRYPTION_KEY");
   }
@@ -98,6 +98,6 @@ export async function verifyMigrationFixture(prisma: PrismaClient, key?: Buffer)
     where: { message: { accountId: acc.id, thread: { accountId: acc.id } } },
   });
   if (!att?.data) throw new Error("migration fixture attachment missing");
-  if (sha(att.data) !== sha(bytes()))
+  if (Buffer.compare(att.data, bytes()) !== 0)
     throw new Error("migration fixture attachment checksum mismatch");
 }

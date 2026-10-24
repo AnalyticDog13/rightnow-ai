@@ -49,14 +49,15 @@ Open and click links use `APP_URL` by default. To send them from your own domain
 
 Proven in CI (`compose-smoke`): a seeded mailbox credential and a 4096-byte attachment survive backup, fresh volume and restore, still decrypt under the same `ENCRYPTION_KEY`, are rejected under another key, and still verify after key rotation. The rest is procedure; tick each checkpoint.
 
-1. [ ] On the laptop run `scripts/backup.sh`.
-2. [ ] Copy `backups/*.dump` and the `.env` `ENCRYPTION_KEY` to the server out of band (a restore under another key fails loudly, it never decrypts to garbage).
-3. [ ] Set up a fresh VPS per sections 1-2 with the same `ENCRYPTION_KEY`.
-4. [ ] Run `scripts/restore.sh <dump>`.
-5. [ ] Verify: sign in, `/api/readyz` is green, each mailbox shows its state, and **manually** download one attachment from the inbox.
-6. [ ] Add the new domain's redirect URI in the Google and Microsoft consoles ([GOOGLE_SETUP.md](GOOGLE_SETUP.md), [MICROSOFT_SETUP.md](MICROSOFT_SETUP.md)) and reconnect any account that shows `NEEDS_ATTENTION`.
-7. [ ] Switch DNS and tracking-domain CNAMEs only after the checks above pass.
-8. [ ] Stop the local stack (`scripts/stop.sh`) so two instances never send from one mailbox.
+1. [ ] Stop the local stack (`scripts/stop.sh|.ps1`) and keep it stopped: two instances must never sync or send from one mailbox.
+2. [ ] On the laptop run `scripts/backup.sh`.
+3. [ ] Copy `backups/*.dump` and the `.env` `ENCRYPTION_KEY` to the server out of band (the restore succeeds under any key, but with a different key the app cannot decrypt the stored credentials).
+4. [ ] Set up a fresh VPS per sections 1-2 with the same `ENCRYPTION_KEY`; do not start it before the restore.
+5. [ ] Run `scripts/restore.sh <dump>`, then start the stack.
+6. [ ] Verify: sign in, `/api/readyz` is green, each mailbox shows its state, and **manually** download one attachment from the inbox.
+7. [ ] Add the new domain's redirect URI in the Google and Microsoft consoles ([GOOGLE_SETUP.md](GOOGLE_SETUP.md), [MICROSOFT_SETUP.md](MICROSOFT_SETUP.md)) and reconnect any account that shows `NEEDS_ATTENTION`.
+8. [ ] Switch DNS and tracking-domain CNAMEs only after the checks above pass.
+9. [ ] Never restart the local install afterwards (or wipe its volume): it would send the same mail a second time.
 
 First start: an account syncs before it sends (the freshness gate, `SYNC_MAX_STALENESS_SEC`), proved by `packages/core/test/dispatch.test.ts` and `packages/core/test/e2e/downtime.test.ts`; it is not re-tested in CI.
 
