@@ -78,6 +78,9 @@ test("draft with AI fills the editor after Use; bulk personalization is applied 
   const review = page.getByRole("region", { name: "AI personalization review" });
   await review.getByRole("button", { name: "Refresh" }).click();
   await expect(review.getByRole("listitem")).toHaveCount(2);
+  await expect(review.getByRole("listitem").filter({ hasText: "ann@e2e-ai.io" })).toHaveCount(1);
+  await expect(review.getByRole("listitem").filter({ hasText: "bob@e2e-ai.io" })).toHaveCount(1);
+  await expect(review.getByRole("status")).toHaveText("2 of 2 waiting");
   await review.getByRole("button", { name: "Approve", exact: true }).first().click();
   await expect(review.getByRole("listitem")).toHaveCount(1);
 

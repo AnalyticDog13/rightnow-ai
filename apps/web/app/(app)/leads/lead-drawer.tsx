@@ -2,7 +2,7 @@
 
 import type { ApiLead } from "@rightnow/core";
 import { useEffect, useRef, useState } from "react";
-import { AiAssist } from "../../../components/ai-assist";
+import { AiAssist, useAiOn } from "../../../components/ai-assist";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
@@ -91,6 +91,8 @@ function LeadAi({ lead, onChanged }: { lead: ApiLead; onChanged: () => void }) {
     setScored(r.json as { aiScore: number; aiScoreReason: string });
     onChanged();
   }
+  const on = useAiOn();
+  if (!on) return null;
   return (
     <section aria-label="AI" className="mt-4 flex flex-col gap-2 border-t border-border pt-4">
       <h3 className="text-sm font-medium">AI</h3>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useAiOn } from "../../../components/ai-assist";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
@@ -90,6 +91,7 @@ export function OpportunityDrawer({
       ((await call(`/api/v1/crm/tasks?opportunityId=${opp.id}`, "GET")).json.tasks ?? []) as Task[],
     );
   const [rec, setRec] = useState("");
+  const aiOn = useAiOn();
   async function recommend() {
     setRec("");
     const r = await call("/api/v1/ai/recommend", "POST", { opportunityId: opp.id });
@@ -430,7 +432,7 @@ export function OpportunityDrawer({
             <Button type="submit">Add task</Button>
           </form>
         )}
-        {canEdit && (
+        {canEdit && aiOn && (
           <div className="mt-2 flex flex-col gap-1">
             <Button
               type="button"

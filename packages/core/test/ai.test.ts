@@ -573,6 +573,32 @@ test("listSuggestions filters by status and kind, scoped to the workspace", asyn
   expect(await code(listSuggestions(P(), w1, { bogus: 1 }))).toBeTruthy();
 });
 
+test("listSuggestions names the lead (email, name, company only) and counts the total", async () => {
+  const ws = await workspace(false);
+  const l = await P().lead.create({
+    data: {
+      workspaceId: ws,
+      email: "ann@acme.test",
+      firstName: "Ann",
+      companyName: "Acme",
+      phone: "555",
+    },
+  });
+  for (let i = 0; i < 3; i++)
+    await P().aiSuggestion.create({
+      data: { workspaceId: ws, kind: "PERSONALIZATION", text: `t${i}`, leadId: l.id },
+    });
+  const r = await listSuggestions(P(), ws, { status: "PENDING", take: 2 });
+  expect(r.total).toBe(3);
+  expect(r.suggestions).toHaveLength(2);
+  expect(r.suggestions[0]!.lead).toEqual({
+    email: "ann@acme.test",
+    firstName: "Ann",
+    lastName: null,
+    companyName: "Acme",
+  });
+});
+
 test("a label is created and updated with aiSelectable", async () => {
   const ws = await workspace(false);
   const l = await createLabel(P(), ws, null, {

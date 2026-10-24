@@ -45,9 +45,11 @@ export const campaignAnalysisInput = z.strictObject({ campaignId: id });
 type Db = PrismaClient | Prisma.TransactionClient;
 const bad = () => new AccountError(502, "ai_bad_response");
 
+export const aiConfigured = async (db: Db, ws: string) => !!(await loadAiConfig(db, ws));
+
 /** 412 before any other work, so an unconfigured workspace gets the same answer from every route. */
 export async function requireAi(db: Db, ws: string) {
-  if (!(await loadAiConfig(db, ws))) throw new AccountError(412, "ai_not_configured");
+  if (!(await aiConfigured(db, ws))) throw new AccountError(412, "ai_not_configured");
 }
 
 /** Strict: a JSON object (optionally fenced), else 502 `ai_bad_response`; the shape is then checked by `schema`. */
@@ -203,7 +205,16 @@ export async function summarize(
   return createSuggestion(prisma, ws, { kind: "SUMMARY", text: r.text, threadId: t.id }, r.callId);
 }
 
-const scoreAnswer = z.object({ score: z.coerce.number().finite(), reason: z.string().default("") });
+// a finite number or a numeric string; null, "", [] and true are not scores
+const scoreValue = z.union([
+  z.number().finite(),
+  z
+    .string()
+    .trim()
+    .regex(/^-?\d+(\.\d+)?$/)
+    .transform(Number),
+]);
+const scoreAnswer = z.object({ score: scoreValue, reason: z.string().default("") });
 
 /** Writes `Lead.aiScore` (a number, never text a recipient sees); clamped, and nothing is written on a bad answer. */
 export async function score(
@@ -344,7 +355,8 @@ export async function personalizeJob(
   progress: (pct: number) => Promise<void>,
   signal: AbortSignal,
 ) {
-  const { leadIds, instruction } = personalizeInput.parse(job.input);
+  const { leadIds: ids, instruction } = personalizeInput.parse(job.input);
+  const leadIds = [...new Set(ids)];
   const ws = job.workspaceId;
   await requireAi(prisma, ws);
   const env: AiEnv = {

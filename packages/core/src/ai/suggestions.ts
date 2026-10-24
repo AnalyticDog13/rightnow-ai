@@ -104,16 +104,33 @@ export const aiFeedbackInput = z.strictObject({ vote: z.union([z.literal(1), z.l
 
 export async function listSuggestions(db: Db, ws: string, input: unknown) {
   const { cursor, take = 50, ...f } = suggestionQuery.parse(input);
-  const rows = await db.aiSuggestion.findMany({
-    where: { workspaceId: ws, ...f },
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    take: take + 1,
-    ...(cursor && { cursor: { id: cursor } }),
-  });
+  const where = { workspaceId: ws, ...f };
+  const [rows, total] = await Promise.all([
+    db.aiSuggestion.findMany({
+      where,
+      // who the text is for: the reviewer must see it (the lead's email, name and company, nothing else)
+      include: {
+        lead: { select: { email: true, firstName: true, lastName: true, companyName: true } },
+      },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: take + 1,
+      ...(cursor && { cursor: { id: cursor } }),
+    }),
+    db.aiSuggestion.count({ where }),
+  ]);
   const next = rows.length > take ? rows.pop()! : null;
   return {
-    suggestions: rows as (AiSuggestion & { status: SuggestionStatus })[],
+    suggestions: rows as (AiSuggestion & {
+      status: SuggestionStatus;
+      lead: {
+        email: string;
+        firstName: string | null;
+        lastName: string | null;
+        companyName: string | null;
+      } | null;
+    })[],
     nextCursor: next?.id ?? null,
+    total,
   };
 }
 

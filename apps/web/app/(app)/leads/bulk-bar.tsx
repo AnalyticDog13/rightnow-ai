@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useAiOn } from "../../../components/ai-assist";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { call, errorText } from "../accounts/api-client";
@@ -40,6 +41,7 @@ export function BulkBar({
   const [tags, setTags] = useState("");
   const [list, setList] = useState("");
   const [busy, setBusy] = useState(false);
+  const aiOn = useAiOn();
 
   async function run(
     label: string,
@@ -233,13 +235,15 @@ export function BulkBar({
           {over ? "Export all matching the filter (selection is over 1,000)" : "Export selected"}
         </a>
       </Button>
-      <Button
-        variant="outline"
-        disabled={busy || ids.length > 500}
-        onClick={() => void personalize()}
-      >
-        Write personalization (AI)
-      </Button>
+      {aiOn && (
+        <Button
+          variant="outline"
+          disabled={busy || ids.length > 500}
+          onClick={() => void personalize()}
+        >
+          Write personalization (AI)
+        </Button>
+      )}
       {isAdmin && (
         <Button
           variant="outline"

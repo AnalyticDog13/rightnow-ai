@@ -159,21 +159,21 @@ describe("suggestions and feedback", () => {
     await setRole("OWNER");
   });
 
-  it("an API key needs ai:write to review and inbox:write to give feedback", async () => {
+  it("an API key never reviews (401); ai:read lists", async () => {
     const { createApiKey } = await import("@rightnow/core");
     const key = async (scopes: string[]) => ({
       authorization: `Bearer ${(await createApiKey(db.prisma, workspaceId, scopes.join(","), scopes)).token}`,
     });
     const { sug } = await seed();
     const s = await sug("DRAFT", "Hi");
-    expect(
-      (await one.PATCH(req("PATCH", "x", { status: "APPROVED" }, await key(["ai:read"])), p(s.id)))
-        .status,
-    ).toBe(403);
-    expect(
-      (await one.PATCH(req("PATCH", "x", { status: "APPROVED" }, await key(["ai:write"])), p(s.id)))
-        .status,
-    ).toBe(200);
+    for (const scopes of [["ai:read"], ["ai:write"], ["all:all"]])
+      expect(
+        (await one.PATCH(req("PATCH", "x", { status: "APPROVED" }, await key(scopes)), p(s.id)))
+          .status,
+      ).toBe(401);
+    expect((await db.prisma.aiSuggestion.findUniqueOrThrow({ where: { id: s.id } })).status).toBe(
+      "PENDING",
+    );
     expect(
       (await list.GET(req("GET", "ai/suggestions", undefined, await key(["ai:read"])))).status,
     ).toBe(200);
@@ -261,6 +261,14 @@ describe("feature routes", () => {
       expect([name, r.status, (await json(r)).error]).toEqual([name, 412, "ai_not_configured"]);
     }
     expect((await post("draft", { stepId: "s", bogus: 1 })).status).toBe(400);
+  });
+
+  it("status reports whether AI is configured", async () => {
+    const st = await import("../app/api/v1/ai/status/route");
+    await db.prisma.workspace.update({ where: { id: workspaceId }, data: { aiConfigEnc: null } });
+    expect(await json(await st.GET(req("GET", "ai/status")))).toEqual({ configured: false });
+    expect((await put(CFG)).status).toBe(200);
+    expect(await json(await st.GET(req("GET", "ai/status")))).toEqual({ configured: true });
   });
 
   it("personalize is 202 {jobId} with a queued ai_personalize job; a VIEWER and a read-only key are refused; an unknown step is 404", async () => {

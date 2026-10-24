@@ -164,8 +164,9 @@ An official SDK, a CLI and an MCP server are not provided (PS-AUTO-14); generate
 | POST | `/ai/recommend` | MEMBER | `ai:write` |
 | POST | `/ai/reply-draft` | MEMBER | `ai:write` |
 | POST | `/ai/score` | MEMBER | `ai:write` |
+| GET | `/ai/status` | VIEWER | `ai:read` |
 | GET | `/ai/suggestions` | VIEWER | `ai:read` |
-| PATCH | `/ai/suggestions/{id}` | MEMBER | `ai:write` |
+| PATCH | `/ai/suggestions/{id}` | MEMBER | session only |
 | POST | `/ai/summary` | MEMBER | `ai:write` |
 | GET | `/analytics` | VIEWER | `analytics:read` |
 | GET | `/analytics/accounts` | VIEWER | `analytics:read` |

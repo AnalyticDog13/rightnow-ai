@@ -17,6 +17,7 @@ const committed = () => JSON.parse(readFileSync(join(root, "docs/openapi.json"),
 /** Handlers that deliberately take no API key. Everything else at VIEWER/MEMBER level needs a scope. */
 const SESSION_ONLY: Record<string, string> = {
   "GET /oauth/sessions/{id}": "polled by the browser tab that started the OAuth connect",
+  "PATCH /ai/suggestions/{id}": "an API key is not a human reviewer (D47)",
 };
 
 /** POST handlers that only read (they render or preview), so they take a `:read` scope. */

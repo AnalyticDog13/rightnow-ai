@@ -5,9 +5,9 @@ import { route } from "../../../../../../lib/api";
 
 export const dynamic = "force-dynamic";
 
-/** Approve or reject: the only way AI text leaves PENDING (D47). MEMBER; a VIEWER gets 403. */
+/** Approve or reject: the only way AI text leaves PENDING (D47). Session only (an API key gets 401), MEMBER; a VIEWER gets 403. */
 export const PATCH = route(
-  { auth: "session-or-apikey", scope: "ai:write", body: suggestionReview },
+  { auth: "session", role: "MEMBER", body: suggestionReview }, // an API key is not a human reviewer (D47)
   (c) =>
     run(() =>
       reviewSuggestion(prisma, systemClock, c.workspaceId, c.userId, c.params.id!, c.body.status),

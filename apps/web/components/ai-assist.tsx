@@ -1,8 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { call, errorText } from "../app/(app)/accounts/api-client";
 import { Button } from "./ui/button";
+
+let configured: Promise<boolean> | undefined;
+/** Whether AI is set up (D47), asked once per page load; the buttons stay hidden until the answer is yes. */
+function isConfigured() {
+  configured ??= call("/api/v1/ai/status", "GET").then((r) => r.ok && r.json.configured === true);
+  void configured.then((on) => on || (configured = undefined)); // only a yes is remembered
+  return configured;
+}
+export function useAiOn() {
+  const [on, setOn] = useState(false);
+  useEffect(() => void isConfigured()?.then(setOn), []);
+  return on;
+}
 
 /**
  * One AI action (D47): POST `/api/v1/ai/<path>`, show the model text, and for a reviewable kind offer Use / Discard.
@@ -25,6 +38,7 @@ export function AiAssist({
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ id: string; text: string } | null>(null);
   const [err, setErr] = useState("");
+  const on = useAiOn();
 
   async function go() {
     setBusy(true);
@@ -44,6 +58,7 @@ export function AiAssist({
     setResult(null);
   }
 
+  if (!on) return null;
   return (
     <div className="flex flex-col gap-2">
       <Button type="button" variant="outline" disabled={disabled || busy} onClick={() => void go()}>
