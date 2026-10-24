@@ -873,12 +873,12 @@
    "id": "P7-T08b",
    "phase": 7,
    "title": "UI polish: rich-text compose, link-target warnings, health sparkline, failed-sends view, carry-forwards",
-   "status": "todo",
+   "status": "done",
    "deps": [
     "P7-T08a"
    ],
    "model": "sonnet",
-   "commit": null,
+   "commit": "40f5e24",
    "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md (incl. Revision 2); tests listed there pass"
   },
   {
