@@ -7,6 +7,7 @@ import type {
 } from "@rightnow/db/client";
 import { z } from "zod";
 import { AccountError, notFound } from "../accounts/service";
+import { scopeAllows } from "../apikeys";
 import { audit } from "../audit";
 import type { Clock } from "../clock";
 
@@ -102,16 +103,32 @@ export const suggestionQuery = z.strictObject({
 export const suggestionReview = z.strictObject({ status: z.enum(["APPROVED", "REJECTED"]) });
 export const aiFeedbackInput = z.strictObject({ vote: z.union([z.literal(1), z.literal(-1)]) });
 
-export async function listSuggestions(db: Db, ws: string, input: unknown) {
+/** Kinds made from a thread's messages: an API key without `inbox:read` does not see them (I1). */
+const THREAD_KINDS: AiSuggestionKind[] = ["SUMMARY", "REPLY_DRAFT", "FOLLOWUP"];
+
+/** `c.scopes` is set for an API key: no thread-derived kinds without `inbox:read`, no `lead` without `leads:read`. */
+export async function listSuggestions(
+  db: Db,
+  ws: string,
+  input: unknown,
+  c: { scopes?: string[] } = {},
+) {
   const { cursor, take = 50, ...f } = suggestionQuery.parse(input);
-  const where = { workspaceId: ws, ...f };
+  const noThreads = c.scopes && !scopeAllows(c.scopes, "inbox:read");
+  const where = {
+    workspaceId: ws,
+    ...f,
+    ...(noThreads && { AND: [{ kind: { notIn: THREAD_KINDS } }] }),
+  };
   const [rows, total] = await Promise.all([
     db.aiSuggestion.findMany({
       where,
       // who the text is for: the reviewer must see it (the lead's email, name and company, nothing else)
-      include: {
-        lead: { select: { email: true, firstName: true, lastName: true, companyName: true } },
-      },
+      ...((!c.scopes || scopeAllows(c.scopes, "leads:read")) && {
+        include: {
+          lead: { select: { email: true, firstName: true, lastName: true, companyName: true } },
+        },
+      }),
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: take + 1,
       ...(cursor && { cursor: { id: cursor } }),

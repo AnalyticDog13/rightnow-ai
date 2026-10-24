@@ -1,5 +1,6 @@
 import type { Prisma, PrismaClient } from "@rightnow/db/client";
 import { AccountError } from "../accounts/service";
+import { scopeAllows } from "../apikeys";
 import { audit } from "../audit";
 import { listLeads, toApiLead, type LeadQuery } from "./service";
 import { line } from "../csv";
@@ -50,15 +51,20 @@ export async function* exportLeadsCsv(
  * PS-LEAD-22: everything stored about one lead (a data-access export, audited as `lead.export`). Threads are the
  * lead's by `Thread.leadId` or by a message to/from/cc its address (exact, lowercase match; shortcut: leads merged
  * into this one are not folded in). Nothing of another lead or workspace is read.
+ * I2: an API key (`c.scopes`) gets the threads only with `inbox:read` and notes/tasks/deals only with `crm:read`;
+ * what it lacks is named in `omitted`.
  */
 export async function exportLeadData(
   db: PrismaClient | Prisma.TransactionClient,
   ws: string,
   leadId: string,
   actorId?: string | null,
+  c: { scopes?: string[] } = {},
 ) {
   const lead = await db.lead.findFirst({ where: { id: leadId, workspaceId: ws } });
   if (!lead) throw new AccountError(404, "Not found");
+  const has = (s: string) => !c.scopes || scopeAllows(c.scopes, s);
+  const omitted = [...(has("inbox:read") ? [] : ["threads"]), ...(has("crm:read") ? [] : ["crm"])];
   const byAddress = await db.message.findMany({
     where: {
       workspaceId: ws,
@@ -95,24 +101,25 @@ export async function exportLeadData(
   await audit(db, { workspaceId: ws, actorId }, "lead.export", leadId);
   return {
     lead: toApiLead(lead),
-    notes,
-    tasks,
-    opportunities,
+    ...(has("crm:read") && { notes, tasks, opportunities }),
     events,
-    threads: threads.map((t) => ({
-      id: t.id,
-      subject: t.subject,
-      messages: t.messages.map((m) => ({
-        direction: m.direction,
-        from: m.fromEmail,
-        to: m.to,
-        cc: m.cc,
-        subject: m.subject,
-        sentAt: m.sentAt,
-        text: m.text,
-        html: m.html,
-        rfcMessageId: m.rfcMessageId,
+    ...(omitted.length ? { omitted } : {}),
+    ...(has("inbox:read") && {
+      threads: threads.map((t) => ({
+        id: t.id,
+        subject: t.subject,
+        messages: t.messages.map((m) => ({
+          direction: m.direction,
+          from: m.fromEmail,
+          to: m.to,
+          cc: m.cc,
+          subject: m.subject,
+          sentAt: m.sentAt,
+          text: m.text,
+          html: m.html,
+          rfcMessageId: m.rfcMessageId,
+        })),
       })),
-    })),
+    }),
   };
 }

@@ -91,8 +91,8 @@ beforeAll(async () => {
     .map((c) => c.split(";")[0])
     .join("; ");
   readKey = await keyWith(["webhooks:read"]);
-  writeKey = await keyWith(["webhooks:write"]);
-  inboxKey = await keyWith(["webhooks:write", "inbox:read"]);
+  writeKey = await keyWith(["webhooks:write", "leads:read"]);
+  inboxKey = await keyWith(["webhooks:write", "inbox:read", "leads:read"]);
 });
 afterAll(async () => {
   server.close();
@@ -102,6 +102,10 @@ afterAll(async () => {
 describe("webhook routes", () => {
   it("create shows the secret once; reads never do; scopes and the reply-body rule apply", async () => {
     expect((await mk({}, bearer(readKey))).status).toBe(403);
+    // M4: email_sent carries the lead's fields
+    expect(await json(await mk({}, bearer(await keyWith(["webhooks:write"]))))).toMatchObject({
+      error: "scope_required:leads:read",
+    });
     const ok = await mk({ headers: { "X-Token": "abc" } }, bearer(writeKey));
     expect(ok.status).toBe(200);
     const w = (await json(ok)) as { id: string; secret: string };

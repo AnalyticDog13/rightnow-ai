@@ -236,16 +236,29 @@ describe("background jobs, audit log, tags, members and lead export routes", () 
     expect(r.headers.get("content-disposition")).toBe(
       `attachment; filename="lead-${lead.id}.json"`,
     );
-    expect(await json(r)).toMatchObject({
+    // I2: a leads:read-only key gets neither threads nor CRM sections, and is told so
+    const body = await json(r);
+    expect(body).toMatchObject({
       lead: { id: lead.id, email: "ex@acme.test" },
-      threads: [],
-      notes: [],
+      omitted: ["threads", "crm"],
     });
+    expect(body).not.toHaveProperty("threads");
+    expect(body).not.toHaveProperty("notes");
+    const full = await exportRoute.GET(
+      req(
+        "GET",
+        `leads/${lead.id}/export`,
+        undefined,
+        bearer(await keyWith(["leads:read", "inbox:read", "crm:read"])),
+      ),
+      p(lead.id),
+    );
+    expect(await json(full)).toMatchObject({ threads: [], notes: [] });
     expect(
       await db.prisma.auditLog.count({
         where: { workspaceId, action: "lead.export", target: lead.id },
       }),
-    ).toBe(1);
+    ).toBe(2);
     expect(
       (await exportRoute.GET(req("GET", `leads/${foreign.id}/export`), p(foreign.id))).status,
     ).toBe(404);

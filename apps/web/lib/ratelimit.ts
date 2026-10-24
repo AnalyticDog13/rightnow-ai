@@ -3,6 +3,9 @@ import { hit } from "@rightnow/core";
 import { prisma } from "@rightnow/db";
 import { HttpError } from "./api";
 
+/** A9: a vps request arrived without `X-Real-IP` (web reached without Caddy, or its `header_up` is gone); readyz says so. */
+export let realIpMissing = false;
+
 /**
  * D49 client IP. Only in vps mode, where web listens on 127.0.0.1 behind Caddy (`header_up X-Real-IP {remote_host}`
  * replaces whatever the client sent), is `X-Real-IP` trusted; without it the IP is `unknown`, which fails closed.
@@ -11,6 +14,10 @@ import { HttpError } from "./api";
 export function clientIp(req: Request, mode: "local" | "vps") {
   if (mode !== "vps") return "local";
   const ip = req.headers.get("x-real-ip")?.trim().slice(0, 64) || "unknown";
+  if (ip === "unknown" && !realIpMissing) {
+    realIpMissing = true;
+    console.warn("x_real_ip_missing"); // A9: once per process; every caller now shares the `unknown` bucket
+  }
   return isIPv6(ip) ? v6Bucket(ip) : ip;
 }
 

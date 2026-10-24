@@ -79,8 +79,8 @@ test("exports exactly the lead's threads (text and html), note, task, deal and 3
   const { ws, lead } = await world();
   const out = await exportLeadData(P(), ws, lead.id, "u1");
   expect(out.lead).toMatchObject({ id: lead.id, email: "jane@acme.test" });
-  expect(out.threads.map((t) => t.subject).sort()).toEqual(["Re: hi", "hi"]);
-  const inbound = out.threads.find((t) => t.subject === "Re: hi")!;
+  expect(out.threads!.map((t) => t.subject).sort()).toEqual(["Re: hi", "hi"]);
+  const inbound = out.threads!.find((t) => t.subject === "Re: hi")!;
   expect(inbound.messages).toHaveLength(1);
   expect(inbound.messages[0]).toMatchObject({
     direction: "IN",
@@ -88,7 +88,7 @@ test("exports exactly the lead's threads (text and html), note, task, deal and 3
     text: "plain",
     html: "<p>rich</p>",
   });
-  expect(out.threads.find((t) => t.subject === "hi")!.messages[0]).toMatchObject({
+  expect(out.threads!.find((t) => t.subject === "hi")!.messages[0]).toMatchObject({
     direction: "OUT",
     to: ["jane@acme.test"],
   });
@@ -148,11 +148,30 @@ test("a foreign lead's thread that cc'd this lead once exposes only that message
   });
   await P().note.create({ data: { workspaceId: ws, leadId: b.id, body: "b lead note" } });
   const out = await exportLeadData(P(), ws, a.id);
-  expect(out.threads.map((t) => t.messages.map((m) => m.text))).toEqual([["looping in a"]]);
+  expect(out.threads!.map((t) => t.messages.map((m) => m.text))).toEqual([["looping in a"]]);
   expect(out.notes).toEqual([]);
   expect(JSON.stringify(out)).not.toMatch(/private pricing|internal note|lead note/);
   // the thread's own lead still gets everything
   const own = await exportLeadData(P(), ws, b.id);
-  expect(own.threads[0]!.messages).toHaveLength(2);
+  expect(own.threads![0]!.messages).toHaveLength(2);
   expect(own.notes).toHaveLength(2);
+});
+
+test("an API key without inbox:read / crm:read gets no threads / CRM sections, and is told so (I2)", async () => {
+  const { ws, lead } = await world();
+  const bare = await exportLeadData(P(), ws, lead.id, null, { scopes: ["leads:read"] });
+  expect(bare).not.toHaveProperty("threads");
+  for (const k of ["notes", "tasks", "opportunities"]) expect(bare).not.toHaveProperty(k);
+  expect(bare.omitted).toEqual(["threads", "crm"]);
+  expect(bare.events).toHaveLength(3);
+  expect(JSON.stringify(bare)).not.toMatch(/plain|jane note|call jane|Jane deal/);
+  const inbox = await exportLeadData(P(), ws, lead.id, null, {
+    scopes: ["leads:read", "inbox:read"],
+  });
+  expect(inbox.threads).toHaveLength(2);
+  expect(inbox.omitted).toEqual(["crm"]);
+  const all = await exportLeadData(P(), ws, lead.id, null, { scopes: ["all:all"] });
+  expect(all.omitted).toBeUndefined();
+  expect(all.notes).toHaveLength(1);
+  expect((await exportLeadData(P(), ws, lead.id)).omitted).toBeUndefined(); // a session
 });

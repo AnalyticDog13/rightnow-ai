@@ -8,7 +8,7 @@ import { audit } from "../audit";
 import type { Clock } from "../clock";
 import { decrypt, encrypt } from "../crypto";
 import { postWebhook, type OutEnv } from "./deliver";
-import { REPLY_EVENTS, WEBHOOK_EVENTS } from "./events";
+import { LEADLESS_EVENTS, REPLY_EVENTS, WEBHOOK_EVENTS } from "./events";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 type Actor = string | null | undefined;
@@ -84,7 +84,7 @@ async function checkUrl(url: string, env: OutEnv) {
   }
 }
 
-/** Event names, the campaign and (for an API key) `inbox:read` for reply bodies (I3). */
+/** Event names, the campaign and (for an API key) `inbox:read` for reply bodies (I3), `leads:read` for lead events (M4). */
 async function checkRefs(db: Db, ws: string, d: Pick<Input, "events" | "campaignId">, c: Caller) {
   if (
     c.scopes &&
@@ -92,6 +92,13 @@ async function checkRefs(db: Db, ws: string, d: Pick<Input, "events" | "campaign
     !scopeAllows(c.scopes, "inbox:read")
   )
     throw new AccountError(403, "scope_required:inbox:read");
+  // M4: every other event names a lead (lead_email and its fields in the payload)
+  if (
+    c.scopes &&
+    d.events.some((e) => !LEADLESS_EVENTS.includes(e)) &&
+    !scopeAllows(c.scopes, "leads:read")
+  )
+    throw new AccountError(403, "scope_required:leads:read");
   const custom = d.events.filter((e) => e !== "all_events" && !WEBHOOK_EVENTS.includes(e));
   if (
     custom.length &&
@@ -176,6 +183,14 @@ export async function updateWebhook(
     },
     c,
   );
+  // I3: stored headers may carry the old receiver's credentials; a new origin gets new ones (or `headers: null`)
+  if (
+    p.url !== undefined &&
+    p.headers === undefined &&
+    cur.headersEnc &&
+    new URL(p.url).origin !== new URL(cur.url).origin
+  )
+    throw bad("headers_required");
   if (p.url !== undefined) await checkUrl(p.url, env);
   return prisma.$transaction(async (tx) => {
     const r = await tx.webhook.updateMany({

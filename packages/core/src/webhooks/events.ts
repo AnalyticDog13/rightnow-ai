@@ -35,6 +35,9 @@ export const WEBHOOK_EVENTS = [
 /** Reply events expose message bodies: an API key also needs `inbox:read` for them (I3). */
 export const REPLY_EVENTS = ["reply_received", "auto_reply_received", "all_events"];
 
+/** The only events whose payload names no lead; any other (labels and `all_events` included) needs `leads:read` (M4). */
+export const LEADLESS_EVENTS = ["account_error", "campaign_completed", "quota_reached"];
+
 /** D44 name of an Event; null = not deliverable (machine open, scanner click, unmapped type). */
 export function webhookEventName(
   e: Pick<Event, "type" | "meta">,

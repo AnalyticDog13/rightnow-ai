@@ -179,6 +179,36 @@ describe("suggestions and feedback", () => {
     ).toBe(200);
   });
 
+  it("a key without inbox:read sees no thread-derived kinds; without leads:read no lead block (I1)", async () => {
+    const { createApiKey } = await import("@rightnow/core");
+    const key = async (scopes: string[]) => ({
+      authorization: `Bearer ${(await createApiKey(db.prisma, workspaceId, scopes.join(","), scopes)).token}`,
+    });
+    const { lead, sug } = await seed();
+    await sug("PERSONALIZATION", "P");
+    for (const kind of ["SUMMARY", "REPLY_DRAFT", "FOLLOWUP"] as const)
+      await db.prisma.aiSuggestion.create({
+        data: { workspaceId, kind, text: "thread text", leadId: lead.id },
+      });
+    const get = async (scopes: string[]) =>
+      json(
+        await list.GET(
+          req("GET", `ai/suggestions?leadId=${lead.id}`, undefined, await key(scopes)),
+        ),
+      );
+    const bare = await get(["ai:read"]);
+    expect(bare.suggestions.map((s: { kind: string }) => s.kind)).toEqual(["PERSONALIZATION"]);
+    expect(bare.total).toBe(1);
+    expect(bare.suggestions[0].lead).toBeUndefined();
+    const full = await get(["ai:read", "inbox:read", "leads:read"]);
+    expect(full.suggestions).toHaveLength(4);
+    expect(full.suggestions[0].lead).toMatchObject({ email: lead.email });
+    // a session is unaffected
+    const s = await json(await list.GET(req("GET", `ai/suggestions?leadId=${lead.id}`)));
+    expect(s.suggestions).toHaveLength(4);
+    expect(s.suggestions[0].lead).toMatchObject({ email: lead.email });
+  });
+
   it("thumbs: 1 and -1 are stored and audited; anything else is 400; a VIEWER cannot", async () => {
     const P = db.prisma;
     const a = await P.emailAccount.create({
@@ -261,6 +291,40 @@ describe("feature routes", () => {
       expect([name, r.status, (await json(r)).error]).toEqual([name, 412, "ai_not_configured"]);
     }
     expect((await post("draft", { stepId: "s", bogus: 1 })).status).toBe(400);
+  });
+
+  it("a key needs the scopes of the data each route reads (I1)", async () => {
+    await db.prisma.workspace.update({ where: { id: workspaceId }, data: { aiConfigEnc: null } });
+    const { createApiKey } = await import("@rightnow/core");
+    const as = async (name: string, body: unknown, scopes: string[]) => {
+      const m = (await import(
+        `../app/api/v1/ai/${name}/route`
+      )) as typeof import("../app/api/v1/ai/draft/route");
+      const t = (await createApiKey(db.prisma, workspaceId, "k", scopes)).token;
+      const r = await m.POST(req("POST", `ai/${name}`, body, { authorization: `Bearer ${t}` }));
+      return [r.status, (await json(r)).error];
+    };
+    const needs: [string, unknown, string[]][] = [
+      ["summary", { threadId: "t" }, ["inbox:read"]],
+      ["reply-draft", { threadId: "t" }, ["inbox:read"]],
+      ["followup", { leadId: "l" }, ["leads:read", "inbox:read"]],
+      ["score", { leadId: "l" }, ["leads:read", "inbox:read"]],
+      ["recommend", { leadId: "l" }, ["leads:read", "inbox:read"]],
+      ["personalize", { leadIds: ["l"] }, ["leads:read"]],
+    ];
+    for (const [name, body, extra] of needs) {
+      for (const missing of extra)
+        expect([
+          name,
+          ...(await as(name, body, ["ai:write", ...extra.filter((x) => x !== missing)])),
+        ]).toEqual([name, 403, `scope_required:${missing}`]);
+      // every scope held: the route goes on (AI is off here)
+      expect([name, ...(await as(name, body, ["ai:write", ...extra]))]).toEqual([
+        name,
+        412,
+        "ai_not_configured",
+      ]);
+    }
   });
 
   it("status reports whether AI is configured", async () => {

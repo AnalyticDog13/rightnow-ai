@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { PrismaClient } from "@rightnow/db/client";
+import { AccountError } from "./accounts/service";
 
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 const alnum = (n: number) => randomBytes(n).toString("base64url").replace(/[-_]/g, "x").slice(0, n);
@@ -58,6 +59,12 @@ export function scopeAllows(scopes: string[], scope: string) {
       s === "all:all" ||
       (s === `${resource}:write` && WRITE_VERBS.includes(action!)),
   );
+}
+
+/** An API-key caller (`scopes` set) must also hold each of `needed` (403 `scope_required:<scope>`); a session passes. */
+export function requireScopes(scopes: string[] | undefined, ...needed: string[]) {
+  for (const n of needed)
+    if (scopes && !scopeAllows(scopes, n)) throw new AccountError(403, `scope_required:${n}`);
 }
 
 /** Scopes offered when creating a key (`<resource>:all` stays valid for verification but is not offered). */

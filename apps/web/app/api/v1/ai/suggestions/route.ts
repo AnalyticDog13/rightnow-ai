@@ -6,5 +6,5 @@ export const dynamic = "force-dynamic";
 
 export const GET = route(
   { auth: "session-or-apikey", scope: "ai:read", query: suggestionQuery },
-  (c) => listSuggestions(prisma, c.workspaceId, c.query),
+  (c) => listSuggestions(prisma, c.workspaceId, c.query, { scopes: c.scopes }),
 );

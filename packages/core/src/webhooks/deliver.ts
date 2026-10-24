@@ -144,12 +144,14 @@ type Claimed = {
 
 /**
  * The result write, conditional on our attempt (`SENDING` and `attempts = n`): a late write from an older attempt
- * changes nothing. Lock order: the delivery, then its webhook. A failure (not a 429) bumps the webhook counter in one
- * statement; the statement that flips it to ERROR fails its PENDING rows and audits once (R9). A row whose webhook is
- * ERROR ends FAILED `webhook_disabled`.
+ * changes nothing. Lock order (M1): the webhook, then the delivery, as `deleteWebhook`'s cascade takes them, so the
+ * two cannot deadlock. A failure (not a 429) bumps the webhook counter in one statement; the statement that flips
+ * it to ERROR fails its PENDING rows and audits once (R9). A row whose webhook is ERROR ends FAILED `webhook_disabled`.
  */
 async function record(prisma: PrismaClient, now: Date, d: Claimed, o: Outcome): Promise<boolean> {
   return prisma.$transaction(async (tx) => {
+    const [w] = await tx.$queryRaw<{ status: string }[]>`
+      SELECT status::text FROM "Webhook" WHERE id = ${d.webhookId} FOR NO KEY UPDATE`;
     const own = await tx.$queryRaw<{ workspaceId: string }[]>`
       SELECT "workspaceId" FROM "WebhookDelivery" WHERE id = ${d.id} AND status = 'SENDING' AND attempts = ${d.attempts}
       FOR UPDATE`;
@@ -172,8 +174,6 @@ async function record(prisma: PrismaClient, now: Date, d: Claimed, o: Outcome): 
       });
       return true;
     }
-    const [w] = await tx.$queryRaw<{ status: string }[]>`
-      SELECT status::text FROM "Webhook" WHERE id = ${d.webhookId} FOR NO KEY UPDATE`;
     let status = w?.status ?? "ERROR";
     if (status === "ACTIVE" && o.status !== 429) {
       const [r] = await tx.$queryRaw<{ status: string }[]>`

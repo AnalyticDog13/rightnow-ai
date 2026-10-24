@@ -1,7 +1,7 @@
 import type { Prisma, PrismaClient } from "@rightnow/db/client";
 import { z } from "zod";
 import { AccountError, isPrismaCode, notFound } from "../accounts/service";
-import { scopeAllows } from "../apikeys";
+import { requireScopes } from "../apikeys";
 import { audit } from "../audit";
 import { leadQuery } from "../leads/service";
 import { RENDER_LEAD_FIELDS } from "../planner";
@@ -87,8 +87,7 @@ export function requireViewScope(
   verb: "read" | "create" | "update" | "delete",
 ) {
   const needed = `${scope === "leads" ? "leads" : "inbox"}:${verb === "read" ? "read" : scope === "leads" ? verb : "write"}`;
-  if (scopes && !scopeAllows(scopes, needed))
-    throw new AccountError(403, `scope_required:${needed}`);
+  requireScopes(scopes, needed);
 }
 
 /** The filters parsed for the view's scope, so an inbox view never holds lead fields and the reverse. */

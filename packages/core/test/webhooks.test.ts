@@ -298,7 +298,7 @@ describe("create", () => {
 
   test("I3: an API key needs inbox:read for reply events or all_events", async () => {
     const w = await world({ leads: 0 });
-    const key = { scopes: ["webhooks:write"] };
+    const key = { scopes: ["webhooks:write", "leads:read"] };
     for (const events of [["reply_received"], ["auto_reply_received"], ["all_events"]])
       expect(await err(createWebhook(P(), w.ws, null, { url: URL_(), events }, OUT, key))).toEqual({
         status: 403,
@@ -316,8 +316,58 @@ describe("create", () => {
       await err(updateWebhook(P(), w.ws, null, id, { events: ["all_events"] }, OUT, key)),
     ).toEqual({ status: 403, message: "scope_required:inbox:read" });
     await createWebhook(P(), w.ws, null, { url: URL_(), events: ["all_events"] }, OUT, {
-      scopes: ["webhooks:write", "inbox:read"],
+      scopes: ["webhooks:write", "inbox:read", "leads:read"],
     });
+  });
+
+  test("M4: an API key needs leads:read for any event that carries lead fields", async () => {
+    const w = await world({ leads: 0 });
+    const key = { scopes: ["webhooks:write", "inbox:read"] };
+    for (const events of [["email_sent"], ["lead_interested"], ["reply_received"], ["all_events"]])
+      expect(await err(createWebhook(P(), w.ws, null, { url: URL_(), events }, OUT, key))).toEqual({
+        status: 403,
+        message: "scope_required:leads:read",
+      });
+    const { id } = await createWebhook(
+      P(),
+      w.ws,
+      null,
+      { url: URL_(), events: ["account_error", "campaign_completed", "quota_reached"] },
+      OUT,
+      key,
+    );
+    expect(
+      await err(updateWebhook(P(), w.ws, null, id, { events: ["email_bounced"] }, OUT, key)),
+    ).toEqual({ status: 403, message: "scope_required:leads:read" });
+    await updateWebhook(P(), w.ws, null, id, { events: ["email_bounced"] }, OUT, {
+      scopes: [...key.scopes, "leads:read"],
+    });
+  });
+
+  test("I3: a URL moved to another origin with stored headers needs new headers; the secret stays", async () => {
+    const w = await world({ leads: 0 });
+    const { id, secret } = await hook(w, ["email_sent"], { headers: { "X-Token": "t1" } });
+    const before = (await P().webhook.findUniqueOrThrow({ where: { id } })).secretEnc;
+    const moved = "https://93.184.216.35/elsewhere";
+    expect(await err(updateWebhook(P(), w.ws, "u1", id, { url: moved }, OUT))).toEqual({
+      status: 400,
+      message: "headers_required",
+    });
+    // the same origin, another path: the headers stay
+    const cur = (await P().webhook.findUniqueOrThrow({ where: { id } })).url;
+    const same = new URL("/other", cur).toString();
+    expect(await updateWebhook(P(), w.ws, "u1", id, { url: same }, OUT)).toMatchObject({
+      url: same,
+      headerNames: ["X-Token"],
+    });
+    expect(
+      await updateWebhook(P(), w.ws, "u1", id, { url: moved, headers: null }, OUT),
+    ).toMatchObject({
+      url: moved,
+      headerNames: [],
+    });
+    expect((await P().webhook.findUniqueOrThrow({ where: { id } })).secretEnc).toBe(before);
+    expect(secret).toMatch(/^whsec_/);
   });
 
   test("update, delete and isolation", async () => {
@@ -634,6 +684,16 @@ describe("subscription filter", () => {
       nextAttemptAt: T,
     });
   });
+});
+
+test("M6: an Event of a soft-deleted (merged) lead gets no delivery, as it gets no rule run", async () => {
+  const w = await world();
+  const W = await hook(w, ["all_events"]);
+  await P().lead.update({ where: { id: w.lead.id }, data: { deletedAt: T } });
+  await accepted(w);
+  await ev(w, "ACCOUNT_ERROR", { accountId: w.accounts[0]!.id, meta: { reason: "x" } });
+  await drain();
+  expect((await rows(W.id)).map((d) => d.eventType)).toEqual(["account_error"]);
 });
 
 describe("retries", () => {

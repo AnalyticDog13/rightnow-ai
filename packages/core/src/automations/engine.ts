@@ -461,11 +461,9 @@ async function runBatch(
         const m = meta(e);
         const lead = e.leadId ? leads.get(e.leadId) : undefined;
         // D43: the loop guard (an action's own Event), no fabricated engagement, no deleted or foreign lead
-        const evaluable =
-          !m.ruleId &&
-          !m.machine &&
-          !m.scanner &&
-          (!e.leadId || (!!lead && !lead.deletedAt && lead.workspaceId === e.workspaceId));
+        const liveLead =
+          !e.leadId || (!!lead && !lead.deletedAt && lead.workspaceId === e.workspaceId);
+        const evaluable = !m.ruleId && !m.machine && !m.scanner && liveLead;
         let runs = 0;
         if (evaluable)
           for (const r of rules)
@@ -475,7 +473,9 @@ async function runBatch(
               matches(r.conditions as RuleConditions, e, lead)
             )
               runs += await runRule(tx, clock, now, r, e, sel.failWith);
-        const deliveries = sel.failWith ? 0 : await dispatchHooks.deliveries(tx, e, now, hooks);
+        // M6: a deleted (merged) lead's Event is not delivered either
+        const deliveries =
+          sel.failWith || !liveLead ? 0 : await dispatchHooks.deliveries(tx, e, now, hooks);
         out.runs += runs;
         out.deliveries += deliveries;
       }),

@@ -8,7 +8,9 @@ export const dynamic = "force-dynamic";
 /** PS-LEAD-22: one lead's data as a JSON download (audited `lead.export`). */
 export const GET = route({ auth: "session-or-apikey", scope: "leads:read", role: "MEMBER" }, (c) =>
   run(async () => {
-    const data = await exportLeadData(prisma, c.workspaceId, c.params.id!, c.userId);
+    const data = await exportLeadData(prisma, c.workspaceId, c.params.id!, c.userId, {
+      scopes: c.scopes,
+    });
     return new Response(JSON.stringify(data), {
       headers: {
         "content-type": "application/json",

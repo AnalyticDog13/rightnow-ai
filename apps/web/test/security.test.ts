@@ -431,6 +431,22 @@ describe("vps mode", () => {
     expect(at("203.0.113.9")).toBe("203.0.113.9");
   });
 
+  it("A9: vps mode without X-Real-IP fails closed, warns once with a code only, and readyz reports it", async () => {
+    const { vi } = await import("vitest");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { clientIp } = await import("../lib/ratelimit");
+    expect(clientIp(new Request(ORIGIN), "vps")).toBe("unknown");
+    expect(clientIp(new Request(ORIGIN), "vps")).toBe("unknown");
+    const calls = warn.mock.calls.filter((c) => c[0] === "x_real_ip_missing");
+    expect(calls.length).toBeLessThanOrEqual(1); // an earlier vps request in this file may have warned already
+    for (const c of calls) expect(c).toEqual(["x_real_ip_missing"]);
+    warn.mockRestore();
+    const ready = await import("../app/api/readyz/route");
+    expect(await (await ready.GET(new Request(`${ORIGIN}/api/readyz`))).json()).toMatchObject({
+      proxy: "x_real_ip_missing",
+    });
+  });
+
   it("push: a flood from one IP is 429 with Retry-After (the provider redelivers); other IPs pass", async () => {
     const push = await import("../lib/push");
     const now = Date.now();
