@@ -12,9 +12,6 @@ import type { Clock } from "../clock";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
-/** Model output is never parsed as template syntax once it sits in a lead field: "{{" -> "{ {", "}}" -> "} }". */
-export const escapeTemplate = (s: string) => s.replaceAll("{{", "{ {").replaceAll("}}", "} }");
-
 export async function createSuggestion(
   db: Db,
   ws: string,
@@ -65,7 +62,7 @@ export async function reviewSuggestion(
     if (status === "APPROVED" && s.kind === "PERSONALIZATION" && s.leadId)
       await tx.lead.updateMany({
         where: { id: s.leadId, workspaceId: ws, deletedAt: null },
-        data: { personalization: escapeTemplate(s.text) },
+        data: { personalization: s.text },
       });
     await audit(
       tx,

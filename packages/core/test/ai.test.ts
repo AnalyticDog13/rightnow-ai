@@ -8,12 +8,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { aiComplete } from "../src/ai/client";
 import { classifyPrompt, leadFields, oooPrompt } from "../src/ai/prompts";
 import { getAiSettings, loadAiConfig, setAiSettings } from "../src/ai/settings";
-import {
-  createSuggestion,
-  escapeTemplate,
-  listSuggestions,
-  reviewSuggestion,
-} from "../src/ai/suggestions";
+import { createSuggestion, listSuggestions, reviewSuggestion } from "../src/ai/suggestions";
 import { fixedClock } from "../src/clock";
 import { decrypt, ENCRYPTED_COLUMNS, encrypt } from "../src/crypto";
 import { createLabel, gdprDeleteLead, updateLabel } from "../src/leads/service";
@@ -328,9 +323,9 @@ describe("approval invariant", () => {
     appUrl: "https://app.example.com",
     unsubscribeKeys: unsubscribeKeys({ ENCRYPTION_KEY: randomBytes(32).toString("base64") }),
   };
-  const evil = "Loved your post {{unsubscribe_url}}";
+  const evil = "Loved your post {{unsubscribe_url}} {{unsubscribeLink}}";
 
-  test("a PENDING personalization reaches nothing; approving writes it neutralized; it renders literally", async () => {
+  test("a PENDING personalization reaches nothing; approving stores it unchanged; it renders literally", async () => {
     const s = await seedCampaign(P(), { at: T, leads: 1 });
     await P().stepVariant.update({
       where: { id: s.steps[0]!.variant.id },
@@ -397,7 +392,7 @@ describe("approval invariant", () => {
     const ok = await reviewSuggestion(P(), clock, s.ws, "u2", sug.id, "APPROVED");
     expect(ok.text).toBe(evil);
     const lead = await P().lead.findUniqueOrThrow({ where: { id: L } });
-    expect(lead.personalization).toBe("Loved your post { {unsubscribe_url} }");
+    expect(lead.personalization).toBe("Loved your post {{unsubscribe_url}} {{unsubscribeLink}}");
     expect(
       await P().auditLog.count({
         where: { workspaceId: s.ws, action: "ai.approve", actorId: "u2", target: sug.id },
@@ -419,7 +414,8 @@ describe("approval invariant", () => {
       workspace: await P().workspace.findUniqueOrThrow({ where: { id: s.ws } }),
       env: ENV,
     });
-    expect(out.text).toContain("Hi Loved your post { {unsubscribe_url} } bye");
+    expect(out.text).toContain("Hi Loved your post {{unsubscribe_url}} {{unsubscribeLink}} bye");
+    expect(out.text).not.toContain("{ {");
 
     expect(await code(reviewSuggestion(P(), clock, s.ws, "u2", sug.id, "APPROVED"))).toEqual({
       status: 409,
@@ -446,7 +442,7 @@ describe("approval invariant", () => {
     expect(r.filter((x) => x?.status === 409)).toHaveLength(1);
   });
 
-  test("a draft kind is returned as written (the editor keeps its merge tags); escapeTemplate neutralizes braces", async () => {
+  test("a draft kind is returned as written (the editor keeps its merge tags)", async () => {
     const ws = await workspace();
     const s = await P().aiSuggestion.create({
       data: { workspaceId: ws, kind: "DRAFT", text: "Hi {{firstName}}" },
@@ -454,7 +450,6 @@ describe("approval invariant", () => {
     expect((await reviewSuggestion(P(), clock, ws, "u", s.id, "APPROVED")).text).toBe(
       "Hi {{firstName}}",
     );
-    expect(escapeTemplate("a {{b}} }}{{")).toBe("a { {b} } } }{ {");
   });
 
   test("only suggestions.ts writes AiSuggestion status or copies it into a lead", () => {
