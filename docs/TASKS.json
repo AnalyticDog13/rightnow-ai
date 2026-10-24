@@ -882,12 +882,24 @@
    "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md (incl. Revision 2); tests listed there pass"
   },
   {
+   "id": "P8-T00",
+   "phase": 8,
+   "title": "Phase 7 debt: env threaded through createProvider/OAuth/outbox, failed API-key lookup limit, push sync spacing floor, recommend dedupe",
+   "status": "todo",
+   "deps": [
+    "P7-T08b"
+   ],
+   "model": "sonnet",
+   "commit": null,
+   "acceptance": "See docs/plans/phase-8.md P8-T00; tests listed there pass"
+  },
+  {
    "id": "P8-T01",
    "phase": 8,
    "title": "Complete E2E suite per mapping below",
    "status": "todo",
    "deps": [
-    "P7-T08b"
+    "P8-T00"
    ],
    "model": "sonnet",
    "commit": null,
