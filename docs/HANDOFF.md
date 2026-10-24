@@ -1,7 +1,7 @@
 # Handoff
 
 **Phase:** 7 — Advanced features (in progress, branch `phase-7-advanced`). Phase 6 DONE and merged to `main` (114d0ab).
-**Current task:** P7-T02b (webhook routes + UI — sonnet) implemented dafbfb4, in review. Done: P7-T01a dff21db, P7-T01b f2c2b25, P7-T02a fd7c69d. Plan `docs/plans/phase-7.md` + Revision 2 (binding). Order: T02a T02b T03a T03b T04 T05a T05b T06a T06b T07a T07b T09 T08a T08b, sequential (low RAM). `jobs/retention.ts` created minimal by T02a (delivery purge); T03a adds the AutomationRun purge (R13). Ledger `.superpowers/sdd/phase-7/progress.md`.
+**Current task:** P7-T03a (background jobs, audit-logs/tags/members, lead export — sonnet) implemented 003e363, in review. Done: P7-T01a dff21db, P7-T01b f2c2b25, P7-T02a fd7c69d, P7-T02b f84b83a. T07a MUST rate-limit POST /webhooks/:id/test. Plan `docs/plans/phase-7.md` + Revision 2 (binding). Order: T02a T02b T03a T03b T04 T05a T05b T06a T06b T07a T07b T09 T08a T08b, sequential (low RAM). `jobs/retention.ts` created minimal by T02a (delivery purge); T03a adds the AutomationRun purge (R13). Ledger `.superpowers/sdd/phase-7/progress.md`.
 **Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 (approved). Done step plans: `docs/plans/phase-1.md` … `phase-5.md` (+ `phase-4-review.md`, `phase-5-review.md`).
 **Tests:** ~1290 vitest + Playwright (auth, accounts*, campaign-create, deliverability, inbox, leads, test-send …) green; CI `check`, `compose-smoke`, `imap-real` green. Parity: 208/316 ticked.
 
