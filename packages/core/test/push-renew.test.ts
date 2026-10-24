@@ -10,6 +10,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vit
 import { encryptCredentials } from "../src/accounts/credentials";
 import { disconnectAccount, getAccount } from "../src/accounts/service";
 import { fixedClock } from "../src/clock";
+import { resetEnvCache } from "../src/env";
 import { renewPush, type PushEnv } from "../src/push/renew";
 import { testEnv } from "./accounts-fixture";
 
@@ -109,6 +110,8 @@ describe("renewPush", () => {
     });
     const r = await rows();
     expect(r.map((x) => x.status)).toEqual(["ACTIVE", "ACTIVE"]);
+    // the raw insert keeps the instant (no timezone shift)
+    expect(r.every((x) => x.expiresAt.getTime() === T0.getTime() + 7 * 24 * HOUR)).toBe(true);
     expect(providerCalls).not.toContain(s.id);
     expect(stubs.has(s.id)).toBe(false);
 
@@ -205,7 +208,9 @@ describe("renewPush", () => {
       renewed: 0,
       failed: 1,
     });
-    expect(await rows()).toMatchObject([{ status: "FAILED", lastError: "pubsub_permission" }]);
+    expect(await rows()).toMatchObject([
+      { status: "FAILED", lastError: "pubsub_permission", externalId: null },
+    ]);
     const audits = await db.prisma.auditLog.findMany({
       where: { action: "push.failed", target: a.id },
     });
@@ -249,7 +254,11 @@ describe("renewPush", () => {
       await bothStarted(s);
       return { externalId: `ext-${++n}`, expiresAt: new Date(T0.getTime() + 7 * 24 * HOUR) };
     });
-    await Promise.all([renewPush(db.prisma, clock, deps()), renewPush(db.prisma, clock, deps())]);
+    const out = await Promise.all([
+      renewPush(db.prisma, clock, deps()),
+      renewPush(db.prisma, clock, deps()),
+    ]);
+    expect(out.map((x) => x.created).sort()).toEqual([0, 1]); // the lost race is not a creation
     const r = await rows();
     expect(r).toHaveLength(1);
     expect(s.subscribe).toHaveBeenCalledTimes(2);
@@ -270,6 +279,51 @@ describe("renewPush", () => {
     await Promise.all([renewPush(db.prisma, clock, deps()), renewPush(db.prisma, clock, deps())]);
     expect(await rows()).toHaveLength(1);
     expect(s.unsubscribe).not.toHaveBeenCalled();
+  });
+  test.each(["GMAIL", "MICROSOFT"] as const)(
+    "%s: a disconnect between subscribe and insert leaves no row and unsubscribes once",
+    async (provider) => {
+      const a = await mk(provider);
+      const s = stubFor(a.id);
+      s.subscribe.mockImplementation(async () => {
+        const stub = { ...s, revoke: async () => {}, kind: provider } as unknown as MailProvider;
+        await disconnectAccount(db.prisma, ws, a.id, { clock, providerFor: () => stub });
+        return { externalId: "late-1", expiresAt: new Date(T0.getTime() + 7 * 24 * HOUR) };
+      });
+      const r = await renewPush(db.prisma, clock, deps());
+      expect(r.created).toBe(0);
+      expect(await rows()).toHaveLength(0);
+      expect(s.unsubscribe).toHaveBeenCalledTimes(1);
+      expect(s.unsubscribe).toHaveBeenCalledWith("late-1");
+    },
+  );
+
+  test("a failure after a disconnect records no placeholder row", async () => {
+    const a = await mk("GMAIL");
+    const s = stubFor(a.id);
+    s.subscribe.mockImplementation(async () => {
+      const stub = { ...s, revoke: async () => {}, kind: "GMAIL" } as unknown as MailProvider;
+      await disconnectAccount(db.prisma, ws, a.id, { clock, providerFor: () => stub });
+      throw new TransientBeforeSendError("gmail 503");
+    });
+    await renewPush(db.prisma, clock, deps());
+    expect(await rows()).toHaveLength(0);
+    expect(await db.prisma.auditLog.count({ where: { action: "push.failed", target: a.id } })).toBe(
+      0,
+    );
+  });
+
+  test("a permanently failing account does not starve the others", async () => {
+    const bad = await mk("GMAIL");
+    const good = await mk("GMAIL");
+    const [first, second] = [bad, good].sort((x, y) => (x.id < y.id ? -1 : 1));
+    stubFor(first!.id).subscribe.mockRejectedValue(
+      new TransientBeforeSendError("pubsub_permission"),
+    );
+    const d = { ...deps(), batch: 1 };
+    expect(await renewPush(db.prisma, clock, d)).toMatchObject({ failed: 1 });
+    expect(await renewPush(db.prisma, clock, d)).toMatchObject({ created: 1 });
+    expect(stubFor(second!.id).subscribe).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -301,37 +355,62 @@ describe("disconnect and delete", () => {
 });
 
 describe("account status line", () => {
-  test("the account view says active/failed/pending/not configured; IMAP has none", async () => {
+  const set = (env: Record<string, string | undefined>) => {
+    for (const [k, v] of Object.entries(env)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+    resetEnvCache();
+  };
+  const push = async (id: string) => (await getAccount(db.prisma, ws, id, { clock }))!.push;
+  const CONFIGURED = {
+    MODE: "vps",
+    APP_URL: "https://app.rn.test",
+    GMAIL_PUBSUB_TOPIC: "projects/p/topics/t",
+    GMAIL_PUSH_SA_EMAIL: "push@p.iam.gserviceaccount.com",
+  };
+
+  test("active, expired, failed, pending, not configured; IMAP has none", async () => {
     const g = await mk("GMAIL");
     const s = await mk("SMTP");
-    // test env is MODE=local: nothing is configured
-    expect((await getAccount(db.prisma, ws, g.id))!.push).toEqual({
-      state: "not_configured",
-      expiresAt: null,
-      error: null,
-    });
-    expect((await getAccount(db.prisma, ws, s.id))!.push).toBeNull();
-    const at = new Date(T0.getTime() + 7 * 24 * HOUR);
-    const row = {
-      workspaceId: ws,
-      accountId: g.id,
-      provider: "GMAIL" as const,
-      externalId: "x",
-      expiresAt: at,
-    };
-    await db.prisma.pushSubscription.create({ data: row });
-    expect((await getAccount(db.prisma, ws, g.id))!.push).toEqual({
-      state: "active",
-      expiresAt: at,
-      error: null,
-    });
-    await db.prisma.pushSubscription.update({
-      where: { accountId: g.id },
-      data: { status: "FAILED", lastError: "pubsub_permission" },
-    });
-    expect((await getAccount(db.prisma, ws, g.id))!.push).toMatchObject({
-      state: "failed",
-      error: "pubsub_permission",
-    });
+    try {
+      // test env is MODE=local: nothing is configured
+      expect(await push(g.id)).toEqual({ state: "not_configured", expiresAt: null, error: null });
+      expect(await push(s.id)).toBeNull();
+      set(CONFIGURED);
+      expect(await push(g.id)).toEqual({ state: "pending", expiresAt: null, error: null });
+      const at = new Date(clock.now().getTime() + 7 * 24 * HOUR);
+      await db.prisma.pushSubscription.create({
+        data: {
+          workspaceId: ws,
+          accountId: g.id,
+          provider: "GMAIL",
+          externalId: "x",
+          expiresAt: at,
+        },
+      });
+      expect(await push(g.id)).toEqual({ state: "active", expiresAt: at, error: null });
+      // ACTIVE but past its expiry (the renew job is not keeping up)
+      const past = new Date(clock.now().getTime() - HOUR);
+      await db.prisma.pushSubscription.update({
+        where: { accountId: g.id },
+        data: { expiresAt: past },
+      });
+      expect(await push(g.id)).toEqual({ state: "expired", expiresAt: past, error: null });
+      await db.prisma.pushSubscription.update({
+        where: { accountId: g.id },
+        data: { status: "FAILED", lastError: "pubsub_permission" },
+      });
+      expect(await push(g.id)).toMatchObject({ state: "failed", error: "pubsub_permission" });
+      // the push env was removed after the row was written
+      await db.prisma.pushSubscription.update({
+        where: { accountId: g.id },
+        data: { status: "ACTIVE", expiresAt: at },
+      });
+      set({ GMAIL_PUSH_SA_EMAIL: undefined });
+      expect(await push(g.id)).toMatchObject({ state: "not_configured" });
+    } finally {
+      set({ MODE: "local", GMAIL_PUBSUB_TOPIC: undefined, GMAIL_PUSH_SA_EMAIL: undefined });
+    }
   });
 });

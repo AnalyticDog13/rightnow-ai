@@ -1,6 +1,7 @@
 "use client";
 
 import type { ApiAccount } from "@rightnow/core";
+import { pushLine } from "./push-line";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
@@ -326,16 +327,6 @@ export function AccountDrawer({
       )}
     </dialog>
   );
-}
-
-/** D48: push when it works, otherwise why not; polling always runs. */
-function pushLine(push: NonNullable<ApiAccount["push"]>) {
-  const polling = " � Polling every 2 min";
-  if (push.state === "active" && push.expiresAt)
-    return `Push: active until ${new Date(push.expiresAt).toLocaleString()}${polling}`;
-  if (push.state === "failed") return `Push: failed: ${push.error ?? "unknown"}${polling}`;
-  if (push.state === "pending") return `Push: starting${polling}`;
-  return `Push: not configured${polling}`;
 }
 
 const SYNC_STATE = { IDLE: "Up to date", SYNCING: "Syncing", FAILED: "Last sync failed" } as const;

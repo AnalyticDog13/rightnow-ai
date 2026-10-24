@@ -162,11 +162,11 @@ model AuditLog {
   target      String?
   meta        Json?
   createdAt   DateTime  @default(now())
-  // partial expression indexes ("workspaceId", meta->>'leadId') and (…, meta->>'opportunityId') for the CRM feed live
-  // in the crm_activity_indexes migration (raw SQL)
 
   @@index([workspaceId, createdAt])
   @@index([workspaceId, target])
+  // partial expression indexes ("workspaceId", meta->>'leadId') and (…, meta->>'opportunityId') for the CRM feed live
+  // in the crm_activity_indexes migration (raw SQL)
 }
 
 model ApiKey {
@@ -433,9 +433,9 @@ enum ImportStatus {
 
 // Partial unique index (workspaceId, email) WHERE deletedAt IS NULL lives in the `leads` migration (raw SQL).
 model Lead {
-  id                   String              @id @default(cuid())
+  id                   String             @id @default(cuid())
   workspaceId          String
-  workspace            Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace            Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   email                String // lowercased
   firstName            String?
   lastName             String?
@@ -448,15 +448,15 @@ model Lead {
   personalization      String?
   aiScore              Int? // PS-AI-08: 0-100
   aiScoreReason        String?
-  customFields         Json                @default("{}")
+  customFields         Json               @default("{}")
   tags                 String[]
   labels               String[]
   interestStatus       Int?
-  verificationStatus   VerificationStatus  @default(NOT_VERIFIED)
+  verificationStatus   VerificationStatus @default(NOT_VERIFIED)
   verifyPrevStatus     VerificationStatus? // D38: what PENDING_JOB restores when verification gives no answer
   verifyClaimedAt      DateTime? // set when a run picks the lead up; only a claimed, stalled row is restored
-  verifyAttempts       Int                 @default(0) // failed verifier calls, capped at 3
-  espType              EspType             @default(IN_QUEUE)
+  verifyAttempts       Int                @default(0) // failed verifier calls, capped at 3
+  espType              EspType            @default(IN_QUEUE)
   esg                  String?
   enrichmentStatus     EnrichmentStatus?
   plValue              Decimal?
@@ -465,10 +465,10 @@ model Lead {
   lawfulBasis          String?
   country              String?
   importJobId          String?
-  emailsSent           Int                 @default(0)
-  opens                Int                 @default(0)
-  clicks               Int                 @default(0)
-  replies              Int                 @default(0)
+  emailsSent           Int                @default(0)
+  opens                Int                @default(0)
+  clicks               Int                @default(0)
+  replies              Int                @default(0)
   lastContactedAt      DateTime?
   lastOpenAt           DateTime?
   lastReplyAt          DateTime?
@@ -478,8 +478,8 @@ model Lead {
   lastSenderAccountId  String?
   lastEngagement       Json?
   mergedIntoId         String?
-  createdAt            DateTime            @default(now())
-  updatedAt            DateTime            @default(now()) @updatedAt
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @default(now()) @updatedAt
   deletedAt            DateTime?
   listMembers          LeadListMember[]
   campaignLeads        CampaignLead[]
@@ -487,11 +487,11 @@ model Lead {
   tasks                Task[]
   webhookDeliveries    WebhookDelivery[]
   aiSuggestions        AiSuggestion[]
-  // partial ("workspaceId", "updatedAt") WHERE verificationStatus = 'PENDING_JOB' for the verify job lives in the
-  // verify_index migration (raw SQL)
 
   @@index([workspaceId, createdAt, id])
   @@index([workspaceId, companyDomain])
+  // partial ("workspaceId", "updatedAt") WHERE verificationStatus = 'PENDING_JOB' for the verify job lives in the
+  // verify_index migration (raw SQL)
 }
 
 model LeadLabel {
@@ -750,11 +750,11 @@ model CampaignLead {
   completedAt   DateTime?
   duplicateOk   Boolean            @default(false) // enrolled with allowDuplicates: exempt from the launch conflict check
   messages      ScheduledMessage[]
-  // partial ("workspaceId", "completedAt") WHERE state = 'COMPLETED' for analytics lives in the analytics_indexes migration (raw SQL)
 
   @@unique([campaignId, leadId])
   @@index([campaignId, state, nextDueAt])
   @@index([workspaceId, leadId])
+  // partial ("workspaceId", "completedAt") WHERE state = 'COMPLETED' for analytics lives in the analytics_indexes migration (raw SQL)
 }
 
 model CampaignDailyUsage {
@@ -1213,7 +1213,7 @@ model Opportunity {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
-  tasks Task[]
+  tasks           Task[]
 
   @@index([workspaceId, stageId])
   @@index([workspaceId, createdAt])
@@ -1226,9 +1226,7 @@ enum TaskStatus {
   AWAITING_APPROVAL // PS-CRM-08; approving sets OPEN
 }
 
-/**
- * D41: a reminder is the task's dueAt; there are no notifications.
- */
+/** D41: a reminder is the task's dueAt; there are no notifications. */
 model Task {
   id            String       @id @default(cuid())
   workspaceId   String
@@ -1257,9 +1255,7 @@ enum AutomationRunStatus {
   FAILED
 }
 
-/**
- * D43: a user rule; conditions are AND-ed optional lists, actions run in array order.
- */
+/** D43: a user rule; conditions are AND-ed optional lists, actions run in array order. */
 model AutomationRule {
   id          String          @id @default(cuid())
   workspaceId String
@@ -1277,9 +1273,7 @@ model AutomationRule {
   @@index([workspaceId, enabled])
 }
 
-/**
- * One per (rule, event): the exactly-once record of a rule run. eventId carries no FK (Events are append-only).
- */
+/** One per (rule, event): the exactly-once record of a rule run. eventId carries no FK (Events are append-only). */
 model AutomationRun {
   id          String              @id @default(cuid())
   workspaceId String
@@ -1307,9 +1301,7 @@ enum DeliveryStatus {
   FAILED
 }
 
-/**
- * D44: an outgoing webhook. secretEnc / headersEnc are encrypted (ENCRYPTED_COLUMNS) and never returned.
- */
+/** D44: an outgoing webhook. secretEnc / headersEnc are encrypted (ENCRYPTED_COLUMNS) and never returned. */
 model Webhook {
   id                  String            @id @default(cuid())
   workspaceId         String
@@ -1468,7 +1460,7 @@ model PushSubscription {
   accountId       String          @unique
   account         EmailAccount    @relation(fields: [accountId], references: [id], onDelete: Cascade)
   provider        AccountProvider
-  externalId      String // "" while the first subscribe has not succeeded
+  externalId      String? // null until the first subscribe succeeds
   clientStateHash String?
   expiresAt       DateTime
   status          PushStatus      @default(ACTIVE)

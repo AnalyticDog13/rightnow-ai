@@ -10,7 +10,7 @@ CREATE TABLE "PushSubscription" (
     "workspaceId" TEXT NOT NULL,
     "accountId" TEXT NOT NULL,
     "provider" "AccountProvider" NOT NULL,
-    "externalId" TEXT NOT NULL,
+    "externalId" TEXT,
     "clientStateHash" TEXT,
     "expiresAt" TIMESTAMP(3) NOT NULL,
     "status" "PushStatus" NOT NULL DEFAULT 'ACTIVE',

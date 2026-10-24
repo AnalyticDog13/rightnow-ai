@@ -91,20 +91,20 @@ export async function accountViews(
   })();
   return rows.map((r, i) => {
     const sub = subs.get(r.id);
+    const configured = !!env && pushConfigured(env, r.provider);
     const push: ApiAccount["push"] =
       r.provider === "SMTP"
         ? null
-        : sub
-          ? {
-              state: sub.status === "FAILED" ? "failed" : "active",
-              expiresAt: sub.externalId ? sub.expiresAt : null,
-              error: sub.lastError,
-            }
-          : {
-              state: env && pushConfigured(env, r.provider) ? "pending" : "not_configured",
-              expiresAt: null,
-              error: null,
-            };
+        : !configured
+          ? { state: "not_configured", expiresAt: null, error: null }
+          : !sub
+            ? { state: "pending", expiresAt: null, error: null }
+            : {
+                state:
+                  sub.status === "FAILED" ? "failed" : sub.expiresAt <= at ? "expired" : "active",
+                expiresAt: sub.externalId ? sub.expiresAt : null,
+                error: sub.lastError,
+              };
     return toApiAccount(r, by.get(`${r.id}|${keys[i]}`) ?? { sent: 0, reserved: 0 }, at, push);
   });
 }

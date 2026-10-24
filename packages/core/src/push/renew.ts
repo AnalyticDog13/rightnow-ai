@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type {
   AccountProvider,
   EmailAccount,
@@ -46,35 +46,67 @@ function codeOf(e: unknown): string {
   return typeof code === "string" ? code : e instanceof Error ? e.name : "error";
 }
 
+/** The account is still ours to subscribe: not deleted, connected, with credentials (a disconnect clears all three). */
+const LIVE = { deletedAt: null, status: "CONNECTED", credentialsEnc: { not: null } } as const;
+
+type Row = {
+  externalId: string | null;
+  clientStateHash: string | null;
+  expiresAt: Date;
+  status: "ACTIVE" | "FAILED";
+  lastError: string | null;
+};
+
+/** One INSERT that only lands while the account is LIVE: a disconnect between our provider call and this write refuses it. */
+async function insertSub(prisma: PrismaClient, a: EmailAccount, d: Row, now: Date) {
+  const n = await prisma.$executeRaw`
+    INSERT INTO "PushSubscription" ("id", "workspaceId", "accountId", "provider", "externalId", "clientStateHash", "expiresAt", "status", "lastError", "updatedAt")
+    SELECT ${randomUUID()}, a."workspaceId", a."id", a."provider", ${d.externalId}::text, ${d.clientStateHash}::text, ${d.expiresAt}::timestamp, ${d.status}::"PushStatus", ${d.lastError}::text, ${now}::timestamp
+    FROM "EmailAccount" a
+    WHERE a."id" = ${a.id} AND a."deletedAt" IS NULL AND a."status" = 'CONNECTED' AND a."credentialsEnc" IS NOT NULL
+    ON CONFLICT ("accountId") DO NOTHING`;
+  return n > 0;
+}
+
 /**
  * Creates and renews one push subscription per Gmail / Microsoft account. Network calls run outside any
- * transaction; every write is conditional on the row as read, and the unique accountId decides concurrent creates.
+ * transaction; every write is conditional on the row as read and on the account still being live, and the unique
+ * accountId decides concurrent creates.
+ * shortcut: a disconnect that is mid-transaction (credentials cleared, not yet committed) when the insert runs is not
+ * seen; that Graph subscription then lapses on its own in about 7 days, and no row points at it.
  */
 export async function renewPush(
   prisma: PrismaClient,
   clock: Clock,
-  deps: { providerFor: SyncDeps["providerFor"]; env: PushEnv },
+  deps: { providerFor: SyncDeps["providerFor"]; env: PushEnv; batch?: number },
 ): Promise<{ created: number; renewed: number; failed: number }> {
   const { env } = deps;
   const out = { created: 0, renewed: 0, failed: 0 };
   const providers = (["GMAIL", "MICROSOFT"] as const).filter((p) => pushConfigured(env, p));
   if (!providers.length) return out;
   const now = clock.now();
-  const accounts = await prisma.emailAccount.findMany({
-    where: {
-      provider: { in: providers },
-      deletedAt: null,
-      status: "CONNECTED",
-      credentialsEnc: { not: null },
-      OR: [
-        { pushSubscription: null },
-        { pushSubscription: { expiresAt: { lt: new Date(now.getTime() + RENEW_WITHIN_MS) } } },
-      ],
-    },
+  const batch = deps.batch ?? BATCH;
+  const base = { provider: { in: providers }, ...LIVE };
+  // never-tried first, then the least recently attempted: a permanently failing account cannot starve the rest
+  const fresh = await prisma.emailAccount.findMany({
+    where: { ...base, pushSubscription: null },
     include: { pushSubscription: true },
     orderBy: { id: "asc" },
-    take: BATCH,
+    take: batch,
   });
+  const due =
+    fresh.length < batch
+      ? await prisma.emailAccount.findMany({
+          where: {
+            ...base,
+            pushSubscription: { expiresAt: { lt: new Date(now.getTime() + RENEW_WITHIN_MS) } },
+          },
+          include: { pushSubscription: true },
+          orderBy: { pushSubscription: { updatedAt: "asc" } },
+          take: batch - fresh.length,
+        })
+      : [];
+  const accounts = [...fresh, ...due];
 
   const fail = async (a: EmailAccount, sub: PushSubscription | null, e: unknown) => {
     const code = codeOf(e);
@@ -94,24 +126,19 @@ export async function renewPush(
           data: { lastError: code },
         });
     } else {
-      // placeholder so the row shows the reason and the next tick retries (expiresAt = now is "due")
-      first =
-        (
-          await prisma.pushSubscription.createMany({
-            data: [
-              {
-                workspaceId: a.workspaceId,
-                accountId: a.id,
-                provider: a.provider,
-                externalId: "",
-                expiresAt: now,
-                status: "FAILED",
-                lastError: code,
-              },
-            ],
-            skipDuplicates: true,
-          })
-        ).count > 0;
+      // placeholder (externalId null) so the row shows the reason and the next tick retries; expiresAt = now is "due"
+      first = await insertSub(
+        prisma,
+        a,
+        {
+          externalId: null,
+          clientStateHash: null,
+          expiresAt: now,
+          status: "FAILED",
+          lastError: code,
+        },
+        now,
+      );
     }
     if (first) await audit(prisma, { workspaceId: a.workspaceId }, "push.failed", a.id, { code });
     if (e instanceof AuthError) await recordProviderError(prisma, clock, a.id, e);
@@ -125,30 +152,27 @@ export async function renewPush(
       ...(clientState ? { clientState } : {}),
       ...(a.provider === "GMAIL" ? { topicName: env.GMAIL_PUBSUB_TOPIC } : {}),
     });
-    const data = {
+    const row: Row = {
       externalId: r.externalId,
       // only the hash is kept; the value was sent once
       clientStateHash: clientState ? createHash("sha256").update(clientState).digest("hex") : null,
       expiresAt: r.expiresAt,
-      status: "ACTIVE" as const,
+      status: "ACTIVE",
       lastError: null,
     };
     const won = sub
       ? (
           await prisma.pushSubscription.updateMany({
-            where: { id: sub.id, externalId: sub.externalId },
-            data,
+            where: { id: sub.id, externalId: sub.externalId, account: LIVE },
+            data: row,
           })
         ).count > 0
-      : (
-          await prisma.pushSubscription.createMany({
-            data: [{ workspaceId: a.workspaceId, accountId: a.id, provider: a.provider, ...data }],
-            skipDuplicates: true,
-          })
-        ).count > 0;
-    // A Gmail watch is per mailbox: stopping the loser's would stop the winner's too.
-    if (!won && a.provider === "MICROSOFT") await push.unsubscribe(r.externalId).catch(() => {});
-    out.created++;
+      : await insertSub(prisma, a, row, now);
+    if (won) return void out.created++;
+    // Refused (the account was disconnected meanwhile) or lost to a concurrent run. A Gmail watch is per mailbox,
+    // so only a refusal may stop it: stopping the loser's would stop the winner's.
+    const live = (await prisma.emailAccount.count({ where: { id: a.id, ...LIVE } })) > 0;
+    if (!live || a.provider === "MICROSOFT") await push.unsubscribe(r.externalId).catch(() => {});
   };
 
   for (const a of accounts) {
@@ -160,11 +184,11 @@ export async function renewPush(
       else {
         try {
           const r = await push.renew(sub.externalId, { topicName: env.GMAIL_PUBSUB_TOPIC });
-          await prisma.pushSubscription.updateMany({
+          const { count } = await prisma.pushSubscription.updateMany({
             where: { id: sub.id, externalId: sub.externalId },
             data: { expiresAt: r.expiresAt, status: "ACTIVE", lastError: null },
           });
-          out.renewed++;
+          if (count) out.renewed++;
         } catch (e) {
           if (!(e instanceof PushError && e.code === "not_found")) throw e;
           await create(a, push, sub);

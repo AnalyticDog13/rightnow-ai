@@ -71,7 +71,7 @@ export type ApiAccount = Pick<EmailAccount, (typeof PUBLIC)[number]> & {
   };
   /** D48 / PS-SYNC-01: null for IMAP (polling only). `error` is a code (`pubsub_permission`, ...), never a message. */
   push: {
-    state: "active" | "pending" | "failed" | "not_configured";
+    state: "active" | "expired" | "pending" | "failed" | "not_configured";
     expiresAt: Date | null;
     error: string | null;
   } | null;
