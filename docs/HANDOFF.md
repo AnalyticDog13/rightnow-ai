@@ -1,7 +1,7 @@
 # Handoff
 
 **Phase:** 8 — Final verification (branch `phase-8-final`). Phase 7 DONE and merged to `main`.
-**Current task:** P8-T01 (missing E2E flows: placement polling spec + executed resume drill, docs/ops/RESUME_DRILL.md). P8-T00 done (95757f3). Plan: docs/plans/phase-8.md Revision 2; its Debt disposition table supersedes the old debt list.
+**Current task:** P8-T02 (local-to-VPS migration test in CI, PS-DEPLOY-11). P8-T00 (95757f3) and P8-T01 (399fd3f) done. Plan: docs/plans/phase-8.md Revision 2; its Debt disposition table supersedes the old debt list.
 **Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 (approved). Done step plans: `docs/plans/phase-1.md` … `phase-5.md` (+ `phase-4-review.md`, `phase-5-review.md`).
 **Tests:** ~1290 vitest + Playwright (auth, accounts*, campaign-create, deliverability, inbox, leads, test-send …) green; CI `check`, `compose-smoke`, `imap-real` green. Parity: 310/316 ticked.
 

@@ -897,12 +897,12 @@
    "id": "P8-T01",
    "phase": 8,
    "title": "Complete E2E suite per mapping below",
-   "status": "todo",
+   "status": "done",
    "deps": [
     "P8-T00"
    ],
    "model": "sonnet",
-   "commit": null,
+   "commit": "399fd3f",
    "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-8.md; tests listed there pass"
   },
   {
