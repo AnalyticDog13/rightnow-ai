@@ -6,6 +6,7 @@ import { Button } from "../../../components/ui/button";
 import { Card } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
 import { call, errorText } from "../accounts/api-client";
+import { AiReview } from "../../../components/ai-review";
 import { BulkBar, type Member, type Named } from "./bulk-bar";
 import { ImportWizard } from "./import-wizard";
 import { ESP, INTEREST, REASON, VERIFICATION } from "./labels";
@@ -52,6 +53,7 @@ export function LeadsTable({
   const [next, setNext] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [aiJob, setAiJob] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
   const [msg, setMsg] = useState("");
   // result of the last action; a refetch must not wipe it
@@ -290,7 +292,17 @@ export function LeadsTable({
             setNotice({ text, ok });
             setTick((n) => n + 1);
           }}
+          onPersonalize={setAiJob}
         />
+      )}
+      {aiJob && (
+        <section aria-label="AI personalization review" className="flex flex-col gap-2">
+          <h2 className="text-sm font-medium">Personalization to review</h2>
+          <AiReview filter={`jobId=${aiJob}`} onApproved={() => setTick((n) => n + 1)} />
+          <Button variant="ghost" className="self-start" onClick={() => setAiJob("")}>
+            Close review
+          </Button>
+        </section>
       )}
       {msg && (
         <p role="alert" className="text-sm text-destructive">

@@ -127,7 +127,8 @@ export async function setAiFeedback(
   vote: 1 | -1,
 ) {
   const r = await prisma.message.updateMany({
-    where: { id: messageId, workspaceId: ws },
+    // only what the AI classified (the thread's category source is AI) can be rated
+    where: { id: messageId, workspaceId: ws, direction: "IN", thread: { categorySource: "AI" } },
     data: { aiFeedback: vote },
   });
   if (!r.count) throw notFound();

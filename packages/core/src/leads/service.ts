@@ -63,6 +63,7 @@ export const updateLeadInput = z
 const PUBLIC = [
   ...["id", "email", "interestStatus", "verificationStatus", "espType", "esg", "enrichmentStatus"],
   ...["emailsSent", "opens", "clicks", "replies", "lastContactedAt", "lastOpenAt", "lastReplyAt"],
+  ...["aiScore", "aiScoreReason"],
   ...[
     "lastClickAt",
     "lastInterestChangeAt",

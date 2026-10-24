@@ -5,6 +5,8 @@ import { Button } from "../../../../components/ui/button";
 import { Card } from "../../../../components/ui/card";
 import { Input } from "../../../../components/ui/input";
 import { call, errorText } from "../../accounts/api-client";
+import { toHtml } from "../../inbox/composer";
+import { AiAssist } from "../../../../components/ai-assist";
 import { PreviewPanel } from "./preview-panel";
 
 export type Variant = {
@@ -62,6 +64,8 @@ function VariantEditor({
   const [body, setBody] = useState(variant?.body ?? "");
   const [weight, setWeight] = useState(String(variant?.weight ?? 1));
   const [errors, setErrors] = useState<string[]>([]);
+  const [tone, setTone] = useState("friendly");
+  const [offer, setOffer] = useState("");
   const area = useRef<HTMLTextAreaElement>(null);
   const name = variant ? `variant ${variant.label}` : "new variant";
   const url = `/api/v1/campaigns/${campaignId}/steps/${stepId}/variants`;
@@ -115,6 +119,28 @@ function VariantEditor({
         value={body}
         onChange={(e) => setBody(e.target.value)}
       />
+      <details className="text-sm">
+        <summary className="cursor-pointer">Draft with AI</summary>
+        <div className="mt-2 flex flex-col gap-2">
+          <Input aria-label="Tone" value={tone} onChange={(e) => setTone(e.target.value)} />
+          <Input
+            aria-label="Offer"
+            placeholder="Offer (optional)"
+            value={offer}
+            onChange={(e) => setOffer(e.target.value)}
+          />
+          <AiAssist
+            label="Generate draft"
+            path="draft"
+            body={{
+              stepId,
+              tone: tone.trim() || "friendly",
+              ...(offer.trim() && { offer: offer.trim() }),
+            }}
+            onUse={(t) => setBody(toHtml(t))}
+          />
+        </div>
+      </details>
       <div className="flex flex-wrap items-center gap-2">
         <select
           aria-label={`Insert variable into ${name}`}

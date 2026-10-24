@@ -19,6 +19,7 @@ export function BulkBar({
   filterQuery,
   isAdmin,
   onDone,
+  onPersonalize,
 }: {
   ids: string[];
   /** emails of the selected leads, for "add to blocklist" */
@@ -31,6 +32,8 @@ export function BulkBar({
   filterQuery: string;
   isAdmin: boolean;
   onDone: (message: string, ok: boolean) => void;
+  /** a queued `ai_personalize` job, so the page can show its suggestions for review */
+  onPersonalize?: (jobId: string) => void;
 }) {
   const [owner, setOwner] = useState("");
   const [interest, setInterest] = useState("");
@@ -59,6 +62,16 @@ export function BulkBar({
       .split(",")
       .map((t) => t.trim())
       .filter(Boolean);
+  async function personalize() {
+    const r = await call("/api/v1/ai/personalize", "POST", { leadIds: ids });
+    if (!r.ok)
+      return onDone(
+        `Personalization: ${r.status === 412 ? "AI is not set up (Settings)" : errorText(r)}`,
+        false,
+      );
+    onDone("Personalization queued. Review the suggestions below when they appear.", true);
+    onPersonalize?.(String(r.json.jobId));
+  }
   const over = ids.length > 1000; // the API refuses more; never export a cut selection
   const target = lists.find((l) => l.id === list);
 
@@ -219,6 +232,13 @@ export function BulkBar({
         >
           {over ? "Export all matching the filter (selection is over 1,000)" : "Export selected"}
         </a>
+      </Button>
+      <Button
+        variant="outline"
+        disabled={busy || ids.length > 500}
+        onClick={() => void personalize()}
+      >
+        Write personalization (AI)
       </Button>
       {isAdmin && (
         <Button

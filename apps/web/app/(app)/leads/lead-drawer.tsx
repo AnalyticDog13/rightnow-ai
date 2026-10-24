@@ -2,6 +2,7 @@
 
 import type { ApiLead } from "@rightnow/core";
 import { useEffect, useRef, useState } from "react";
+import { AiAssist } from "../../../components/ai-assist";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
@@ -70,6 +71,58 @@ const toForm = (l: ApiLead): Record<string, string> => ({
   tags: l.tags.join(", "),
   interest: l.interestStatus === null ? "" : String(l.interestStatus),
 });
+
+/** AI helpers (D47). A follow-up is copied to the clipboard once approved; sending stays a human step in the inbox. */
+function LeadAi({ lead, onChanged }: { lead: ApiLead; onChanged: () => void }) {
+  const [scored, setScored] = useState<{ aiScore: number; aiScoreReason: string } | null>(
+    lead.aiScore === null
+      ? null
+      : { aiScore: lead.aiScore, aiScoreReason: lead.aiScoreReason ?? "" },
+  );
+  const [err, setErr] = useState("");
+  const [copied, setCopied] = useState(false);
+  async function rate() {
+    setErr("");
+    const r = await call("/api/v1/ai/score", "POST", { leadId: lead.id });
+    if (!r.ok)
+      return setErr(
+        r.status === 412 ? "AI is not set up. An admin can add a model in Settings." : errorText(r),
+      );
+    setScored(r.json as { aiScore: number; aiScoreReason: string });
+    onChanged();
+  }
+  return (
+    <section aria-label="AI" className="mt-4 flex flex-col gap-2 border-t border-border pt-4">
+      <h3 className="text-sm font-medium">AI</h3>
+      <div className="flex flex-wrap items-start gap-2">
+        <Button variant="outline" onClick={() => void rate()}>
+          Score lead
+        </Button>
+        <AiAssist
+          label="Suggest follow-up"
+          path="followup"
+          body={{ leadId: lead.id }}
+          onUse={(t) => void navigator.clipboard?.writeText(t).then(() => setCopied(true))}
+        />
+      </div>
+      {scored && (
+        <p role="status" className="text-sm">
+          Score {scored.aiScore}/100. {scored.aiScoreReason}
+        </p>
+      )}
+      {copied && (
+        <p role="status" className="text-sm">
+          Follow-up copied. Paste it into a reply.
+        </p>
+      )}
+      {err && (
+        <p role="alert" className="text-sm text-destructive">
+          {err}
+        </p>
+      )}
+    </section>
+  );
+}
 
 export function LeadDrawer({
   lead,
@@ -252,6 +305,7 @@ export function LeadDrawer({
           </div>
         )}
       </form>
+      {canEdit && <LeadAi lead={lead} onChanged={onChanged} />}
       <section aria-label="Timeline" className="mt-4 border-t border-border pt-4">
         <h3 className="mb-2 text-sm font-medium">Timeline</h3>
         {timeline.length ? (

@@ -4,6 +4,7 @@ import type { Metrics } from "@rightnow/core";
 import { Settings2 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { AiAssist } from "../../../components/ai-assist";
 import { pct, StatTile } from "../../../components/stat-tile";
 import { Button } from "../../../components/ui/button";
 import { call, errorText } from "../accounts/api-client";
@@ -486,6 +487,9 @@ export function AnalyticsClient({
             Use at least 3 months of data before pausing a variant.
             {!campaignId && " Filter to a single campaign to pause or resume variants here."}
           </p>
+          {campaignId && canEdit && (
+            <AiAssist label="Analyze campaign" path="campaign-analysis" body={{ campaignId }} />
+          )}
           {toggleError && (
             <p role="alert" className="text-sm text-red-600">
               {toggleError}

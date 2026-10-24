@@ -14,6 +14,13 @@ export type AiEnv = OutEnv & { signal?: AbortSignal; fetchFn?: typeof safeReques
 /** Fail with a short code: never a response body, a prompt or the key (D47). */
 const fail = (code: string) => new AccountError(502, code);
 
+/** R13: the model asked us to slow down; `retryAfterSec` comes from `Retry-After` (default 5, capped at 120). */
+export class AiRateLimited extends AccountError {
+  constructor(readonly retryAfterSec: number) {
+    super(502, "ai_http_429");
+  }
+}
+
 /**
  * One OpenAI-compatible `POST <baseUrl>/chat/completions` through the shared outbound guard (pinned IP, no redirects,
  * capped body). Every call, failed or not, writes an AiCall with the prompt's sha256 only. The caller holds no transaction.
@@ -51,9 +58,9 @@ export async function aiComplete(
       },
       select: { id: true },
     });
-  const refuse = async (code: string): Promise<never> => {
+  const refuse = async (code: string, err: Error = fail(code)): Promise<never> => {
     await log("error", code);
-    throw fail(code);
+    throw err;
   };
   let res;
   try {
@@ -85,6 +92,13 @@ export async function aiComplete(
         : code === "response_too_large"
           ? "ai_bad_response"
           : `ai_${code || "request_failed"}`,
+    );
+  }
+  if (res.status === 429) {
+    const s = Number(res.headers["retry-after"]);
+    return refuse(
+      "ai_http_429",
+      new AiRateLimited(Math.min(Number.isFinite(s) && s > 0 ? s : 5, 120)),
     );
   }
   if (res.status >= 300) return refuse(`ai_http_${res.status}`);

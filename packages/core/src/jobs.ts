@@ -1,5 +1,6 @@
 import type { BackgroundJob, JobStatus, Prisma, PrismaClient } from "@rightnow/db/client";
 import { AccountError, isPrismaCode } from "./accounts/service";
+import { personalizeJob } from "./ai/features";
 import { audit } from "./audit";
 import type { Clock } from "./clock";
 import { bulkInput, bulkLeads, leadWhere } from "./leads/service";
@@ -43,6 +44,7 @@ export async function createJob(
 }
 
 export const JOB_HANDLERS: Record<string, Handler> = {
+  ai_personalize: personalizeJob,
   /** `filter` is walked by id in 500-id chunks, so rows the action itself removes from the filter are not skipped. */
   async leads_bulk(prisma, clock, job, progress, signal) {
     const { filter, action, value } = bulkInput.parse(job.input);

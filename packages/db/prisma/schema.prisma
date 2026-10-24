@@ -442,6 +442,8 @@ model Lead {
   industry             String?
   phone                String?
   personalization      String?
+  aiScore              Int? // PS-AI-08: 0-100
+  aiScoreReason        String?
   customFields         Json               @default("{}")
   tags                 String[]
   labels               String[]
@@ -921,6 +923,7 @@ model Thread {
   createdAt        DateTime       @default(now())
   messages         Message[]
   notes            Note[]
+  aiSuggestions    AiSuggestion[]
 
   @@index([workspaceId, lastMessageAt])
   @@index([accountId, providerThreadId])
@@ -1408,6 +1411,7 @@ model AiSuggestion {
   leadId      String?
   lead        Lead?            @relation(fields: [leadId], references: [id], onDelete: Cascade)
   threadId    String?
+  thread      Thread?          @relation(fields: [threadId], references: [id], onDelete: Cascade)
   campaignId  String?
   stepId      String?
   jobId       String?

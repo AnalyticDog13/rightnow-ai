@@ -157,8 +157,16 @@ An official SDK, a CLI and an MCP server are not provided (PS-AUTO-14); generate
 | GET | `/accounts/{id}/warmup/stats` | VIEWER | `accounts:read` |
 | POST | `/accounts/bulk` | MEMBER | `accounts:update` |
 | POST | `/accounts/test-connection` | ADMIN | session only |
+| POST | `/ai/campaign-analysis` | MEMBER | `ai:write` |
+| POST | `/ai/draft` | MEMBER | `ai:write` |
+| POST | `/ai/followup` | MEMBER | `ai:write` |
+| POST | `/ai/personalize` | MEMBER | `ai:write` |
+| POST | `/ai/recommend` | MEMBER | `ai:write` |
+| POST | `/ai/reply-draft` | MEMBER | `ai:write` |
+| POST | `/ai/score` | MEMBER | `ai:write` |
 | GET | `/ai/suggestions` | VIEWER | `ai:read` |
 | PATCH | `/ai/suggestions/{id}` | MEMBER | `ai:write` |
+| POST | `/ai/summary` | MEMBER | `ai:write` |
 | GET | `/analytics` | VIEWER | `analytics:read` |
 | GET | `/analytics/accounts` | VIEWER | `analytics:read` |
 | GET | `/analytics/activity` | VIEWER | `analytics:read` |

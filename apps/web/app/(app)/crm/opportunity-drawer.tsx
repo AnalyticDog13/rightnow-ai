@@ -89,6 +89,18 @@ export function OpportunityDrawer({
     setTasks(
       ((await call(`/api/v1/crm/tasks?opportunityId=${opp.id}`, "GET")).json.tasks ?? []) as Task[],
     );
+  const [rec, setRec] = useState("");
+  async function recommend() {
+    setRec("");
+    const r = await call("/api/v1/ai/recommend", "POST", { opportunityId: opp.id });
+    setRec(
+      r.ok
+        ? `${(r.json as unknown as unknown[]).length} suggested task(s) wait for your approval under Tasks, Awaiting approval.`
+        : r.status === 412
+          ? "AI is not set up. An admin can add a model in Settings."
+          : friendly(r),
+    );
+  }
   useEffect(() => {
     void loadNotes();
     void loadTasks();
@@ -417,6 +429,23 @@ export function OpportunityDrawer({
             </div>
             <Button type="submit">Add task</Button>
           </form>
+        )}
+        {canEdit && (
+          <div className="mt-2 flex flex-col gap-1">
+            <Button
+              type="button"
+              variant="outline"
+              className="self-start"
+              onClick={() => void recommend()}
+            >
+              Recommend next actions
+            </Button>
+            {rec && (
+              <p role="status" className="text-sm">
+                {rec}
+              </p>
+            )}
+          </div>
         )}
         <p className="mt-1 text-xs text-muted-foreground">
           Reminders are due dates only. Nothing is emailed or pushed.

@@ -45,6 +45,9 @@ export function AiReview({
       {rows.length === 0 && (
         <p className="text-sm text-muted-foreground">Nothing waiting for review.</p>
       )}
+      <Button variant="outline" className="self-start" onClick={() => void load()}>
+        Refresh
+      </Button>
       {rows.length > 1 && (
         <Button
           variant="outline"

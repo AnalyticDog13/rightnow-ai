@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { AiAssist } from "../../../components/ai-assist";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { call } from "../accounts/api-client";
@@ -153,6 +154,22 @@ export function Composer({
           <Button type="button" variant="outline" onClick={() => setManage(true)}>
             Manage macros
           </Button>
+          <AiAssist
+            label="Suggest reply"
+            path="reply-draft"
+            body={{ threadId }}
+            onUse={(t) =>
+              setBody(
+                (b) =>
+                  (b
+                    ? `${b}
+
+`
+                    : "") + t,
+              )
+            }
+          />
+          <AiAssist label="Summarize" path="summary" body={{ threadId }} />
         </div>
         {mode === "forward" && (
           <Input

@@ -94,3 +94,4 @@ export * from "./ai/client";
 export * from "./ai/suggestions";
 export * from "./ai/classifier";
 export * from "./ai/prompts";
+export * from "./ai/features";

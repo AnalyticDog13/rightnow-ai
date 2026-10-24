@@ -194,7 +194,13 @@ describe("suggestions and feedback", () => {
       },
     });
     const t = await P.thread.create({
-      data: { workspaceId, accountId: a.id, subject: "S", lastMessageAt: new Date() },
+      data: {
+        workspaceId,
+        accountId: a.id,
+        subject: "S",
+        lastMessageAt: new Date(),
+        categorySource: "AI",
+      },
     });
     const m = await P.message.create({
       data: {
@@ -220,9 +226,64 @@ describe("suggestions and feedback", () => {
       await P.auditLog.count({ where: { workspaceId, action: "ai.feedback", target: m.id } }),
     ).toBe(2);
     expect((await vote(2)).status).toBe(400);
+    await P.thread.update({ where: { id: t.id }, data: { categorySource: "RULE" } });
+    expect((await vote(1)).status).toBe(404); // only AI-classified mail can be rated
+    await P.thread.update({ where: { id: t.id }, data: { categorySource: "AI" } });
     expect((await feedback.POST(req("POST", "x", { vote: 1 }), p("missing"))).status).toBe(404);
     await setRole("VIEWER");
     expect((await vote(1)).status).toBe(403);
+    await setRole("OWNER");
+  });
+});
+
+describe("feature routes", () => {
+  const routes = [
+    ["draft", { stepId: "s" }],
+    ["personalize", { leadIds: ["l"] }],
+    ["followup", { leadId: "l" }],
+    ["reply-draft", { threadId: "t" }],
+    ["summary", { threadId: "t" }],
+    ["score", { leadId: "l" }],
+    ["recommend", { leadId: "l" }],
+    ["campaign-analysis", { campaignId: "c" }],
+  ] as const;
+  const post = async (name: string, body: unknown) => {
+    const m = (await import(
+      `../app/api/v1/ai/${name}/route`
+    )) as typeof import("../app/api/v1/ai/draft/route");
+    return m.POST(req("POST", `ai/${name}`, body));
+  };
+
+  it("every one is 412 ai_not_configured while AI is off, 400 on a bad body", async () => {
+    await db.prisma.workspace.update({ where: { id: workspaceId }, data: { aiConfigEnc: null } });
+    for (const [name, body] of routes) {
+      const r = await post(name, body);
+      expect([name, r.status, (await json(r)).error]).toEqual([name, 412, "ai_not_configured"]);
+    }
+    expect((await post("draft", { stepId: "s", bogus: 1 })).status).toBe(400);
+  });
+
+  it("personalize is 202 {jobId} with a queued ai_personalize job; a VIEWER and a read-only key are refused; an unknown step is 404", async () => {
+    expect((await put(CFG)).status).toBe(200);
+    const r = await post("personalize", { leadIds: ["l1", "l2"] });
+    expect(r.status).toBe(202);
+    const { jobId } = await json(r);
+    expect(await db.prisma.backgroundJob.findUniqueOrThrow({ where: { id: jobId } })).toMatchObject(
+      {
+        kind: "ai_personalize",
+        status: "PENDING",
+      },
+    );
+    expect((await post("draft", { stepId: "nope" })).status).toBe(404);
+    const { createApiKey } = await import("@rightnow/core");
+    const ro = (await createApiKey(db.prisma, workspaceId, "ro", ["ai:read"])).token;
+    const m = await import("../app/api/v1/ai/score/route");
+    expect(
+      (await m.POST(req("POST", "ai/score", { leadId: "l" }, { authorization: `Bearer ${ro}` })))
+        .status,
+    ).toBe(403);
+    await setRole("VIEWER");
+    expect((await post("score", { leadId: "l" })).status).toBe(403);
     await setRole("OWNER");
   });
 });
