@@ -1,7 +1,7 @@
 # Handoff
 
 **Phase:** 8 — Final verification (branch `phase-8-final`). Phase 7 DONE and merged to `main`.
-**Current task:** P8-T03 fix round 1, INTERRUPTED: uncommitted partial work in 29 files (S1 restore pauses campaigns via scripts/pause-campaigns.ts, S2 imports scope, m1/m3/m6-m11/m13-m15) — backup patch + scope/rulings in ledger .superpowers/sdd/phase-8/progress.md and docs/FINAL_ASSESSMENT.md (84956d2). Resume: re-dispatch the fix-round implementer (sonnet) on the tree as-is (verify done parts, RED per finding, finish), then FINAL_ASSESSMENT round 2 (opus). Accepted, not fixed: m2, m4, m5, m12, m16. Then P8-T04. P8-T00..T02 done, CI green.
+**Current task:** P8-T03 fix round 2 (S1-R: restore + resume re-sends), INTERRUPTED before its tests finished. Uncommitted work in 14 files implements D53 (derived campaign Message-ID + sender settles from a synced Sent copy) and n1-n4; typecheck + lint pass, TESTS UNVERIFIED. Do NOT commit it as-is and do NOT discard it: follow the numbered RESUME steps in ledger .superpowers/sdd/phase-8/progress.md (fresh opus implementer verifies RED/GREEN + full suites + concerns c1-c4, commits; push + CI; round 3 = last review round; then P8-T04). Backup patch: .superpowers/sdd/phase-8/task-03-fix2-interrupted.patch. Accepted, not fixed: m2, m4, m5, m12, m16. P8-T00..T02 done, CI green through d79fb20.
 **Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 (approved). Done step plans: `docs/plans/phase-1.md` … `phase-5.md` (+ `phase-4-review.md`, `phase-5-review.md`).
 **Tests:** ~1290 vitest + Playwright (auth, accounts*, campaign-create, deliverability, inbox, leads, test-send …) green; CI `check`, `compose-smoke`, `imap-real` green. Parity: 311/316 ticked.
 
