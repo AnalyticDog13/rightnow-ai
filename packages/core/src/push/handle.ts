@@ -3,6 +3,9 @@ import type { PrismaClient } from "@rightnow/db/client";
 import { z } from "zod";
 import type { Clock } from "../clock";
 
+/** A notification right after a sync attempt began cannot re-flag the account within this many seconds. */
+export const PUSH_MIN_GAP_SEC = 15;
+
 /**
  * D48 effect of a verified notification: one conditional write, and only while no request is pending, so a burst
  * collapses into one flag and one sync run. The sync job reads it; the cursor, not the notification, says what is new.
@@ -12,7 +15,9 @@ async function requestSync(prisma: PrismaClient, clock: Clock, accountIds: strin
   return prisma.$executeRaw`
     UPDATE "EmailAccount" SET "syncRequestedAt" = ${clock.now()}::timestamp
     WHERE id = ANY(${accountIds}::text[]) AND "deletedAt" IS NULL
-      AND ("syncRequestedAt" IS NULL OR "syncRequestedAt" <= "lastSyncAttemptAt")`;
+      AND ("syncRequestedAt" IS NULL OR "syncRequestedAt" <= "lastSyncAttemptAt")
+      AND ("lastSyncAttemptAt" IS NULL
+        OR "lastSyncAttemptAt" <= ${clock.now()}::timestamp - make_interval(secs => ${PUSH_MIN_GAP_SEC}))`;
 }
 
 const gmailEnvelope = z.object({

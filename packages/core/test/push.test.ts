@@ -9,7 +9,7 @@ import { exportJWK, exportSPKI, generateKeyPair, SignJWT, type JWK } from "jose"
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { fixedClock } from "../src/clock";
 import { reconcileAccount, syncDue, type SyncDeps } from "../src/mail/sync";
-import { handleGmailPush, handleGraphPush } from "../src/push/handle";
+import { handleGmailPush, handleGraphPush, PUSH_MIN_GAP_SEC } from "../src/push/handle";
 import { verifyGoogleJwt } from "../src/push/verify";
 
 process.env.FAKE_MAIL_DIR = mkdtempSync(join(tmpdir(), "push-"));
@@ -194,6 +194,28 @@ describe("handleGmailPush", () => {
     expect(await handleGmailPush(P(), clock, gmailBody("UNDER@x.com"))).toBe(1);
   });
 
+  test("T00-C: the spacing floor: a fresh sync attempt blocks a flag until PUSH_MIN_GAP_SEC has passed", async () => {
+    const a = await mk("GMAIL", "gap@x.com");
+    await sub(a, "h-gap");
+    const clock = fixedClock(T0);
+    const ago = (sec: number | null) =>
+      P().emailAccount.update({
+        where: { id: a.id },
+        data: {
+          syncRequestedAt: new Date(T0.getTime() - 60_000),
+          lastSyncAttemptAt: sec === null ? null : new Date(T0.getTime() - sec * 1000),
+        },
+      });
+    await ago(1);
+    expect(await handleGmailPush(P(), clock, gmailBody("gap@x.com"))).toBe(0);
+    expect((await acct(a.id)).syncRequestedAt).toEqual(new Date(T0.getTime() - 60_000));
+    await ago(PUSH_MIN_GAP_SEC + 1);
+    expect(await handleGmailPush(P(), clock, gmailBody("gap@x.com"))).toBe(1);
+    await ago(null);
+    await P().emailAccount.update({ where: { id: a.id }, data: { syncRequestedAt: null } });
+    expect(await handleGmailPush(P(), clock, gmailBody("gap@x.com"))).toBe(1);
+  });
+
   test("a FAILED subscription no longer flags syncs (M4)", async () => {
     const a = await mk("GMAIL", "failed@x.com");
     const s1 = await sub(a, "h-f");
@@ -243,6 +265,24 @@ describe("handleGraphPush", () => {
       rejected: 0,
     });
     expect((await acct(a.id)).syncRequestedAt).toEqual(T0);
+  });
+
+  test("T00-C: a Graph notification right after a sync attempt does not re-flag within the floor", async () => {
+    const a = await mk("MICROSOFT");
+    await sub(a, "sub-gap", "secret-gap");
+    await P().emailAccount.update({
+      where: { id: a.id },
+      data: {
+        syncRequestedAt: new Date(T0.getTime() - 60_000),
+        lastSyncAttemptAt: new Date(T0.getTime() - 1000),
+      },
+    });
+    const note = { value: [graphNote("sub-gap", "secret-gap")] };
+    expect(await handleGraphPush(P(), fixedClock(T0), note)).toEqual({ flagged: 0, rejected: 0 });
+    expect(await handleGraphPush(P(), fixedClock(new Date(T0.getTime() + 20_000)), note)).toEqual({
+      flagged: 1,
+      rejected: 0,
+    });
   });
 
   test("lifecycle: subscriptionRemoved → FAILED and due; missed → flagged; a forged one changes nothing", async () => {
@@ -301,7 +341,7 @@ describe("dedupe with the watermark", () => {
     const clock = fixedClock(T0);
     const a = await synced(clock);
     const other = await synced(clock);
-    clock.advance(10_000);
+    clock.advance(20_000); // past PUSH_MIN_GAP_SEC since the sync attempt
     let flagged = 0;
     for (let i = 0; i < 20; i++) {
       const r = await Promise.all(
@@ -311,7 +351,7 @@ describe("dedupe with the watermark", () => {
       clock.advance(10); // later notifications would write a later value
     }
     expect(flagged).toBe(1);
-    expect((await acct(a.id)).syncRequestedAt).toEqual(new Date(T0.getTime() + 10_000));
+    expect((await acct(a.id)).syncRequestedAt).toEqual(new Date(T0.getTime() + 20_000));
     const spy = vi.fn(async (x: EmailAccount) => fake(x) as MailProvider);
     await syncDue(P(), clock, deps({ providerFor: spy }), { maxMs: 10_000 });
     await syncDue(P(), clock, deps({ providerFor: spy }), { maxMs: 10_000, requestedOnly: true });
@@ -325,7 +365,7 @@ describe("dedupe with the watermark", () => {
   test("a flag during a held lease → no concurrent run, then one run right after", async () => {
     const clock = fixedClock(T0);
     const a = await synced(clock);
-    clock.advance(5_000);
+    clock.advance(20_000);
     await P().emailAccount.update({
       where: { id: a.id },
       data: { syncLeaseId: "other", syncLeaseUntil: new Date(clock.now().getTime() + 60_000) },
@@ -351,7 +391,7 @@ describe("dedupe with the watermark", () => {
       where: { id: a.id },
       data: { syncErrors: 3, syncState: "FAILED", lastSyncAttemptAt: clock.now() },
     });
-    clock.advance(1_000);
+    clock.advance(16_000);
     expect(await handleGmailPush(P(), clock, gmailBody(a.email))).toBe(1);
     const spy = vi.fn(async (x: EmailAccount) => fake(x) as MailProvider);
     await syncDue(P(), clock, deps({ providerFor: spy }), { maxMs: 10_000 });
@@ -365,11 +405,11 @@ describe("dedupe with the watermark", () => {
   test("the watermark is the run's start even when a flag arrives mid-run; another run follows", async () => {
     const clock = fixedClock(T0);
     const a = await synced(clock);
-    clock.advance(10_000);
+    clock.advance(20_000);
     const start = clock.now();
     const p = Object.assign(Object.create(fake(a)) as MailProvider, {
       async listChangesSince(...args: Parameters<MailProvider["listChangesSince"]>) {
-        clock.advance(2_000);
+        clock.advance(16_000);
         expect(await handleGmailPush(P(), clock, gmailBody(a.email))).toBe(1);
         return fake(a).listChangesSince(...args);
       },

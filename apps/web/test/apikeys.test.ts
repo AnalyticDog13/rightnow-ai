@@ -1,10 +1,15 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { audit, createApiKey, fixedClock, revokeApiKey, verifyApiKey } from "@rightnow/core";
 import { createTestDb } from "@rightnow/db/test-db";
 import { route } from "../lib/api";
 import { resetWebEnvCache } from "../lib/env";
 import { apiKeyResolver } from "../lib/apikey-auth";
 import { readiness } from "../lib/ready";
+
+// ratelimit.ts (via apikey-auth) builds the global prisma client at import time
+vi.hoisted(() => {
+  process.env.DATABASE_URL ??= "postgresql://x:x@localhost:5432/x";
+});
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
 let w1: string;
@@ -106,6 +111,22 @@ describe("route() with API keys", () => {
     const live = await createApiKey(db.prisma, w1, "live", ["all:all"]);
     const sessionOnly = route({}, async () => ({}), none, apiKeyResolver(db.prisma));
     expect((await sessionOnly(req(live.token))).status).toBe(401);
+  });
+});
+
+describe("failed key lookups (T00-B)", () => {
+  const req = (token?: string) =>
+    new Request("http://x/api/t", { headers: token ? { authorization: `Bearer ${token}` } : {} });
+  it("20 bad tokens resolve null, the 21st is 429; a valid key still works; no token counts nothing", async () => {
+    await db.prisma.rateLimitBucket.deleteMany({ where: { key: { contains: "apikey_fail" } } });
+    const resolve = apiKeyResolver(db.prisma);
+    for (let i = 0; i < 30; i++) expect(await resolve(req(), "leads:read")).toBeNull();
+    for (let i = 0; i < 20; i++) expect(await resolve(req("rn_bad" + i), "leads:read")).toBeNull();
+    const e = await resolve(req("rn_bad21"), "leads:read").catch((x: unknown) => x);
+    expect(e).toMatchObject({ status: 429, message: "rate_limited" });
+    expect((e as { retryAfter: number }).retryAfter).toBeGreaterThanOrEqual(1);
+    const { token } = await createApiKey(db.prisma, w1, "ok", ["leads:read"]);
+    expect(await resolve(req(token), "leads:read")).toMatchObject({ workspaceId: w1 });
   });
 });
 

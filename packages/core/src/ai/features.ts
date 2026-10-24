@@ -269,8 +269,26 @@ export async function recommend(
     (await ask(prisma, clock, ws, "recommend", p, 500, env)).text,
     recommendAnswer,
   );
+  // skip a title already in this answer or already an open/awaiting task on this lead and deal (a concurrent call can still race)
+  const key = (t: string) => t.trim().toLowerCase();
+  const seen = new Set(
+    (
+      await prisma.task.findMany({
+        where: {
+          workspaceId: ws,
+          leadId: l.id,
+          opportunityId: opp?.id ?? null,
+          status: { in: ["AWAITING_APPROVAL", "OPEN"] },
+        },
+        select: { title: true },
+      })
+    ).map((t) => key(t.title)),
+  );
+  const fresh = a.actions.filter(
+    (x) => !seen.has(key(x.title.slice(0, 200))) && seen.add(key(x.title.slice(0, 200))),
+  );
   return prisma.$transaction(
-    a.actions.slice(0, 5).map((x) =>
+    fresh.slice(0, 5).map((x) =>
       prisma.task.create({
         data: {
           workspaceId: ws,

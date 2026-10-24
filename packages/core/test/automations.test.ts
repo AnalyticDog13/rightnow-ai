@@ -27,8 +27,10 @@ import { evaluateHealth } from "../src/deliverability/health";
 import { claimDue } from "../src/dispatch";
 import { createLead, updateLead } from "../src/leads/service";
 import { planDue } from "../src/planner";
+import { createWebhook } from "../src/webhooks/service";
 import { unsubscribeKeys } from "../src/unsubscribe";
 import { insertDeliveries } from "../src/webhooks/deliver";
+import { testEnv } from "./accounts-fixture";
 import { planRow, seedCampaign } from "./campaign-fixture";
 
 // the dispatcher's insertDeliveries, wrapped so a test can hold, fail or slow it (the real one runs unless replaced)
@@ -193,6 +195,49 @@ describe("conditions", () => {
 });
 
 describe("actions", () => {
+  test("send_webhook builds the payload links from the dispatch appUrl (T00-A)", async () => {
+    testEnv();
+    const w = await world();
+    const acc = w.accounts[0]!;
+    const hook = await createWebhook(
+      P(),
+      w.ws,
+      "u1",
+      { url: "https://hook.test/h", events: ["email_sent"] },
+      { allowPrivate: true, resolve: async () => ["127.0.0.1"] },
+    );
+    const th = await P().thread.create({
+      data: {
+        workspaceId: w.ws,
+        accountId: acc.id,
+        subject: "s",
+        leadId: w.lead!.id,
+        lastMessageAt: T,
+      },
+    });
+    const m = await P().message.create({
+      data: {
+        workspaceId: w.ws,
+        accountId: acc.id,
+        threadId: th.id,
+        rfcMessageId: `<a${++n}@x>`,
+        direction: "IN",
+        folder: "INBOX",
+        fromEmail: w.lead!.email,
+        to: [acc.email],
+        subject: "s",
+        text: "t",
+        sentAt: T,
+        kind: "REPLY",
+      },
+    });
+    await rule(w, "reply_received", [{ type: "send_webhook", webhookId: hook.id }]);
+    await reply(w, { messageId: m.id });
+    await dispatchEvents(P(), clock, { maxMs: 0, appUrl: "https://inject.test" });
+    const [d] = await P().webhookDelivery.findMany({ where: { webhookId: hook.id } });
+    expect((d!.payload as { unibox_url: string }).unibox_url).toMatch(/^https:\/\/inject\.test\//);
+  });
+
   test("stop_sequence stops the lead and cancels its open rows", async () => {
     const w = await world();
     const sm = await planRow(P(), {

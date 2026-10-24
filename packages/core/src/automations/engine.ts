@@ -63,19 +63,33 @@ type Action = {
   scope: string;
   /** Needs the Event's lead: refused on lead-less triggers, skipped for an Event without one. */
   lead: boolean;
-  run(tx: Tx, clock: Clock, e: Event, input: unknown, ruleId: string): Promise<void>;
+  run(
+    tx: Tx,
+    clock: Clock,
+    e: Event,
+    input: unknown,
+    ruleId: string,
+    appUrl?: string,
+  ): Promise<void>;
 };
 const act = <S extends z.ZodType>(
   scope: string,
   lead: boolean,
   input: S,
-  run: (tx: Tx, clock: Clock, e: Event, d: z.output<S>, ruleId: string) => Promise<unknown>,
+  run: (
+    tx: Tx,
+    clock: Clock,
+    e: Event,
+    d: z.output<S>,
+    ruleId: string,
+    appUrl?: string,
+  ) => Promise<unknown>,
 ): Action => ({
   input,
   scope,
   lead,
-  run: async (tx, clock, e, d, ruleId) => {
-    if (!lead || e.leadId) await run(tx, clock, e, d as z.output<S>, ruleId);
+  run: async (tx, clock, e, d, ruleId, appUrl) => {
+    if (!lead || e.leadId) await run(tx, clock, e, d as z.output<S>, ruleId, appUrl);
   },
 });
 const coded = (code: string) => Object.assign(new Error(code), { code });
@@ -220,7 +234,7 @@ export const ACTIONS: Record<string, Action> = {
     "webhooks:write",
     false,
     z.strictObject({ webhookId: ref }),
-    (tx, clock, e, d) => enqueueDelivery(tx, e, clock.now(), d.webhookId),
+    (tx, clock, e, d, _r, appUrl) => enqueueDelivery(tx, e, clock.now(), d.webhookId, appUrl),
   ),
 };
 
@@ -349,6 +363,7 @@ async function runRule(
   r: AutomationRule,
   e: Event,
   failWith?: string,
+  appUrl?: string,
 ) {
   let n = 0;
   // FOR KEY SHARE: a rule deleted mid-batch reads as gone instead of failing the run insert on its FK
@@ -380,7 +395,7 @@ async function runRule(
         const a = ACTIONS[type];
         if (!a) throw coded("unknown_action");
         try {
-          await a.run(tx, clock, e, input, r.id);
+          await a.run(tx, clock, e, input, r.id, appUrl);
         } catch (x) {
           throw asCode(x);
         }
@@ -402,7 +417,13 @@ async function runRule(
 async function runBatch(
   tx: Tx,
   clock: Clock,
-  sel: { limit: number; ids?: string[]; lockTimeoutMs?: number; failWith?: string },
+  sel: {
+    limit: number;
+    ids?: string[];
+    lockTimeoutMs?: number;
+    failWith?: string;
+    appUrl?: string;
+  },
   claimed: string[],
 ): Promise<Counts> {
   const out: Counts = { events: 0, runs: 0, deliveries: 0 };
@@ -467,10 +488,10 @@ async function runBatch(
               TRIGGERS[r.trigger]?.(e) &&
               matches(r.conditions as RuleConditions, e, lead)
             )
-              runs += await runRule(tx, clock, now, r, e, sel.failWith);
+              runs += await runRule(tx, clock, now, r, e, sel.failWith, sel.appUrl);
         // M6: a deleted (merged) lead's Event is not delivered either
         const deliveries =
-          sel.failWith || !liveLead ? 0 : await insertDeliveries(tx, e, now, hooks);
+          sel.failWith || !liveLead ? 0 : await insertDeliveries(tx, e, now, hooks, sel.appUrl);
         out.runs += runs;
         out.deliveries += deliveries;
       }),
@@ -498,7 +519,7 @@ const add = (a: Counts, b: Counts) => {
   a.runs += b.runs;
   a.deliveries += b.deliveries;
 };
-type Limits = { txTimeoutMs?: number; lockTimeoutMs?: number };
+type Limits = { txTimeoutMs?: number; lockTimeoutMs?: number; appUrl?: string };
 
 /**
  * One batch; when it fails as a whole (retries spent, timeout, lock wait), its events are retried one at a time (R1).
@@ -518,7 +539,13 @@ async function dispatchBatch(
   const solo = (id: string, failWith?: string) =>
     withTxRetry(() =>
       prisma.$transaction(
-        (tx) => runBatch(tx, clock, { limit: 1, ids: [id], lockTimeoutMs, failWith }, []),
+        (tx) =>
+          runBatch(
+            tx,
+            clock,
+            { limit: 1, ids: [id], lockTimeoutMs, failWith, appUrl: o.appUrl },
+            [],
+          ),
         timeout,
       ),
     );
@@ -526,7 +553,7 @@ async function dispatchBatch(
     const r = await withTxRetry(() => {
       claimed.length = 0;
       return prisma.$transaction(
-        (tx) => runBatch(tx, clock, { limit, lockTimeoutMs }, claimed),
+        (tx) => runBatch(tx, clock, { limit, lockTimeoutMs, appUrl: o.appUrl }, claimed),
         timeout,
       );
     });

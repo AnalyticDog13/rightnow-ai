@@ -611,6 +611,40 @@ describe("payload", () => {
 });
 
 describe("send_webhook action", () => {
+  test("appUrl passed to dispatchEvents builds the payload links, not getEnv().APP_URL (T00-A)", async () => {
+    const w = await world();
+    const W = await hook(w, ["reply_received"]);
+    const th = await P().thread.create({
+      data: {
+        workspaceId: w.ws,
+        accountId: w.accounts[0]!.id,
+        subject: "s",
+        leadId: w.lead.id,
+        lastMessageAt: T,
+      },
+    });
+    const m = await P().message.create({
+      data: {
+        workspaceId: w.ws,
+        accountId: w.accounts[0]!.id,
+        threadId: th.id,
+        rfcMessageId: `<a${++n}@x>`,
+        direction: "IN",
+        folder: "INBOX",
+        fromEmail: w.lead.email,
+        to: [w.accounts[0]!.email],
+        subject: "s",
+        text: "t",
+        sentAt: T,
+        kind: "REPLY",
+      },
+    });
+    await ev(w, "REPLY", { leadId: w.lead.id, messageId: m.id });
+    await dispatchEvents(P(), fixedClock(T), { maxMs: 0, appUrl: "https://inject.test" });
+    const [d] = await rows(W.id);
+    expect((d!.payload as { unibox_url: string }).unibox_url).toMatch(/^https:\/\/inject\.test\//);
+  });
+
   test("a rule delivers to W once, also when W is subscribed; a foreign webhookId is invalid_reference", async () => {
     const w = await world();
     const o = await world({ leads: 0 });

@@ -35,9 +35,9 @@ export const sign = (secret: string, t: number, body: string) =>
   `t=${t},v1=${createHmac("sha256", secret).update(`${t}.${body}`).digest("hex")}`;
 
 /** Inserts one PENDING delivery per (webhook, event); a duplicate (rule + subscription) is skipped. */
-async function insert(tx: Tx, e: Event, now: Date, webhookIds: string[]) {
+async function insert(tx: Tx, e: Event, now: Date, webhookIds: string[], appUrl?: string) {
   if (!webhookIds.length) return 0;
-  const payload = await buildPayload(tx, e, getEnv().APP_URL);
+  const payload = await buildPayload(tx, e, appUrl ?? getEnv().APP_URL);
   if (!payload) return 0;
   const r = await tx.webhookDelivery.createMany({
     data: webhookIds.map((webhookId) => ({
@@ -56,7 +56,13 @@ async function insert(tx: Tx, e: Event, now: Date, webhookIds: string[]) {
 }
 
 /** The dispatcher's hook (D43): deliveries for the ACTIVE webhooks subscribed to this Event. */
-export function insertDeliveries(tx: Tx, e: Event, now: Date, hooks: ActiveHook[]) {
+export function insertDeliveries(
+  tx: Tx,
+  e: Event,
+  now: Date,
+  hooks: ActiveHook[],
+  appUrl?: string,
+) {
   const name = webhookEventName(e);
   if (!name) return Promise.resolve(0);
   const ids = hooks
@@ -67,15 +73,21 @@ export function insertDeliveries(tx: Tx, e: Event, now: Date, hooks: ActiveHook[
         (h.events.includes("all_events") || h.events.includes(name)),
     )
     .map((h) => h.id);
-  return insert(tx, e, now, ids);
+  return insert(tx, e, now, ids, appUrl);
 }
 
 /** The `send_webhook` action: one delivery to that webhook when it is ACTIVE in the Event's workspace. */
-export async function enqueueDelivery(tx: Tx, e: Event, now: Date, webhookId: string) {
+export async function enqueueDelivery(
+  tx: Tx,
+  e: Event,
+  now: Date,
+  webhookId: string,
+  appUrl?: string,
+) {
   const w = await tx.webhook.count({
     where: { id: webhookId, workspaceId: e.workspaceId, status: "ACTIVE" },
   });
-  return w ? insert(tx, e, now, [webhookId]) : 0;
+  return w ? insert(tx, e, now, [webhookId], appUrl) : 0;
 }
 
 type Target = { url: string; secretEnc: string; headersEnc: string | null };

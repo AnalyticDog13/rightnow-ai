@@ -371,6 +371,24 @@ describe("recommend", () => {
     );
   });
 
+  test("T00-D: a repeated call or a repeated title in one answer creates each task once; scoped to the workspace", async () => {
+    const s = await setup();
+    const o = await setup();
+    const id = s.leads[0]!.lead.id;
+    const env = (...titles: string[]) =>
+      model(JSON.stringify({ actions: titles.map((title) => ({ title })) })).env;
+    const run = (ws: string, leadId: string, ...titles: string[]) =>
+      recommend(P(), clock, ws, { leadId }, env(...titles));
+    expect(await run(s.ws, id, "Call Ann")).toHaveLength(1);
+    expect(await run(s.ws, id, " call ann ")).toHaveLength(0);
+    expect((await run(s.ws, id, "Email Bob", "email bob", "Ping Cy")).map((x) => x.title)).toEqual([
+      "Email Bob",
+      "Ping Cy",
+    ]);
+    expect(await P().task.count({ where: { workspaceId: s.ws } })).toBe(3);
+    expect(await run(o.ws, o.leads[0]!.lead.id, "Call Ann")).toHaveLength(1);
+  });
+
   test("at most 5 tasks; an answer that is not the documented shape creates nothing", async () => {
     const s = await setup();
     const many = Array.from({ length: 9 }, (_, i) => ({ title: `T${i}` }));
