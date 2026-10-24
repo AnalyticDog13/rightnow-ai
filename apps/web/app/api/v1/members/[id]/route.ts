@@ -33,24 +33,33 @@ export const PATCH = route(
   },
 );
 
+/**
+ * Order matters (a failure must never leave a removed member with working keys or no audit row): first one transaction
+ * revokes their keys and writes the audit row, then the membership goes, then the user. A retry after a failure repeats
+ * the idempotent steps (and adds a second audit row).
+ */
 export const DELETE = route({ role: "ADMIN" }, async (c) => {
   const m = await target(c);
   if (m.userId === c.userId) throw new HttpError(409, "cannot_remove_self");
+  const user = await prisma.user.findUnique({ where: { id: m.userId }, select: { email: true } });
+  await prisma.$transaction(async (tx) => {
+    await tx.apiKey.updateMany({
+      where: { workspaceId: c.workspaceId, createdById: m.userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    // email and userId keep the member's past actions readable once the user row is gone
+    await audit(tx, { workspaceId: c.workspaceId, actorId: c.userId }, "member.remove", m.id, {
+      role: m.role,
+      userId: m.userId,
+      email: user?.email ?? null,
+    });
+  });
   await viaAuth((api) =>
     api.removeMember({
       headers: c.req.headers,
       body: { memberIdOrEmail: m.id, organizationId: c.workspaceId },
     }),
   );
-  await prisma.$transaction(async (tx) => {
-    await tx.apiKey.updateMany({
-      where: { workspaceId: c.workspaceId, createdById: m.userId, revokedAt: null },
-      data: { revokedAt: new Date() },
-    });
-    // single-workspace deployment: the user goes too (sessions cascade), so the address can be invited again
-    await tx.user.deleteMany({ where: { id: m.userId, members: { none: {} } } });
-    await audit(tx, { workspaceId: c.workspaceId, actorId: c.userId }, "member.remove", m.id, {
-      role: m.role,
-    });
-  });
+  // single-workspace deployment: the user goes too (sessions cascade), so the address can be invited again
+  await prisma.user.deleteMany({ where: { id: m.userId, members: { none: {} } } });
 });

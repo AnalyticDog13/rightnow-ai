@@ -2,7 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { hashPassword } from "better-auth/crypto";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestDb } from "@rightnow/db/test-db";
 import { createFirstOwner } from "../lib/setup";
 
@@ -277,5 +277,91 @@ describe("members", () => {
     expect(
       await db.prisma.auditLog.count({ where: { action: "member.remove", target: "m-temp" } }),
     ).toBe(1);
+  });
+});
+
+describe("fix round 1", () => {
+  it("C1: no audit row or audit API response ever carries an invitation id; a MEMBER cannot list invites", async () => {
+    const { id } = await json(await inviteAs("admin", "secret-invite@x.com"));
+    const { id: cancelled } = await json(await inviteAs("admin", "cancelled-invite@x.com"));
+    await invite.DELETE(
+      req("DELETE", `/api/v1/invites/${cancelled}`, undefined, as("admin")),
+      p(cancelled),
+    );
+    const rows = JSON.stringify(await db.prisma.auditLog.findMany());
+    expect(rows).not.toContain(id);
+    expect(rows).not.toContain(cancelled);
+    expect(rows).toContain("secret-invite@x.com"); // the invited email is the target
+    const audits = await import("../app/api/v1/audit-logs/route");
+    const body = await (
+      await audits.GET(req("GET", "/api/v1/audit-logs?take=100", undefined, as("member")))
+    ).text();
+    expect(body).not.toContain(id);
+    expect((await invites.GET(req("GET", "/api/v1/invites", undefined, as("member")))).status).toBe(
+      403,
+    );
+    expect((await invites.GET(req("GET", "/api/v1/invites", undefined, as("viewer")))).status).toBe(
+      403,
+    );
+  });
+
+  it("I1: the migration backfills ApiKey.createdById from the apikey.create audit rows", async () => {
+    const { readFileSync, readdirSync } = await import("node:fs");
+    const dir = join(__dirname, "../../../packages/db/prisma/migrations");
+    const name = readdirSync(dir).find((d) => d.endsWith("_two_factor"))!;
+    const sql = readFileSync(join(dir, name, "migration.sql"), "utf8");
+    const update = sql.split(";").find((s) => /UPDATE "ApiKey"/.test(s));
+    expect(update, "backfill statement").toBeTruthy();
+    const k = await db.prisma.apiKey.create({
+      data: { workspaceId, name: "old", prefix: "p", hash: "h-old-key", scopes: ["leads:read"] },
+    });
+    await db.prisma.auditLog.create({
+      data: { workspaceId, actorId: "u-admin", action: "apikey.create", target: k.id },
+    });
+    await db.prisma.$executeRawUnsafe(update!);
+    expect((await db.prisma.apiKey.findUniqueOrThrow({ where: { id: k.id } })).createdById).toBe(
+      "u-admin",
+    );
+  });
+
+  it("I2: a failing removeMember leaves the keys revoked and an audit row; a retry then completes", async () => {
+    await mkUser("flaky", "member");
+    const k = await db.prisma.apiKey.create({
+      data: {
+        workspaceId,
+        name: "f",
+        prefix: "p",
+        hash: "h-flaky",
+        scopes: ["leads:read"],
+        createdById: "u-flaky",
+      },
+    });
+    const spy = vi.spyOn(auth.api, "removeMember").mockRejectedValueOnce(new Error("boom"));
+    expect((await removeAs("owner", "m-flaky")).status).toBe(500);
+    spy.mockRestore();
+    expect(
+      (await db.prisma.apiKey.findUniqueOrThrow({ where: { id: k.id } })).revokedAt,
+    ).not.toBeNull();
+    expect(
+      await db.prisma.auditLog.count({ where: { action: "member.remove", target: "m-flaky" } }),
+    ).toBe(1);
+    expect(await db.prisma.member.count({ where: { id: "m-flaky" } })).toBe(1);
+    expect((await removeAs("owner", "m-flaky")).status).toBe(200);
+    expect(await db.prisma.member.count({ where: { id: "m-flaky" } })).toBe(0);
+    expect(await db.prisma.user.count({ where: { id: "u-flaky" } })).toBe(0);
+  });
+
+  it("I3: a removed member's past actions are labelled with their email, not 'system'", async () => {
+    const { actorLabels } = await import("@rightnow/core");
+    await mkUser("leaver", "member"); // the sign-in is audited under u-leaver
+    await removeAs("owner", "m-leaver");
+    const row = await db.prisma.auditLog.findFirstOrThrow({
+      where: { action: "member.remove", target: "m-leaver" },
+    });
+    expect(row.meta).toMatchObject({ email: "leaver@x.io", userId: "u-leaver" });
+    const labels = await actorLabels(db.prisma, workspaceId, ["u-leaver", "u-unknown", null]);
+    expect(labels.get("u-leaver")).toBe("removed user (leaver@x.io)");
+    expect(labels.get("u-unknown")).toBe("removed user (u-unknown)");
+    expect(labels.has("null")).toBe(false);
   });
 });

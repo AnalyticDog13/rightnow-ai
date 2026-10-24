@@ -413,6 +413,11 @@ describe("vps mode", () => {
     expect(ok.headers.getSetCookie().join(";")).toContain("session_token");
     expect((await verify(12, "verify-backup-code", enabled.backupCodes[0]!)).status).toBe(401);
     expect((await verify(13, "verify-totp", totp(secret))).status).toBe(200);
+    // M1: sign-in is audited once per usable session: the first password sign-in and the two successful verifies
+    // (not the password step of a 2FA sign-in, and not enabling 2FA)
+    expect(
+      await db.prisma.auditLog.count({ where: { actorId: u.id, action: "auth.sign_in" } }),
+    ).toBe(3);
   });
 
   it("clientIp buckets IPv6 by /64 and keeps IPv4 as is", async () => {

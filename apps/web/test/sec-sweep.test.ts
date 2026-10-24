@@ -246,15 +246,18 @@ describe("PS-SEC-09 / -10 / -16 outbound mail", () => {
       new Request(`${ORIGIN}/api/v1/leads`, {
         method: "POST",
         headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-        body: JSON.stringify({ email: "key@lead.test" }),
+        body: JSON.stringify({ email: "key@lead.test", source: "csv:spoofed.csv" }),
       }),
     );
-    const src = async (email: string) =>
-      (await db.prisma.lead.findFirstOrThrow({ where: { email } })).source;
-    expect(await src("ui@lead.test")).toBe("manual");
-    expect(await src("key@lead.test")).toBe("api");
+    const src = async (email: string) => db.prisma.lead.findFirstOrThrow({ where: { email } });
+    // the upload method is set by the server, never from input; `source` stays caller free text
+    expect(await src("ui@lead.test")).toMatchObject({ uploadMethod: "manual" });
+    expect(await src("key@lead.test")).toMatchObject({
+      uploadMethod: "api",
+      source: "csv:spoofed.csv",
+    });
     expect(readFileSync(join(root, "packages/core/src/leads/import.ts"), "utf8")).toContain(
-      "`csv:${fileName}`",
+      'uploadMethod: "csv"',
     );
   });
 

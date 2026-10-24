@@ -186,6 +186,7 @@ function prepare(
       companyDomain: companyDomainOf(email),
       customFields: custom,
       source: job.source,
+      uploadMethod: "csv",
       lawfulBasis: job.lawfulBasis,
       importJobId: job.id,
       // D38: waits for the lead-verify job, so a running campaign cannot plan the lead first

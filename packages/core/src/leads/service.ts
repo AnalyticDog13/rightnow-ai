@@ -129,7 +129,13 @@ export async function labelsAdded(
     });
 }
 
-export async function createLead(prisma: Db, ws: string, actorId: Actor, input: unknown) {
+export async function createLead(
+  prisma: Db,
+  ws: string,
+  actorId: Actor,
+  input: unknown,
+  uploadMethod?: "manual" | "api",
+) {
   const { customFields, plValue, ...d } = createLeadInput.parse(input);
   try {
     return await prisma.$transaction(async (tx) => {
@@ -137,6 +143,7 @@ export async function createLead(prisma: Db, ws: string, actorId: Actor, input: 
       const lead = await tx.lead.create({
         data: {
           ...d,
+          uploadMethod,
           companyDomain: d.companyDomain ?? companyDomainOf(d.email),
           tags: uniq(d.tags ?? []),
           labels: uniq(d.labels ?? []),

@@ -28,9 +28,14 @@ export const POST = route({ role: "ADMIN", body }, async (c) => {
       body: { email: c.body.email, role: c.body.role, organizationId: c.workspaceId },
     }),
   );
-  await audit(prisma, { workspaceId: c.workspaceId, actorId: c.userId }, "member.invite", inv.id, {
-    email: inv.email,
-    role: c.body.role,
-  });
+  await audit(
+    prisma,
+    { workspaceId: c.workspaceId, actorId: c.userId },
+    "member.invite",
+    inv.email,
+    {
+      role: c.body.role,
+    },
+  ); // the invitation id is the secret that lets anyone join: it never goes into an audit row
   return { id: inv.id, expiresAt: inv.expiresAt };
 });

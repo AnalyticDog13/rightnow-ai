@@ -22,3 +22,10 @@ CREATE INDEX "TwoFactor_userId_idx" ON "TwoFactor"("userId");
 
 -- AddForeignKey
 ALTER TABLE "TwoFactor" ADD CONSTRAINT "TwoFactor_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- Keys made before createdById existed: the audit row of their creation names the creator.
+UPDATE "ApiKey" k SET "createdById" = a."actorId" FROM "AuditLog" a
+WHERE a.action = 'apikey.create' AND a.target = k.id AND k."createdById" IS NULL AND a."actorId" IS NOT NULL;
+
+-- AlterTable: set by the server (route or import), never from input
+ALTER TABLE "Lead" ADD COLUMN "uploadMethod" TEXT;

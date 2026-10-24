@@ -481,6 +481,7 @@ model Lead {
   plValue              Decimal?
   ownerId              String?
   source               String?
+  uploadMethod         String? // PS-SEC-12: manual | api | csv, set by the server, never from input
   lawfulBasis          String?
   country              String?
   importJobId          String?

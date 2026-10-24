@@ -1,4 +1,4 @@
-import { listAuditLogs } from "@rightnow/core";
+import { actorLabels, listAuditLogs } from "@rightnow/core";
 import { prisma } from "@rightnow/db";
 import Link from "next/link";
 import { Button } from "./ui/button";
@@ -33,11 +33,11 @@ export async function AuditLog({
     cursor,
     take: 50,
   });
-  const users = await prisma.user.findMany({
-    where: { id: { in: [...new Set(logs.flatMap((l) => (l.actorId ? [l.actorId] : [])))] } },
-    select: { id: true, email: true },
-  });
-  const who = new Map(users.map((u) => [u.id, u.email]));
+  const who = await actorLabels(
+    prisma,
+    workspaceId,
+    logs.map((l) => l.actorId),
+  );
   return (
     <Card id="audit" className="flex flex-col gap-4">
       <h2 className="text-lg font-medium">Audit log</h2>
