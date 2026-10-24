@@ -1468,6 +1468,7 @@ model AiCall {
   createdAt    DateTime  @default(now())
 
   @@index([workspaceId, createdAt])
+  @@index([createdAt]) // A10: the retention purge spans workspaces
 }
 
 enum PushStatus {

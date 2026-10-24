@@ -1,4 +1,4 @@
-import type { Lead, LeadLabel, Prisma, PrismaClient } from "@rightnow/db/client";
+import { Prisma, type Lead, type LeadLabel, type PrismaClient } from "@rightnow/db/client";
 import { z } from "zod";
 import { AccountError, isPrismaCode } from "../accounts/service";
 import {
@@ -420,6 +420,15 @@ export async function softDeleteLead(
   );
 }
 
+/** Event types whose meta can hold an address on another lead's (or no lead's) row: a bounce or complaint recipient,
+ * a clicked URL. The lead's own events are handled by `leadId`. A new type that stores an address in meta joins here. */
+const ADDRESS_META_TYPES = ["BOUNCE_HARD", "BOUNCE_SOFT", "BOUNCE_UNKNOWN", "COMPLAINT", "CLICK"];
+
+/** A1: redacts other rows' meta naming an address; narrowed to `(workspaceId, type)` so it is an index scan. */
+export const eventMetaRedaction = (ws: string, like: string[]) =>
+  Prisma.sql`UPDATE "Event" SET meta = '{}' WHERE "workspaceId" = ${ws}
+    AND type = ANY(${ADDRESS_META_TYPES}::"EventType"[]) AND meta::text ILIKE ANY(${like}::text[])`;
+
 /**
  * PS-LEAD-24. One transaction erases every row for the address (soft-deleted ones and rows merged into it
  * included, I10), keeps a hashed GDPR_ERASURE suppression and audits hashes only.
@@ -517,8 +526,13 @@ export async function gdprDeleteLead(
     );
     await tx.$executeRaw`DELETE FROM "Event" WHERE "workspaceId" = ${ws} AND "leadId" = ANY(${ids}::text[])
       AND meta::text ILIKE ANY(${like}::text[])`;
-    await tx.$executeRaw`UPDATE "Event" SET meta = '{}' WHERE "workspaceId" = ${ws}
-      AND meta::text ILIKE ANY(${like}::text[])`;
+    await tx.$executeRaw(eventMetaRedaction(ws, like));
+    // I4: a finished job's input (a bulk filter) or result can name the address; an unfinished one keeps its row
+    // (a RUNNING job already parsed its input; a rerun then fails on the empty input instead of reading the address)
+    await tx.$executeRaw`DELETE FROM "BackgroundJob" WHERE "workspaceId" = ${ws} AND status IN ('DONE', 'FAILED')
+      AND (input::text ILIKE ANY(${like}::text[]) OR result::text ILIKE ANY(${like}::text[]))`;
+    await tx.$executeRaw`UPDATE "BackgroundJob" SET input = '{}' WHERE "workspaceId" = ${ws}
+      AND status IN ('PENDING', 'RUNNING') AND input::text ILIKE ANY(${like}::text[])`;
     await tx.event.updateMany({
       where: { workspaceId: ws, leadId: { in: ids } },
       data: { leadId: null },

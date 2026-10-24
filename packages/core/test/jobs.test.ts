@@ -181,6 +181,33 @@ test("R13 retention: AutomationRun and finished BackgroundJob rows are purged af
   expect(left.map((j) => j.id).sort()).toEqual(kept.map((j) => j.id).sort());
 });
 
+test("A10: retention deletes AiCall rows older than 180 days; audit rows are kept", async () => {
+  const w = await ws();
+  const call = (days: number) =>
+    P().aiCall.create({
+      data: {
+        workspaceId: w,
+        feature: "f",
+        model: "m",
+        promptHash: "h",
+        inputTokens: 0,
+        outputTokens: 0,
+        status: "ok",
+        createdAt: new Date(T.getTime() - days * DAY),
+      },
+    });
+  await call(181);
+  const kept = await call(179);
+  await P().auditLog.create({
+    data: { workspaceId: w, action: "x", createdAt: new Date(T.getTime() - 400 * DAY) },
+  });
+  expect(await purgeRetention(P(), fixedClock(T))).toMatchObject({ aiCalls: 1 });
+  expect((await P().aiCall.findMany({ where: { workspaceId: w } })).map((c) => c.id)).toEqual([
+    kept.id,
+  ]);
+  expect(await P().auditLog.count({ where: { workspaceId: w, action: "x" } })).toBe(1);
+});
+
 test("fencing: a run that was reset and re-claimed writes neither progress nor DONE to the new run", async () => {
   const w = await ws();
   const clock = fixedClock(T);

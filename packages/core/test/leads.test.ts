@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { Prisma } from "@rightnow/db/client";
 import { createTestDb, expectIsolated } from "@rightnow/db/test-db";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { fixedClock } from "../src/clock";
@@ -8,6 +9,7 @@ import {
   createLabel,
   createLead,
   deleteLabel,
+  eventMetaRedaction,
   gdprDeleteLead,
   getLead,
   listLabels,
@@ -393,6 +395,91 @@ describe("gdpr delete", () => {
         where: { campaignId: campaign.id, status: "SCHEDULED" },
       }),
     ).toBe(0);
+  });
+});
+
+describe("gdpr erasure residue (I4, A1)", () => {
+  test("no table holds the address afterwards, BackgroundJob and other leads' Event meta included", async () => {
+    const addr = "resi@acme.test";
+    const l = await mk({ email: addr });
+    const o = await mk({ email: "kept-r@acme.test" });
+    const event = (type: "BOUNCE_HARD" | "CLICK" | "OPEN", leadId: string, meta: object) =>
+      db.prisma.event.create({
+        data: { workspaceId: ws, type, occurredAt: T0, leadId, meta, dedupeKey: `resi:${++n}` },
+      });
+    const bounce = await event("BOUNCE_HARD", o.id, { recipient: addr, status: "5.1.1" });
+    const click = await event("CLICK", o.id, {
+      url: `https://x.test/?e=${encodeURIComponent(addr)}`,
+    });
+    await event("OPEN", l.id, {});
+    const job = (
+      status: "DONE" | "FAILED" | "PENDING" | "RUNNING",
+      input: object,
+      result?: object,
+    ) =>
+      db.prisma.backgroundJob.create({
+        data: { workspaceId: ws, kind: "leads_bulk", status, input, result },
+      });
+    const filter = { filter: { q: addr }, action: "add_tags", value: ["x"] };
+    await job("DONE", filter, { affected: 1 });
+    await job("FAILED", { leadIds: [l.id] }, { note: addr });
+    const pendingJob = await job("PENDING", filter);
+    const running = await job("RUNNING", filter);
+    const unrelated = await job("DONE", { filter: { q: "nobody" } });
+    const hook = await db.prisma.webhook.create({
+      data: { workspaceId: ws, url: "https://h.test/", events: ["all_events"], secretEnc: "x" },
+    });
+    await db.prisma.webhookDelivery.create({
+      data: {
+        workspaceId: ws,
+        webhookId: hook.id,
+        eventId: `resi-${++n}`,
+        eventType: "reply_received",
+        payload: { reply_text: `cc ${addr}` },
+        nextAttemptAt: T0,
+      },
+    });
+    await gdprDeleteLead(db.prisma, clock, ws, l.id);
+    const tables = await db.prisma.$queryRaw<{ t: string }[]>`
+      SELECT table_name AS t FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_type = 'BASE TABLE' AND table_name <> '_prisma_migrations'`;
+    const left: string[] = [];
+    for (const { t } of tables) {
+      const [r] = await db.prisma.$queryRawUnsafe<{ c: number }[]>(
+        `SELECT count(*)::int AS c FROM "${t}" x WHERE x::text ILIKE $1 OR x::text ILIKE $2`,
+        `%${addr}%`,
+        `%${encodeURIComponent(addr)}%`,
+      );
+      if (r!.c) left.push(t);
+    }
+    expect(left).toEqual([]);
+    // the other lead's events stay, redacted; a running job keeps its row; an unrelated job is untouched
+    expect(await db.prisma.event.findUniqueOrThrow({ where: { id: bounce.id } })).toMatchObject({
+      leadId: o.id,
+      meta: {},
+    });
+    expect(await db.prisma.event.count({ where: { id: click.id } })).toBe(1);
+    expect(
+      await db.prisma.backgroundJob.findUniqueOrThrow({ where: { id: running.id } }),
+    ).toMatchObject({
+      status: "RUNNING",
+      input: {},
+    });
+    expect(await db.prisma.backgroundJob.count({ where: { id: pendingJob.id } })).toBe(1);
+    expect(await db.prisma.backgroundJob.count({ where: { id: unrelated.id } })).toBe(1);
+  });
+
+  test("the Event meta sweep is an index scan, not a scan of every workspace event", async () => {
+    const plan = await db.prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe("SET LOCAL enable_seqscan = off");
+      return tx.$queryRaw<{ "QUERY PLAN": string }[]>(
+        Prisma.sql`EXPLAIN ${eventMetaRedaction(ws, ["%a@b.test%"])}`,
+      );
+    });
+    const text = plan.map((r) => r["QUERY PLAN"]).join(" | ");
+    expect(text).not.toMatch(/Seq Scan on "Event"/);
+    // the type list is part of the index condition: only bounce/complaint/click rows of the workspace are read
+    expect(text).toMatch(/Index Cond: .*"workspaceId" = .* AND \(type = ANY/);
   });
 });
 
