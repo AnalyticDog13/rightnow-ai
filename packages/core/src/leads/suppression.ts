@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { editHooks } from "../campaigns/hooks";
 import { OPEN_STATES_SQL } from "../campaigns/lead-status";
 import type { Prisma, SuppressionKind, SuppressionReason } from "@rightnow/db/client";
+import { domainOf } from "./domain";
 
 type Tx = Prisma.TransactionClient;
 
@@ -53,7 +54,6 @@ export async function suppressedEmails(
   emails: string[],
 ): Promise<Set<string>> {
   const list = emails.map((e) => e.trim().toLowerCase());
-  const domainOf = (e: string) => e.slice(e.lastIndexOf("@") + 1);
   const rows = await tx.suppression.findMany({
     where: {
       workspaceId: ws,

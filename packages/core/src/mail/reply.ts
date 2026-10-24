@@ -22,6 +22,7 @@ import { suppressedEmails } from "../leads/suppression";
 import { parseEmail } from "../leads/validate";
 import { SEND_TIMEOUT_MS } from "../sender";
 import type { SyncDeps } from "./sync";
+import { domainOf } from "../leads/domain";
 
 type Db = PrismaClient;
 type Actor = string | null | undefined;
@@ -150,7 +151,7 @@ export async function sendReply(
     subject: prefixed(t.subject, r.mode === "forward" ? "Fwd" : "Re"),
     html: r.html,
     text: convert(r.html, { wordwrap: false }),
-    messageId: newMessageId(me.split("@")[1]!),
+    messageId: newMessageId(domainOf(me)),
     ...(threadable ? { inReplyTo: last.rfcMessageId, references: refs } : {}),
     ...(t.providerThreadId ? { threadId: t.providerThreadId } : {}),
     ...(files.length ? { attachments: files } : {}),

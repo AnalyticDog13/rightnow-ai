@@ -112,8 +112,14 @@ describe("placement-test routes", () => {
   it("starts a test with opted-in seeds; GET lists and reads it, audited", async () => {
     await mk(workspaceId, "seed@acme2.io", { placementSeed: true });
     const res = await list.POST(req("POST", { accountId: sender, subject: "S", body: "B" }));
-    expect(res.status).toBe(200);
-    const { id } = (await res.json()) as { id: string };
+    expect(res.status).toBe(202);
+    const { id, jobId } = (await res.json()) as { id: string; jobId: string };
+    expect(await db.prisma.backgroundJob.findUniqueOrThrow({ where: { id: jobId } })).toMatchObject(
+      {
+        kind: "placement_run",
+        status: "PENDING",
+      },
+    );
     const rep = (await (await one.GET(req("GET"), p(id))).json()) as {
       seeds: { email: string; folder: string }[];
       spamAssassin: string;
@@ -125,6 +131,17 @@ describe("placement-test routes", () => {
     expect(
       await db.prisma.auditLog.count({ where: { workspaceId, action: "placement.start" } }),
     ).toBe(1);
+  });
+
+  it("the 4th run for an account within an hour is 429 with Retry-After", async () => {
+    // the previous test used 1 of 3 runs on this account
+    for (let i = 0; i < 2; i++)
+      expect(
+        (await list.POST(req("POST", { accountId: sender, subject: "S", body: "B" }))).status,
+      ).toBe(202);
+    const res = await list.POST(req("POST", { accountId: sender, subject: "S", body: "B" }));
+    expect(res.status).toBe(429);
+    expect(Number(res.headers.get("Retry-After"))).toBeGreaterThan(0);
   });
 
   it("GET is isolated by workspace and readable with accounts:read", async () => {

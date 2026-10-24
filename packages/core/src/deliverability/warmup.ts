@@ -24,6 +24,7 @@ import { codeOf } from "../mail/ingest";
 import type { SyncDeps } from "../mail/sync";
 import { WARMUP_DEFAULTS } from "./warmup-settings";
 import { isInWindow, localMidnightUtc, nextWindowStart, type Window } from "../schedule";
+import { domainOf } from "../leads/domain";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 type Tx = Prisma.TransactionClient;
@@ -65,11 +66,13 @@ const window = (timezone: string, weekdaysOnly: boolean): Window => ({
   to: `${TO_HOUR}:00`,
 });
 const dow = (ymd: string) => new Date(`${ymd}T00:00:00Z`).getUTCDay();
-const domainOf = (email: string) => email.slice(email.lastIndexOf("@") + 1).toLowerCase();
 const curveOf = (s: Pick<WarmupSettings, "customCurve">) =>
   Array.isArray(s.customCurve) ? (s.customCurve as { day: number; volume: number }[]) : [];
 
-/** Messages one mailbox warms up with today: warm-up plus campaign mail stays within 60 % of the provider cap (D36). */
+/**
+ * Messages one mailbox warms up with today: warm-up plus campaign mail stays within 60 % of the provider cap (D36).
+ * A health-throttled account (`healthCap` set) warms up at `slowdownPct` % of that (D51), never below 1.
+ */
 export function warmupTarget(
   s: Pick<
     WarmupSettings,
@@ -81,8 +84,9 @@ export function warmupTarget(
     | "weekdaysOnly"
     | "startedAt"
   >,
-  a: Pick<EmailAccount, "providerCap" | "timezone">,
+  a: Pick<EmailAccount, "providerCap" | "timezone" | "healthCap">,
   now: Date,
+  slowdownPct = 100,
 ): number {
   const today = dayKey(a.timezone, now);
   if (s.weekdaysOnly && [0, 6].includes(dow(today))) return 0;
@@ -98,7 +102,8 @@ export function warmupTarget(
     : s.slowWarmup
       ? Math.min(s.dailyLimit, s.startVolume + s.increasePerDay * idx)
       : s.dailyLimit;
-  return Math.max(0, Math.min(v, 50, Math.floor(a.providerCap / 10)));
+  const t = Math.max(0, Math.min(v, 50, Math.floor(a.providerCap / 10)));
+  return a.healthCap !== null && t > 0 ? Math.max(1, Math.floor((t * slowdownPct) / 100)) : t;
 }
 
 export type WarmupState =
@@ -203,7 +208,9 @@ export async function warmupReceipt(
   return true;
 }
 
-type Live = WarmupSettings & { account: EmailAccount };
+type Live = WarmupSettings & {
+  account: EmailAccount & { workspace: { healthSlowdownPct: number } };
+};
 
 /**
  * One warm-up pass (D36), every 5 minutes. Never catches up: a missed slot is gone, the day's target does not grow.
@@ -236,7 +243,7 @@ export async function warmupTick(
 
   const live: Live[] = await prisma.warmupSettings.findMany({
     where: warmupUsable(sendable),
-    include: { account: true },
+    include: { account: { include: { workspace: { select: { healthSlowdownPct: true } } } } },
     orderBy: { accountId: "asc" },
   });
   const byId = new Map(live.map((s) => [s.accountId, s]));
@@ -322,7 +329,7 @@ export async function warmupTick(
   async function sendOne(s: Live) {
     const a = s.account;
     const win = window(a.timezone, s.weekdaysOnly);
-    const target = warmupTarget(s, a, now);
+    const target = warmupTarget(s, a, now, a.workspace.healthSlowdownPct);
     if (!isInWindow([win], now) || target < 1) return;
     let last = a.lastWarmupAt?.getTime() ?? 0;
     const spaced = () => now.getTime() - last >= MIN_GAP_MS;
@@ -552,10 +559,17 @@ export async function warmupView(
     where: { ...warmupUsable(sendable, a.workspaceId), accountId: { not: a.id } },
   });
   const full = { ...WARMUP_DEFAULTS, filterTag: null, startedAt: null, nextAt: null, ...s };
+  const slow =
+    a.healthCap !== null
+      ? await prisma.workspace.findUnique({
+          where: { id: a.workspaceId },
+          select: { healthSlowdownPct: true },
+        })
+      : null;
   return {
     settings: full,
     state: warmupState(a, s, peers, sendable),
     peers,
-    todayTarget: s ? warmupTarget(s, a, now) : 0,
+    todayTarget: s ? warmupTarget(s, a, now, slow?.healthSlowdownPct) : 0,
   };
 }

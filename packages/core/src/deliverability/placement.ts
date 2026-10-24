@@ -1,9 +1,9 @@
-import type { AccountProvider, PrismaClient } from "@rightnow/db/client";
+import type { AccountProvider, BackgroundJob, PrismaClient } from "@rightnow/db/client";
 import { AmbiguousSendError, AuthError, newMessageId } from "@rightnow/providers";
 import { z } from "zod";
 import { recordProviderError } from "../accounts/health";
 import { dayKey } from "../accounts/daykey";
-import { maxDailyLimit } from "../accounts/factory";
+import { createProvider } from "../accounts/factory";
 import { AccountError, live } from "../accounts/service";
 import { audit } from "../audit";
 import { previewMessage } from "../campaigns/preview";
@@ -11,9 +11,12 @@ import type { Clock } from "../clock";
 import { sendableProviders } from "../dispatch";
 import { getEnv, type Env } from "../env";
 import { codeOf } from "../mail/ingest";
+import { effectiveAllowance } from "../quota";
+import { hit } from "../ratelimit";
 import type { SyncDeps } from "../mail/sync";
 import type { RenderEnv } from "../unsubscribe";
 import type { DomainReport } from "./dns";
+import { domainOf } from "../leads/domain";
 
 type Actor = string | null | undefined;
 
@@ -27,23 +30,30 @@ export const placementInput = z.union([
 ]);
 export type PlacementInput = z.infer<typeof placementInput>;
 
+/** Tests replace the provider factory; the worker uses the real one (as `aiRuntime` does for the AI jobs). */
+export const placementRuntime: { providerFor?: SyncDeps["providerFor"] } = {};
+
+/** At most 3 placement runs per account per hour (D51, T07a `hit`). */
+const RUNS_PER_HOUR = 3;
+
 /**
- * D37: one message per opted-in seed mailbox of the workspace, sent through the tested account. The seeds' own
- * mailboxes say where it landed (sync sees INBOX, `warmupTick` locates the rest after 10 min). Counts against the
- * account's daily quota like a manual reply: one guarded upsert in the same transaction as the rows (M10).
+ * D37: one message per opted-in seed mailbox of the workspace, sent through the tested account. This validates, books
+ * the quota and stores the PLANNED rows in one transaction, then queues the `placement_run` job that does the sends
+ * (D51: a slow provider no longer holds the HTTP request). The seeds' own mailboxes say where it landed (sync sees
+ * INBOX, `warmupTick` locates the rest after 10 min). Counts against the account's allowance like a manual reply: one
+ * lock on the usage row in the same transaction as the rows (M10).
  */
 export async function startPlacementTest(
   prisma: PrismaClient,
   clock: Clock,
   deps: {
-    providerFor: SyncDeps["providerFor"];
     renderEnv: RenderEnv;
     env?: Pick<Env, "MAIL_PROVIDER_FAKE">; // tests: the D17 gate without a ProviderVerification row
   },
   ws: string,
   actor: Actor,
   input: PlacementInput,
-): Promise<{ id: string }> {
+): Promise<{ id: string; jobId: string }> {
   const a = await live(prisma, ws, input.accountId);
   const sendable = await sendableProviders(prisma, deps.env ?? getEnv());
   // "sendable" is the claim's account rule without the freshness term (Rev 2 I7)
@@ -104,11 +114,14 @@ export async function startPlacementTest(
     };
 
   const now = clock.now();
+  const limit = await hit(prisma, `placement:${a.id}`, RUNS_PER_HOUR, 3600, now);
+  if (!limit.ok)
+    throw new AccountError(429, "rate_limited", { retryAfterSec: limit.retryAfterSec });
   const day = new Date(`${dayKey(a.timezone, now)}T00:00:00Z`);
   const units = seeds.length;
-  const cap = maxDailyLimit(a.providerCap);
-  const domain = a.email.split("@").pop()!;
-  const { test, rows } = await prisma.$transaction(async (tx) => {
+  const cap = effectiveAllowance(a, now); // the health cap and a re-warm plan count, like any send
+  const domain = domainOf(a.email);
+  return prisma.$transaction(async (tx) => {
     const ok = await tx.$queryRaw<unknown[]>`
       INSERT INTO "AccountDailyUsage" ("accountId", day, sent, reserved)
       SELECT ${a.id}, ${day}, ${units}::int, 0 WHERE ${units}::int <= ${cap}::int
@@ -119,31 +132,70 @@ export async function startPlacementTest(
     const test = await tx.placementTest.create({
       data: { workspaceId: ws, accountId: a.id, subject: content.subject, createdAt: now },
     });
-    const rows = [];
     for (const s of seeds)
-      rows.push(
-        await tx.warmupMessage.create({
-          data: {
-            workspaceId: ws,
-            fromAccountId: a.id,
-            toAccountId: s.id,
-            kind: "PLACEMENT",
-            status: "PLANNED",
-            rfcMessageId: newMessageId(domain),
-            subject: content.subject,
-            placementTestId: test.id,
-            dueAt: now,
-          },
-        }),
-      );
+      await tx.warmupMessage.create({
+        data: {
+          workspaceId: ws,
+          fromAccountId: a.id,
+          toAccountId: s.id,
+          kind: "PLACEMENT",
+          status: "PLANNED",
+          rfcMessageId: newMessageId(domain),
+          subject: content.subject,
+          placementTestId: test.id,
+          dueAt: now,
+        },
+      });
+    const job = await tx.backgroundJob.create({
+      data: {
+        workspaceId: ws,
+        kind: "placement_run",
+        input: { testId: test.id, text: content.text, html: content.html ?? null },
+        createdById: actor ?? null,
+      },
+    });
     await audit(tx, { workspaceId: ws, actorId: actor, at: now }, "placement.start", a.id, {
       testId: test.id,
       seeds: units,
     });
-    return { test, rows };
+    return { id: test.id, jobId: job.id };
   });
+}
 
-  // outside the transaction: a failed send is that seed's MISSING; an unknown outcome stays SENT and is located (never resent)
+const runInput = z.object({
+  testId: z.string(),
+  text: z.string(),
+  html: z.string().nullable(),
+});
+
+/**
+ * The `placement_run` job: sends the test's PLANNED rows, outside any transaction. `progress` is the job fence, so a
+ * superseded run stops writing. A failed send is that seed's MISSING; an unknown outcome stays SENT and is located
+ * (never resent); a row left SENDING by a stopped earlier attempt is unknown too.
+ */
+export async function placementRunJob(
+  prisma: PrismaClient,
+  clock: Clock,
+  job: BackgroundJob,
+  progress: (pct: number) => Promise<void>,
+  signal: AbortSignal,
+) {
+  const { testId, text, html } = runInput.parse(job.input);
+  const ws = job.workspaceId;
+  const t = await prisma.placementTest.findFirstOrThrow({ where: { id: testId, workspaceId: ws } });
+  const a = await prisma.emailAccount.findFirstOrThrow({
+    where: { id: t.accountId, workspaceId: ws },
+  });
+  await progress(0);
+  await prisma.warmupMessage.updateMany({
+    where: { placementTestId: testId, status: "SENDING" },
+    data: { status: "SENT", error: "ambiguous_send" },
+  });
+  const rows = await prisma.warmupMessage.findMany({
+    where: { placementTestId: testId, status: "PLANNED" },
+    include: { to: { select: { email: true } } },
+    orderBy: { createdAt: "asc" },
+  });
   const fail = (id: string, e: unknown) =>
     prisma.warmupMessage.updateMany({
       where: { id, status: { in: ["PLANNED", "SENDING"] } },
@@ -151,13 +203,18 @@ export async function startPlacementTest(
     });
   let provider;
   try {
-    provider = await deps.providerFor(a);
+    provider = await (
+      placementRuntime.providerFor ?? ((x) => createProvider(x, { prisma, clock }))
+    )(a);
   } catch (e) {
     for (const r of rows) await fail(r.id, e);
     if (e instanceof AuthError) await recordProviderError(prisma, clock, a.id, e);
-    return { id: test.id };
+    return { sent: 0 };
   }
+  let sent = 0;
   for (const [i, r] of rows.entries()) {
+    if (signal.aborted) break;
+    await progress(Math.floor((i * 100) / rows.length));
     const claim = await prisma.warmupMessage.updateMany({
       where: { id: r.id, status: "PLANNED" },
       data: { status: "SENDING", sentAt: clock.now() },
@@ -167,11 +224,11 @@ export async function startPlacementTest(
       await provider.send(
         {
           from: { email: a.email, name: a.fromName },
-          to: [{ email: seeds[i]!.email }],
+          to: [{ email: r.to.email }],
           replyTo: a.replyTo ? { email: a.replyTo } : undefined,
-          subject: content.subject,
-          text: content.text,
-          html: content.html ?? undefined,
+          subject: r.subject,
+          text,
+          html: html ?? undefined,
           messageId: r.rfcMessageId,
           headers: { "X-RightNow-Test": "1" },
         },
@@ -181,6 +238,7 @@ export async function startPlacementTest(
         where: { id: r.id, status: "SENDING" },
         data: { status: "SENT", sentAt: clock.now() },
       });
+      sent++;
     } catch (e) {
       if (e instanceof AmbiguousSendError)
         await prisma.warmupMessage.updateMany({
@@ -193,7 +251,7 @@ export async function startPlacementTest(
       }
     }
   }
-  return { id: test.id };
+  return { sent };
 }
 
 type Folder = "INBOX" | "SPAM" | "OTHER" | "MISSING" | "PENDING";
@@ -237,7 +295,7 @@ export async function placementReport(
   const check = a
     ? await prisma.domainCheck.findUnique({
         where: {
-          workspaceId_domain: { workspaceId: ws, domain: a.email.split("@").pop()!.toLowerCase() },
+          workspaceId_domain: { workspaceId: ws, domain: domainOf(a.email) },
         },
       })
     : null;

@@ -39,6 +39,12 @@ A send that was in flight when the machine slept or the worker crashed is never 
 
 With `APP_URL=http://localhost:3000`, open/click tracking links and one-click unsubscribe links point at your own machine, so recipients cannot reach them. Locally, emails carry mailto-only unsubscribe and click/open tracking is unavailable. For tracking, run in VPS mode or expose the app on a public HTTPS URL and set `APP_URL` to it.
 
+To try tracking from a laptop, start a tunnel to port 3000 (for example `cloudflared tunnel --url http://localhost:3000` or `ngrok http 3000`), set `APP_URL` in `.env` to the HTTPS address it prints and restart. The address changes on every tunnel start for the free tiers, and links already sent keep the old address, so use a tunnel for tests, not for a real campaign. Accounts with a custom tracking domain also need its CNAME to point at the `APP_URL` host (the account's connection test reports `tracking_cname`).
+
+## Dry-run mode: no real mailbox needed (PS-DEPLOY-15)
+
+`MAIL_PROVIDER_FAKE=1` in `.env` replaces Gmail, Microsoft and IMAP/SMTP with an in-process fake mailbox (state in `FAKE_MAIL_DIR`). Connect an account of any type, build a campaign, launch it, and the whole pipeline (planner, send queue, sync, replies, bounces, warm-up, placement tests) runs against it without contacting a provider. Read a fake mailbox through `GET /api/v1/_fake/mailbox/<address>`. The app refuses this flag when `MODE=vps`. Real providers stay off for campaign sending until `scripts/live-verify.ts` passes ([LIVE_VERIFICATION.md](LIVE_VERIFICATION.md), D17).
+
 ## Sending limits per account
 
 The daily limit you set is never allowed above half of the provider's rolling 24-hour cap. Calendar-day

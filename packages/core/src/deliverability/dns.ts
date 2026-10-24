@@ -8,6 +8,7 @@ import { audit } from "../audit";
 import type { DnsFinding, LaunchDeps } from "../campaigns/launch";
 import type { Clock } from "../clock";
 import { FREE_MAIL_DOMAINS } from "../leads/domain";
+import { domainOf } from "../leads/domain";
 
 type Db = PrismaClient;
 
@@ -467,7 +468,7 @@ export async function recheckDomains(prisma: Db, clock: Clock, r: DnsResolver): 
   const by = new Map<string, Set<string>>();
   for (const a of rows) {
     const set = by.get(a.workspaceId) ?? new Set<string>();
-    set.add(a.email.slice(a.email.lastIndexOf("@") + 1).toLowerCase());
+    set.add(domainOf(a.email));
     by.set(a.workspaceId, set);
   }
   let n = 0;
@@ -534,7 +535,7 @@ export async function accountDns(
   ws: string,
   a: { email: string; provider: AccountProvider; credentialsEnc: string | null },
 ): Promise<DomainReport | null> {
-  const domain = a.email.slice(a.email.lastIndexOf("@") + 1).toLowerCase();
+  const domain = domainOf(a.email);
   const prev = await prisma.domainCheck.findUnique({
     where: { workspaceId_domain: { workspaceId: ws, domain } },
   });

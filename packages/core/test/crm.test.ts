@@ -854,6 +854,29 @@ describe("deal lifecycle", () => {
   });
 });
 
+describe("currency race on a deal edited from 0 (D51)", () => {
+  test("a value edit waits for an in-flight currency change, so a valued deal never sits in a changed currency", async () => {
+    const w = await world();
+    const l = await newLead(w.ws);
+    const deal = await createOpportunity(P(), clock, w.ws, null, { leadId: l.id });
+    // the currency tx, mid-flight: it has locked the workspace and counted no money yet
+    const h = await hold(
+      (tx) => tx.$queryRaw`SELECT id FROM "Workspace" WHERE id = ${w.ws} FOR UPDATE`,
+    );
+    let edited = false;
+    const edit = updateOpportunity(P(), clock, w.ws, null, deal.id, { value: 100 }).then(
+      () => (edited = true),
+    );
+    await new Promise((r) => setTimeout(r, 500));
+    expect(edited).toBe(false);
+    await h.release();
+    await edit;
+    expect(
+      (await P().opportunity.findUniqueOrThrow({ where: { id: deal.id } })).value.toString(),
+    ).toBe("100");
+  });
+});
+
 describe("filters", () => {
   test("list, board and bulk", async () => {
     const w = await world();

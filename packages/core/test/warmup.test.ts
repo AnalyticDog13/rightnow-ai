@@ -8,7 +8,13 @@ import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { fixedClock } from "../src/clock";
 import { updateWarmup } from "../src/deliverability/warmup-settings";
 import { healthInputs } from "../src/deliverability/health";
-import { warmupState, warmupStats, warmupTarget, warmupTick } from "../src/deliverability/warmup";
+import {
+  warmupState,
+  warmupStats,
+  warmupTarget,
+  warmupTick,
+  warmupView,
+} from "../src/deliverability/warmup";
 import { reconcileAccount, type SyncDeps } from "../src/mail/sync";
 import { seedCampaign } from "./campaign-fixture";
 
@@ -703,6 +709,36 @@ describe("warmupTick: gate fixes", () => {
     });
     expect(got.reduce((t, g) => t + g._count, 0)).toBe(5);
     expect(Math.max(...got.map((g) => g._count))).toBeLessThanOrEqual(2); // still spread over the peers
+  });
+});
+
+describe("warm-up on a health-throttled account (D51)", () => {
+  test("warmupTarget scales by healthSlowdownPct when healthCap is set, floor and at least 1", () => {
+    const s = base({ dailyLimit: 20, slowWarmup: false });
+    expect(warmupTarget(s, acct({ healthCap: 5 }), day(0), 50)).toBe(10);
+    expect(warmupTarget(s, acct({ healthCap: null }), day(0), 50)).toBe(20);
+    expect(
+      warmupTarget(base({ dailyLimit: 1, slowWarmup: false }), acct({ healthCap: 5 }), day(0), 10),
+    ).toBe(1);
+    expect(warmupTarget(s, acct({ healthCap: 5 }), day(0), 33)).toBe(6);
+    // a weekend stays 0
+    const wk = base({ dailyLimit: 20, slowWarmup: false, weekdaysOnly: true });
+    expect(warmupTarget(wk, acct({ healthCap: 5 }), day(2), 50)).toBe(0);
+  });
+
+  test("the tick and the view use it: target 2 at 50 % sends one message that day", async () => {
+    const w = await world(2, { settings: [{ dailyLimit: 2 }] });
+    await P().emailAccount.update({
+      where: { id: w.A.id },
+      data: { healthCap: 3, healthCapAt: TUE_8 },
+    });
+    await P().workspace.update({ where: { id: w.ws }, data: { healthSlowdownPct: 50 } });
+    const a = await P().emailAccount.findUniqueOrThrow({ where: { id: w.A.id } });
+    expect((await warmupView(P(), a, TUE_8, ["SMTP"])).todayTarget).toBe(1);
+    await w.tick();
+    w.clock.advance(20 * 60_000);
+    await w.tick();
+    expect(await rows({ fromAccountId: w.A.id, kind: "SEND" })).toHaveLength(1);
   });
 });
 

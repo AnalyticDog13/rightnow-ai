@@ -10,6 +10,7 @@ import { rewarmAllowance } from "../quota";
 import { checkWorkspaceDomains, findings, type DnsResolver } from "./dns";
 import { beginRewarm } from "./lifecycle";
 import { HARD_BOUNCE_SQL, perLead, TARGETED_SQL } from "./health";
+import { domainOf } from "../leads/domain";
 
 type Tx = Prisma.TransactionClient;
 type Actor = string | null | undefined;
@@ -47,7 +48,7 @@ export async function startRewarm(
     actorId: actor,
   });
   if (!connectionOk(d)) throw new AccountError(409, "reconnect_required", { checks: d.checks });
-  const domain = a.email.slice(a.email.lastIndexOf("@") + 1);
+  const domain = domainOf(a.email);
   const found = !deps.skipDns
     ? (await checkWorkspaceDomains(prisma, deps.resolver, clock, ws, [domain])).flatMap(findings)
     : [];
@@ -127,14 +128,14 @@ export async function cancelRewarm(
 
 /**
  * PS-REWARM-08, called by evaluateHealth: every plan (keyed on rewarmStartedAt, whatever the lifecycle, Rev 2 I2)
- * whose allowance reached its target, without a health cap, without hard bounces above 2 % and without an error in
+ * whose allowance reached its target, without a health cap, without hard bounces above `rewarmExitBouncePct` (default 2 %) and without an error in
  * the last `rewarmExitCleanDays` days ends: the account is ACTIVE at its normal limits. Returns how many ended.
  */
 export async function completeRewarms(prisma: PrismaClient, clock: Clock): Promise<number> {
   const now = clock.now();
   const rows = await prisma.emailAccount.findMany({
     where: { rewarmStartedAt: { not: null }, healthCap: null, deletedAt: null },
-    include: { workspace: { select: { rewarmExitCleanDays: true } } },
+    include: { workspace: { select: { rewarmExitCleanDays: true, rewarmExitBouncePct: true } } },
   });
   let done = 0;
   for (const { workspace, ...a } of rows) {
@@ -147,7 +148,7 @@ export async function completeRewarms(prisma: PrismaClient, clock: Clock): Promi
         ${perLead(HARD_BOUNCE_SQL)} AS hard
       FROM "Event" e WHERE e."workspaceId" = ${a.workspaceId} AND e."accountId" = ${a.id}
         AND e."occurredAt" >= ${since.toISOString()}::timestamp AND ${TARGETED_SQL}`;
-    if ((100 * c!.hard) / Math.max(c!.accepted, 20) > 2) continue;
+    if ((100 * c!.hard) / Math.max(c!.accepted, 20) > workspace.rewarmExitBouncePct) continue;
     try {
       if (await prisma.$transaction((tx) => endRewarm(tx, now, a, null, "account.rewarm_complete")))
         done++;

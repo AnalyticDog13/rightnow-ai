@@ -72,7 +72,8 @@ export type Location = { folder: "INBOX" | "SPAM" | "SENT" | "OTHER"; providerMe
 export type Diagnostics = {
   ok: boolean;
   checks: {
-    name: "token" | "scopes" | "api" | "imap_login" | "smtp_auth" | "sent_folder";
+    name:
+      "token" | "scopes" | "api" | "imap_login" | "smtp_auth" | "sent_folder" | "tracking_cname";
     ok: boolean;
     code?: string;
     command?: string;

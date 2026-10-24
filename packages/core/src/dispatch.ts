@@ -12,6 +12,7 @@ import { routeAllowed, tagsAllowed } from "./rotation";
 import { dayKey, isInWindow, nextWindowStart, startOfNextDay, type Window } from "./schedule";
 import { templateVariables } from "./template";
 import type { RenderEnv } from "./unsubscribe";
+import { domainOf } from "./leads/domain";
 
 type Tx = Prisma.TransactionClient;
 
@@ -330,7 +331,7 @@ async function claimOne(
       }
 
       const claimToken = randomUUID();
-      const rfcMessageId = m.rfcMessageId ?? newMessageId(a.email.split("@").pop()!);
+      const rfcMessageId = m.rfcMessageId ?? newMessageId(domainOf(a.email));
       const done = await set({
         status: "SENDING",
         claimToken,

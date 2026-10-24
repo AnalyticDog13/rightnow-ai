@@ -277,14 +277,13 @@ async function bounceProtect(prisma: PrismaClient, now: Date): Promise<number> {
   for (const c of rows) {
     const hardPct = c.accepted24h ? (100 * c.hard24h) / c.accepted24h : 0;
     const complaintPct = pct(c.complaints30d, c.accepted30d, 1000);
+    // each branch has the floor of its own window: complaint% is a 30-day figure (D51)
     const reason =
-      c.accepted24h < PAUSE_FLOOR
-        ? null
-        : hardPct > c.thr
-          ? "bounce_rate"
-          : complaintPct > COMPLAINT_LINE
-            ? "complaint_rate"
-            : null;
+      c.accepted24h >= PAUSE_FLOOR && hardPct > c.thr
+        ? "bounce_rate"
+        : c.accepted30d >= PAUSE_FLOOR && complaintPct > COMPLAINT_LINE
+          ? "complaint_rate"
+          : null;
     if (!reason) continue;
     await prisma.$transaction(async (tx) => {
       const r = await tx.campaign.updateMany({

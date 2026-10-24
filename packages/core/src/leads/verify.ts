@@ -10,6 +10,7 @@ import { getEnv } from "../env";
 import { DISPOSABLE_DOMAINS } from "./disposable";
 import type { ResolveMx } from "./esp";
 import { parseEmail } from "./validate";
+import { domainOf } from "./domain";
 
 type Db = PrismaClient;
 type Actor = string | null | undefined;
@@ -48,7 +49,7 @@ export function mxVerifier(resolveMx: ResolveMx): EmailVerifier {
     async verify(email, signal) {
       const e = parseEmail(email);
       if (!e) return "INVALID";
-      const domain = e.slice(e.lastIndexOf("@") + 1);
+      const domain = domainOf(e);
       if (DISPOSABLE_DOMAINS.has(domain)) return "RISKY";
       try {
         const mx = await abortable(resolveMx(domain), signal);

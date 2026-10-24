@@ -644,6 +644,9 @@ export async function updateOpportunity(
   const { stageId, ...p } = opportunityPatch.parse(input);
   return prisma.$transaction(async (tx) => {
     if (!(await lockDeal(tx, ws, id))) throw notFound();
+    // D51: a currency change holds the Workspace FOR UPDATE while it counts money; this waits for it (and it for us)
+    if (p.value !== undefined || p.cashCollected !== undefined)
+      await tx.$queryRaw`SELECT id FROM "Workspace" WHERE id = ${ws} FOR KEY SHARE`;
     if (p.ownerId) await assertMembers(tx, ws, [p.ownerId]);
     if (stageId && (await moveStage(tx, clock, ws, actor, id, stageId)) === "no_stage")
       throw notFound();

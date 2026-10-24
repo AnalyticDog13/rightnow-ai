@@ -304,6 +304,63 @@ describe("state changes", () => {
     expect(got.origin).toMatchObject({ step: { order: 1 }, variant: { label: "A" } });
   });
 
+  test("query count: the thread list and an opened thread stay at 6 queries or fewer (D51)", async () => {
+    const s = await seedCampaign(P(), { at: T, rows: 1, accounts: [{}] });
+    const a = s.accounts[0]!;
+    const l = s.leads[0]!.lead;
+    for (let i = 0; i < 20; i++)
+      await thread(s.ws, a, { leadId: l.id, campaignId: s.campaign.id, out: true });
+    const open = await thread(s.ws, a, { leadId: l.id, campaignId: s.campaign.id, out: true });
+    // ten more messages, each with a cid image and its own attachment
+    for (let i = 0; i < 10; i++) {
+      const m = await P().message.create({
+        data: {
+          workspaceId: s.ws,
+          accountId: a.id,
+          threadId: open.id,
+          subject: "s",
+          sentAt: at(i),
+          references: [],
+          rfcMessageId: `<cid${i}@x.test>`,
+          direction: "IN",
+          folder: "INBOX",
+          fromEmail: "x@x.test",
+          to: [a.email],
+          cc: [],
+          kind: "REPLY",
+          text: "t",
+          html: `<img src="cid:i${i}.png">`,
+          leadId: l.id,
+        },
+      });
+      await P().attachment.create({
+        data: {
+          messageId: m.id,
+          filename: `i${i}.png`,
+          contentType: "image/png",
+          size: 3,
+          data: Buffer.alloc(3, 1),
+        },
+      });
+    }
+    let q = 0;
+    const counted = P().$extends({
+      query: {
+        $allOperations({ args, query }) {
+          q++;
+          return query(args);
+        },
+      },
+    }) as never;
+    const list = await listThreads(counted, s.ws, { view: "all" });
+    expect(list.length).toBeGreaterThan(20);
+    expect(q).toBeLessThanOrEqual(6);
+    q = 0;
+    const got = await getThread(counted, s.ws, open.id);
+    expect(got.messages.filter((m) => m.html?.startsWith('<img src="data:'))).toHaveLength(10);
+    expect(q).toBeLessThanOrEqual(6);
+  });
+
   test("local delete hides the thread and the lead stays in its campaign", async () => {
     const s = await seedCampaign(P(), { at: T, rows: 1, accounts: [{}] });
     const l = s.leads[0]!;
@@ -339,7 +396,11 @@ describe("state changes", () => {
       );
     });
     // FR M3 / D20: a MEMBER (or API key) changes the category, but only an ADMIN lifts the suppression
-    const m = await thread(ws, a, { leadId: l.id, category: "NOT_INTERESTED", categorySource: "RULE" });
+    const m = await thread(ws, a, {
+      leadId: l.id,
+      category: "NOT_INTERESTED",
+      categorySource: "RULE",
+    });
     expect(await updateThread(P(), ws, "u2", m.id, { category: "NEUTRAL" })).toMatchObject({
       category: "NEUTRAL",
     });

@@ -5,6 +5,7 @@ import { unwrapPrevious } from "../accounts/status";
 import { audit } from "../audit";
 import type { Clock } from "../clock";
 import { maxStalenessSec } from "../env";
+import { domainOf } from "../leads/domain";
 
 type Tx = Prisma.TransactionClient;
 type Actor = string | null | undefined;
@@ -50,7 +51,7 @@ export async function computeLifecycle(
         where: {
           workspaceId_domain: {
             workspaceId: a.workspaceId,
-            domain: a.email.split("@").pop()!.toLowerCase(),
+            domain: domainOf(a.email),
           },
         },
         select: { level: true },

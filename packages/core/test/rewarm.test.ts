@@ -275,6 +275,32 @@ describe("completeRewarms (PS-REWARM-08)", () => {
   });
 });
 
+describe("completeRewarms exit threshold (D51)", () => {
+  test("rewarmExitBouncePct 1 keeps a 1.5 % bounce day re-warming; the default 2 lets it exit", async () => {
+    const strict = await setup(reached);
+    const normal = await setup(reached);
+    await P().workspace.update({ where: { id: strict.ws }, data: { rewarmExitBouncePct: 1 } });
+    for (const { A } of [strict, normal])
+      await P().event.createMany({
+        data: [
+          ...Array.from({ length: 200 }, () => ({ type: "ACCEPTED" as const })),
+          ...Array.from({ length: 3 }, () => ({ type: "BOUNCE_HARD" as const })),
+        ].map((e) => ({
+          ...e,
+          workspaceId: A.workspaceId,
+          accountId: A.id,
+          occurredAt: ago(1),
+          meta: {},
+          scheduledMessageId: `sm-${randomBytes(4).toString("hex")}`,
+          dedupeKey: `t:${randomBytes(8).toString("hex")}`,
+        })),
+      });
+    await completeRewarms(P(), clock());
+    expect((await acct(strict.A.id)).lifecycle).toBe("REWARMING");
+    expect((await acct(normal.A.id)).lifecycle).toBe("ACTIVE");
+  });
+});
+
 describe("rewarmPlanView", () => {
   test("allowance, target, progress and days left; null without a plan", () => {
     const a = {

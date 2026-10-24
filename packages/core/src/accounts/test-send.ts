@@ -11,6 +11,7 @@ import { audit } from "../audit";
 import type { Clock } from "../clock";
 import { recordProviderError } from "./health";
 import { AccountError, live, providerOf, type Opts } from "./service";
+import { domainOf } from "../leads/domain";
 
 const LIMIT = 5;
 const WINDOW_MS = 10 * 60_000;
@@ -64,15 +65,17 @@ export async function sendTestEmail(
       { workspaceId: p.workspaceId, actorId: p.actorId, at: now },
       "account.test_send",
       a.id,
-      { toDomain: to.data.split("@").pop()!.toLowerCase() },
+      { toDomain: domainOf(to.data) },
     );
   });
 
-  const rfcMessageId = newMessageId(a.email.split("@").pop()!);
+  const rfcMessageId = newMessageId(domainOf(a.email));
   const body =
     "This is a test message sent from RightNow to check this account. No reply is needed.";
   try {
-    const r = await (await providerOf(prisma, { clock, providerFor: deps.providerFor })(a)).send({
+    const r = await (
+      await providerOf(prisma, { clock, providerFor: deps.providerFor })(a)
+    ).send({
       from: { email: a.email, name: a.fromName },
       to: [{ email: to.data }],
       replyTo: a.replyTo ? { email: a.replyTo } : undefined,

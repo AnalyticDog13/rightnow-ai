@@ -2,6 +2,8 @@
 
 Everything in Phase 2 was built and tested against fakes and recorded fixtures. This guide checks those fixtures against the real services. Run it once per provider with a throwaway mailbox you own. Send only to an address you control.
 
+Before relying on a provider for campaigns, read its acceptable-use rules in [../PROVIDER_COMPLIANCE.md](../PROVIDER_COMPLIANCE.md) (the Provider Compliance Gate, PS-DEPLOY-14). A full PASS here is what lifts the D17 gate for that provider.
+
 The **Message-ID checks (G4, M2, M3) gate P3-T11**: its UNCERTAIN to SENT/HELD resolution depends on our `Message-ID` surviving. They do not gate the Phase 2 merge.
 
 Record every result in the table at the bottom of this file (date, provider, step, PASS/FAIL, note) and commit it. Where reality differs, correct the fixtures named under "If it differs" in the same commit.

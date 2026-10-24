@@ -13,6 +13,7 @@ import {
   type WarmupDay,
   type WarmupState,
 } from "./warmup";
+import { domainOf } from "../leads/domain";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 const DAY = 86_400_000;
@@ -90,13 +91,14 @@ export async function deliverabilityOverview(
     Math.min(...accounts.map((a) => warmupSince(a.timezone, 7, now).getTime())),
   );
 
-  const [workspace, snaps, counts, reasons, checks, settings, warmRows, peerRows] = await Promise.all([
-    prisma.workspace.findUniqueOrThrow({ where: { id: ws }, select: { inactivityDays: true } }),
-    prisma.healthSnapshot.findMany({
-      where: { accountId: { in: ids }, day: { gte: day30 } },
-      orderBy: { day: "asc" },
-    }),
-    prisma.$queryRaw<Counts[]>`
+  const [workspace, snaps, counts, reasons, checks, settings, warmRows, peerRows] =
+    await Promise.all([
+      prisma.workspace.findUniqueOrThrow({ where: { id: ws }, select: { inactivityDays: true } }),
+      prisma.healthSnapshot.findMany({
+        where: { accountId: { in: ids }, day: { gte: day30 } },
+        orderBy: { day: "asc" },
+      }),
+      prisma.$queryRaw<Counts[]>`
       SELECT e."accountId" AS id,
         count(*) FILTER (WHERE e.type = 'ACCEPTED')::int AS accepted,
         ${perLead(HARD_BOUNCE_SQL)} AS hard,
@@ -109,7 +111,7 @@ export async function deliverabilityOverview(
         AND e.type IN ('ACCEPTED', 'BOUNCE_HARD', 'BOUNCE_SOFT', 'BOUNCE_UNKNOWN', 'SEND_FAILED', 'COMPLAINT', 'REPLY')
         AND ${TARGETED_SQL}
       GROUP BY e."accountId"`,
-    prisma.$queryRaw<{ id: string; reason: string }[]>`
+      prisma.$queryRaw<{ id: string; reason: string }[]>`
       SELECT id, reason FROM (
         SELECT e."accountId" AS id, e.meta->>'reason' AS reason,
           row_number() OVER (PARTITION BY e."accountId" ORDER BY e."occurredAt" DESC) AS rn
@@ -119,15 +121,15 @@ export async function deliverabilityOverview(
           AND e.type IN ('BOUNCE_HARD', 'BOUNCE_SOFT', 'BOUNCE_UNKNOWN')
           AND e.meta->>'reason' IS NOT NULL AND ${TARGETED_SQL}) x
       WHERE rn <= 3 ORDER BY rn`,
-    prisma.domainCheck.findMany({ where: { workspaceId: ws } }),
-    prisma.warmupSettings.findMany({ where: { workspaceId: ws } }),
-    prisma.warmupMessage.findMany({ where: warmupRowsWhere(ws, ids, warmSince) }),
-    // the same filter warmupView and warmupTick use for peers
-    prisma.warmupSettings.findMany({
-      where: warmupUsable(sendable, ws),
-      select: { accountId: true },
-    }),
-  ]);
+      prisma.domainCheck.findMany({ where: { workspaceId: ws } }),
+      prisma.warmupSettings.findMany({ where: { workspaceId: ws } }),
+      prisma.warmupMessage.findMany({ where: warmupRowsWhere(ws, ids, warmSince) }),
+      // the same filter warmupView and warmupTick use for peers
+      prisma.warmupSettings.findMany({
+        where: warmupUsable(sendable, ws),
+        select: { accountId: true },
+      }),
+    ]);
 
   const trend = groupBy(snaps, (s) => s.accountId);
   const stat = new Map(counts.map((c) => [c.id, c]));
@@ -141,7 +143,7 @@ export async function deliverabilityOverview(
     const accepted = c?.accepted ?? 0;
     const pct = (n = 0) => (accepted ? round1((100 * n) / accepted) : 0);
     const idleDays = Math.floor((now.getTime() - idleSince(a).getTime()) / DAY);
-    const dc = check.get(a.email.slice(a.email.lastIndexOf("@") + 1));
+    const dc = check.get(domainOf(a.email));
     const found = dc ? findings(dc.report as DomainReport) : [];
     const dnsReason = (found.find((f) => f.level === "block") ?? found[0])?.reason;
     const s = warm.get(a.id) ?? null;

@@ -327,6 +327,40 @@ describe("diagnostics and mark fixed", () => {
       },
     ],
   };
+  test("tracking_cname: fails with cname_missing when the tracking domain does not resolve; no check without one (PS-ACC-24)", async () => {
+    const good: Diagnostics = { ok: true, checks: [{ name: "token", ok: true }] };
+    const plain = await mk();
+    const none = await runDiagnostics(db.prisma, ws, plain.id, { ...o, ...diag(good) });
+    expect(none.checks.map((c) => c.name)).toEqual(["token"]);
+
+    const a = await mk();
+    await db.prisma.emailAccount.update({
+      where: { id: a.id },
+      data: { trackingDomain: "t.acme.test" },
+    });
+    const missing = await runDiagnostics(db.prisma, ws, a.id, {
+      ...o,
+      ...diag(good),
+      resolveCname: async () => {
+        throw new Error("ENODATA");
+      },
+    });
+    expect(missing.checks.find((c) => c.name === "tracking_cname")).toMatchObject({
+      ok: false,
+      code: "cname_missing",
+    });
+    // informational: the account keeps its status and no error is recorded
+    const row = await db.prisma.emailAccount.findUniqueOrThrow({ where: { id: a.id } });
+    expect([row.status, row.lastError]).toEqual(["CONNECTED", null]);
+
+    const host = new URL(process.env.APP_URL ?? "http://localhost:3000").hostname;
+    const ok = await runDiagnostics(db.prisma, ws, a.id, {
+      ...o,
+      ...diag(good),
+      resolveCname: async () => [host],
+    });
+    expect(ok.checks.find((c) => c.name === "tracking_cname")).toMatchObject({ ok: true });
+  });
   test("failing checks are stored as lastError, responses truncated to 200 chars", async () => {
     const a = await mk();
     const r = await runDiagnostics(db.prisma, ws, a.id, { ...o, ...diag(bad) });

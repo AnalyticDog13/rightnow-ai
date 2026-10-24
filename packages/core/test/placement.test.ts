@@ -8,7 +8,12 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import type { AccountError } from "../src/accounts/service";
 import { fixedClock } from "../src/clock";
 import { healthInputs, healthScore } from "../src/deliverability/health";
-import { placementReport, startPlacementTest } from "../src/deliverability/placement";
+import {
+  placementReport,
+  placementRuntime,
+  startPlacementTest,
+} from "../src/deliverability/placement";
+import { runNextJob } from "../src/jobs";
 import { warmupTick } from "../src/deliverability/warmup";
 import { reconcileAccount, type SyncDeps } from "../src/mail/sync";
 import { seedCampaign } from "./campaign-fixture";
@@ -38,7 +43,13 @@ async function world(o: { cap?: number; seeds?: boolean; failM?: boolean } = {})
     at: TUE_8,
     leads: 1,
     accounts: [
-      { email: `t-${tag}@sender${tag}.test`, credentialsEnc: "x", providerCap: o.cap ?? 500 },
+      {
+        email: `t-${tag}@sender${tag}.test`,
+        credentialsEnc: "x",
+        providerCap: o.cap ?? 500,
+        slowRamp: false,
+        dailyLimit: 500,
+      },
       {
         email: `g-${tag}@gmail${tag}.test`,
         provider: "GMAIL",
@@ -72,8 +83,25 @@ async function world(o: { cap?: number; seeds?: boolean; failM?: boolean } = {})
           : Reflect.get(t, k, r),
     });
   const deps = { providerFor, renderEnv, env: FAKE };
-  const start = (input: object = { accountId: T.id }, d: object = deps) =>
+  // the route queues the job (202); the worker runs it. Tests run it right away with the world's provider.
+  const queue = (input: object = { accountId: T.id }, d: object = deps) =>
     startPlacementTest(P(), clock, d as typeof deps, s.ws, null, input as never);
+  const runJob = async (p: typeof providerFor = providerFor) => {
+    placementRuntime.providerFor = p;
+    // other tests of this file leave PENDING jobs of their own workspaces: stop at this world's job
+    const mine = await P().backgroundJob.findFirst({
+      where: { workspaceId: s.ws, status: "PENDING" },
+    });
+    for (;;) {
+      const id = await runNextJob(P(), clock, new AbortController().signal);
+      if (!id || id === mine?.id) return id;
+    }
+  };
+  const start = async (input: object = { accountId: T.id }, d: object = deps) => {
+    const r = await queue(input, d);
+    await runJob((d as typeof deps).providerFor);
+    return r;
+  };
   const tick = () => warmupTick(P(), clock, { providerFor, env: FAKE });
   const sync = (...who: EmailAccount[]) =>
     Promise.all(
@@ -85,7 +113,7 @@ async function world(o: { cap?: number; seeds?: boolean; failM?: boolean } = {})
       ),
     );
   await sync(T, G, M);
-  return { ...s, T, G, M, clock, deps, start, tick, sync };
+  return { ...s, T, G, M, clock, deps, start, queue, runJob, providerFor, tick, sync };
 }
 const usage = (a: EmailAccount) =>
   P().accountDailyUsage.findUnique({ where: { accountId_day: { accountId: a.id, day: DAY0 } } });
@@ -217,6 +245,93 @@ describe("placement test (D37)", () => {
     expect(
       (await P().placementTest.findUniqueOrThrow({ where: { id } })).finishedAt,
     ).not.toBeNull();
+  });
+});
+
+describe("placement runs as a background job (D51)", () => {
+  test("start stores PLANNED rows and a PENDING placement_run job; the job sends and finishes", async () => {
+    const w = await world();
+    sent.length = 0;
+    const { id, jobId } = await w.queue();
+    expect(sent).toHaveLength(0);
+    expect(
+      await P().warmupMessage.count({ where: { placementTestId: id, status: "PLANNED" } }),
+    ).toBe(2);
+    expect(await P().backgroundJob.findUniqueOrThrow({ where: { id: jobId } })).toMatchObject({
+      kind: "placement_run",
+      status: "PENDING",
+    });
+    expect(await w.runJob()).toBe(jobId);
+    expect(sent).toHaveLength(2);
+    expect(await P().warmupMessage.count({ where: { placementTestId: id, status: "SENT" } })).toBe(
+      2,
+    );
+    expect(await P().backgroundJob.findUniqueOrThrow({ where: { id: jobId } })).toMatchObject({
+      status: "DONE",
+      progress: 100,
+    });
+  });
+
+  test("a superseded run stops after the fence check and sends nothing more", async () => {
+    const w = await world();
+    const { id, jobId } = await w.queue();
+    let calls = 0;
+    await w.runJob(async (a) => {
+      const p = await w.providerFor(a);
+      return new Proxy(p, {
+        get: (t, k, r) =>
+          k === "send"
+            ? async (...x: never[]) => {
+                if (++calls === 1)
+                  await P().backgroundJob.update({
+                    where: { id: jobId },
+                    data: { attempts: { increment: 1 } },
+                  });
+                return (t.send as (...a: never[]) => Promise<unknown>)(...x);
+              }
+            : Reflect.get(t, k, r),
+      });
+    });
+    expect(calls).toBe(1);
+    const left = await P().warmupMessage.findMany({
+      where: { placementTestId: id },
+      orderBy: { createdAt: "asc" },
+    });
+    expect(left.map((r) => r.status).sort()).toEqual(["PLANNED", "SENT"]);
+    expect((await P().backgroundJob.findUniqueOrThrow({ where: { id: jobId } })).status).toBe(
+      "RUNNING",
+    );
+  });
+
+  test("a health-throttled account (cap 10, 9 used) cannot book 2 seeds: 409 provider_cap, nothing queued", async () => {
+    const w = await world();
+    await P().emailAccount.update({
+      where: { id: w.T.id },
+      data: { healthCap: 10, healthCapAt: TUE_8 },
+    });
+    await P().accountDailyUsage.create({ data: { accountId: w.T.id, day: DAY0, sent: 9 } });
+    const e = await rejects(w.queue());
+    expect([e?.status, e?.message]).toEqual([409, "provider_cap"]);
+    expect((await usage(w.T))?.sent).toBe(9);
+    expect(await P().backgroundJob.count({ where: { workspaceId: w.ws } })).toBe(0);
+    // with 8 used the same throttled account fits both
+    await P().accountDailyUsage.update({
+      where: { accountId_day: { accountId: w.T.id, day: DAY0 } },
+      data: { sent: 8 },
+    });
+    await w.queue();
+    expect((await usage(w.T))?.sent).toBe(10);
+  });
+
+  test("the 4th run for an account within an hour is 429 with Retry-After seconds; the next hour is fine", async () => {
+    const w = await world();
+    for (let i = 0; i < 3; i++) await w.queue();
+    const e = await rejects(w.queue());
+    expect([e?.status, e?.message]).toEqual([429, "rate_limited"]);
+    expect((e?.body as { retryAfterSec: number }).retryAfterSec).toBeGreaterThan(0);
+    expect(await P().placementTest.count({ where: { workspaceId: w.ws } })).toBe(3);
+    w.clock.advance(61 * MIN);
+    await expect(w.queue()).resolves.toMatchObject({ jobId: expect.any(String) });
   });
 });
 

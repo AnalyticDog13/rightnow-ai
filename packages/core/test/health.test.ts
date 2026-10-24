@@ -456,6 +456,26 @@ describe("evaluateHealth: campaigns", () => {
     expect((await camp(many.campaign.id)).status).toBe("BOUNCE_PROTECT");
   });
 
+  test("D51: the BounceProtect complaint floor counts the 30-day sends, the window of complaint%", async () => {
+    const quiet = await seedCampaign(P(), { at: T });
+    const busy = await seedCampaign(P(), { at: T });
+    const [Q] = quiet.accounts as [EmailAccount];
+    const [B] = busy.accounts as [EmailAccount];
+    // a quiet last day (10 sends) after 1990 earlier in the month, 3 complaints: 0.15 % of 2000 > 0.1 %
+    for (const [a, c, day] of [
+      [Q, quiet.campaign.id, 10],
+      [B, busy.campaign.id, 60],
+    ] as const) {
+      await events(a, "ACCEPTED", day, { campaignId: c });
+      await events(a, "ACCEPTED", 2000 - day, { campaignId: c, at: ago(5 * 24 * H) });
+      for (const l of ["a", "b", "c"])
+        await events(a, "COMPLAINT", 1, { campaignId: c, leadId: `${c}${l}` });
+    }
+    expect(await evaluateHealth(P(), fixedClock(T))).toMatchObject({ bounceProtected: 2 });
+    expect((await camp(quiet.campaign.id)).status).toBe("BOUNCE_PROTECT");
+    expect((await camp(busy.campaign.id)).status).toBe("BOUNCE_PROTECT");
+  });
+
   test("G-M7: a failing step does not skip the later ones", async () => {
     const s = await seedCampaign(P(), {
       at: T,

@@ -16,6 +16,7 @@ export function DeliverabilitySettings(v: {
   bounceThresholdPct: number;
   healthSlowdownPct: number;
   rewarmExitCleanDays: number;
+  rewarmExitBouncePct: number;
 }) {
   const router = useRouter();
   const [msg, setMsg] = useState("");
@@ -32,6 +33,7 @@ export function DeliverabilitySettings(v: {
         bounceThresholdPct: Number(f.get("bounceThresholdPct")),
         healthSlowdownPct: Number(f.get("healthSlowdownPct")),
         rewarmExitCleanDays: Number(f.get("rewarmExitCleanDays")),
+        rewarmExitBouncePct: Number(f.get("rewarmExitBouncePct")),
       }),
     });
     const j = (await res.json().catch(() => ({}))) as { error?: string };
@@ -111,6 +113,25 @@ export function DeliverabilitySettings(v: {
             defaultValue={v.rewarmExitCleanDays}
             required
           />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="rewarmExitBouncePct">
+            Hard bounce rate that keeps a re-warm going (%)
+          </Label>
+          <Input
+            id="rewarmExitBouncePct"
+            name="rewarmExitBouncePct"
+            type="number"
+            min={0.5}
+            max={10}
+            step={0.5}
+            defaultValue={v.rewarmExitBouncePct}
+            required
+          />
+          <p className="text-xs text-muted-foreground">
+            A re-warm ends only when the clean days stay at or under this rate. Between 0.5 and 10,
+            default 2.
+          </p>
         </div>
         <div className="flex items-center gap-3">
           <Button type="submit">Save</Button>

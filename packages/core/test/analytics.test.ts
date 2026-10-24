@@ -215,6 +215,50 @@ describe("analytics (D42)", () => {
     expect(s2).toMatchObject({ contacted: 0, newLeadsContacted: 0 });
   });
 
+  test("meetings count one per lead and campaign, so a merge cannot double-count (D51)", async () => {
+    const f = await analyticsFixture(P());
+    const at = AT("2026-11-02T14:30:00Z");
+    await P().event.create({
+      data: {
+        workspaceId: f.ws,
+        type: "MEETING",
+        occurredAt: at,
+        dedupeKey: "m2",
+        leadId: f.L2.id,
+        campaignId: f.C.id,
+      },
+    });
+    expect((await run(f.ws, { campaignIds: f.C.id })).total.meetings).toBe(2);
+    // what mergeLeads does to a merged lead's events
+    await P().event.updateMany({
+      where: { type: "MEETING", leadId: f.L2.id },
+      data: { leadId: f.L1.id },
+    });
+    expect((await run(f.ws, { campaignIds: f.C.id })).total.meetings).toBe(1);
+  });
+
+  test("revenuePerLead counts campaign cash only, not a non-campaign deal (D51)", async () => {
+    const f = await analyticsFixture(P());
+    const won = await P().pipelineStage.findFirstOrThrow({
+      where: { workspaceId: f.ws, name: "Closed Won" },
+    });
+    await P().opportunity.create({
+      data: {
+        workspaceId: f.ws,
+        leadId: f.L2.id,
+        stageId: won.id,
+        title: "walk-in",
+        value: 50,
+        cashCollected: 50,
+        closedAt: AT("2026-11-02T17:00:00Z"),
+        createdAt: AT("2026-11-02T12:00:00Z"),
+      },
+    });
+    const r = await crmReport(P(), f.ws, q());
+    expect(r.cashCollected).toBe("850.00");
+    expect(r.revenuePerLead).toBe("200.00"); // 800 campaign cash / 4 contacted, the 50 is excluded
+  });
+
   test("crmReport", async () => {
     const f = await analyticsFixture(P());
     const r = await crmReport(P(), f.ws, q());

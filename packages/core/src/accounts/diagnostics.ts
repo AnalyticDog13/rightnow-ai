@@ -4,9 +4,10 @@ import { audit } from "../audit";
 import { systemClock } from "../clock";
 import { accountDns, type DomainReport } from "../deliverability/dns";
 import { returnToService } from "../deliverability/lifecycle";
-import { maxStalenessSec } from "../env";
+import { getEnv, maxStalenessSec } from "../env";
 import { accountError } from "./health";
 import { AccountError, live, mutate, providerOf, type Opts } from "./service";
+import { verifyCname } from "./tracking-domain";
 
 /** Error codes that only a new grant or new credentials can fix: never auto-fixed. */
 export const AUTH_CODES = new Set([
@@ -97,6 +98,16 @@ export async function runDiagnostics(
         code,
         check: bad.name,
       });
+    });
+  }
+  // informational like DNS: a tracking domain that does not resolve to this app never changes the status (PS-ACC-24)
+  if (a.trackingDomain) {
+    const host = new URL(getEnv().APP_URL).hostname;
+    const ok = (await verifyCname(a.trackingDomain, host, o.resolveCname)) === "VERIFIED";
+    d.checks.push({
+      name: "tracking_cname",
+      ok,
+      ...(!ok && { code: "cname_missing", message: `${a.trackingDomain} has no CNAME to ${host}` }),
     });
   }
   // DNS is informational: it never changes the account status. No resolver (tests, callers that skip it) = no DNS section.

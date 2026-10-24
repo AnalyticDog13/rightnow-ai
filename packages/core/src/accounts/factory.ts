@@ -14,6 +14,7 @@ import {
 import { type Clock } from "../clock";
 import { getEnv } from "../env";
 import { accountCredentialStore, smtpCredentials } from "./credentials";
+import { domainOf } from "../leads/domain";
 
 /** D7: default provider cap per tier; the max `dailyLimit` is half of it (calendar-day accounting vs rolling windows). */
 export const TIER_CAP: Record<CapTier, number> = {
@@ -26,7 +27,7 @@ export const TIER_CAP: Record<CapTier, number> = {
 export const maxDailyLimit = (cap: number) => Math.floor(cap / 2);
 
 export function tierFor(provider: ProviderKind, email: string): CapTier {
-  const domain = email.toLowerCase().split("@").pop()!;
+  const domain = domainOf(email);
   if (provider === "GMAIL")
     return domain === "gmail.com" || domain === "googlemail.com"
       ? "GMAIL_CONSUMER"

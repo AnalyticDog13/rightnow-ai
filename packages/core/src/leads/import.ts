@@ -7,7 +7,7 @@ import type { Clock } from "../clock";
 import { withTxRetry } from "../dispatch";
 import { LEAD_FIELDS, autoMap, parseCsv, type Mapping } from "./csv";
 import { DISPOSABLE_DOMAINS } from "./disposable";
-import { companyDomainOf } from "./domain";
+import { companyDomainOf, domainOf } from "./domain";
 import { detectEsp, type ResolveMx } from "./esp";
 import { LeadError } from "./service";
 import { hashValue } from "./suppression";
@@ -49,7 +49,6 @@ const MAX_LEN = {
   website: 500,
   phone: 50,
 };
-const domainOf = (email: string) => email.slice(email.lastIndexOf("@") + 1);
 
 export async function previewImport(prisma: Db, ws: string, buf: Buffer, mapping?: Mapping) {
   const { headers, rows, delimiter } = parseCsv(buf, PREVIEW_ROWS);

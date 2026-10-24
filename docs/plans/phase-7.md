@@ -804,7 +804,7 @@ Files:
 - `deliverability/rewarm.ts` + `settings.ts`: `rewarmExitBouncePct`.
 - `accounts/diagnostics.ts`: a `tracking_cname` check when the account has a `trackingDomain`, using the existing tracking-domain check; `ok` is false only when it is configured and not resolving.
 - `analytics/metrics.ts`: meetings `DISTINCT (leadId, campaignId)`.
-- Migration `20261115000000_carry_forwards`: the `Lead(mergedIntoId)` index, `rewarmExitBouncePct`.
+- Migration `20261117000000_carry_forwards`: the `Lead(mergedIntoId)` index, `rewarmExitBouncePct`.
 - `settings.ts`: the currency change takes its existing Workspace `FOR UPDATE` lock before the "every deal is 0" read, not after it (the one-line race fix from HANDOFF).
 - `leads/domain.ts`: the single `domainOf(email)`, with the duplicates found by `grep -rn "split(\"@\")" packages/core/src` replaced.
 - `leads/timeline.ts`: a `shortcut:` comment on the 200 cap.

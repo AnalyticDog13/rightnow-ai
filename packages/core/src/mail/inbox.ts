@@ -235,28 +235,34 @@ const CID_MAX = 1024 * 1024;
  * attachment filename `x`; add a contentId column if a sender uses opaque ids.
  */
 async function inlineCid<M extends { id: string; html: string | null }>(db: Db, msgs: M[]) {
-  return Promise.all(
-    msgs.map(async (m) => {
-      if (!m.html || !/cid:/i.test(m.html)) return m;
-      const files = await db.attachment.findMany({
-        where: { messageId: m.id, size: { lte: CID_MAX }, data: { not: null } },
-      });
-      const html = m.html.replace(/cid:([^"'\s)>]+)/gi, (_, id: string) => {
-        const name = (() => {
-          try {
-            return decodeURIComponent(id);
-          } catch {
-            return id;
-          }
-        })();
-        const f = files.find((a) => a.filename === name && CID_IMAGE.test(a.contentType));
-        return f
-          ? `data:${f.contentType};base64,${Buffer.from(f.data!).toString("base64")}`
-          : "about:blank";
-      });
-      return { ...m, html };
-    }),
-  );
+  const withCid = msgs.filter((m) => m.html && /cid:/i.test(m.html));
+  if (!withCid.length) return msgs;
+  // one query for the whole thread, not one per message
+  const all = await db.attachment.findMany({
+    where: {
+      messageId: { in: withCid.map((m) => m.id) },
+      size: { lte: CID_MAX },
+      data: { not: null },
+    },
+  });
+  return msgs.map((m) => {
+    if (!m.html || !/cid:/i.test(m.html)) return m;
+    const files = all.filter((a) => a.messageId === m.id);
+    const html = m.html.replace(/cid:([^"'\s)>]+)/gi, (_, id: string) => {
+      const name = (() => {
+        try {
+          return decodeURIComponent(id);
+        } catch {
+          return id;
+        }
+      })();
+      const f = files.find((a) => a.filename === name && CID_IMAGE.test(a.contentType));
+      return f
+        ? `data:${f.contentType};base64,${Buffer.from(f.data!).toString("base64")}`
+        : "about:blank";
+    });
+    return { ...m, html };
+  });
 }
 
 export const threadPatch = z.strictObject({

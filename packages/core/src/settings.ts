@@ -21,6 +21,7 @@ const patch = z.strictObject({
   inactivityDays: z.union([z.literal(7), z.literal(14), z.literal(30), z.literal(60)]).optional(),
   autoRewarm: z.enum(["OFF", "RECOMMEND", "AUTO"]).optional(),
   rewarmExitCleanDays: z.number().int().min(1).max(30).optional(),
+  rewarmExitBouncePct: z.number().min(0.5).max(10).optional(),
   // D40: one currency per workspace (ISO 4217); fixed while a deal carries money (Rev 2 M12)
   currency: z
     .string()
@@ -41,6 +42,7 @@ const SELECT = {
   inactivityDays: true,
   autoRewarm: true,
   rewarmExitCleanDays: true,
+  rewarmExitBouncePct: true,
   currency: true,
   storeNonLeadMail: true,
 } as const;

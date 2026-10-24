@@ -29,6 +29,7 @@ const ERRORS: Record<string, string> = {
   account_unavailable:
     "This account cannot send right now (paused, disconnected or its provider is not live-verified).",
   provider_cap: "Today's quota for this account has no room for a placement test.",
+  rate_limited: "At most 3 placement tests per account per hour. Try again later.",
 };
 
 export function PlacementManager({ isAdmin }: { isAdmin: boolean }) {
@@ -77,7 +78,9 @@ export function PlacementManager({ isAdmin }: { isAdmin: boolean }) {
     setMsg("Sending...");
     const r = await call("/api/v1/placement-tests", "POST", { accountId, subject, body });
     if (!r.ok) return setMsg(ERRORS[errorText(r)] ?? errorText(r));
-    setMsg("Sent. Results appear in about 10 minutes.");
+    setMsg(
+      "Queued. The messages go out within a minute; results appear in about 10 minutes after that.",
+    );
     setShown(r.json.id as string);
     await loadTests();
   }

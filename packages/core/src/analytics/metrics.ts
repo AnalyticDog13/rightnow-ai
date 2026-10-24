@@ -153,7 +153,7 @@ function eventStatement(db: Db, ws: string, q: AnalyticsQuery, bys: By[]) {
       ${perLead(sql`e.type = 'BOUNCE_UNKNOWN'`)} AS "unknownBounced",
       ${perLead(sql`e.type = 'COMPLAINT'`)} AS complaints,
       ${perLead(sql`e.type = 'UNSUBSCRIBE'`)} AS unsubscribed,
-      count(*) FILTER (WHERE e.type = 'MEETING')::int AS meetings
+      count(DISTINCT (e."leadId", e."campaignId")) FILTER (WHERE e.type = 'MEETING')::int AS meetings
     FROM (
       SELECT e.*, ARRAY[${Prisma.join(ks)}]::text[] AS ks, (${first(sql`e."campaignId",`)} AND ${firstBefore(ws, q, true)}) AS first_c,
         (${first(Prisma.empty)} AND ${firstBefore(ws, q, false)}) AS first_w

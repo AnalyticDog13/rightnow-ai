@@ -1,5 +1,7 @@
 # Email Provider Compliance Gate
 
+**How this gate is enforced (PS-DEPLOY-14, D17):** an account of a real provider (Gmail, Microsoft, IMAP/SMTP) sends campaign mail only after `npx tsx scripts/live-verify.ts` passed for that provider and recorded a `ProviderVerification` (steps in [ops/LIVE_VERIFICATION.md](ops/LIVE_VERIFICATION.md)); a later failure removes it. Campaign building, tests and the dry-run mode (`MAIL_PROVIDER_FAKE=1`, see [ops/LOCAL.md](ops/LOCAL.md)) need no live provider.
+
 Researched 2026-10-19. "Verified" = read on the official page today; "From knowledge" = long-standing rule not re-fetched, confirm before relying on it. Not legal advice.
 
 ## 1. Gmail API

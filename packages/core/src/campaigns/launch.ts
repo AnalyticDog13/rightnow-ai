@@ -7,6 +7,7 @@ import type { EspRule } from "./schema";
 import { CampaignError, liveCampaign } from "./service";
 import { lockEnrollment } from "./hooks";
 import { OPEN_STATES_SQL } from "./lead-status";
+import { domainOf } from "../leads/domain";
 
 export type DnsFinding = {
   domain: string;
@@ -125,7 +126,10 @@ async function activate(
   if (c.minGapSec < 300) warnings.push(warn("gap_below_5_min", "Gap below 5 minutes"));
   if (links.some((l) => l.account.lifecycle === "INACTIVE"))
     warnings.push(
-      warn("accounts_inactive", "Some accounts are inactive: re-warm them or resume at full volume"),
+      warn(
+        "accounts_inactive",
+        "Some accounts are inactive: re-warm them or resume at full volume",
+      ),
     );
   const send = (c.espRoutingRules as EspRule[]).filter((r) => r.action === "send");
   if (
@@ -172,7 +176,7 @@ async function activate(
     );
 
   // Network call: before any transaction.
-  const domains = [...new Set(usable.map((a) => a.email.split("@")[1]!))];
+  const domains = [...new Set(usable.map((a) => domainOf(a.email)))];
   const dns = deps.dnsGate && domains.length ? await deps.dnsGate(domains) : [];
   for (const f of dns.filter((f) => f.level === "block"))
     issues.push(block("dns_block", f.reason, { domain: f.domain, fix: f.fix }));

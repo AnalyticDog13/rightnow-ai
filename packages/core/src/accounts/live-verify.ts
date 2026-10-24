@@ -1,6 +1,7 @@
 import type { AccountProvider, PrismaClient } from "@rightnow/db/client";
 import { newMessageId, type MailProvider, type SyncCursor } from "@rightnow/providers";
 import type { Clock } from "../clock";
+import { domainOf } from "../leads/domain";
 
 export type VerifyStep = { step: string; ok: boolean; detail?: string };
 const WAIT_MS = 60_000;
@@ -47,7 +48,7 @@ export async function liveVerify(
   } catch {
     /* reported in the cursor step */
   }
-  const messageId = newMessageId(provider.address.split("@").pop()!);
+  const messageId = newMessageId(domainOf(provider.address));
   const sent = await step("send", async () => {
     const r = await provider.send({
       from: { email: provider.address },
