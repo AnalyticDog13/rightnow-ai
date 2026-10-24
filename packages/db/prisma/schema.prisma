@@ -41,7 +41,8 @@ model Workspace {
   automationRuns       AutomationRun[]
   webhooks             Webhook[]
   webhookDeliveries    WebhookDelivery[]
-  timezone             String                @default("UTC")
+  backgroundJobs       BackgroundJob[]
+  timezone            String                @default("UTC")
   physicalAddress      String?
   dailyCap             Int? // null = no workspace cap
   perCompanyDailyLimit Int?
@@ -1336,4 +1337,35 @@ model WebhookDelivery {
   @@index([status, nextAttemptAt])
   @@index([workspaceId, lastAttemptAt])
   @@index([leadId])
+}
+
+enum JobStatus {
+  PENDING
+  RUNNING
+  DONE
+  FAILED
+}
+
+/**
+ * D45: a long operation answered with 202 {jobId}. `updatedAt` is the progress heartbeat (every progress() call bumps it).
+ * Partial unique index ("workspaceId") WHERE status = 'RUNNING' (one running job per workspace) lives in the
+ * background_jobs migration (raw SQL).
+ */
+model BackgroundJob {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  kind        String
+  status      JobStatus @default(PENDING)
+  input       Json
+  progress    Int       @default(0)
+  result      Json?
+  error       String?
+  attempts    Int       @default(0)
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  finishedAt  DateTime?
+
+  @@index([status, createdAt])
 }

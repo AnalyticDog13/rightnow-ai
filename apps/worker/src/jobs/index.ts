@@ -1,6 +1,7 @@
 import type { JobDef } from "../boss";
 import { accountsAutoResumeJob } from "./accounts-auto-resume";
 import { accountsAutofixJob } from "./accounts-autofix";
+import { backgroundJobsJob } from "./background-jobs";
 import { campaignDispatchJob } from "./campaign-dispatch";
 import { campaignPlanJob } from "./campaign-plan";
 import { deliverabilityHealthJob } from "./deliverability-health";
@@ -29,5 +30,6 @@ export const jobs: JobDef[] = [
   warmupTickJob,
   eventDispatchJob,
   webhookDeliverJob,
+  backgroundJobsJob,
   retentionJob,
 ];

@@ -602,15 +602,20 @@ export async function mergeLeads(
   );
 }
 
-export const bulkInput = z.strictObject({
-  ids: z.array(z.string().min(1)).min(1).max(1000),
+const bulkBase = {
   action: z.enum([
     ...["assign_round_robin", "set_owner", "set_interest", "add_tags", "remove_tags", "delete"],
   ] as const),
   value: z
     .union([z.string(), z.number(), z.array(z.string().min(1)).max(100), z.null()])
     .optional(),
-});
+};
+const bulkIds = z.array(z.string().min(1)).min(1).max(1000);
+/** `bulkLeads` takes ids; the route also takes a `filter` (a leadQuery) and answers 202 with a `leads_bulk` job. */
+export const bulkIdsInput = z.strictObject({ ids: bulkIds, ...bulkBase });
+export const bulkInput = z
+  .strictObject({ ids: bulkIds.optional(), filter: leadQuery.optional(), ...bulkBase })
+  .refine((b) => (b.ids === undefined) !== (b.filter === undefined), "ids or filter, not both");
 
 export async function bulkLeads(
   prisma: Db,
@@ -619,7 +624,7 @@ export async function bulkLeads(
   input: unknown,
   actorId?: Actor,
 ) {
-  const { ids, action, value } = bulkInput.parse(input);
+  const { ids, action, value } = bulkIdsInput.parse(input);
   const strs = () => z.array(text(50)).min(1).parse(value);
   // gate M-1: delete and set_interest lock Lead before CampaignLead: a deadlock is retried, not a 500
   return withTxRetry(() =>

@@ -3,7 +3,7 @@ import type { Clock } from "./clock";
 
 const DAY = 86_400_000;
 
-/** The daily `retention` job (Fixed names): finished webhook deliveries are kept 30 days (D44). Later tasks add purges. */
+/** The daily `retention` job (Fixed names): finished webhook deliveries are kept 30 days (D44), automation runs and finished background jobs 90 days (R13). Later tasks add purges. */
 export async function purgeRetention(prisma: PrismaClient, clock: Clock) {
   const now = clock.now().getTime();
   const webhookDeliveries = (
@@ -14,5 +14,14 @@ export async function purgeRetention(prisma: PrismaClient, clock: Clock) {
       },
     })
   ).count;
-  return { webhookDeliveries };
+  const old = new Date(now - 90 * DAY);
+  const automationRuns = (
+    await prisma.automationRun.deleteMany({ where: { createdAt: { lt: old } } })
+  ).count;
+  const backgroundJobs = (
+    await prisma.backgroundJob.deleteMany({
+      where: { status: { in: ["DONE", "FAILED"] }, createdAt: { lt: old } },
+    })
+  ).count;
+  return { webhookDeliveries, automationRuns, backgroundJobs };
 }

@@ -1,4 +1,7 @@
-import { listLeads, type LeadQuery } from "./service";
+import type { Prisma, PrismaClient } from "@rightnow/db/client";
+import { AccountError } from "../accounts/service";
+import { audit } from "../audit";
+import { listLeads, toApiLead, type LeadQuery } from "./service";
 import { line } from "../csv";
 export { csvCell, line } from "../csv"; // index.ts re-exports this file, so the public names stay
 
@@ -41,4 +44,68 @@ export async function* exportLeadsCsv(
       })
       .join("");
   }
+}
+
+/**
+ * PS-LEAD-22: everything stored about one lead (a data-access export, audited as `lead.export`). Threads are the
+ * lead's by `Thread.leadId` or by a message to/from/cc its address (exact, lowercase match; shortcut: leads merged
+ * into this one are not folded in). Nothing of another lead or workspace is read.
+ */
+export async function exportLeadData(
+  db: PrismaClient | Prisma.TransactionClient,
+  ws: string,
+  leadId: string,
+  actorId?: string | null,
+) {
+  const lead = await db.lead.findFirst({ where: { id: leadId, workspaceId: ws } });
+  if (!lead) throw new AccountError(404, "Not found");
+  const byAddress = await db.message.findMany({
+    where: {
+      workspaceId: ws,
+      OR: [{ fromEmail: lead.email }, { to: { has: lead.email } }, { cc: { has: lead.email } }],
+    },
+    select: { threadId: true },
+    distinct: ["threadId"],
+  });
+  const threads = await db.thread.findMany({
+    where: { workspaceId: ws, OR: [{ leadId }, { id: { in: byAddress.map((m) => m.threadId) } }] },
+    orderBy: [{ lastMessageAt: "asc" }, { id: "asc" }],
+    include: { messages: { orderBy: [{ sentAt: "asc" }, { id: "asc" }] } },
+  });
+  const [notes, tasks, opportunities, events] = await Promise.all([
+    db.note.findMany({
+      where: { workspaceId: ws, OR: [{ leadId }, { threadId: { in: threads.map((t) => t.id) } }] },
+      orderBy: { createdAt: "asc" },
+    }),
+    db.task.findMany({ where: { workspaceId: ws, leadId }, orderBy: { createdAt: "asc" } }),
+    db.opportunity.findMany({ where: { workspaceId: ws, leadId }, orderBy: { createdAt: "asc" } }),
+    db.event.findMany({
+      where: { workspaceId: ws, leadId },
+      select: { id: true, type: true, occurredAt: true, campaignId: true, meta: true },
+      orderBy: [{ occurredAt: "asc" }, { id: "asc" }],
+    }),
+  ]);
+  await audit(db, { workspaceId: ws, actorId }, "lead.export", leadId);
+  return {
+    lead: toApiLead(lead),
+    notes,
+    tasks,
+    opportunities,
+    events,
+    threads: threads.map((t) => ({
+      id: t.id,
+      subject: t.subject,
+      messages: t.messages.map((m) => ({
+        direction: m.direction,
+        from: m.fromEmail,
+        to: m.to,
+        cc: m.cc,
+        subject: m.subject,
+        sentAt: m.sentAt,
+        text: m.text,
+        html: m.html,
+        rfcMessageId: m.rfcMessageId,
+      })),
+    })),
+  };
 }

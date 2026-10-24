@@ -21,3 +21,24 @@ export async function audit(
     },
   });
 }
+
+/** The workspace's audit rows, newest first. `action` is a prefix (`webhook.`); paged by id cursor. */
+export async function listAuditLogs(
+  prisma: Pick<PrismaClient, "auditLog">,
+  ws: string,
+  q: { action?: string; from?: Date; to?: Date; cursor?: string; take?: number },
+) {
+  const take = Math.min(q.take ?? 50, 100);
+  const rows = await prisma.auditLog.findMany({
+    where: {
+      workspaceId: ws,
+      ...(q.action && { action: { startsWith: q.action } }),
+      ...((q.from || q.to) && { createdAt: { gte: q.from, lte: q.to } }),
+    },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: take + 1,
+    ...(q.cursor && { cursor: { id: q.cursor } }),
+  });
+  const next = rows.length > take ? rows.pop()! : null;
+  return { logs: rows, nextCursor: next?.id ?? null };
+}
