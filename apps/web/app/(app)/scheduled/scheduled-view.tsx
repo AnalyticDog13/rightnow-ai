@@ -151,7 +151,7 @@ export function ScheduledView({ canEdit, isAdmin }: { canEdit: boolean; isAdmin:
         />
         {canEdit && sel.selected.size > 0 && (
           <BulkToolbar count={sel.selected.size}>
-            {(tab === "SCHEDULED" || tab === "HELD" || tab === "DEAD_LETTER") && (
+            {(tab === "SCHEDULED" || tab === "HELD") && (
               <Button variant="outline" onClick={() => void bulk("cancel")}>
                 Cancel selected
               </Button>

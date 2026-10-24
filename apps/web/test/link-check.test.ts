@@ -21,11 +21,43 @@ describe("linkCheckHref", () => {
     expect(linkCheckHref("https://bank.test", "mailto:a@evil.test", O)).toBeNull();
     expect(linkCheckHref("https://bank.test", "javascript:alert(1)", O)).toBeNull();
   });
+  it("flags credentials instead of refusing them", () => {
+    expect(linkTarget("https://bank.test@evil.test/")).toEqual({
+      url: "https://bank.test@evil.test/",
+      host: "evil.test",
+      credentialed: true,
+    });
+    expect(linkTarget("https://evil.test/")?.credentialed).toBe(false);
+  });
+});
+
+describe("linkCheckHref heuristics", () => {
+  it("always routes a credentialed href (userinfo spoof), whatever the text", () => {
+    for (const text of ["https://bank.test", "Click here"]) {
+      const h = linkCheckHref(text, "https://bank.test@evil.test/", O)!;
+      expect(h).toContain("/link-check?");
+    }
+  });
+  it("finds the domain in punctuation and sentences, and in IDN text", () => {
+    for (const text of [
+      "bank.test.",
+      "(bank.test)",
+      "Visit bank.test now",
+      " https://bank.test/x, ",
+      "bank.test!",
+      "bäcker.test",
+    ])
+      expect(linkCheckHref(text, "https://evil.test/", O), text).toContain("/link-check?");
+  });
+  it("leaves words and a matching host alone", () => {
+    expect(linkCheckHref("Visit our site.", "https://evil.test/", O)).toBeNull();
+    expect(linkCheckHref("Visit bank.test now", "https://bank.test/a", O)).toBeNull();
+  });
 });
 
 describe("linkTarget", () => {
   it("accepts http(s) only and returns the real host", () => {
-    expect(linkTarget("https://evil.test:8443/p")).toEqual({
+    expect(linkTarget("https://evil.test:8443/p")).toMatchObject({
       url: "https://evil.test:8443/p",
       host: "evil.test:8443",
     });
@@ -36,7 +68,6 @@ describe("linkTarget", () => {
       "/rel",
       "",
       undefined,
-      "https://u:p@x.test",
     ])
       expect(linkTarget(bad)).toBeNull();
   });

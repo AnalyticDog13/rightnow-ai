@@ -207,6 +207,10 @@ test("create, preview, launch gate, launch, held rows, keyboard", async ({ page 
   await expect(dead.locator("tbody tr")).toHaveCount(2);
   await expect(dead).toContainText("lease_expired");
   await expect(dead.getByRole("button", { name: `Release email to ${releaseRow}` })).toBeVisible();
+  // bulk Cancel belongs to the Scheduled and Held tabs, not here
+  await dead.getByLabel(`Select email to ${releaseRow}`).check();
+  await expect(page.getByRole("button", { name: "Retry selected" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Cancel selected" })).toHaveCount(0);
   await tab(page, "Held").click();
 
   // release asks first, traps focus, and "Keep held" changes nothing

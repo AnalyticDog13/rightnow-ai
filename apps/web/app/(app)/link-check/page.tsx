@@ -21,7 +21,12 @@ export default async function Page({
     <div className="flex max-w-xl flex-col gap-4">
       <h1 className="text-2xl font-semibold tracking-tight">Check this link</h1>
       {target ? (
-        <LinkCheck url={target.url} host={target.host} shown={one(sp.shown)?.slice(0, 253) ?? ""} />
+        <LinkCheck
+          url={target.url}
+          host={target.host}
+          credentialed={target.credentialed}
+          shown={one(sp.shown)?.slice(0, 253) ?? ""}
+        />
       ) : (
         <p role="alert">This link is not a web address, so it was not opened.</p>
       )}

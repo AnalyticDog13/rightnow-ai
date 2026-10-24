@@ -509,3 +509,19 @@ describe("sendReply sanitizes the editor html", () => {
     expect(m.html).not.toMatch(/javascript|onerror|<script/i);
   });
 });
+
+describe("sendReply empty bodies", () => {
+  test.each(["<p><br></p>", "<script>x</script>", "<p> &nbsp; </p>"])(
+    "%s has no text after sanitizing: 400 and nothing is sent",
+    async (html) => {
+      const s = await setup();
+      await expect(
+        sendReply(P(), clock, deps, s.ws, "u1", input(s, { html })),
+      ).rejects.toMatchObject({
+        status: 400,
+        message: "invalid_message",
+      });
+      expect(await getFakeProvider(s.a.email).sentRaw()).toHaveLength(0);
+    },
+  );
+});

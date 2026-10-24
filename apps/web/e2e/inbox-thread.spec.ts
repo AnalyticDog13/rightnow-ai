@@ -275,7 +275,8 @@ test("thread, reply with attachment, inert rendering, notes, bulk unread, remind
 <p id="hello">Hostile hello</p><script>window.__pwned=1</script><img src="x" onerror="window.__pwned=2">
 <img id="px" src="${REMOTE}/pixel.png"><form action="${REMOTE}/post" method="post"><input name="a"></form>
 <a href="javascript:window.__pwned=3">click</a>
-<a id="mismatch" href="https://evil.test/login">https://bank.test</a></body></html>`;
+<a id="mismatch" href="https://evil.test/login">https://bank.test</a>
+<a id="spoof" href="https://bank.test@evil.test/">https://bank.test</a></body></html>`;
   await box.receiveRaw(
     await buildMime({
       from: { email: "stranger@e2e-inbox.io" },
@@ -334,5 +335,12 @@ test("thread, reply with attachment, inert rendering, notes, bulk unread, remind
   await warn.getByRole("button", { name: "Cancel" }).click();
   await page.waitForTimeout(500); // a tab the app opened closes itself; otherwise the page says nothing was opened
   if (!warn.isClosed()) await expect(warn.getByRole("status")).toContainText("Nothing was opened");
+  // userinfo spoof: the warning names the real host and offers no Continue
+  const popup2 = page.waitForEvent("popup");
+  await inner.locator("#spoof").click();
+  const spoof = await popup2;
+  await expect(spoof.getByRole("status")).toContainText("This link goes to evil.test");
+  await expect(spoof.getByRole("alert")).toContainText("hides its real destination");
+  await expect(spoof.getByRole("link", { name: "Continue" })).toHaveCount(0);
   expect(evil).toEqual([]);
 });

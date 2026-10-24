@@ -77,7 +77,8 @@ export async function sendReply(
   const parsed = replyInput.parse(rest);
   // the editor html is untrusted: only the allowlist is sent and stored; text is derived from it
   const r = { ...parsed, html: sanitizeReplyHtml(parsed.html) };
-  if (!r.html.trim()) throw new AccountError(400, "invalid_message");
+  const bodyText = convert(r.html, { wordwrap: false });
+  if (!bodyText.trim()) throw new AccountError(400, "invalid_message"); // e.g. <p><br></p> or only a script
   const t = await prisma.thread.findFirst({
     where: { id: r.threadId, workspaceId: ws, deletedAt: null },
   });
@@ -154,7 +155,7 @@ export async function sendReply(
     ...(acct.replyTo ? { replyTo: { email: acct.replyTo } } : {}),
     subject: prefixed(t.subject, r.mode === "forward" ? "Fwd" : "Re"),
     html: r.html,
-    text: convert(r.html, { wordwrap: false }),
+    text: bodyText,
     messageId: newMessageId(domainOf(me)),
     ...(threadable ? { inReplyTo: last.rfcMessageId, references: refs } : {}),
     ...(t.providerThreadId ? { threadId: t.providerThreadId } : {}),
