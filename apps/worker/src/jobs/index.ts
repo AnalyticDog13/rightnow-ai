@@ -11,6 +11,7 @@ import { eventDispatchJob } from "./event-dispatch";
 import { leadImportJob } from "./lead-import";
 import { leadVerifyJob } from "./lead-verify";
 import { mailSyncJob } from "./mail-sync";
+import { pushRenewJob } from "./push-renew";
 import { sendRecoveryJob } from "./send-recovery";
 import { retentionJob } from "./retention";
 import { warmupTickJob } from "./warmup-tick";
@@ -33,5 +34,6 @@ export const jobs: JobDef[] = [
   abOptimizeJob,
   webhookDeliverJob,
   backgroundJobsJob,
+  pushRenewJob,
   retentionJob,
 ];

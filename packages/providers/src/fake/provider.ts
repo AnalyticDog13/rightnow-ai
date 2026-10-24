@@ -19,6 +19,7 @@ import type {
   MailProvider,
   OutboundMime,
   ProviderKind,
+  PushSource,
   RemoteMessage,
   SendResult,
   SyncCursor,
@@ -38,7 +39,7 @@ const ADDRESS = /^[a-z0-9._%+-]+@[a-z0-9.-]+$/;
  * File-backed mailbox shared by every process using the same FAKE_MAIL_DIR (D14).
  * `failNext` is per instance (in memory); all other state lives in the JSON file.
  */
-export class FakeProvider implements MailProvider {
+export class FakeProvider implements MailProvider, PushSource {
   readonly kind: ProviderKind;
   readonly address: string;
   private readonly dir: string;
@@ -179,6 +180,16 @@ export class FakeProvider implements MailProvider {
   }
 
   async revoke(): Promise<void> {}
+
+  // ---- PushSource: stateless, nothing is ever delivered (the e2e/dev Fake is polled) ----
+
+  async subscribe() {
+    return { externalId: `fake-${randomUUID()}`, expiresAt: new Date(Date.now() + 7 * 86_400_000) };
+  }
+  async renew() {
+    return { expiresAt: new Date(Date.now() + 7 * 86_400_000) };
+  }
+  async unsubscribe(): Promise<void> {}
 
   // ---- controls (tests and the e2e harness) -------------------------------
 

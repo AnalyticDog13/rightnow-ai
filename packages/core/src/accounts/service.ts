@@ -17,6 +17,7 @@ import { applyLimits, type LimitWarning } from "./caps";
 import { setCredentials } from "./credentials";
 import { dayKey } from "./daykey";
 import { createProvider } from "./factory";
+import { pushConfigured, unsubscribePush } from "../push/renew";
 import { type ApiAccount, toApiAccount } from "./serialize";
 import { type CnameResolver, verifyCname } from "./tracking-domain";
 
@@ -73,9 +74,39 @@ export async function accountViews(
     },
   });
   const by = new Map(usage.map((u) => [`${u.accountId}|${u.day.toISOString().slice(0, 10)}`, u]));
-  return rows.map((r, i) =>
-    toApiAccount(r, by.get(`${r.id}|${keys[i]}`) ?? { sent: 0, reserved: 0 }, at),
+  const subs = new Map(
+    (
+      await prisma.pushSubscription.findMany({
+        where: { accountId: { in: rows.map((r) => r.id) } },
+      })
+    ).map((s) => [s.accountId, s]),
   );
+  // a view must not need the whole env (tests, scripts): unconfigured then
+  const env = (() => {
+    try {
+      return getEnv();
+    } catch {
+      return undefined;
+    }
+  })();
+  return rows.map((r, i) => {
+    const sub = subs.get(r.id);
+    const push: ApiAccount["push"] =
+      r.provider === "SMTP"
+        ? null
+        : sub
+          ? {
+              state: sub.status === "FAILED" ? "failed" : "active",
+              expiresAt: sub.externalId ? sub.expiresAt : null,
+              error: sub.lastError,
+            }
+          : {
+              state: env && pushConfigured(env, r.provider) ? "pending" : "not_configured",
+              expiresAt: null,
+              error: null,
+            };
+    return toApiAccount(r, by.get(`${r.id}|${keys[i]}`) ?? { sent: 0, reserved: 0 }, at, push);
+  });
 }
 
 export async function getAccount(prisma: Db, ws: string, id: string, o: Opts = {}) {
@@ -278,13 +309,16 @@ async function detach(
   let revoked = false;
   if (a.credentialsEnc) {
     try {
-      await (await providerOf(prisma, o)(a)).revoke();
+      const provider = await providerOf(prisma, o)(a);
+      await unsubscribePush(prisma, id, provider); // while the credentials still work; never throws
+      await provider.revoke();
       revoked = true;
     } catch (e) {
       console.warn("provider revoke failed", (e as Error).name); // the user still wants the account detached
     }
   }
   await prisma.$transaction(async (tx) => {
+    await tx.pushSubscription.deleteMany({ where: { accountId: id } });
     if (!(await setCredentials(tx, ws, id, null, data))) throw new AccountError(404, "Not found");
     await audit(tx, { workspaceId: ws, actorId: o.actorId }, action, id, { revoked });
   });

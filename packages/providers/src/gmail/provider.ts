@@ -1,4 +1,4 @@
-import { AuthError, PermanentSendError, ProviderError } from "../errors";
+import { AuthError, PermanentSendError, ProviderError, TransientBeforeSendError } from "../errors";
 import { DEFAULT_PAGE_BYTES, listCapped, readCapped } from "../map-limit";
 import { buildMime, parseRaw } from "../mime";
 import type {
@@ -11,6 +11,7 @@ import type {
   OAuthClient,
   OAuthCreds,
   OutboundMime,
+  PushSource,
   RemoteMessage,
   SendResult,
   SyncCursor,
@@ -30,7 +31,7 @@ type GHistory = {
 };
 const CONCURRENCY = 8;
 
-export class GmailProvider implements MailProvider {
+export class GmailProvider implements MailProvider, PushSource {
   readonly kind = "GMAIL" as const;
   readonly address: string;
   private http: GmailHttp;
@@ -258,6 +259,34 @@ export class GmailProvider implements MailProvider {
       if (e instanceof AuthError) checks.push(scopes);
     }
     return { ok: checks.every((c) => c.ok), checks };
+  }
+
+  /** users.watch; the same call renews. Pub/Sub permission problems are not an auth failure (the Gmail token is fine). */
+  private async watch(topicName?: string) {
+    if (!topicName) throw new TransientBeforeSendError("pubsub_not_configured");
+    try {
+      const r = await this.http.call<{ historyId: string; expiration: string }>("watch", {
+        method: "POST",
+        body: { topicName, labelIds: ["INBOX", "SENT"], labelFilterBehavior: "INCLUDE" },
+      });
+      return { externalId: r.historyId, expiresAt: new Date(Number(r.expiration)) };
+    } catch (e) {
+      if (e instanceof TransientBeforeSendError && e.detail === "gmail 403")
+        throw new TransientBeforeSendError("pubsub_permission");
+      throw e;
+    }
+  }
+
+  subscribe(o: { notificationUrl?: string; topicName?: string }) {
+    return this.watch(o.topicName);
+  }
+
+  async renew(_externalId: string, o: { topicName?: string }) {
+    return { expiresAt: (await this.watch(o.topicName)).expiresAt };
+  }
+
+  async unsubscribe(): Promise<void> {
+    await this.http.call("stop", { method: "POST", ok404: true });
   }
 
   async revoke(): Promise<void> {

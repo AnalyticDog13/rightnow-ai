@@ -128,3 +128,20 @@ export type OAuthCreds = {
   expiresAt: number;
   scope: string;
 };
+
+/** D48: optional push (Gmail watch, Graph subscription). Separate from the frozen MailProvider; IMAP does not implement it. */
+export interface PushSource {
+  subscribe(o: {
+    notificationUrl: string;
+    clientState?: string;
+    topicName?: string;
+  }): Promise<{ externalId: string; expiresAt: Date }>;
+  renew(externalId: string, o: { topicName?: string }): Promise<{ expiresAt: Date }>;
+  /** Idempotent: an already removed subscription resolves. */
+  unsubscribe(externalId: string): Promise<void>;
+}
+export const isPushSource = (p: unknown): p is PushSource =>
+  !!p &&
+  ["subscribe", "renew", "unsubscribe"].every(
+    (m) => typeof (p as Record<string, unknown>)[m] === "function",
+  );

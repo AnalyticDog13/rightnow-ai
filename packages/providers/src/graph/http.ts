@@ -21,7 +21,7 @@ export function assertGraphUrl(url: string): string {
 }
 
 export type CallOpts = {
-  method?: "GET" | "POST" | "DELETE";
+  method?: "GET" | "POST" | "PATCH" | "DELETE";
   query?: Record<string, string | number | undefined>;
   json?: unknown;
   /** Raw body (the base64 MIME draft) with its content type. */

@@ -35,6 +35,10 @@ export const envSchema = z.object({
   ALLOW_PRIVATE_HTTP_HOSTS: z
     .union([z.literal("1"), z.literal("").transform(() => undefined)])
     .optional(),
+  // D48 push (vps only): Pub/Sub topic, the service account that signs the push JWT, and its audience (default ${APP_URL}/api/push/gmail)
+  GMAIL_PUBSUB_TOPIC: z.string().optional(),
+  GMAIL_PUSH_SA_EMAIL: z.string().optional(),
+  GMAIL_PUSH_AUDIENCE: z.string().optional(),
   FAKE_MAIL_DIR: z.string().optional(),
   MAIL_PROVIDER_FAKE: z
     .union([z.literal("1"), z.literal("").transform(() => undefined)])

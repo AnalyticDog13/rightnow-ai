@@ -70,3 +70,13 @@ export class AdminConsentRequiredError extends ProviderError {
     super("admin consent required", opts);
   }
 }
+
+/** A push-subscription failure with a stable machine code (`not_found`, ...); never carries a body. */
+export class PushError extends ProviderError {
+  constructor(
+    readonly code: string,
+    opts?: { cause?: unknown },
+  ) {
+    super(`push error: ${code}`, opts);
+  }
+}

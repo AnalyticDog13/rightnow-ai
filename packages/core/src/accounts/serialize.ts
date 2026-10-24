@@ -69,6 +69,12 @@ export type ApiAccount = Pick<EmailAccount, (typeof PUBLIC)[number]> & {
     progress: Pick<SyncProgress, "mode" | "folder" | "fetched" | "since"> | null;
     lastError: Prisma.JsonValue | null;
   };
+  /** D48 / PS-SYNC-01: null for IMAP (polling only). `error` is a code (`pubsub_permission`, ...), never a message. */
+  push: {
+    state: "active" | "pending" | "failed" | "not_configured";
+    expiresAt: Date | null;
+    error: string | null;
+  } | null;
 };
 
 /** PS-ACC-07: the only shape of an account any API returns; credentials, cursor and lease never leave the server. `usageToday` is today's usage row for the account's timezone. */
@@ -76,6 +82,7 @@ export function toApiAccount(
   a: EmailAccount,
   usageToday: { sent: number; reserved: number },
   now: Date = new Date(),
+  push: ApiAccount["push"] = null,
 ): ApiAccount {
   const picked = Object.fromEntries(PUBLIC.map((k) => [k, a[k]])) as Pick<
     EmailAccount,
@@ -101,5 +108,6 @@ export function toApiAccount(
       progress: p && { mode: p.mode, folder: p.folder, fetched: p.fetched, since: p.since },
       lastError: (a.lastError as { kind?: string } | null)?.kind === "SYNC" ? a.lastError : null,
     },
+    push,
   };
 }

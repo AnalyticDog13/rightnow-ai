@@ -125,6 +125,10 @@ export function createFakeGmail(address = "me@rn.test") {
       url: "https://oauth2.googleapis.com/revoke",
       respond: async () => json(200, {}),
     },
+    route("POST", "watch", () =>
+      json(200, { historyId: String(hid), expiration: String(Date.now() + 7 * 86_400_000) }),
+    ),
+    route("POST", "stop", () => json(200, {})),
     route("GET", "profile", () => json(200, { emailAddress: address, historyId: String(hid) })),
     route("POST", "messages/send", (_u, req) => {
       stats.sendCalls++;

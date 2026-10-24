@@ -263,3 +263,14 @@ Every transaction that touches send state locks `ScheduledMessage` → `Campaign
   - **Feedback.** `POST /inbox/messages/{id}/ai-feedback {vote: 1|-1}` sets `Message.aiFeedback` and audits `ai.feedback`.
   - **GDPR.** `gdprDeleteLead` deletes the lead's suggestions and those on its threads, including threads with a null `leadId` (R17).
 
+
+## Phase 7 (P7-T06a)
+
+- **D48 (renewal part) · Push sources, subscriptions and renewal.** `PushSource` (`subscribe`, `renew`, `unsubscribe`) and `isPushSource` live in `providers/src/types.ts`, next to the frozen `MailProvider`; Gmail, Graph and the Fake implement it, IMAP does not. `core/push/renew.ts`, worker job `push-renew` (`*/30 * * * *`, boot, heartbeat 10 s), migration `20261113000000_push` (the plan's `20261112000000_push` collided with `ai_features`).
+  - **When.** `renewPush` does nothing unless `MODE=vps`; Gmail also needs `GMAIL_PUBSUB_TOPIC` and `GMAIL_PUSH_SA_EMAIL`, Graph an `https` `APP_URL`. Only CONNECTED, live Gmail and Microsoft accounts with credentials are subscribed.
+  - **Provider calls.** Gmail `users/me/watch` (labels INBOX and SENT, `labelFilterBehavior: "INCLUDE"`; renew is the same call) and `users/me/stop`. Graph `POST /subscriptions` (inbox `created`, 10 070 min), `PATCH`, `DELETE`, all through `GraphHttp`. A Gmail 403 on watch is `TransientBeforeSendError("pubsub_permission")`, never `AuthError`. A Graph renew 404 is `PushError("not_found")` (a `ProviderError` with a `code`, R18), and `renewPush` then re-creates the subscription. `unsubscribe` of an already removed subscription resolves.
+  - **Secret.** The Graph `clientState` is 32 random bytes, sent once. Only its sha256 (`clientStateHash`) is stored, so there is no encrypted column and nothing for `rotate.test.ts` to cover. It is never logged or returned.
+  - **Concurrency, no advisory lock.** `PushSubscription.accountId` is unique. A create is `createMany … skipDuplicates`, a re-create or renew is `updateMany … WHERE id AND externalId = <as read>`. The run that loses unsubscribes its extra Graph subscription (best effort). A lost Gmail race is not unsubscribed: a watch is per mailbox, so `stop` would end the winner's.
+  - **Failures.** The row goes FAILED with `lastError` = a code (`pubsub_permission`, `invalid_grant`, `rate_limited`, ...). The first transition to FAILED writes audit `push.failed`; each later tick retries (a row that never subscribed has `externalId ""` and `expiresAt = now`, so it is always due). An `AuthError` also goes through `recordProviderError`.
+  - **Disconnect and delete.** `unsubscribe` runs best effort before the credentials are dropped and outside the transaction (a failure logs a code only); the row is deleted inside it.
+  - **Status.** The account view has `push: {state, expiresAt, error} | null` (null for IMAP), shown in the drawer as "Push: active until … · Polling every 2 min" or the reason.

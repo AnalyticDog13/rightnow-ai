@@ -610,3 +610,50 @@ describe("diagnostics and revoke", () => {
     expect(fetch.calls[0]!.url).toBe("https://oauth2.googleapis.com/revoke");
   });
 });
+
+describe("push (watch)", () => {
+  const watch = (r: Response): Route => ({
+    method: "POST",
+    url: API + "watch",
+    respond: async () => r.clone(),
+  });
+  test("watch sends topicName, INBOX+SENT labels, INCLUDE; parses expiration (ms string) and historyId", async () => {
+    const { p, fetch } = setup([
+      watch(json(200, { historyId: "77", expiration: "1893456000000" })),
+    ]);
+    const r = await p.subscribe({ notificationUrl: "unused", topicName: "projects/p/topics/t" });
+    expect(r).toEqual({ externalId: "77", expiresAt: new Date(1893456000000) });
+    expect(JSON.parse(fetch.calls[0]!.body!)).toEqual({
+      topicName: "projects/p/topics/t",
+      labelIds: ["INBOX", "SENT"],
+      labelFilterBehavior: "INCLUDE",
+    });
+  });
+  test("renew is the same call; unsubscribe posts stop", async () => {
+    const { p, fetch } = setup([
+      watch(json(200, { historyId: "78", expiration: "1893456000000" })),
+      { method: "POST", url: API + "stop", respond: async () => json(200, {}) },
+    ]);
+    expect((await p.renew("77", { topicName: "t" })).expiresAt).toEqual(new Date(1893456000000));
+    await p.unsubscribe();
+    expect(fetch.calls.map((c) => c.url)).toEqual([API + "watch", API + "stop"]);
+  });
+  test("403 PERMISSION_DENIED is TransientBeforeSendError pubsub_permission, not AuthError", async () => {
+    const { p } = setup([
+      watch(
+        json(403, { error: { status: "PERMISSION_DENIED", errors: [{ reason: "forbidden" }] } }),
+      ),
+    ]);
+    const e = await p.subscribe({ notificationUrl: "u", topicName: "t" }).catch((x) => x);
+    expect(e).toBeInstanceOf(TransientBeforeSendError);
+    expect(e).not.toBeInstanceOf(AuthError);
+    expect(e.detail).toBe("pubsub_permission");
+  });
+  test("subscribe without a topic fails before any request", async () => {
+    const { p, fetch } = setup([]);
+    await expect(p.subscribe({ notificationUrl: "u" })).rejects.toBeInstanceOf(
+      TransientBeforeSendError,
+    );
+    expect(fetch.calls).toHaveLength(0);
+  });
+});

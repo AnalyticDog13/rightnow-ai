@@ -182,6 +182,13 @@ export function createFakeGraph(address = "me@rn.test") {
     let m: RegExpExecArray | null;
     if (method === "GET" && path === "/me")
       return json(200, { mail: address, userPrincipalName: address, displayName: "Me" });
+    if (path.startsWith("/subscriptions")) {
+      if (method === "DELETE") return new Response(null, { status: 204 });
+      return json(method === "POST" ? 201 : 200, {
+        id: "sub-1",
+        expirationDateTime: new Date(Date.now() + 7 * 86_400_000).toISOString(),
+      });
+    }
     if (method === "POST" && path === "/me/messages") {
       stats.draftCalls++;
       const f = fail;
@@ -285,7 +292,7 @@ export function createFakeGraph(address = "me@rn.test") {
         });
       },
     },
-    ...(["GET", "POST", "DELETE"] as const).map((method) => ({
+    ...(["GET", "POST", "PATCH", "DELETE"] as const).map((method) => ({
       method,
       url: /^https:\/\/graph\.microsoft\.com\/v1\.0\//,
       respond: async (req: { url: string; body?: string; headers: Record<string, string> }) => {

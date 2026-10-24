@@ -650,7 +650,7 @@ Files:
   - `graph/provider.ts`: `POST /subscriptions {changeType:"created", notificationUrl, lifecycleNotificationUrl: notificationUrl, resource:"me/mailFolders('inbox')/messages", expirationDateTime: now + 10 070 min, clientState}`, `PATCH /subscriptions/{id}`, `DELETE`; every call goes through `GraphHttp` (`Prefer: IdType="ImmutableId"`, `assertGraphUrl`), with errors mapped per the taxonomy;
   - `fake/provider.ts`;
   - contract additions in `contract/suite.ts` (`runPushContract`, for push-capable providers only).
-- **Schema:** migration `20261112000000_push`.
+- **Schema:** migration `20261113000000_push` (`20261112000000` is `ai_features`).
 - **Core:** `packages/core/src/push/renew.ts`; `accounts/service.ts` disconnect/delete calls `unsubscribe` best-effort outside the transaction; `env.ts`.
 - **Worker:** `jobs/push-renew.ts`.
 - **Web:** the account detail line "Push: active until … · Polling every 2 min" or the reason (`not configured`, `pubsub_permission`, `failed: <code>`).

@@ -7,7 +7,13 @@ import {
   RateLimitedError,
   TransientBeforeSendError,
 } from "../errors";
-import type { MailProvider, OutboundMime, SendResult } from "../types";
+import {
+  isPushSource,
+  type MailProvider,
+  type OutboundMime,
+  type PushSource,
+  type SendResult,
+} from "../types";
 import type { FailKind, ProviderHarness } from "./harness";
 
 export type { FailKind, ProviderHarness, Scenario } from "./harness";
@@ -330,6 +336,41 @@ export function runProviderContract(h: ProviderHarness): void {
       const { provider: p } = await setup();
       await expect(p.revoke()).resolves.toBeUndefined();
       await expect(p.revoke()).resolves.toBeUndefined();
+    });
+  });
+}
+
+/** Contract for push-capable providers only (Fake, Gmail, Graph). IMAP never runs it. */
+export function runPushContract(h: {
+  name: string;
+  setup(): Promise<{ provider: MailProvider }>;
+}): void {
+  describe(`PushSource contract: ${h.name}`, () => {
+    const o = {
+      notificationUrl: "https://app.rn.test/api/push/graph",
+      clientState: "cs-1",
+      topicName: "projects/p/topics/t",
+    };
+    const open = async () => {
+      const { provider } = await h.setup();
+      expect(isPushSource(provider)).toBe(true);
+      return provider as unknown as PushSource;
+    };
+
+    it("subscribe returns an externalId and a future expiry; renew extends it", async () => {
+      const p = await open();
+      const s = await p.subscribe(o);
+      expect(s.externalId).toBeTruthy();
+      expect(s.expiresAt.getTime()).toBeGreaterThan(Date.now());
+      const r = await p.renew(s.externalId, o);
+      expect(r.expiresAt.getTime()).toBeGreaterThan(Date.now());
+    });
+
+    it("unsubscribe resolves, twice", async () => {
+      const p = await open();
+      const s = await p.subscribe(o);
+      await expect(p.unsubscribe(s.externalId)).resolves.toBeUndefined();
+      await expect(p.unsubscribe(s.externalId)).resolves.toBeUndefined();
     });
   });
 }

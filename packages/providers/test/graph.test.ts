@@ -7,6 +7,7 @@ import {
   GraphProvider,
   MicrosoftOAuth,
   PermanentSendError,
+  ProviderError,
   RateLimitedError,
   TransientBeforeSendError,
   createFixtureFetch,
@@ -785,5 +786,78 @@ describe("diagnostics", () => {
       "https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/Mail.ReadWrite",
     ).diagnostics();
     expect(good.ok).toBe(true);
+  });
+});
+
+describe("push (subscriptions)", () => {
+  const sub = (method: string, url: string | RegExp, r: Response): Route => ({
+    method,
+    url,
+    respond: async () => r.clone(),
+  });
+  const setupPush = (routes: Route[]) => {
+    const fetch = createFixtureFetch(routes);
+    return { fetch, p: make(fetch) };
+  };
+  const exp = "2027-01-01T00:00:00.0000000Z";
+  test("create sends clientState, notification+lifecycle url, inbox resource and ImmutableId", async () => {
+    const { p, fetch } = setupPush([
+      sub("POST", `${G}/subscriptions`, json(201, { id: "s1", expirationDateTime: exp })),
+    ]);
+    const r = await p.subscribe({
+      notificationUrl: "https://app.rn.test/api/push/graph",
+      clientState: "cs-secret",
+    });
+    expect(r).toEqual({ externalId: "s1", expiresAt: new Date(exp) });
+    const c = fetch.calls[0]!;
+    expect(c.headers.prefer).toContain('IdType="ImmutableId"');
+    const b = JSON.parse(c.body!);
+    expect(b).toMatchObject({
+      changeType: "created",
+      notificationUrl: "https://app.rn.test/api/push/graph",
+      lifecycleNotificationUrl: "https://app.rn.test/api/push/graph",
+      resource: "me/mailFolders('inbox')/messages",
+      clientState: "cs-secret",
+    });
+    const mins = (Date.parse(b.expirationDateTime) - Date.now()) / 60_000;
+    expect(mins).toBeGreaterThan(10_060);
+    expect(mins).toBeLessThanOrEqual(10_070);
+  });
+  test("renew PATCHes, delete DELETEs; both with ImmutableId; a renew 404 is ProviderError not_found", async () => {
+    const { p, fetch } = setupPush([
+      sub("PATCH", `${G}/subscriptions/s1`, json(200, { id: "s1", expirationDateTime: exp })),
+      sub("PATCH", `${G}/subscriptions/gone`, json(404, { error: { code: "ResourceNotFound" } })),
+      sub("DELETE", `${G}/subscriptions/s1`, new Response(null, { status: 204 })),
+    ]);
+    expect((await p.renew("s1")).expiresAt).toEqual(new Date(exp));
+    const e = await p.renew("gone").catch((x) => x);
+    expect(e).toBeInstanceOf(ProviderError);
+    expect(e.code).toBe("not_found");
+    await p.unsubscribe("s1");
+    expect(fetch.calls.every((c) => c.headers.prefer?.includes('IdType="ImmutableId"'))).toBe(true);
+  });
+  test("unsubscribe of an already deleted subscription resolves", async () => {
+    const { p } = setupPush([
+      sub("DELETE", `${G}/subscriptions/x`, json(404, { error: { code: "ResourceNotFound" } })),
+    ]);
+    await expect(p.unsubscribe("x")).resolves.toBeUndefined();
+  });
+  test("a 401 that survives the refresh is an AuthError", async () => {
+    const f = createFixtureFetch([
+      {
+        method: "POST",
+        url: TOKEN_URL,
+        respond: async () =>
+          json(200, { access_token: "at2", refresh_token: "r", expires_in: 3600, scope: SCOPE }),
+      },
+      sub(
+        "POST",
+        `${G}/subscriptions`,
+        json(401, { error: { code: "InvalidAuthenticationToken" } }),
+      ),
+    ]);
+    await expect(
+      make(f).subscribe({ notificationUrl: "https://a.test/x", clientState: "c" }),
+    ).rejects.toBeInstanceOf(AuthError);
   });
 });

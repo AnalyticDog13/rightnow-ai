@@ -3,6 +3,7 @@ import {
   AuthError,
   PermanentSendError,
   ProviderError,
+  PushError,
   TransientBeforeSendError,
 } from "../errors";
 import { DEFAULT_PAGE_BYTES, listCapped, readCapped } from "../map-limit";
@@ -17,6 +18,7 @@ import type {
   OAuthClient,
   OAuthCreds,
   OutboundMime,
+  PushSource,
   RemoteMessage,
   SendResult,
   SyncCursor,
@@ -43,7 +45,7 @@ const FOLDERS = [
 ] as const;
 const msgs = `/me/mailFolders`;
 
-export class GraphProvider implements MailProvider {
+export class GraphProvider implements MailProvider, PushSource {
   readonly kind = "MICROSOFT" as const;
   readonly address: string;
   private http: GraphHttp;
@@ -307,6 +309,40 @@ export class GraphProvider implements MailProvider {
     }
     return { ok: checks.every((c) => c.ok), checks };
   }
+
+  /** Inbox "created" subscription (~7 days, Graph's mail maximum is 10 080 min). clientState goes out once; the caller keeps only its hash. */
+  async subscribe(o: { notificationUrl: string; clientState?: string }) {
+    const r = await this.http.call<{ id: string; expirationDateTime: string }>("/subscriptions", {
+      method: "POST",
+      json: {
+        changeType: "created",
+        notificationUrl: o.notificationUrl,
+        lifecycleNotificationUrl: o.notificationUrl,
+        resource: "me/mailFolders('inbox')/messages",
+        expirationDateTime: this.pushExpiry(),
+        clientState: o.clientState,
+      },
+    });
+    return { externalId: r.id, expiresAt: new Date(r.expirationDateTime) };
+  }
+
+  async renew(externalId: string) {
+    const r = await this.http.call<{ expirationDateTime: string }>(
+      `/subscriptions/${encodeURIComponent(externalId)}`,
+      { method: "PATCH", json: { expirationDateTime: this.pushExpiry() }, nullOn: [404] },
+    );
+    if (!r) throw new PushError("not_found");
+    return { expiresAt: new Date(r.expirationDateTime) };
+  }
+
+  async unsubscribe(externalId: string): Promise<void> {
+    await this.http.call(`/subscriptions/${encodeURIComponent(externalId)}`, {
+      method: "DELETE",
+      nullOn: [404],
+    });
+  }
+
+  private pushExpiry = () => new Date(this.clock.now().getTime() + 10_070 * 60_000).toISOString();
 
   /** Graph has no per-token revocation (revokeSignInSessions would sign the user out everywhere): no HTTP call. */
   async revoke(): Promise<void> {}

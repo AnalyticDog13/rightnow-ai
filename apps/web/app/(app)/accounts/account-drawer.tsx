@@ -239,7 +239,7 @@ export function AccountDrawer({
       <p role="alert" className="min-h-5 text-sm text-destructive">
         {error}
       </p>
-      <SyncStatus sync={account.sync} />
+      <SyncStatus sync={account.sync} push={account.push} />
       <DomainSection email={account.email} canEdit={canEdit} />
       <WarmupSection accountId={account.id} canEdit={canEdit} />
       <RewarmSection account={account} canEdit={canEdit} onChanged={onChanged} />
@@ -328,10 +328,20 @@ export function AccountDrawer({
   );
 }
 
+/** D48: push when it works, otherwise why not; polling always runs. */
+function pushLine(push: NonNullable<ApiAccount["push"]>) {
+  const polling = " � Polling every 2 min";
+  if (push.state === "active" && push.expiresAt)
+    return `Push: active until ${new Date(push.expiresAt).toLocaleString()}${polling}`;
+  if (push.state === "failed") return `Push: failed: ${push.error ?? "unknown"}${polling}`;
+  if (push.state === "pending") return `Push: starting${polling}`;
+  return `Push: not configured${polling}`;
+}
+
 const SYNC_STATE = { IDLE: "Up to date", SYNCING: "Syncing", FAILED: "Last sync failed" } as const;
 
 /** PS-ACC-31: sync state, lag and import progress. A mailbox that has not synced recently does not send. */
-function SyncStatus({ sync }: { sync: ApiAccount["sync"] }) {
+function SyncStatus({ sync, push }: { sync: ApiAccount["sync"]; push: ApiAccount["push"] }) {
   const err = sync.lastError as { code?: string } | null;
   return (
     <section
@@ -345,6 +355,7 @@ function SyncStatus({ sync }: { sync: ApiAccount["sync"] }) {
           ? ` · last completed ${new Date(sync.lastCompletedAt).toLocaleString()} (${sync.lagSec} s ago)`
           : " · never completed: campaigns do not send from this account yet"}
       </p>
+      {push && <p>{pushLine(push)}</p>}
       {sync.progress && (
         <p>
           {sync.progress.mode === "HISTORICAL" ? "Importing history" : "Full re-sync"} since{" "}
