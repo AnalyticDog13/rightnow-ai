@@ -837,12 +837,12 @@
    "id": "P7-T07b",
    "phase": 7,
    "title": "TOTP 2FA, invite acceptance + member roles, audit view, dependency audit, PS-SEC sweep",
-   "status": "todo",
+   "status": "done",
    "deps": [
     "P7-T07a"
    ],
    "model": "sonnet",
-   "commit": null,
+   "commit": "f9ffba7",
    "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md (incl. Revision 2); tests listed there pass"
   },
   {
