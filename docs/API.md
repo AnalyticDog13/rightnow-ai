@@ -78,10 +78,14 @@ across a window edge.
 | `POST /api/setup` | 10 per 15 minutes | client IP |
 | Push endpoints (`/api/push/gmail`, `/api/push/graph`) | 600 per minute each | client IP |
 
-- The AI limit refuses before the model is called. A feature route answers 429 with `Retry-After`; an AI job waits and
-  retries; a reply the classifier could not reach stays `UNCERTAIN` (AI runs only when a message is first imported).
+- The AI limit refuses before the model is called. A feature route answers 429 with `Retry-After` and the body
+  `{"error": "rate_limited", "retryAfterSec": <n>}`; an AI job waits and retries; a reply the classifier could not reach
+  stays `UNCERTAIN` (AI runs only when a message is first imported). The bucket is shared, so a large personalization
+  job can use up the minute's calls, and replies imported meanwhile stay `UNCERTAIN`.
 - The failed-sign-in limit is per address, so an attacker who keeps guessing can lock the owner out of password sign-in
   for up to 15 minutes. A successful sign-in does not count.
+- Sign-in accepts JSON or a urlencoded form; any other body type is `415` `unsupported_media_type`, and a body without
+  an email is `400`.
 - Client IP: with `MODE=vps` it is the `X-Real-IP` header that Caddy sets from the TCP peer (the web container only
   listens on `127.0.0.1`). A request without it counts as `unknown`, so all of them share one bucket (fails closed). With
   `MODE=local` no header is trusted and every caller is one client, `local`.

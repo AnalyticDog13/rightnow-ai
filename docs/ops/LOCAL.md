@@ -54,3 +54,7 @@ and the page tells you so.
 | SMTP | 100 / 10000 | 50 | none |
 
 New accounts start at 30 a day (or the maximum, if lower). Counts follow the account's own timezone.
+
+Rate limits in local mode: no client header is trusted, so every caller counts as one client (`local`), for example 5
+sign-ins a minute in total. `npm run dev` (`next dev`) listens on all interfaces, so other hosts on your LAN can reach it
+and share that bucket; Docker Compose binds web to `127.0.0.1` only.

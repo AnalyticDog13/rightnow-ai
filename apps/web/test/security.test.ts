@@ -259,6 +259,99 @@ describe("vps mode", () => {
     expect((await verify(10)).status).toBe(429);
   });
 
+  it("2FA: a decoy cookie first or a quoted value still reaches the user bucket (better-call parsing)", async () => {
+    await freshWindow();
+    for (const [n, uid] of [
+      ["decoy", "u-decoy"],
+      ["quoted", "u-quoted"],
+    ] as const) {
+      await db.prisma.verification.create({
+        data: {
+          id: `v-${n}`,
+          identifier: `id-${n}`,
+          value: uid,
+          expiresAt: new Date(Date.now() + 600_000),
+        },
+      });
+    }
+    const cookies = {
+      // better-call reads the exact name `better-auth.two_factor`; the prefixed decoy must not hide it
+      decoy: "__Secure-better-auth.two_factor=junk.c2ln; better-auth.two_factor=id-decoy.c2ln",
+      quoted: 'better-auth.two_factor="id-quoted.c2ln"',
+    };
+    for (const [n, cookie] of Object.entries(cookies)) {
+      const verify = (i: number) =>
+        authRoute.POST(
+          req("/api/auth/two-factor/verify-totp", {
+            body: { code: "123456" },
+            headers: { ...ip(`6${i}`), cookie },
+          }),
+        );
+      for (let i = 0; i < 10; i++) expect((await verify(i)).status, n).not.toBe(429);
+      expect((await verify(10)).status, n).toBe(429);
+      await db.prisma.rateLimitBucket.deleteMany({
+        where: { key: { startsWith: "ip:203.0.113.6" } },
+      });
+    }
+  });
+
+  it("2FA: a cookie that names no user is counted per IP on 2fa-nouser (fails closed)", async () => {
+    const now = Date.now();
+    await db.prisma.rateLimitBucket.create({
+      data: {
+        key: "ip:203.0.113.80:2fa-nouser",
+        windowStart: new Date(now - (now % 900_000)),
+        count: 10,
+      },
+    });
+    const r = await authRoute.POST(
+      req("/api/auth/two-factor/verify-totp", {
+        body: { code: "123456" },
+        headers: { ...ip(80), cookie: "better-auth.two_factor=nobody.c2ln" },
+      }),
+    );
+    expect(r.status).toBe(429);
+  });
+
+  it("sign-in: form-encoded attempts count on the email bucket like JSON; other bodies are 415", async () => {
+    await freshWindow();
+    const form = (i: number) =>
+      authRoute.POST(
+        new Request(`${ORIGIN}/api/auth/sign-in/email`, {
+          method: "POST",
+          headers: {
+            origin: ORIGIN,
+            "content-type": "application/x-www-form-urlencoded",
+            ...ip(`7${i}`),
+          },
+          body: new URLSearchParams({ email: "Form@X.io", password: "wrong-password!" }).toString(),
+        }),
+      );
+    for (let i = 0; i < 5; i++) expect((await form(i)).status).toBe(401);
+    for (let i = 5; i < 10; i++) expect((await signIn("form@x.io", ip(`7${i}`))).status).toBe(401);
+    expect((await form(10)).status).toBe(429);
+    const text = await authRoute.POST(
+      new Request(`${ORIGIN}/api/auth/sign-in/email`, {
+        method: "POST",
+        headers: { origin: ORIGIN, "content-type": "text/plain", ...ip(90) },
+        body: "email=form@x.io",
+      }),
+    );
+    expect(text.status).toBe(415);
+    expect(await text.json()).toEqual({ error: "unsupported_media_type" });
+  });
+
+  it("clientIp buckets IPv6 by /64 and keeps IPv4 as is", async () => {
+    const { clientIp } = await import("../lib/ratelimit");
+    const at = (v: string) => clientIp(new Request(ORIGIN, { headers: { "x-real-ip": v } }), "vps");
+    expect(at("2001:db8:1:2:3:4:5:6")).toBe("2001:db8:1:2::/64");
+    expect(at("2001:db8:1:2::9")).toBe("2001:db8:1:2::/64");
+    expect(at("2001:0db8:0001:0002:ffff::1")).toBe("2001:db8:1:2::/64");
+    expect(at("2001:db8::1")).toBe("2001:db8:0:0::/64");
+    expect(at("::ffff:203.0.113.9")).toBe("203.0.113.9");
+    expect(at("203.0.113.9")).toBe("203.0.113.9");
+  });
+
   it("push: a flood from one IP is 429 with Retry-After (the provider redelivers); other IPs pass", async () => {
     const push = await import("../lib/push");
     const now = Date.now();

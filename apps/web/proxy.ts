@@ -5,7 +5,7 @@ import { NextResponse, type NextRequest } from "next/server";
  * layout passes it to the theme script, R20) and on the response. API routes keep their own headers.
  */
 export function proxy(request: NextRequest) {
-  const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
+  const nonce = Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString("base64"); // 128 bits
   const csp = [
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""}`,
