@@ -20,6 +20,6 @@ export const PATCH = route(
 );
 
 export const DELETE = route(
-  { auth: "session-or-apikey", scope: "accounts:delete", role: "ADMIN" },
+  { auth: "session", role: "ADMIN" },
   (c) => run(() => softDeleteAccount(prisma, c.workspaceId, c.params.id!, actor(c))),
 );

@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 /** SMTP/IMAP reconnect (PS-ACC-08): new credentials for the same account; checks first, 422 and nothing saved when they fail. */
 export const POST = route(
-  { auth: "session-or-apikey", scope: "accounts:update", role: "ADMIN", body: smtpReconnectInput },
+  { auth: "session", role: "ADMIN", body: smtpReconnectInput },
   (c) =>
     run(() =>
       reconnectSmtpAccount(

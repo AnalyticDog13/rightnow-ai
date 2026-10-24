@@ -142,7 +142,10 @@ describe("accounts routes", () => {
     const post = (id: string) =>
       resumeFull.POST(req("POST", `/api/v1/accounts/${id}/resume-full`, {}), p(id));
     expect((await post(accountId)).status).toBe(409);
-    await db.prisma.emailAccount.update({ where: { id: accountId }, data: { lifecycle: "INACTIVE" } });
+    await db.prisma.emailAccount.update({
+      where: { id: accountId },
+      data: { lifecycle: "INACTIVE" },
+    });
     const r = await post(accountId);
     expect(r.status).toBe(200);
     expect(((await r.json()) as { lifecycle: string }).lifecycle).toBe("ACTIVE");
@@ -213,14 +216,14 @@ describe("SMTP connect routes", () => {
     expect(await db.prisma.emailAccount.count({ where: { workspaceId } })).toBe(before);
   });
 
-  it("a duplicate answers 409 account_exists; an API key without accounts:create cannot connect", async () => {
+  it("a duplicate answers 409 account_exists; an API key cannot connect (session-only, 401)", async () => {
     const dup = await create(body());
     expect(dup.status).toBe(409);
     expect(((await dup.json()) as { error: string }).error).toBe("account_exists");
     expect(
       (await create(body("imap.acme.io", "k@acme.io"), { authorization: `Bearer ${readKey}` }))
         .status,
-    ).toBe(403);
+    ).toBe(401);
   });
 
   it("credentials route: ADMIN only, same id, 422 on failing checks, 409 for an OAuth account, audited", async () => {

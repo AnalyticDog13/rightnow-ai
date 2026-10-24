@@ -12,8 +12,7 @@ export const dynamic = "force-dynamic";
  */
 export const POST = route(
   {
-    auth: "session-or-apikey",
-    scope: "campaigns:update",
+    auth: "session",
     role: "ADMIN",
     body: z.strictObject({ confirm: z.boolean().optional() }),
   },

@@ -112,13 +112,9 @@
         "security": [
           {
             "session": []
-          },
-          {
-            "apiKey": []
           }
         ],
         "x-role": "ADMIN",
-        "x-scope": "accounts:create",
         "requestBody": {
           "required": true,
           "content": {
@@ -431,13 +427,9 @@
         "security": [
           {
             "session": []
-          },
-          {
-            "apiKey": []
           }
         ],
         "x-role": "ADMIN",
-        "x-scope": "accounts:delete",
         "parameters": [
           {
             "name": "id",
@@ -495,13 +487,9 @@
         "security": [
           {
             "session": []
-          },
-          {
-            "apiKey": []
           }
         ],
         "x-role": "ADMIN",
-        "x-scope": "accounts:update",
         "parameters": [
           {
             "name": "id",
@@ -651,13 +639,9 @@
         "security": [
           {
             "session": []
-          },
-          {
-            "apiKey": []
           }
         ],
         "x-role": "ADMIN",
-        "x-scope": "accounts:update",
         "parameters": [
           {
             "name": "id",
@@ -919,13 +903,9 @@
         "security": [
           {
             "session": []
-          },
-          {
-            "apiKey": []
           }
         ],
         "x-role": "ADMIN",
-        "x-scope": "accounts:update",
         "parameters": [
           {
             "name": "id",
@@ -1225,13 +1205,9 @@
         "security": [
           {
             "session": []
-          },
-          {
-            "apiKey": []
           }
         ],
         "x-role": "ADMIN",
-        "x-scope": "accounts:create",
         "requestBody": {
           "required": true,
           "content": {
@@ -3132,13 +3108,9 @@
         "security": [
           {
             "session": []
-          },
-          {
-            "apiKey": []
           }
         ],
         "x-role": "ADMIN",
-        "x-scope": "blocklist:delete",
         "parameters": [
           {
             "name": "id",
@@ -3200,13 +3172,9 @@
         "security": [
           {
             "session": []
-          },
-          {
-            "apiKey": []
           }
         ],
         "x-role": "ADMIN",
-        "x-scope": "blocklist:delete",
         "requestBody": {
           "required": true,
           "content": {
@@ -3248,13 +3216,9 @@
         "security": [
           {
             "session": []
-          },
-          {
-            "apiKey": []
           }
         ],
         "x-role": "ADMIN",
-        "x-scope": "blocklist:delete",
         "requestBody": {
           "required": true,
           "content": {
@@ -10898,13 +10862,9 @@
         "security": [
           {
             "session": []
-          },
-          {
-            "apiKey": []
           }
         ],
         "x-role": "ADMIN",
-        "x-scope": "accounts:update",
         "requestBody": {
           "required": true,
           "content": {
@@ -11116,13 +11076,9 @@
         "security": [
           {
             "session": []
-          },
-          {
-            "apiKey": []
           }
         ],
         "x-role": "ADMIN",
-        "x-scope": "campaigns:update",
         "parameters": [
           {
             "name": "id",

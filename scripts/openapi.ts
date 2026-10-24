@@ -1,5 +1,5 @@
 /** Builds docs/openapi.json from the `meta` every `route()` attaches (D45). Run: `npm run openapi`. */
-import { readdirSync, writeFileSync } from "node:fs";
+import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { z } from "zod";
@@ -97,8 +97,38 @@ export async function buildOpenApi(): Promise<Json> {
   };
 }
 
+const START = "<!-- routes:start -->";
+const END = "<!-- routes:end -->";
+
+/** `api` with the route table between the markers rebuilt from `doc` (so it cannot drift from the code). */
+export function withRouteTable(api: string, doc: Json): string {
+  const paths = doc.paths as Record<string, Record<string, Json>>;
+  const rows = Object.entries(paths).flatMap(([path, ops]) =>
+    Object.entries(ops).map(([method, op]) => {
+      const sec = op.security as unknown[];
+      const scope = !sec.length
+        ? "public"
+        : sec.length === 1
+          ? "session only"
+          : `\`${op["x-scope"]}\``;
+      return `| ${method.toUpperCase()} | \`${path}\` | ${op["x-role"]} | ${scope} |`;
+    }),
+  );
+  const table = ["| Method | Path | Role | Scope |", "|---|---|---|---|", ...rows].join("\n");
+  const a = api.indexOf(START);
+  const b = api.indexOf(END);
+  if (a < 0 || b < a) throw new Error("docs/API.md lost its routes markers");
+  return `${api.slice(0, a + START.length)}\n${table}\n${api.slice(b)}`;
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const out = resolve(process.argv[2] ?? join(root, "docs/openapi.json"));
-  writeFileSync(out, JSON.stringify(await buildOpenApi(), null, 2) + "\n");
+  const doc = await buildOpenApi();
+  writeFileSync(out, JSON.stringify(doc, null, 2) + "\n");
+  // an explicit output path (the drift test) leaves docs/API.md alone
+  if (!process.argv[2]) {
+    const api = join(root, "docs/API.md");
+    writeFileSync(api, withRouteTable(readFileSync(api, "utf8"), doc));
+  }
   process.exit(0); // route modules keep handles open
 }

@@ -9,9 +9,10 @@ when they differ, `openapi.json` wins.
 
 - **Session cookie** (the web app). State-changing requests must come from the app's own origin (CSRF check).
 - **API key**: `Authorization: Bearer rn_<prefix>_<secret>`. Create keys in Settings and pick scopes; the token is shown once.
-- **API keys act as MEMBER.** A route that needs ADMIN is unreachable with a key (403), and routes marked "session
-  only" below reject keys outright (401). Connecting, disconnecting and deleting mailboxes, test sends, pipeline stages,
-  API keys, the verifier and workspace settings are all ADMIN or session-only.
+- **API keys act as MEMBER, and ADMIN routes are session-only.** Every route that needs ADMIN rejects an API key with
+  401: connecting, disconnecting, deleting and testing mailboxes, clearing or deleting blocklist entries, placement
+  tests, releasing held sends, pipeline stages, API keys, the verifier and workspace settings. They are marked
+  "session only" in the table at the end.
 - **Scopes** are `<resource>:read` and `<resource>:write` (plus `all:all`). `<resource>:write` covers `create`,
   `update` and `delete`; a route may name the finer scope (`leads:create`) and a `:write` key satisfies it.
   Resources: `leads`, `blocklist`, `campaigns`, `accounts`, `inbox`, `analytics`, `crm`, `automations`, `webhooks`,
@@ -132,29 +133,30 @@ An official SDK, a CLI and an MCP server are not provided (PS-AUTO-14); generate
 
 "session only" routes reject API keys. The role is the minimum for that method; keys count as MEMBER.
 
+<!-- routes:start -->
 | Method | Path | Role | Scope |
 |---|---|---|---|
 | GET | `/accounts` | VIEWER | `accounts:read` |
-| POST | `/accounts` | ADMIN | `accounts:create` |
+| POST | `/accounts` | ADMIN | session only |
 | GET | `/accounts/{id}` | VIEWER | `accounts:read` |
 | PATCH | `/accounts/{id}` | MEMBER | `accounts:update` |
-| DELETE | `/accounts/{id}` | ADMIN | `accounts:delete` |
+| DELETE | `/accounts/{id}` | ADMIN | session only |
 | GET | `/accounts/{id}/campaigns` | VIEWER | `campaigns:read` |
-| POST | `/accounts/{id}/credentials` | ADMIN | `accounts:update` |
+| POST | `/accounts/{id}/credentials` | ADMIN | session only |
 | POST | `/accounts/{id}/diagnostics` | MEMBER | `accounts:update` |
-| POST | `/accounts/{id}/disconnect` | ADMIN | `accounts:update` |
+| POST | `/accounts/{id}/disconnect` | ADMIN | session only |
 | POST | `/accounts/{id}/mark-fixed` | MEMBER | `accounts:update` |
 | POST | `/accounts/{id}/pause` | MEMBER | `accounts:update` |
 | POST | `/accounts/{id}/resume` | MEMBER | `accounts:update` |
 | POST | `/accounts/{id}/resume-full` | MEMBER | `accounts:update` |
 | POST | `/accounts/{id}/rewarm` | MEMBER | `accounts:update` |
 | DELETE | `/accounts/{id}/rewarm` | MEMBER | `accounts:update` |
-| POST | `/accounts/{id}/test-send` | ADMIN | `accounts:update` |
+| POST | `/accounts/{id}/test-send` | ADMIN | session only |
 | GET | `/accounts/{id}/warmup` | VIEWER | `accounts:read` |
 | PATCH | `/accounts/{id}/warmup` | MEMBER | `accounts:update` |
 | GET | `/accounts/{id}/warmup/stats` | VIEWER | `accounts:read` |
 | POST | `/accounts/bulk` | MEMBER | `accounts:update` |
-| POST | `/accounts/test-connection` | ADMIN | `accounts:create` |
+| POST | `/accounts/test-connection` | ADMIN | session only |
 | GET | `/analytics` | VIEWER | `analytics:read` |
 | GET | `/analytics/accounts` | VIEWER | `analytics:read` |
 | GET | `/analytics/activity` | VIEWER | `analytics:read` |
@@ -174,9 +176,9 @@ An official SDK, a CLI and an MCP server are not provided (PS-AUTO-14); generate
 | GET | `/automations/rules/{id}/runs` | VIEWER | `automations:read` |
 | GET | `/blocklist` | VIEWER | `blocklist:read` |
 | POST | `/blocklist` | MEMBER | `blocklist:create` |
-| DELETE | `/blocklist/{id}` | ADMIN | `blocklist:delete` |
-| POST | `/blocklist/bulk-delete` | ADMIN | `blocklist:delete` |
-| POST | `/blocklist/clear` | ADMIN | `blocklist:delete` |
+| DELETE | `/blocklist/{id}` | ADMIN | session only |
+| POST | `/blocklist/bulk-delete` | ADMIN | session only |
+| POST | `/blocklist/clear` | ADMIN | session only |
 | GET | `/blocklist/export` | VIEWER | `blocklist:read` |
 | POST | `/blocklist/import` | MEMBER | `blocklist:create` |
 | GET | `/campaigns` | VIEWER | `campaigns:read` |
@@ -287,11 +289,11 @@ An official SDK, a CLI and an MCP server are not provided (PS-AUTO-14); generate
 | DELETE | `/oauth/sessions/{id}` | ADMIN | session only |
 | GET | `/openapi.json` | VIEWER | public |
 | GET | `/placement-tests` | VIEWER | `accounts:read` |
-| POST | `/placement-tests` | ADMIN | `accounts:update` |
+| POST | `/placement-tests` | ADMIN | session only |
 | GET | `/placement-tests/{id}` | VIEWER | `accounts:read` |
 | GET | `/scheduled-messages` | VIEWER | `campaigns:read` |
 | POST | `/scheduled-messages/{id}/cancel` | MEMBER | `campaigns:update` |
-| POST | `/scheduled-messages/{id}/release` | ADMIN | `campaigns:update` |
+| POST | `/scheduled-messages/{id}/release` | ADMIN | session only |
 | POST | `/scheduled-messages/{id}/retry` | MEMBER | `campaigns:update` |
 | GET | `/settings/verifier` | ADMIN | session only |
 | PUT | `/settings/verifier` | ADMIN | session only |
@@ -309,3 +311,4 @@ An official SDK, a CLI and an MCP server are not provided (PS-AUTO-14); generate
 | POST | `/webhooks/{id}/test` | MEMBER | `webhooks:write` |
 | POST | `/webhooks/deliveries/{id}/redeliver` | MEMBER | `webhooks:write` |
 | GET | `/webhooks/overview` | VIEWER | `webhooks:read` |
+<!-- routes:end -->

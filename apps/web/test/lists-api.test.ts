@@ -175,7 +175,7 @@ describe("blocklist routes", () => {
     expect(r.status).toBe(413);
   });
 
-  it("removing is ADMIN-only and session-only; MEMBER and API keys get 403", async () => {
+  it("removing is ADMIN-only and session-only; MEMBER gets 403 and API keys 401", async () => {
     const rows = (await json(await bl.GET(req("GET", "/api/v1/blocklist")))).rows;
     const id = rows[0].id as string;
     const { createApiKey } = await import("@rightnow/core");
@@ -189,7 +189,9 @@ describe("blocklist routes", () => {
     ])
       expect(r.status).toBe(403);
     await setRole("admin");
-    expect((await blOne.DELETE(req("DELETE", "/x", undefined, k), p(id))).status).toBe(403);
+    expect((await blOne.DELETE(req("DELETE", "/x", undefined, k), p(id))).status).toBe(401);
+    expect((await blBulk.POST(req("POST", "/x", { ids: [id] }, k))).status).toBe(401);
+    expect((await blClear.POST(req("POST", "/x", { confirm: "DELETE ALL" }, k))).status).toBe(401);
     expect((await blClear.POST(req("POST", "/x", { confirm: "no" }))).status).toBe(400);
     expect((await blOne.DELETE(req("DELETE", "/x", {}), p(id))).status).toBe(200);
     expect(await json(await blBulk.POST(req("POST", "/x", { ids: ["gone"] })))).toEqual({

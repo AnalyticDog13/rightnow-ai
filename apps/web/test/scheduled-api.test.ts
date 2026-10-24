@@ -103,12 +103,12 @@ it("list, release, cancel, retry: roles, confirm, 409, 404 and one audit row per
   await setRole("VIEWER");
   expect((await release.POST(req("POST", "/x", { confirm: true }), p(held))).status).toBe(403);
   await setRole("MEMBER");
-  // a release may send a second copy: ADMIN in a session only, never an API key (like test-send)
+  // a release may send a second copy: ADMIN in a session only; an API key gets 401 (like test-send)
   expect((await release.POST(req("POST", "/x", { confirm: true }), p(held))).status).toBe(403);
   const { createApiKey } = await import("@rightnow/core");
   const key = (await createApiKey(P, workspaceId, "w", ["campaigns:write"])).token;
   const k = { authorization: `Bearer ${key}` };
-  expect((await release.POST(req("POST", "/x", { confirm: true }, k), p(held))).status).toBe(403);
+  expect((await release.POST(req("POST", "/x", { confirm: true }, k), p(held))).status).toBe(401);
   expect((await cancel.POST(req("POST", "/x", undefined, k), p(foreign.rows[0]!.id))).status).toBe(
     404,
   ); // cancel stays MEMBER, keys allowed

@@ -15,6 +15,6 @@ const body = z.strictObject({
 
 /** ADMIN only (API keys act as MEMBER, so they cannot). Rules per reason: see `removeBlocklist` (D20). Send `{}` for a plain entry. */
 export const DELETE = route(
-  { auth: "session-or-apikey", scope: "blocklist:delete", role: "ADMIN", body },
+  { auth: "session", role: "ADMIN", body },
   (c) => run(() => removeBlocklist(prisma, c.workspaceId, c.userId, c.params.id!, c.body)),
 );

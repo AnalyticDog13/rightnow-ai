@@ -8,8 +8,7 @@ export const dynamic = "force-dynamic";
 
 export const POST = route(
   {
-    auth: "session-or-apikey",
-    scope: "blocklist:delete",
+    auth: "session",
     role: "ADMIN",
     body: z.strictObject({ confirm: z.string() }),
   },

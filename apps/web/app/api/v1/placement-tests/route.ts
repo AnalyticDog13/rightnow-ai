@@ -18,7 +18,7 @@ export const GET = route({ auth: "session-or-apikey", scope: "accounts:read" }, 
 
 // ADMIN only: API keys act as MEMBER, so they get 403. It sends mail from the account.
 export const POST = route(
-  { auth: "session-or-apikey", scope: "accounts:update", role: "ADMIN", body: placementInput },
+  { auth: "session", role: "ADMIN", body: placementInput },
   (c) =>
     run(() =>
       startPlacementTest(

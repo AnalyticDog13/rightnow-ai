@@ -88,12 +88,12 @@ afterAll(async () => {
 });
 
 describe("placement-test routes", () => {
-  it("POST is ADMIN and session only: MEMBER and API keys get 403", async () => {
+  it("POST is ADMIN and session only: MEMBER gets 403 and API keys 401", async () => {
     await setRole("member");
     expect((await list.POST(req("POST", { accountId: sender }))).status).toBe(403);
     await setRole("owner");
     const key = { authorization: `Bearer ${adminKey}` };
-    expect((await list.POST(req("POST", { accountId: sender }, key))).status).toBe(403);
+    expect((await list.POST(req("POST", { accountId: sender }, key))).status).toBe(401);
     expect(await db.prisma.placementTest.count({ where: { workspaceId } })).toBe(0);
   });
 

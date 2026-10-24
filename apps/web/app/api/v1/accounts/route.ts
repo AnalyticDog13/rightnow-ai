@@ -18,7 +18,7 @@ export const GET = route(
 
 /** SMTP/IMAP connect (PS-ACC-04): checks first, 422 with the checks and nothing saved when they fail. */
 export const POST = route(
-  { auth: "session-or-apikey", scope: "accounts:create", role: "ADMIN", body: smtpConnectInput },
+  { auth: "session", role: "ADMIN", body: smtpConnectInput },
   (c) =>
     run(() => connectSmtpAccount(prisma, systemClock, {}, c.workspaceId, actor(c).actorId, c.body)),
 );

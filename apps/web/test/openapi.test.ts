@@ -19,6 +19,9 @@ const SESSION_ONLY: Record<string, string> = {
   "GET /oauth/sessions/{id}": "polled by the browser tab that started the OAuth connect",
 };
 
+/** POST handlers that only read (they render or preview), so they take a `:read` scope. */
+const READ_POSTS = new Set(["POST /campaigns/{id}/preview", "POST /inbox/macros/{id}/render"]);
+
 /** Objects that stay open on purpose: rule actions are validated per `type` by the engine's ACTIONS table. */
 const OPEN_BY_DESIGN = new Set(["#/properties/actions/items"]);
 
@@ -64,6 +67,8 @@ describe("openapi document", () => {
     );
     expect(JSON.parse(readFileSync(out, "utf8"))).toEqual(committed());
     expect(await script.buildOpenApi()).toEqual(committed());
+    const api = readFileSync(join(root, "docs/API.md"), "utf8").replace(/\r\n/g, "\n");
+    expect(api).toBe(script.withRouteTable(api, committed()));
   }, 120_000);
 
   it("coverage: every route.ts method is a path (no %5F routes)", () => {
@@ -167,14 +172,15 @@ describe("scope audit", () => {
           (scopes as readonly string[]).includes(`${res}:write`))
       );
     };
+    const adminWithKey: string[] = [];
     const ranks = ["VIEWER", "MEMBER", "ADMIN", "OWNER"];
     for (const { method, path, meta } of routes) {
       const key = `${method} ${path}`;
       if (meta.auth === "public") continue;
       const role = script.roleOf(method, meta.role);
       if (ranks.indexOf(role) > 1) {
-        // API keys act as MEMBER: an ADMIN handler is unreachable with one (403) or is session-only.
-        expect(meta.auth === "session" || role === "ADMIN" || role === "OWNER", key).toBe(true);
+        // ADMIN routes are session-only (CLAUDE.md): a key never reaches them.
+        if (meta.auth !== "session") adminWithKey.push(key);
         continue;
       }
       if (SESSION_ONLY[key]) {
@@ -183,7 +189,14 @@ describe("scope audit", () => {
       }
       expect(meta.auth, key).toBe("session-or-apikey");
       expect(meta.scope && known(meta.scope), `${key} scope ${meta.scope}`).toBe(true);
+      const verb = meta.scope!.split(":")[1]!;
+      const writes = ["write", "create", "update", "delete"];
+      expect(
+        method === "GET" || READ_POSTS.has(key) ? verb === "read" : writes.includes(verb),
+        `${key} verb ${verb}`,
+      ).toBe(true);
     }
+    expect(adminWithKey, "ADMIN/OWNER handlers must be session-only").toEqual([]);
   });
 
   it("session-only exceptions are real routes", () => {
