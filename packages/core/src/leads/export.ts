@@ -72,11 +72,11 @@ export async function exportLeadData(
     orderBy: [{ lastMessageAt: "asc" }, { id: "asc" }],
     include: { messages: { orderBy: [{ sentAt: "asc" }, { id: "asc" }] } },
   });
-  // another lead's thread shows only the messages that name this address; its notes stay out
+  // a thread that is not this lead's (another lead's or unassigned) shows only the messages that name this address; its notes stay out
   const involves = (m: { fromEmail: string; to: string[]; cc: string[] }) =>
     m.fromEmail === lead.email || m.to.includes(lead.email) || m.cc.includes(lead.email);
   const threads = found.map((t) =>
-    t.leadId && t.leadId !== leadId ? { ...t, messages: t.messages.filter(involves) } : t,
+    t.leadId !== leadId ? { ...t, messages: t.messages.filter(involves) } : t,
   );
   const ownThreads = found.filter((t) => t.leadId === leadId).map((t) => t.id);
   const [notes, tasks, opportunities, events] = await Promise.all([
