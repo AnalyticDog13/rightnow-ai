@@ -80,6 +80,22 @@ model User {
   accounts      Account[]
   members       Member[]
   invitations   Invitation[]
+  twoFactorEnabled Boolean   @default(false)
+  twoFactors    TwoFactor[]
+}
+
+/// better-auth twoFactor: `secret` and `backupCodes` are encrypted by the plugin with BETTER_AUTH_SECRET.
+model TwoFactor {
+  id                      String    @id
+  secret                  String
+  backupCodes             String
+  userId                  String
+  user                    User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  verified                Boolean   @default(true)
+  failedVerificationCount Int       @default(0)
+  lockedUntil             DateTime?
+
+  @@index([userId])
 }
 
 model Session {
@@ -182,6 +198,7 @@ model ApiKey {
   createdAt   DateTime  @default(now())
   lastUsedAt  DateTime?
   revokedAt   DateTime?
+  createdById String? // the session user who made it; removing that member revokes it
 
   @@index([workspaceId])
 }

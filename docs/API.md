@@ -76,6 +76,7 @@ across a window edge.
 | 2FA verify (`/api/auth/two-factor/verify-*`) | 5 per minute; 10 per 15 minutes | client IP; user |
 | Other `/api/auth` POSTs | 100 per minute | client IP |
 | `POST /api/setup` | 10 per 15 minutes | client IP |
+| `POST /api/invite/accept` | 10 per 15 minutes | client IP |
 | Push endpoints (`/api/push/gmail`, `/api/push/graph`) | 600 per minute each | client IP |
 
 - The AI limit refuses before the model is called. A feature route answers 429 with `Retry-After` and the body
@@ -90,6 +91,22 @@ across a window edge.
   listens on `127.0.0.1`). A request without it counts as `unknown`, so all of them share one bucket (fails closed). With
   `MODE=local` no header is trusted and every caller is one client, `local`.
 - A push endpoint's 429 makes Pub/Sub or Graph redeliver later; polling keeps every mailbox in sync meanwhile.
+
+## Members, invites and two-factor
+
+- `GET /members` (any role) lists members. `PATCH /members/{id}` (`{role: admin|member|viewer}`), `DELETE /members/{id}`,
+  `GET|POST /invites` (`{email, role}`) and `DELETE /invites/{id}` are ADMIN and **session only**: an API key acts as
+  MEMBER and never reaches them. Roles are stored in lower case. The OWNER's role and membership are fixed
+  (`409 owner_immutable`), nobody removes themselves (`409 cannot_remove_self`), and removing a member revokes the API
+  keys they created and deletes their user, so the address can be invited again.
+- An invite is the link `/invite/<id>` (no email is sent) and is valid for 7 days. `POST /api/invite/accept
+  {invitationId, name, password}` is public: `404 invite_not_found`, `409 invite_used`, `410 invite_expired`,
+  `409 user_exists`. The new user always gets the invited email address.
+- better-auth's own `/api/auth/organization/*` endpoints (`leave`, `invite-member`, `update-member-role`, ...) are all
+  disabled over HTTP (`404`), so members change only through the audited routes above.
+- Two-factor (TOTP plus 10 backup codes) is optional per user: Settings > Security, or `/api/auth/two-factor/*`. A user
+  who lost both the app and the codes is reset by the operator (`scripts/disable-2fa.ts`, docs/ops/LOCAL.md).
+- `GET /audit-logs` and Settings > Audit log are both MEMBER and up (a VIEWER sees neither); the API needs `audit:read`.
 
 ## Webhooks
 
@@ -297,6 +314,9 @@ An official SDK, a CLI and an MCP server are not provided (PS-AUTO-14); generate
 | POST | `/inbox/views` | MEMBER | `inbox:write` |
 | PATCH | `/inbox/views/{id}` | MEMBER | `inbox:write` |
 | DELETE | `/inbox/views/{id}` | MEMBER | `inbox:write` |
+| GET | `/invites` | ADMIN | session only |
+| POST | `/invites` | ADMIN | session only |
+| DELETE | `/invites/{id}` | ADMIN | session only |
 | GET | `/jobs` | VIEWER | `jobs:read` |
 | GET | `/jobs/{id}` | VIEWER | `jobs:read` |
 | GET | `/lead-labels` | VIEWER | `leads:read` |
@@ -324,6 +344,8 @@ An official SDK, a CLI and an MCP server are not provided (PS-AUTO-14); generate
 | POST | `/leads/merge` | MEMBER | `leads:update` |
 | POST | `/leads/verify` | MEMBER | `leads:update` |
 | GET | `/members` | VIEWER | `workspace:read` |
+| PATCH | `/members/{id}` | ADMIN | session only |
+| DELETE | `/members/{id}` | ADMIN | session only |
 | GET | `/oauth/{provider}/callback` | ADMIN | session only |
 | POST | `/oauth/{provider}/start` | ADMIN | session only |
 | GET | `/oauth/sessions/{id}` | VIEWER | session only |

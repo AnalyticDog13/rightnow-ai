@@ -1,0 +1,281 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { hashPassword } from "better-auth/crypto";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { createTestDb } from "@rightnow/db/test-db";
+import { createFirstOwner } from "../lib/setup";
+
+const TOKEN = "t".repeat(20);
+const PASSWORD = "correct horse battery";
+const ORIGIN = "http://localhost:3100";
+let db: Awaited<ReturnType<typeof createTestDb>>;
+let auth: typeof import("../lib/auth").auth;
+let workspaceId: string;
+let ownerMember: string;
+const cookies: Record<string, string> = {};
+let invites: typeof import("../app/api/v1/invites/route");
+let invite: typeof import("../app/api/v1/invites/[id]/route");
+let members: typeof import("../app/api/v1/members/route");
+let member: typeof import("../app/api/v1/members/[id]/route");
+let accept: typeof import("../app/api/invite/accept/route");
+let apiKeys: typeof import("../app/api/v1/api-keys/route");
+
+const req = (method: string, url: string, body?: unknown, headers: Record<string, string> = {}) =>
+  new Request(`${ORIGIN}${url}`, {
+    method,
+    headers: { origin: ORIGIN, "content-type": "application/json", ...headers },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+const as = (who: string) => ({ cookie: cookies[who]! });
+const p = (id: string) => ({ params: Promise.resolve({ id }) });
+const json = (r: Response) => r.json() as Promise<Record<string, any>>; // eslint-disable-line @typescript-eslint/no-explicit-any
+const inviteAs = (who: string, email: string, role = "member") =>
+  invites.POST(req("POST", "/api/v1/invites", { email, role }, as(who)));
+const acceptBody = (invitationId: string, over: object = {}) => ({
+  invitationId,
+  name: "New Person",
+  password: PASSWORD,
+  ...over,
+});
+const doAccept = (b: unknown) => accept.POST(req("POST", "/api/invite/accept", b));
+const patchRole = (who: string, id: string, role: string) =>
+  member.PATCH(req("PATCH", `/api/v1/members/${id}`, { role }, as(who)), p(id));
+const removeAs = (who: string, id: string) =>
+  member.DELETE(req("DELETE", `/api/v1/members/${id}`, undefined, as(who)), p(id));
+const auditActions = async () =>
+  (await db.prisma.auditLog.findMany({ where: { workspaceId } })).map((a) => a.action);
+
+async function login(email: string) {
+  const { headers } = await auth.api.signInEmail({
+    body: { email, password: PASSWORD },
+    returnHeaders: true,
+  });
+  return headers
+    .getSetCookie()
+    .map((c) => c.split(";")[0])
+    .join("; ");
+}
+/** A user with a credential and a membership, made directly (the accept route has its own tests). */
+async function mkUser(key: string, role: string) {
+  const email = `${key}@x.io`;
+  const u = await db.prisma.user.create({ data: { id: `u-${key}`, name: key, email } });
+  await db.prisma.account.create({
+    data: {
+      id: `a-${key}`,
+      userId: u.id,
+      accountId: u.id,
+      providerId: "credential",
+      password: await hashPassword(PASSWORD),
+    },
+  });
+  await db.prisma.member.create({ data: { id: `m-${key}`, workspaceId, userId: u.id, role } });
+  cookies[key] = await login(email);
+}
+
+beforeAll(async () => {
+  db = await createTestDb();
+  Object.assign(process.env, {
+    MODE: "local",
+    MAIL_PROVIDER_FAKE: "1",
+    FAKE_MAIL_DIR: mkdtempSync(join(tmpdir(), "rn-web-")),
+    DATABASE_URL: db.url,
+    APP_URL: ORIGIN,
+    ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64"),
+    BETTER_AUTH_SECRET: "x".repeat(40),
+    SETUP_TOKEN: TOKEN,
+  });
+  ({ auth } = await import("../lib/auth"));
+  invites = await import("../app/api/v1/invites/route");
+  invite = await import("../app/api/v1/invites/[id]/route");
+  members = await import("../app/api/v1/members/route");
+  member = await import("../app/api/v1/members/[id]/route");
+  accept = await import("../app/api/invite/accept/route");
+  apiKeys = await import("../app/api/v1/api-keys/route");
+  ({ workspaceId } = await createFirstOwner(
+    db.prisma,
+    { name: "O", email: "owner@x.io", password: PASSWORD, workspaceName: "Acme", token: TOKEN },
+    TOKEN,
+  ));
+  cookies.owner = await login("owner@x.io");
+  ownerMember = (await db.prisma.member.findFirstOrThrow({ where: { role: "owner" } })).id;
+  await mkUser("admin", "admin");
+  await mkUser("member", "member");
+  await mkUser("viewer", "viewer");
+});
+afterAll(() => db.drop());
+beforeEach(() => db.prisma.rateLimitBucket.deleteMany()); // the accept route is limited per IP
+
+describe("invites", () => {
+  it("an ADMIN invites new@x.com; accept creates the user, credential and MEMBER row; the link is single-use", async () => {
+    const r = await inviteAs("admin", "New@X.com");
+    expect(r.status).toBe(200);
+    const { id } = await json(r);
+    expect(id).toEqual(expect.any(String));
+    const row = await db.prisma.invitation.findUniqueOrThrow({ where: { id } });
+    expect(row).toMatchObject({ email: "new@x.com", role: "member", status: "pending" });
+    expect(row.expiresAt.getTime() - Date.now()).toBeGreaterThan(6.9 * 86_400_000);
+    const listed = await json(
+      await invites.GET(req("GET", "/api/v1/invites", undefined, as("admin"))),
+    );
+    expect(listed.invites.map((i: { id: string }) => i.id)).toContain(id);
+
+    const ok = await doAccept(acceptBody(id));
+    expect(ok.status).toBe(200);
+    const user = await db.prisma.user.findUniqueOrThrow({ where: { email: "new@x.com" } });
+    expect(user.name).toBe("New Person");
+    expect(
+      await db.prisma.account.count({ where: { userId: user.id, providerId: "credential" } }),
+    ).toBe(1);
+    expect(await db.prisma.member.findFirst({ where: { userId: user.id } })).toMatchObject({
+      workspaceId,
+      role: "member",
+    });
+    expect((await db.prisma.invitation.findUniqueOrThrow({ where: { id } })).status).toBe(
+      "accepted",
+    );
+    expect(await auditActions()).toEqual(expect.arrayContaining(["member.invite", "member.join"]));
+    // the new member signs in with the chosen password
+    expect(await login("new@x.com")).toContain("session_token");
+
+    const again = await doAccept(acceptBody(id));
+    expect(again.status).toBe(409);
+    expect(await json(again)).toEqual({ error: "invite_used" });
+  });
+
+  it("an expired invite is 410 invite_expired; an unknown id 404; a short password 400", async () => {
+    const { id } = await json(await inviteAs("admin", "late@x.com"));
+    await db.prisma.invitation.update({
+      where: { id },
+      data: { expiresAt: new Date(Date.now() - 1000) },
+    });
+    const r = await doAccept(acceptBody(id));
+    expect(r.status).toBe(410);
+    expect(await json(r)).toEqual({ error: "invite_expired" });
+    expect(await db.prisma.user.count({ where: { email: "late@x.com" } })).toBe(0);
+    expect((await doAccept(acceptBody("nope"))).status).toBe(404);
+    const { id: id2 } = await json(await inviteAs("admin", "short@x.com"));
+    expect((await doAccept(acceptBody(id2, { password: "elevenchars" }))).status).toBe(400);
+  });
+
+  it("an email that already has a user is 409 user_exists, and the invite stays pending", async () => {
+    await db.prisma.user.create({ data: { id: "ghost", name: "G", email: "ghost@x.com" } });
+    const { id } = await json(await inviteAs("admin", "ghost@x.com"));
+    const r = await doAccept(acceptBody(id));
+    expect(r.status).toBe(409);
+    expect(await json(r)).toEqual({ error: "user_exists" });
+    expect((await db.prisma.invitation.findUniqueOrThrow({ where: { id } })).status).toBe(
+      "pending",
+    );
+  });
+
+  it("two concurrent accepts make one user", async () => {
+    const { id } = await json(await inviteAs("admin", "race@x.com", "viewer"));
+    const rs = await Promise.all([doAccept(acceptBody(id)), doAccept(acceptBody(id))]);
+    expect(rs.map((r) => r.status).sort()).toEqual([200, 409]);
+    expect(await db.prisma.user.count({ where: { email: "race@x.com" } })).toBe(1);
+    expect(await db.prisma.member.count({ where: { user: { email: "race@x.com" } } })).toBe(1);
+  });
+
+  it("a MEMBER or VIEWER cannot invite (403); an API key is 401; owner is not an invitable role; cancel works", async () => {
+    expect((await inviteAs("member", "m@x.com")).status).toBe(403);
+    expect((await inviteAs("viewer", "v@x.com")).status).toBe(403);
+    const keyed = await invites.POST(
+      req(
+        "POST",
+        "/api/v1/invites",
+        { email: "k@x.com", role: "member" },
+        { authorization: `Bearer rn_abcdefgh_${"a".repeat(32)}` },
+      ),
+    );
+    expect(keyed.status).toBe(401);
+    expect((await inviteAs("admin", "o@x.com", "owner")).status).toBe(400);
+    const { id } = await json(await inviteAs("admin", "cancel@x.com"));
+    const del = (who: string) =>
+      invite.DELETE(req("DELETE", `/api/v1/invites/${id}`, undefined, as(who)), p(id));
+    expect((await del("member")).status).toBe(403);
+    expect((await del("admin")).status).toBe(200);
+    expect((await doAccept(acceptBody(id))).status).toBe(409); // canceled = not pending
+    expect(await auditActions()).toContain("member.invite_cancel");
+  });
+
+  it("accept is limited per IP: the 11th in 15 minutes is 429", async () => {
+    for (let i = 0; i < 10; i++) expect((await doAccept(acceptBody("nope"))).status).toBe(404);
+    const r = await doAccept(acceptBody("nope"));
+    expect(r.status).toBe(429);
+    expect(r.headers.get("retry-after")).toBeTruthy();
+  });
+});
+
+describe("members", () => {
+  it("lists members; a VIEWER may read but not write", async () => {
+    const j = await json(await members.GET(req("GET", "/api/v1/members", undefined, as("viewer"))));
+    expect(j.members.map((m: { email: string }) => m.email)).toContain("owner@x.io");
+    expect((await patchRole("viewer", "m-member", "viewer")).status).toBe(403);
+    expect((await removeAs("viewer", "m-member")).status).toBe(403);
+  });
+
+  it("the OWNER's role cannot change or be removed; nobody removes themselves", async () => {
+    const patch = await patchRole("admin", ownerMember, "member");
+    expect(patch.status).toBe(409);
+    expect(await json(patch)).toEqual({ error: "owner_immutable" });
+    const del = await removeAs("admin", ownerMember);
+    expect(del.status).toBe(409);
+    expect(await json(del)).toEqual({ error: "owner_immutable" });
+    const self = await removeAs("admin", "m-admin");
+    expect(self.status).toBe(409);
+    expect(await json(self)).toEqual({ error: "cannot_remove_self" });
+    expect((await removeAs("owner", ownerMember)).status).toBe(409);
+    expect(await db.prisma.member.count({ where: { role: "owner" } })).toBe(1);
+  });
+
+  it("an ADMIN changes a role (audited); owner and unknown roles are 400; another workspace's member is 404", async () => {
+    await mkUser("rolechange", "member");
+    expect((await patchRole("admin", "m-rolechange", "viewer")).status).toBe(200);
+    expect((await db.prisma.member.findUniqueOrThrow({ where: { id: "m-rolechange" } })).role).toBe(
+      "viewer",
+    );
+    expect(
+      await db.prisma.auditLog.findFirstOrThrow({ where: { action: "member.role" } }),
+    ).toMatchObject({ target: "m-rolechange", meta: { from: "member", to: "viewer" } });
+    for (const role of ["owner", "root"])
+      expect((await patchRole("admin", "m-rolechange", role)).status).toBe(400);
+    const other = await db.prisma.workspace.create({ data: { name: "B", slug: "b-members" } });
+    await db.prisma.member.create({
+      data: { id: "m-foreign", workspaceId: other.id, userId: "u-member", role: "member" },
+    });
+    expect((await patchRole("admin", "m-foreign", "admin")).status).toBe(404);
+    expect((await removeAs("admin", "m-foreign")).status).toBe(404);
+    await db.prisma.member.delete({ where: { id: "m-foreign" } });
+  });
+
+  it("removing a member revokes the API keys they created, ends their access and audits member.remove", async () => {
+    await mkUser("temp", "admin");
+    const newKey = async (who: string) =>
+      json(
+        await apiKeys.POST(
+          req("POST", "/api/v1/api-keys", { name: who, scopes: ["leads:read"] }, as(who)),
+        ),
+      );
+    const made = await newKey("temp");
+    const keep = await newKey("admin");
+    expect((await db.prisma.apiKey.findUniqueOrThrow({ where: { id: made.id } })).createdById).toBe(
+      "u-temp",
+    );
+    expect((await removeAs("owner", "m-temp")).status).toBe(200);
+    expect(
+      (await db.prisma.apiKey.findUniqueOrThrow({ where: { id: made.id } })).revokedAt,
+    ).not.toBeNull();
+    expect(
+      (await db.prisma.apiKey.findUniqueOrThrow({ where: { id: keep.id } })).revokedAt,
+    ).toBeNull();
+    expect(await db.prisma.member.count({ where: { id: "m-temp" } })).toBe(0);
+    expect(await db.prisma.user.count({ where: { id: "u-temp" } })).toBe(0); // the address can be invited again
+    expect((await members.GET(req("GET", "/api/v1/members", undefined, as("temp")))).status).toBe(
+      401,
+    );
+    expect(
+      await db.prisma.auditLog.count({ where: { action: "member.remove", target: "m-temp" } }),
+    ).toBe(1);
+  });
+});

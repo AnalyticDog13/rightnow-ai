@@ -12,5 +12,12 @@ export const GET = route(
 
 export const POST = route(
   { auth: "session-or-apikey", scope: "leads:create", body: createLeadInput },
-  (c) => run(() => createLead(prisma, c.workspaceId, c.userId, c.body)),
+  // PS-SEC-12: where the contact came from (imports record `csv:<file>`); a key is "api", the UI "manual"
+  (c) =>
+    run(() =>
+      createLead(prisma, c.workspaceId, c.userId, {
+        ...c.body,
+        source: c.body.source ?? (c.userId ? "manual" : "api"),
+      }),
+    ),
 );

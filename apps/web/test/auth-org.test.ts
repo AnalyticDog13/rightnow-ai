@@ -86,3 +86,58 @@ describe("organization endpoints are locked down", () => {
     expect(await db.prisma.invitation.count()).toBe(1);
   });
 });
+
+describe("raw /api/auth/organization/* is closed (R21): members change only through audited routes", () => {
+  const raw = async (email: string, path: string, body: object) => {
+    const { POST } = await import("../app/api/auth/[...all]/route");
+    const origin = "http://localhost:3100";
+    const cookie = (await login(email)).get("cookie")!;
+    return POST(
+      new Request(`${origin}/api/auth${path}`, {
+        method: "POST",
+        headers: { origin, cookie, "content-type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+    );
+  };
+
+  it("the OWNER cannot leave and orphan the workspace", async () => {
+    const r = await raw("owner@x.io", "/organization/leave", { organizationId: workspaceId });
+    expect(r.status).toBe(404);
+    expect(await db.prisma.member.count({ where: { workspaceId, role: "owner" } })).toBe(1);
+  });
+
+  it("an ADMIN cannot change roles, remove or invite members unaudited", async () => {
+    const a = await db.prisma.user.create({ data: { id: "adm1", name: "A", email: "adm@x.io" } });
+    await db.prisma.account.create({
+      data: {
+        id: "acc-a",
+        userId: a.id,
+        accountId: a.id,
+        providerId: "credential",
+        password: await hashPassword(PASSWORD),
+      },
+    });
+    await db.prisma.member.create({
+      data: { id: "m-a", workspaceId, userId: a.id, role: "admin" },
+    });
+    const calls: [string, object][] = [
+      [
+        "/organization/update-member-role",
+        { memberId: "m-v", role: "admin", organizationId: workspaceId },
+      ],
+      ["/organization/remove-member", { memberIdOrEmail: "m-v", organizationId: workspaceId }],
+      [
+        "/organization/invite-member",
+        { email: "z@x.io", role: "member", organizationId: workspaceId },
+      ],
+      ["/organization/accept-invitation", { invitationId: "x" }],
+    ];
+    for (const [path, body] of calls)
+      expect((await raw("adm@x.io", path, body)).status, path).toBe(404);
+    expect((await db.prisma.member.findUniqueOrThrow({ where: { id: "m-v" } })).role).toBe(
+      "viewer",
+    );
+    expect(await db.prisma.invitation.count({ where: { email: "z@x.io" } })).toBe(0);
+  });
+});

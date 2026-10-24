@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { SETUP_TOKEN } from "./env";
+import { totp } from "./totp";
 
 const NAV = [
   "Dashboard",
@@ -13,6 +14,15 @@ const NAV = [
   "Automations",
   "Settings",
 ];
+
+let inviteLink = "";
+
+async function signIn(page: import("@playwright/test").Page, email: string, password: string) {
+  await page.goto("/sign-in");
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password").fill(password);
+  await page.getByRole("button", { name: "Sign in" }).click();
+}
 
 async function fillSignUp(page: import("@playwright/test").Page, token: string) {
   await page.goto("/sign-up");
@@ -79,6 +89,13 @@ test("first owner signs up, sees the 10 nav items, signs out; second sign-up is 
   await page.getByRole("button", { name: "Revoke ci" }).click();
   await expect(page.getByRole("cell", { name: /^Revoked/ })).toBeVisible();
 
+  // members: an invite link (no email is sent) for the next test
+  await page.goto("/settings");
+  await page.getByLabel("Invite by email").fill("grace@example.com");
+  await page.getByRole("button", { name: "Create invite link" }).click();
+  inviteLink = (await page.getByTestId("invite-link").textContent())!;
+  expect(inviteLink).toMatch(/\/invite\/\w+$/);
+
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page).toHaveURL(/\/sign-in/);
 
@@ -94,4 +111,60 @@ test("first owner signs up, sees the 10 nav items, signs out; second sign-up is 
     },
   });
   expect(res.status()).toBe(409);
+});
+
+test("an invited member joins, turns on 2FA, signs in with an app code, and a backup code works once", async ({
+  page,
+}) => {
+  // sign-in is limited to 5 a minute per IP: start just after a window edge so this test's 4 sign-ins fit
+  const into = Date.now() % 60_000;
+  if (into > 5_000) await page.waitForTimeout(60_000 - into + 500);
+
+  // the invite link signs the new member in
+  await page.goto(inviteLink);
+  await page.getByLabel("Your name").fill("Grace Member");
+  await page.getByLabel("Password (12+ characters)").fill("another long password");
+  await page.getByRole("button", { name: "Join workspace" }).click();
+  await expect(page).toHaveURL(/\/dashboard/);
+  await page.goto(inviteLink); // single use
+  await expect(page.getByText("This invite link is not valid")).toBeVisible();
+
+  // Settings > Security: enable with the shown key
+  await page.goto("/settings");
+  await expect(page.getByRole("heading", { name: "Members" })).toHaveCount(0); // a MEMBER does not manage members
+  await page.getByLabel("Your password").fill("another long password");
+  await page.getByRole("button", { name: "Set up two-factor" }).click();
+  const key = (await page.getByTestId("totp-key").textContent())!;
+  const backup = await page.getByTestId("backup-codes").getByRole("listitem").allTextContents();
+  expect(backup).toHaveLength(10);
+  await page.getByLabel("Code from the app").fill(totp(key));
+  await page.getByRole("button", { name: "Turn on two-factor" }).click();
+  await expect(page.getByRole("button", { name: "Turn off two-factor" })).toBeVisible();
+  await page.getByRole("button", { name: "Sign out" }).click();
+
+  // sign in -> the 2FA page -> the code -> the dashboard
+  await signIn(page, "grace@example.com", "another long password");
+  await expect(page).toHaveURL(/\/sign-in\/2fa/);
+  await page.getByLabel("Authentication code").fill(totp(key));
+  await page.getByRole("button", { name: "Verify" }).click();
+  await expect(page).toHaveURL(/\/dashboard/);
+
+  // the audit log page lists the enabling
+  await page.goto("/settings");
+  await expect(page.getByRole("cell", { name: "auth.2fa_enable", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Sign out" }).click();
+
+  // a backup code works once
+  await signIn(page, "grace@example.com", "another long password");
+  await page.getByRole("button", { name: "Use a backup code" }).click();
+  await page.getByLabel("Backup code").fill(backup[0]!);
+  await page.getByRole("button", { name: "Verify" }).click();
+  await expect(page).toHaveURL(/\/dashboard/);
+  await page.getByRole("button", { name: "Sign out" }).click();
+  await signIn(page, "grace@example.com", "another long password");
+  await page.getByRole("button", { name: "Use a backup code" }).click();
+  await page.getByLabel("Backup code").fill(backup[0]!);
+  await page.getByRole("button", { name: "Verify" }).click();
+  await expect(page.getByRole("main").getByRole("alert")).not.toBeEmpty();
+  await expect(page).toHaveURL(/\/sign-in\/2fa/);
 });

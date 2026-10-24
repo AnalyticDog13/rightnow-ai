@@ -29,7 +29,7 @@ const body = z.strictObject({
 /** The token is in this response only; it cannot be retrieved later. */
 export const POST = route({ role: "ADMIN", body }, async ({ workspaceId, userId, body }) => {
   return prisma.$transaction(async (tx) => {
-    const { id, token } = await createApiKey(tx, workspaceId, body.name, body.scopes);
+    const { id, token } = await createApiKey(tx, workspaceId, body.name, body.scopes, userId);
     await audit(tx, { workspaceId, actorId: userId }, "apikey.create", id, {
       name: body.name,
       scopes: body.scopes,

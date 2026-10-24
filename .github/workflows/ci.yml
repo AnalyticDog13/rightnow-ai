@@ -12,6 +12,8 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      # D50: high and critical findings in production dependencies fail the build
+      - run: npm audit --omit=dev --audit-level=high
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test

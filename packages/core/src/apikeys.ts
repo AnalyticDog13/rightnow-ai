@@ -10,11 +10,12 @@ export async function createApiKey(
   workspaceId: string,
   name: string,
   scopes: string[],
+  createdById?: string,
 ): Promise<{ id: string; token: string }> {
   const prefix = alnum(8);
   const token = `rn_${prefix}_${alnum(32)}`;
   const key = await prisma.apiKey.create({
-    data: { workspaceId, name, prefix, hash: sha256(token), scopes },
+    data: { workspaceId, name, prefix, hash: sha256(token), scopes, createdById },
   });
   return { id: key.id, token };
 }

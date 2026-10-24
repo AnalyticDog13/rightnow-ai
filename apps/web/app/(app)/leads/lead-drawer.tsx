@@ -308,6 +308,13 @@ export function LeadDrawer({
         )}
       </form>
       {canEdit && <LeadAi lead={lead} onChanged={onChanged} />}
+      {canEdit && (
+        <p className="mt-4 text-sm">
+          <a className="text-primary underline" href={`/api/v1/leads/${lead.id}/export`}>
+            Export data (JSON)
+          </a>
+        </p>
+      )}
       <section aria-label="Timeline" className="mt-4 border-t border-border pt-4">
         <h3 className="mb-2 text-sm font-medium">Timeline</h3>
         {timeline.length ? (

@@ -32,3 +32,7 @@ Unsubscribe links in sent emails are signed with a key derived from `ENCRYPTION_
 Open and click tracking links are signed the same way (a separate HKDF subkey), so keep `OLD_ENCRYPTION_KEY` for at least 90 days or old tracking and unsubscribe links return 400.
 
 Only one previous key is honored. Rotating twice invalidates links signed with the key before the previous one, so keep `OLD_ENCRYPTION_KEY` as the key you just replaced and do not rotate again until old mail no longer matters.
+
+## Rotating BETTER_AUTH_SECRET (not covered by the script)
+
+`BETTER_AUTH_SECRET` signs session cookies and encrypts the two-factor secrets and backup codes that better-auth stores (they are not in `ENCRYPTED_COLUMNS`). Changing it signs everyone out, and every user who enabled two-factor can no longer pass the second step. After changing it, reset each such user with `scripts/disable-2fa.ts` (see docs/ops/LOCAL.md, "Lost two-factor device"); they enrol again in Settings > Security. Passwords are hashed (scrypt) and are not affected.

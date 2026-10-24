@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTestDb } from "@rightnow/db/test-db";
+import { hashPassword } from "better-auth/crypto";
+import { totp } from "../e2e/totp";
 import { createFirstOwner } from "../lib/setup";
 
 const TOKEN = "t".repeat(20);
@@ -12,6 +14,7 @@ let db: Awaited<ReturnType<typeof createTestDb>>;
 let workspaceId: string;
 let userId: string;
 let cookie: string;
+let auth: typeof import("../lib/auth").auth;
 let authRoute: typeof import("../app/api/auth/[...all]/route");
 let setEnv: (mode: "local" | "vps") => Promise<void>;
 
@@ -63,7 +66,7 @@ beforeAll(async () => {
     resetWebEnvCache();
   };
   await setEnv("local");
-  const { auth } = await import("../lib/auth");
+  ({ auth } = await import("../lib/auth"));
   authRoute = await import("../app/api/auth/[...all]/route");
   ({ workspaceId } = await createFirstOwner(
     db.prisma,
@@ -339,6 +342,77 @@ describe("vps mode", () => {
     );
     expect(text.status).toBe(415);
     expect(await text.json()).toEqual({ error: "unsupported_media_type" });
+  });
+
+  it("2FA with the real plugin: TOTP, backup code and OTP verifies are counted per user across IPs; the code works once", async () => {
+    await freshWindow();
+    const email = "tf@x.io";
+    const u = await db.prisma.user.create({ data: { id: "u-tf", name: "T", email } });
+    await db.prisma.account.create({
+      data: {
+        id: "a-tf",
+        userId: u.id,
+        accountId: u.id,
+        providerId: "credential",
+        password: await hashPassword(PASSWORD),
+      },
+    });
+    await db.prisma.member.create({
+      data: { id: "m-tf", workspaceId, userId: u.id, role: "member" },
+    });
+    const first = await auth.api.signInEmail({
+      body: { email, password: PASSWORD },
+      returnHeaders: true,
+    });
+    const headers = new Headers({
+      cookie: first.headers
+        .getSetCookie()
+        .map((c) => c.split(";")[0])
+        .join("; "),
+    });
+    const enabled = (await auth.api.enableTwoFactor({
+      headers,
+      body: { password: PASSWORD },
+    })) as { totpURI: string; backupCodes: string[] };
+    const secret = new URL(enabled.totpURI).searchParams.get("secret")!;
+    await auth.api.verifyTOTP({ headers, body: { code: totp(secret) } });
+    expect(
+      await db.prisma.auditLog.count({
+        where: { workspaceId, actorId: u.id, action: "auth.2fa_enable" },
+      }),
+    ).toBe(1);
+
+    const challenge = async (i: number) => {
+      const r = await signIn(email, ip(110 + i), PASSWORD);
+      expect(await r.json()).toMatchObject({ twoFactorRedirect: true });
+      return r.headers
+        .getSetCookie()
+        .map((c) => c.split(";")[0])
+        .find((c) => c!.startsWith("better-auth.two_factor="))!;
+    };
+    const paths = ["verify-totp", "verify-backup-code", "verify-otp"];
+    const verify = async (i: number, path: string, code: string) =>
+      authRoute.POST(
+        req(`/api/auth/two-factor/${path}`, {
+          body: { code },
+          headers: { ...ip(110 + i), cookie: await challenge(i) },
+        }),
+      );
+    // the plugin really answers (not 404): a wrong code is 401 on each path it serves
+    for (let i = 0; i < 10; i++) {
+      const r = await verify(i, paths[i % 3]!, "000000");
+      expect(r.status, paths[i % 3]).not.toBe(404);
+      expect(r.status).not.toBe(429);
+    }
+    expect((await verify(10, "verify-totp", totp(secret))).status).toBe(429); // right code, over the user budget
+
+    // a backup code signs in once (a fresh budget: the buckets are per window)
+    await db.prisma.rateLimitBucket.deleteMany({ where: { key: { startsWith: "user:" } } });
+    const ok = await verify(11, "verify-backup-code", enabled.backupCodes[0]!);
+    expect(ok.status).toBe(200);
+    expect(ok.headers.getSetCookie().join(";")).toContain("session_token");
+    expect((await verify(12, "verify-backup-code", enabled.backupCodes[0]!)).status).toBe(401);
+    expect((await verify(13, "verify-totp", totp(secret))).status).toBe(200);
   });
 
   it("clientIp buckets IPv6 by /64 and keeps IPv4 as is", async () => {

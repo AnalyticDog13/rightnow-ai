@@ -56,12 +56,16 @@ export function AuthForm({ mode }: { mode: "sign-in" | "sign-up" }) {
           throw new Error(j.issues?.[0]?.message ?? j.error ?? "Sign-up failed");
         }
       }
-      const { error: err } = await authClient.signIn.email({
+      const { data, error: err } = await authClient.signIn.email({
         email: v.email!,
         password: v.password!,
       });
       if (err) throw new Error(err.message ?? "Sign-in failed");
-      router.push("/dashboard");
+      router.push(
+        data && "twoFactorRedirect" in data && data.twoFactorRedirect
+          ? "/sign-in/2fa"
+          : "/dashboard",
+      );
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");

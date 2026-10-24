@@ -28,5 +28,5 @@ export const NAV: { href: string; label: string; icon: LucideIcon; arrives?: str
   { href: "/crm", label: "CRM", icon: KanbanSquare },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/automations", label: "Automations", icon: Workflow },
-  { href: "/settings", label: "Settings", icon: Settings, arrives: "Phase 7 (task P7-T07)" },
+  { href: "/settings", label: "Settings", icon: Settings },
 ];

@@ -58,3 +58,11 @@ New accounts start at 30 a day (or the maximum, if lower). Counts follow the acc
 Rate limits in local mode: no client header is trusted, so every caller counts as one client (`local`), for example 5
 sign-ins a minute in total. `npm run dev` (`next dev`) listens on all interfaces, so other hosts on your LAN can reach it
 and share that bucket; Docker Compose binds web to `127.0.0.1` only.
+
+## Lost two-factor device
+
+A user who lost both the authenticator app and the 10 backup codes is locked out of sign-in. The operator turns two-factor off for that user (this ends their sessions and writes an `auth.2fa_disable` audit row with `via: "ops"`); they then sign in with the password and enrol again in Settings > Security:
+
+`DATABASE_URL=... npx tsx scripts/disable-2fa.ts user@example.com`
+
+With Compose, run it from the repo root against the published Postgres port, or inside the `migrate` image the same way `rotate-key` runs.
