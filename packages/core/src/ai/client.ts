@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { PrismaClient } from "@rightnow/db/client";
-import { HttpOutError, safeRequest } from "@rightnow/providers";
+import { HttpOutError, parseRetryAfter, safeRequest } from "@rightnow/providers";
 import { AccountError } from "../accounts/service";
 import type { Clock } from "../clock";
 import { hit } from "../ratelimit";
@@ -111,13 +111,11 @@ export async function aiComplete(
           : `ai_${code || "request_failed"}`,
     );
   }
-  if (res.status === 429) {
-    const s = Number(res.headers["retry-after"]);
+  if (res.status === 429)
     return refuse(
       "ai_http_429",
-      new AiRateLimited(Math.min(Number.isFinite(s) && s > 0 ? s : 5, 120)),
+      new AiRateLimited(parseRetryAfter(res.headers["retry-after"] ?? null, clock.now(), 5, 120)),
     );
-  }
   if (res.status >= 300) return refuse(`ai_http_${res.status}`);
   let text: unknown;
   let usage: { prompt_tokens?: unknown; completion_tokens?: unknown } | undefined;

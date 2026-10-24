@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./csv": "./src/csv.ts",
+    "./domain": "./src/leads/domain.ts",
     "./schedule": "./src/schedule.ts"
   },
   "scripts": {

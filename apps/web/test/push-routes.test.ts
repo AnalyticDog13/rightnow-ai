@@ -190,9 +190,9 @@ describe("graph route", () => {
     ).toMatchObject({ status: "FAILED" });
   });
 
-  it("an oversized body → 413; a bad shape → 400", async () => {
+  it("an oversized body → 413; a bad shape is a 202 no-op (A8); unparseable JSON → 400", async () => {
     expect((await post("", "x".repeat(2 * 1024 * 1024))).status).toBe(413);
-    expect((await post("", { value: "x" })).status).toBe(400);
+    expect((await post("", { value: "x" })).status).toBe(202);
     expect((await post("", "{")).status).toBe(400);
   });
 

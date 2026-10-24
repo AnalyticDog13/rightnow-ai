@@ -943,3 +943,28 @@ describe("builtins", () => {
     expect(await P().opportunity.count({ where: { workspaceId: w.ws } })).toBe(0);
   });
 });
+
+describe("A12: no automation sends mail by itself", () => {
+  test("the action list is fixed and none composes or sends a message (an AI INTERESTED tag reaches no send)", async () => {
+    expect(Object.keys(ACTIONS).sort()).toEqual(
+      [
+        "add_tag",
+        "add_to_list",
+        "assign_owner",
+        "create_opportunity",
+        "create_task",
+        "enroll_campaign",
+        "move_to_subsequence",
+        "pause_account",
+        "send_webhook",
+        "stop_sequence",
+        "suppress_contact",
+      ].sort(),
+    );
+    // enroll/move schedule the human-written campaign steps through the normal sender; nothing reads AI text
+    const { readFileSync } = await import("node:fs");
+    const src = readFileSync(new URL("../src/automations/engine.ts", import.meta.url), "utf8");
+    expect(src).not.toMatch(/from "\.\.\/(ai|mail)\//);
+    expect(src).not.toMatch(/aiSuggestion|sendReply|scheduledMessage\.create/);
+  });
+});

@@ -1,3 +1,4 @@
+/** Client-safe (`@rightnow/core/domain`): no imports, so the inbox dialog uses this list too. */
 export const FREE_MAIL_DOMAINS: ReadonlySet<string> = new Set([
   ...["gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com", "msn.com"],
   ...["yahoo.com", "icloud.com", "me.com", "aol.com", "proton.me", "protonmail.com"],

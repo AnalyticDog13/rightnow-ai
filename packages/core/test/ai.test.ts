@@ -210,6 +210,34 @@ describe("client", () => {
     });
   });
 
+  test("A6: a 429's Retry-After is seconds or an HTTP-date, default 5, capped at 120", async () => {
+    const ws = await workspace();
+    const wait = async (h?: string) => {
+      const e = await aiComplete(
+        P(),
+        clock,
+        ws,
+        "f",
+        { system: "S", user: "U", maxTokens: 5 },
+        {
+          ...PUBLIC,
+          fetchFn: async () => ({
+            status: 429,
+            headers: (h === undefined ? {} : { "retry-after": h }) as Record<string, string>,
+            latencyMs: 1,
+            body: Buffer.alloc(0),
+          }),
+        },
+      ).catch((x: { retryAfterSec?: number }) => x);
+      return (e as { retryAfterSec?: number }).retryAfterSec;
+    };
+    expect(await wait("7")).toBe(7);
+    expect(await wait(new Date(T.getTime() + 40_000).toUTCString())).toBe(40);
+    expect(await wait()).toBe(5);
+    expect(await wait("junk")).toBe(5);
+    expect(await wait("9999")).toBe(120);
+  });
+
   test("a 2 MB answer, a malformed answer and a transport failure map to codes", async () => {
     const ws = await workspace();
     const run = (fetchFn: NonNullable<Parameters<typeof aiComplete>[5]["fetchFn"]>) =>

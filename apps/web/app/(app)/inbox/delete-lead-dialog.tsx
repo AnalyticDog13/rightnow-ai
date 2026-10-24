@@ -1,22 +1,9 @@
 "use client";
 
+import { FREE_MAIL_DOMAINS } from "@rightnow/core/domain";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../components/ui/button";
 import { call, errorText } from "../accounts/api-client";
-
-// shortcut: a short local copy of the free-mail list (core's is not client-safe); a same-domain action on these would hit strangers
-const FREE = new Set([
-  "gmail.com",
-  "yahoo.com",
-  "outlook.com",
-  "hotmail.com",
-  "icloud.com",
-  "aol.com",
-  "proton.me",
-  "protonmail.com",
-  "live.com",
-  "msn.com",
-]);
 
 /** PS-INBOX-15: delete the lead (which stops it in every campaign), optionally everyone at the same domain, optionally block future outreach. */
 export function DeleteLeadDialog({
@@ -33,7 +20,7 @@ export function DeleteLeadDialog({
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => ref.current?.showModal(), []);
   const domain = lead.email.split("@")[1] ?? "";
-  const shared = FREE.has(domain);
+  const shared = FREE_MAIL_DOMAINS.has(domain.toLowerCase()); // a same-domain action on these would hit strangers
   const [del, setDel] = useState(true);
   const [same, setSame] = useState(false);
   const [block, setBlock] = useState(false);

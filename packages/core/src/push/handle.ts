@@ -46,7 +46,8 @@ export async function handleGmailPush(
   const accounts = await prisma.emailAccount.findMany({
     where: {
       provider: "GMAIL",
-      email: { equals: emailAddress, mode: "insensitive" },
+      // A11: stored lowercased; plain equality (Prisma's insensitive mode is ILIKE, where `_` is a wildcard)
+      email: emailAddress.toLowerCase(),
       deletedAt: null,
       pushSubscription: { externalId: { not: null }, status: "ACTIVE" },
     },
@@ -88,7 +89,10 @@ export async function handleGraphPush(
   clock: Clock,
   body: unknown,
 ): Promise<{ flagged: number; rejected: number }> {
-  const { value } = graphBody.parse(body);
+  // A8: a body that is not a notification batch is a no-op, as for Gmail (an error would only make Graph retry)
+  const parsed = graphBody.safeParse(body);
+  if (!parsed.success) return { flagged: 0, rejected: 0 };
+  const { value } = parsed.data;
   const subs = await prisma.pushSubscription.findMany({
     where: {
       provider: "MICROSOFT",

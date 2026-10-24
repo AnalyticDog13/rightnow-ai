@@ -184,6 +184,16 @@ describe("handleGmailPush", () => {
     expect((await acct(g.id)).syncRequestedAt).toBeNull();
   });
 
+  test("A11: the address is matched exactly (lowercased), never as a pattern", async () => {
+    const a = await mk("GMAIL", "under@x.com");
+    await sub(a, "h-u");
+    const clock = fixedClock(T0);
+    for (const addr of ["und_r@x.com", "UND_R@x.com"])
+      expect(await handleGmailPush(P(), clock, gmailBody(addr))).toBe(0);
+    expect((await acct(a.id)).syncRequestedAt).toBeNull();
+    expect(await handleGmailPush(P(), clock, gmailBody("UNDER@x.com"))).toBe(1);
+  });
+
   test("a FAILED subscription no longer flags syncs (M4)", async () => {
     const a = await mk("GMAIL", "failed@x.com");
     const s1 = await sub(a, "h-f");
@@ -257,14 +267,16 @@ describe("handleGraphPush", () => {
     });
   });
 
-  test("more than 100 notifications or a bad shape is rejected", async () => {
+  test("more than 100 notifications or a bad shape is a no-op, never an error (A8)", async () => {
     const clock = fixedClock(T0);
-    await expect(
-      handleGraphPush(P(), clock, {
+    const none = { flagged: 0, rejected: 0 };
+    expect(
+      await handleGraphPush(P(), clock, {
         value: Array.from({ length: 101 }, () => graphNote("x", "y")),
       }),
-    ).rejects.toThrow();
-    await expect(handleGraphPush(P(), clock, { value: "x" })).rejects.toThrow();
+    ).toEqual(none);
+    for (const body of [{ value: "x" }, null, "x", { value: [{ subscriptionId: 5 }] }])
+      expect(await handleGraphPush(P(), clock, body)).toEqual(none);
   });
 });
 

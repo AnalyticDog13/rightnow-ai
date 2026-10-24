@@ -34,8 +34,9 @@ export async function backgroundJobs(
 export const backgroundJobsJob: JobDef = {
   name: "background-jobs",
   cron: "* * * * *",
-  // heartbeat (R2): a killed worker's active run is failed within ~40 s, so the stately queue is not blocked for 15 min
-  options: { policy: "stately", retryLimit: 0, heartbeatSeconds: 10 },
+  // heartbeat (R2): a killed worker's active run is failed within ~40 s, so the stately queue is not blocked for 15 min.
+  // M3: a tick runs its claimed jobs to the end (a 500-lead ai_personalize at 30 calls/min is ~17 min), as lead-import
+  options: { policy: "stately", retryLimit: 0, expireInSeconds: 3 * 3600, heartbeatSeconds: 10 },
   handler: async (_jobs, { prisma, clock, signal }) => {
     await backgroundJobs(prisma, clock, { signal });
   },

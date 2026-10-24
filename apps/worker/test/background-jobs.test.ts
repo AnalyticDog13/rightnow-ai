@@ -10,11 +10,12 @@ beforeAll(async () => {
 });
 afterAll(() => db.drop());
 
-test("background-jobs: every minute, stately, with a heartbeat (R2), registered", () => {
+test("background-jobs: every minute, stately, with a heartbeat (R2) and a 3 h expiry (M3), registered", () => {
   expect(backgroundJobsJob).toMatchObject({
     name: "background-jobs",
     cron: "* * * * *",
-    options: { policy: "stately", retryLimit: 0, heartbeatSeconds: 10 },
+    // a 500-lead ai_personalize at 30 calls/min is ~17 min, past pg-boss's 15-min default
+    options: { policy: "stately", retryLimit: 0, heartbeatSeconds: 10, expireInSeconds: 3 * 3600 },
   });
   expect(jobs).toContain(backgroundJobsJob);
 });
