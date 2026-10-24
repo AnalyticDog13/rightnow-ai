@@ -42,7 +42,7 @@ model Workspace {
   webhooks             Webhook[]
   webhookDeliveries    WebhookDelivery[]
   backgroundJobs       BackgroundJob[]
-  timezone            String                @default("UTC")
+  timezone             String                @default("UTC")
   physicalAddress      String?
   dailyCap             Int? // null = no workspace cap
   perCompanyDailyLimit Int?

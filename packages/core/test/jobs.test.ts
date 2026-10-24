@@ -33,7 +33,7 @@ const running = (workspaceId: string, over: { updatedAt?: Date; attempts?: numbe
   });
 const tagAll = { filter: {}, action: "add_tags", value: ["q"] };
 
-test("leads_bulk over 1200 filtered leads: 3 chunks, progress 41, 83, 100, DONE {affected:1200}", async () => {
+test("leads_bulk over 1200 filtered leads: 3 chunks, progress 0, 41, 83, 100, DONE {affected:1200}", async () => {
   const w = await ws();
   await leads(w, 1200, ["x"]);
   await leads(w, 5, ["other"]);
@@ -55,7 +55,7 @@ test("leads_bulk over 1200 filtered leads: 3 chunks, progress 41, 83, 100, DONE 
   expect(await runNextJob(P(), fixedClock(T), signal)).toBe(jobId);
   spy.mockRestore();
 
-  expect(seen).toEqual([41, 83, 100]);
+  expect(seen).toEqual([0, 41, 83, 100]);
   expect(await row(jobId)).toMatchObject({
     status: "DONE",
     progress: 100,
@@ -179,4 +179,45 @@ test("R13 retention: AutomationRun and finished BackgroundJob rows are purged af
   expect(runs.map((x) => x.eventId)).toEqual(["e89"]);
   const left = await P().backgroundJob.findMany({ where: { workspaceId: w } });
   expect(left.map((j) => j.id).sort()).toEqual(kept.map((j) => j.id).sort());
+});
+
+test("fencing: a run that was reset and re-claimed writes neither progress nor DONE to the new run", async () => {
+  const w = await ws();
+  const clock = fixedClock(T);
+  await P().backgroundJob.deleteMany(); // earlier tests leave stale and pending rows
+  // simulates a worker stalled past the stale window whose job another worker has since re-claimed
+  const reclaim = async (id: string) => {
+    await P().backgroundJob.update({
+      where: { id },
+      data: { updatedAt: new Date(T.getTime() - 6 * MIN) },
+    });
+    await resetStaleJobs(P(), clock);
+    await P().backgroundJob.update({
+      where: { id },
+      data: { status: "RUNNING", progress: 7, updatedAt: T },
+    });
+  };
+  JOB_HANDLERS.stall_progress = async (_p, _c, job, progress) => {
+    await reclaim(job.id);
+    await progress(50);
+    return { late: true };
+  };
+  JOB_HANDLERS.stall_done = async (_p, _c, job) => {
+    await reclaim(job.id);
+    return { late: true };
+  };
+  for (const kind of ["stall_progress", "stall_done"]) {
+    const id = (await createJob(P(), w, null, kind, {})).jobId;
+    expect(await runNextJob(P(), clock, signal)).toBe(id);
+    expect(await row(id)).toMatchObject({
+      status: "RUNNING",
+      attempts: 1,
+      progress: 7,
+      result: null,
+      finishedAt: null,
+    });
+    await P().backgroundJob.delete({ where: { id } });
+  }
+  delete JOB_HANDLERS.stall_progress;
+  delete JOB_HANDLERS.stall_done;
 });

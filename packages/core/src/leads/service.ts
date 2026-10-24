@@ -617,6 +617,21 @@ export const bulkInput = z
   .strictObject({ ids: bulkIds.optional(), filter: leadQuery.optional(), ...bulkBase })
   .refine((b) => (b.ids === undefined) !== (b.filter === undefined), "ids or filter, not both");
 
+/** The `value` an action needs, parsed. The route calls it before queueing a filter job, so both paths answer 400. */
+export function bulkValue(action: z.infer<typeof bulkIdsInput>["action"], value: unknown) {
+  if (action === "assign_round_robin") return uniq(z.array(text(100)).min(1).parse(value));
+  if (action === "set_owner")
+    return z
+      .string()
+      .min(1)
+      .nullable()
+      .parse(value ?? null);
+  if (action === "set_interest") return interest.nullable().parse(value ?? null);
+  if (action === "add_tags" || action === "remove_tags")
+    return z.array(text(50)).min(1).parse(value);
+  return undefined;
+}
+
 export async function bulkLeads(
   prisma: Db,
   clock: Clock,
@@ -625,7 +640,8 @@ export async function bulkLeads(
   actorId?: Actor,
 ) {
   const { ids, action, value } = bulkIdsInput.parse(input);
-  const strs = () => z.array(text(50)).min(1).parse(value);
+  const parsed = bulkValue(action, value);
+  const strs = () => parsed as string[];
   // gate M-1: delete and set_interest lock Lead before CampaignLead: a deadlock is retried, not a 500
   return withTxRetry(() =>
     prisma.$transaction(
@@ -638,20 +654,16 @@ export async function bulkLeads(
         });
         const found = leads.map((l) => l.id);
         if (action === "assign_round_robin") {
-          const users = uniq(z.array(text(100)).min(1).parse(value));
+          const users = parsed as string[];
           await assertMembers(tx, ws, users);
           const owners = found.map((_, i) => users[i % users.length]!);
           await tx.$executeRaw`UPDATE "Lead" l SET "ownerId" = v.o, "updatedAt" = now() FROM unnest(${found}::text[], ${owners}::text[]) AS v(id, o) WHERE l.id = v.id AND l."workspaceId" = ${ws}`;
         } else if (action === "set_owner") {
-          const owner = z
-            .string()
-            .min(1)
-            .nullable()
-            .parse(value ?? null);
+          const owner = parsed as string | null;
           if (owner) await assertMembers(tx, ws, [owner]);
           await tx.lead.updateMany({ where: base, data: { ownerId: owner } });
         } else if (action === "set_interest") {
-          const v = interest.nullable().parse(value ?? null);
+          const v = parsed as number | null;
           if (v === -1) {
             const rows = await tx.lead.findMany({ where: base, select: { email: true } });
             await suppress(

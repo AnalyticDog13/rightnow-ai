@@ -1,4 +1,4 @@
-import { bulkInput, bulkLeads, createJob, systemClock } from "@rightnow/core";
+import { bulkInput, bulkLeads, bulkValue, createJob, systemClock } from "@rightnow/core";
 import { prisma } from "@rightnow/db";
 import { run } from "../../../../../lib/accounts-http";
 import { HttpError, route } from "../../../../../lib/api";
@@ -14,10 +14,12 @@ export const POST = route(
   (c) => {
     if (c.body.action === "delete" && c.role !== "ADMIN" && c.role !== "OWNER")
       throw new HttpError(403, "Forbidden");
-    if (c.body.filter)
+    if (c.body.filter) {
+      bulkValue(c.body.action, c.body.value); // a bad value is a 400 now, not a failed job later
       return createJob(prisma, c.workspaceId, c.userId, "leads_bulk", c.body).then((r) =>
         Response.json(r, { status: 202 }),
       );
+    }
     return run(() => bulkLeads(prisma, systemClock, c.workspaceId, c.body, c.userId));
   },
 );

@@ -67,14 +67,21 @@ export async function exportLeadData(
     select: { threadId: true },
     distinct: ["threadId"],
   });
-  const threads = await db.thread.findMany({
+  const found = await db.thread.findMany({
     where: { workspaceId: ws, OR: [{ leadId }, { id: { in: byAddress.map((m) => m.threadId) } }] },
     orderBy: [{ lastMessageAt: "asc" }, { id: "asc" }],
     include: { messages: { orderBy: [{ sentAt: "asc" }, { id: "asc" }] } },
   });
+  // another lead's thread shows only the messages that name this address; its notes stay out
+  const involves = (m: { fromEmail: string; to: string[]; cc: string[] }) =>
+    m.fromEmail === lead.email || m.to.includes(lead.email) || m.cc.includes(lead.email);
+  const threads = found.map((t) =>
+    t.leadId && t.leadId !== leadId ? { ...t, messages: t.messages.filter(involves) } : t,
+  );
+  const ownThreads = found.filter((t) => t.leadId === leadId).map((t) => t.id);
   const [notes, tasks, opportunities, events] = await Promise.all([
     db.note.findMany({
-      where: { workspaceId: ws, OR: [{ leadId }, { threadId: { in: threads.map((t) => t.id) } }] },
+      where: { workspaceId: ws, OR: [{ leadId }, { threadId: { in: ownThreads } }] },
       orderBy: { createdAt: "asc" },
     }),
     db.task.findMany({ where: { workspaceId: ws, leadId }, orderBy: { createdAt: "asc" } }),

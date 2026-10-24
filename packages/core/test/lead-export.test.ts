@@ -108,3 +108,51 @@ test("another workspace's lead is a 404; after gdprDeleteLead the export is a 40
   await gdprDeleteLead(P(), fixedClock(T), ws, lead.id, "u1");
   await expect(exportLeadData(P(), ws, lead.id)).rejects.toMatchObject({ status: 404 });
 });
+
+test("a foreign lead's thread that cc'd this lead once exposes only that message and none of the foreign notes", async () => {
+  const acct = await seedAccount(P(), null, `cc${n++}@mine.test`);
+  const ws = acct.workspaceId;
+  const a = await P().lead.create({ data: { workspaceId: ws, email: "a@acme.test" } });
+  const b = await P().lead.create({ data: { workspaceId: ws, email: "b@acme.test" } });
+  const thread = await P().thread.create({
+    data: {
+      workspaceId: ws,
+      accountId: acct.id,
+      subject: "B deal",
+      leadId: b.id,
+      lastMessageAt: T,
+    },
+  });
+  const msg = (text: string, cc: string[]) =>
+    P().message.create({
+      data: {
+        workspaceId: ws,
+        accountId: acct.id,
+        threadId: thread.id,
+        rfcMessageId: `<cc${n++}@x>`,
+        folder: "INBOX",
+        sentAt: T,
+        kind: "REPLY",
+        direction: "IN",
+        fromEmail: "b@acme.test",
+        to: [acct.email],
+        cc,
+        subject: "B deal",
+        text,
+      },
+    });
+  await msg("b private pricing", []);
+  await msg("looping in a", ["a@acme.test"]);
+  await P().note.create({
+    data: { workspaceId: ws, threadId: thread.id, body: "b internal note" },
+  });
+  await P().note.create({ data: { workspaceId: ws, leadId: b.id, body: "b lead note" } });
+  const out = await exportLeadData(P(), ws, a.id);
+  expect(out.threads.map((t) => t.messages.map((m) => m.text))).toEqual([["looping in a"]]);
+  expect(out.notes).toEqual([]);
+  expect(JSON.stringify(out)).not.toMatch(/private pricing|internal note|lead note/);
+  // the thread's own lead still gets everything
+  const own = await exportLeadData(P(), ws, b.id);
+  expect(own.threads[0]!.messages).toHaveLength(2);
+  expect(own.notes).toHaveLength(2);
+});

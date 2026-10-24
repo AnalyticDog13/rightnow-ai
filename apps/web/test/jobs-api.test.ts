@@ -258,4 +258,79 @@ describe("background jobs, audit log, tags, members and lead export routes", () 
       ).status,
     ).toBe(403);
   });
+
+  it("a filter bulk with a bad value is a 400 like the ids path, and queues nothing", async () => {
+    const before = await db.prisma.backgroundJob.count();
+    for (const body of [
+      { filter: { tag: "x" }, action: "add_tags", value: null },
+      { ids: ["a"], action: "add_tags", value: null },
+    ])
+      expect((await bulk.POST(req("POST", "leads/bulk", body))).status).toBe(400);
+    expect(await db.prisma.backgroundJob.count()).toBe(before);
+  });
+
+  it("expectIsolated through the routes: tags, members, jobs/[id] and the lead export", async () => {
+    const keys = new Map<string, string>();
+    const as = async (ws: string) => {
+      if (!keys.has(ws))
+        keys.set(
+          ws,
+          (
+            await core.createApiKey(db.prisma, ws, "iso", [
+              "workspace:read",
+              "jobs:read",
+              "leads:read",
+            ])
+          ).token,
+        );
+      return bearer(keys.get(ws)!);
+    };
+    const ids = { job: "", lead: "" };
+    const iso = (
+      seed: (ws: string) => Promise<unknown>,
+      read: (ws: string) => Promise<unknown[]>,
+    ) => expectIsolated({ prisma: db.prisma, seed, read });
+
+    await iso(
+      async (ws) => {
+        await mkLead(ws, "t@iso.test", { tags: ["iso-tag"] });
+      },
+      async (ws) =>
+        (await json(await tags.GET(req("GET", "tags?kind=lead", undefined, await as(ws))))).tags,
+    );
+    await iso(
+      async (ws) => {
+        const user = await db.prisma.user.create({
+          data: { id: `u-${ws}`, name: "U", email: `${ws}@iso.test` },
+        });
+        await db.prisma.member.create({
+          data: { id: `m-${ws}`, workspaceId: ws, userId: user.id, role: "member" },
+        });
+      },
+      async (ws) =>
+        (await json(await members.GET(req("GET", "members", undefined, await as(ws))))).members,
+    );
+    // B asks for A's id: a 404 reads as nothing
+    await iso(
+      async (ws) => {
+        ids.job = (await core.createJob(db.prisma, ws, null, "nope", {})).jobId;
+      },
+      async (ws) => {
+        const r = await job.GET(req("GET", `jobs/${ids.job}`, undefined, await as(ws)), p(ids.job));
+        return r.status === 200 ? [await json(r)] : [];
+      },
+    );
+    await iso(
+      async (ws) => {
+        ids.lead = (await mkLead(ws, "e@iso.test")).id;
+      },
+      async (ws) => {
+        const r = await exportRoute.GET(
+          req("GET", `leads/${ids.lead}/export`, undefined, await as(ws)),
+          p(ids.lead),
+        );
+        return r.status === 200 ? [await json(r)] : [];
+      },
+    );
+  });
 });

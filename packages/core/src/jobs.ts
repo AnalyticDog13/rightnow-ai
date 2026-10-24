@@ -18,6 +18,7 @@ type Handler = (
 const STALE_MS = 5 * 60_000;
 const MAX_RESETS = 3;
 const CHUNK = 500;
+class Superseded extends Error {}
 
 /** D45: long operations are queued here and answered with 202 {jobId}; the `background-jobs` worker runs them. */
 export async function createJob(
@@ -51,6 +52,7 @@ export const JOB_HANDLERS: Record<string, Handler> = {
     let after: string | undefined;
     let done = 0;
     let affected = 0;
+    await progress(0); // starts the heartbeat before the first chunk
     while (!signal.aborted) {
       const rows = await prisma.lead.findMany({
         where: { AND: [where, ...(after ? [{ id: { gt: after } }] : [])] },
@@ -119,11 +121,10 @@ export async function runNextJob(
   await resetStaleJobs(prisma, clock);
   const job = await claim(prisma, clock);
   if (!job) return null;
+  // fence (R13): a run that was reset and re-claimed has a stale `attempts` and writes nothing to the new run
+  const mine = { id: job.id, status: "RUNNING" as const, attempts: job.attempts };
   const end = (data: Prisma.BackgroundJobUpdateManyMutationInput) =>
-    prisma.backgroundJob.updateMany({
-      where: { id: job.id, status: "RUNNING" },
-      data: { ...data, finishedAt: clock.now() },
-    });
+    prisma.backgroundJob.updateMany({ where: mine, data: { ...data, finishedAt: clock.now() } });
   const handler = JOB_HANDLERS[job.kind];
   if (!handler) {
     await end({ status: "FAILED", error: "unknown_kind" });
@@ -135,17 +136,18 @@ export async function runNextJob(
       clock,
       job,
       async (pct) => {
-        await prisma.backgroundJob.updateMany({
-          where: { id: job.id, status: "RUNNING" },
+        const r = await prisma.backgroundJob.updateMany({
+          where: mine,
           data: { progress: pct, updatedAt: clock.now() },
         });
+        if (!r.count) throw new Superseded();
       },
       signal,
     );
     if (!signal.aborted) await end({ status: "DONE", progress: 100, result: result as never });
   } catch (e) {
-    // on shutdown the job stays RUNNING: the stale reset requeues it
-    if (signal.aborted) return job.id;
+    // on shutdown the job stays RUNNING (the stale reset requeues it); a superseded run just stops
+    if (signal.aborted || e instanceof Superseded) return job.id;
     if (!(e instanceof AccountError)) console.error("background job failed", job.id, e);
     await end({ status: "FAILED", error: e instanceof AccountError ? e.message : "job_failed" });
   }
