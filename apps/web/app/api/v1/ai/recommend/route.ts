@@ -11,7 +11,7 @@ export const POST = route(
   { auth: "session-or-apikey", scope: "ai:write", body: recommendInput },
   (c) =>
     run(async () => {
-      requireScopes(c.scopes, "leads:read", "inbox:read"); // I1: the key also reads what the model is shown
+      requireScopes(c.scopes, "leads:read", "inbox:read", "crm:create"); // I1: reads the thread, creates tasks
       if (c.body.opportunityId) requireScopes(c.scopes, "crm:read"); // the model is shown the deal
       return recommend(prisma, systemClock, c.workspaceId, c.body, outEnv());
     }),

@@ -72,6 +72,13 @@ describe("openapi document", () => {
     expect(api).toBe(script.withRouteTable(api, committed()));
   }, 120_000);
 
+  it("x-also-scopes: a route's alsoScopes are listed beside x-scope and in the API.md table", () => {
+    const op = committed().paths["/inbox/views"].get;
+    expect(op).toMatchObject({ "x-scope": "inbox:read", "x-also-scopes": ["leads:read"] });
+    const api = readFileSync(join(root, "docs/API.md"), "utf8");
+    expect(api).toContain("| GET | `/inbox/views` | VIEWER | `inbox:read` or `leads:read` |");
+  });
+
   it("coverage: every route.ts method is a path (no %5F routes)", () => {
     const dir = join(root, "apps/web/app/api/v1");
     const files = (readdirSync(dir, { recursive: true }) as string[]).filter((f) =>

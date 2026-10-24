@@ -132,3 +132,22 @@ test("notes, tasks and deals", async () => {
   });
   expect(t.filter((e) => e.kind === "note")).toHaveLength(1);
 });
+
+test("round C: an API key without crm:read gets no notes, tasks or deals, as the export omits them", async () => {
+  const p = db.prisma;
+  const s = await seedCampaign(p, { at: new Date("2026-10-20T10:00:00Z"), rows: 1 });
+  const { lead } = s.leads[0]!;
+  const clock = fixedClock(new Date("2026-10-21T10:00:00Z"));
+  await p.note.create({ data: { workspaceId: s.ws, leadId: lead.id, body: "rang", kind: "call" } });
+  await createTask(p, clock, s.ws, "u1", { leadId: lead.id, title: "follow up" });
+  await createOpportunity(p, clock, s.ws, "u1", { leadId: lead.id });
+  const crm = ["note", "task", "opportunity"];
+  const bare = await leadTimeline(p, s.ws, lead.id, { scopes: ["leads:read"] });
+  expect(bare.length).toBeGreaterThan(0);
+  expect(bare.filter((e) => crm.includes(e.kind))).toEqual([]);
+  const withCrm = await leadTimeline(p, s.ws, lead.id, { scopes: ["leads:read", "crm:read"] });
+  expect(withCrm.map((e) => e.kind)).toEqual(expect.arrayContaining(crm));
+  expect((await leadTimeline(p, s.ws, lead.id)).map((e) => e.kind)).toEqual(
+    expect.arrayContaining(crm),
+  );
+});

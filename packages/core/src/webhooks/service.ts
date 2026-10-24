@@ -7,6 +7,7 @@ import { scopeAllows } from "../apikeys";
 import { audit } from "../audit";
 import type { Clock } from "../clock";
 import { decrypt, encrypt } from "../crypto";
+import { isLeadKey } from "./payload";
 import { postWebhook } from "./deliver";
 import { LEADLESS_EVENTS, REPLY_EVENTS, WEBHOOK_EVENTS } from "./events";
 
@@ -304,11 +305,15 @@ export async function listDeliveries(
     ...(p.cursor && { cursor: { id: p.cursor } }),
   });
   const next = deliveries.length > take ? deliveries.pop()! : null;
-  // fix I3: message bodies are inbox data; an API key without inbox:read sees the payload without them
-  if (c.scopes && !scopeAllows(c.scopes, "inbox:read"))
+  // fix I3: message bodies are inbox data; round C: the lead's fields are lead data
+  const noBody = c.scopes && !scopeAllows(c.scopes, "inbox:read");
+  const noLead = c.scopes && !scopeAllows(c.scopes, "leads:read");
+  if (noBody || noLead)
     for (const d of deliveries)
       d.payload = Object.fromEntries(
-        Object.entries(d.payload as Prisma.JsonObject).filter(([k]) => !BODY.test(k)),
+        Object.entries(d.payload as Prisma.JsonObject).filter(
+          ([k]) => !(noBody && BODY.test(k)) && !(noLead && isLeadKey(k)),
+        ),
       );
   return { deliveries, nextCursor: next?.id ?? null };
 }

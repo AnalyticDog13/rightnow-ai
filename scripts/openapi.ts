@@ -72,6 +72,7 @@ export async function buildOpenApi(): Promise<Json> {
             : [{ session: [] }, { apiKey: [] }],
       "x-role": roleOf(method, meta.role),
       ...(meta.scope && { "x-scope": meta.scope }),
+      ...(meta.alsoScopes && { "x-also-scopes": meta.alsoScopes }),
       ...(parameters.length && { parameters }),
       ...(meta.body && {
         requestBody: {
@@ -110,7 +111,9 @@ export function withRouteTable(api: string, doc: Json): string {
         ? "public"
         : sec.length === 1
           ? "session only"
-          : `\`${op["x-scope"]}\``;
+          : [op["x-scope"], ...((op["x-also-scopes"] as string[] | undefined) ?? [])]
+              .map((s) => `\`${s}\``)
+              .join(" or ");
       return `| ${method.toUpperCase()} | \`${path}\` | ${op["x-role"]} | ${scope} |`;
     }),
   );

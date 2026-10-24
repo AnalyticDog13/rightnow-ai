@@ -230,7 +230,9 @@ describe("webhook routes", () => {
           await deliveries.GET(req("GET", `webhooks/${w.id}/deliveries`, undefined, h), p(w.id)),
         )) as { deliveries: { payload: Record<string, unknown> }[] }
       ).deliveries[0]!.payload;
-    expect(await get(bearer(readKey))).toEqual({
+    // round C: a webhooks:read-only key sees neither bodies nor the lead's fields
+    expect(await get(bearer(readKey))).toEqual({ event_type: "reply_received" });
+    expect(await get(bearer(await keyWith(["webhooks:read", "leads:read"])))).toEqual({
       event_type: "reply_received",
       lead_email: "a@b.test",
     });

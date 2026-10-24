@@ -1280,6 +1280,10 @@ describe("fix round 1", () => {
       payload: {
         event_type: "reply_received",
         lead_email: "a@b.test",
+        first_name: "Ann",
+        company_name: "Acme",
+        plan: "pro",
+        step: 1,
         reply_text: "secret",
         reply_html: "<p>secret</p>",
         reply_subject: "Re",
@@ -1290,12 +1294,27 @@ describe("fix round 1", () => {
     });
     const shown = async (c?: { scopes?: string[] }) =>
       (await listDeliveries(P(), w.ws, W.id, {}, c)).deliveries[0]!.payload;
-    expect(await shown({ scopes: ["webhooks:read"] })).toEqual({
+    expect(await shown({ scopes: ["webhooks:read", "leads:read"] })).toEqual({
       event_type: "reply_received",
       lead_email: "a@b.test",
+      first_name: "Ann",
+      company_name: "Acme",
+      plan: "pro",
+      step: 1,
     });
-    expect(await shown({ scopes: ["webhooks:read", "inbox:read"] })).toMatchObject({
+    // round C: without leads:read the lead's address, standard fields and custom fields go too
+    expect(await shown({ scopes: ["webhooks:read"] })).toEqual({
+      event_type: "reply_received",
+      step: 1,
+    });
+    expect(await shown({ scopes: ["webhooks:read", "inbox:read"] })).toEqual({
+      event_type: "reply_received",
+      step: 1,
       reply_text: "secret",
+      reply_html: "<p>secret</p>",
+      reply_subject: "Re",
+      reply_text_snippet: "secret",
+      email_text: "body",
       email_html: "<p>body</p>",
     });
     expect(await shown()).toMatchObject({ reply_text: "secret" }); // a session user

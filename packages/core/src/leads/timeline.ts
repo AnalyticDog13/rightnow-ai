@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@rightnow/db/client";
+import { scopeAllows } from "../apikeys";
 import { crmActivity } from "../crm/activity";
 import { hashValue } from "./suppression";
 
@@ -22,11 +23,16 @@ export type TimelineEntry = {
   detail: Record<string, unknown>;
 };
 
-/** PS-LEAD-19 (P3 part): everything that happened to a lead, newest first. P4 adds opens, clicks, replies, bounces and unsubscribes (Event), P6 notes, tasks and deals. */
+/**
+ * PS-LEAD-19 (P3 part): everything that happened to a lead, newest first. P4 adds opens, clicks, replies, bounces and
+ * unsubscribes (Event), P6 notes, tasks and deals. As the export (I2): an API key (`c.scopes`) without `crm:read` gets
+ * no notes, tasks or deals; no entry carries message text, so nothing depends on `inbox:read`.
+ */
 export async function leadTimeline(
   prisma: PrismaClient,
   ws: string,
   leadId: string,
+  c: { scopes?: string[] } = {},
 ): Promise<TimelineEntry[]> {
   const lead = await prisma.lead.findFirst({ where: { id: leadId, workspaceId: ws } });
   if (!lead) return [];
@@ -72,7 +78,9 @@ export async function leadTimeline(
     }),
     // notes, tasks and deals as the CRM feed has them, merged-away leads included
     // shortcut: the newest 200 CRM items; page crmActivity if a lead ever has more
-    crmActivity(prisma, ws, { leadId, take: 200 }),
+    !c.scopes || scopeAllows(c.scopes, "crm:read")
+      ? crmActivity(prisma, ws, { leadId, take: 200 })
+      : { items: [] },
   ]);
   const out: TimelineEntry[] = [];
   for (const e of engaged) {

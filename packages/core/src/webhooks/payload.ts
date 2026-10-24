@@ -39,6 +39,9 @@ const STANDARD_FIELDS: ReadonlySet<string> = new Set([
   "reply_html",
   "reply_text_snippet",
 ]);
+/** Round C: the lead's part of a payload (its address, standard fields and custom fields, i.e. any non-standard key). */
+export const isLeadKey = (k: string) =>
+  k === "lead_email" || LEAD_FIELDS.some(([, out]) => out === k) || !STANDARD_FIELDS.has(k);
 // M6: a rendered unsubscribe link is a working token; a third party never gets it
 const unsub = (s: string) => s.replace(/[^\s"'<>()]*\/u\/[A-Za-z0-9._~%-]+/g, "[unsubscribe link]");
 

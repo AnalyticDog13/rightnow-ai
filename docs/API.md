@@ -21,6 +21,16 @@ when they differ, `openapi.json` wins.
 - Creating or editing an automation rule or webhook with a key also needs the scopes of what it does (for example a
   `suppress_contact` action needs `blocklist:write`; a webhook for reply events needs `inbox:read`): 403
   `scope_required:<scope>`.
+- A route marked `a` or `b` in the table takes either scope; the handler enforces the one the request needs (saved
+  views: `inbox:*` or `leads:*`). Some routes also need the scopes of the data they read or write: the AI routes
+  (`inbox:read` for thread input, `leads:read` for lead input, `leads:update` for `score`, `crm:create` for `recommend`),
+  and webhook create/update (`inbox:read` for reply events, `leads:read` for lead events).
+- Reads trim what a key may not see instead of refusing. `GET /leads/{id}/export` leaves out `threads` without
+  `inbox:read` and notes, tasks and deals without `crm:read`, and names them in `omitted` (e.g.
+  `"omitted": ["threads", "crm"]`). `GET /leads/{id}/timeline` drops its note, task and deal entries without
+  `crm:read`. `GET /webhooks/{id}/deliveries` drops body fields without `inbox:read` and the lead's fields (address,
+  standard and custom fields) without `leads:read`. `GET /ai/suggestions` hides thread-derived kinds without
+  `inbox:read` and PERSONALIZATION and the `lead` block without `leads:read`.
 
 ## Errors
 
@@ -310,10 +320,10 @@ An official SDK, a CLI and an MCP server are not provided (PS-AUTO-14); generate
 | POST | `/inbox/threads/{id}/reply` | MEMBER | `inbox:write` |
 | POST | `/inbox/threads/bulk` | MEMBER | `inbox:write` |
 | GET | `/inbox/unread-count` | VIEWER | `inbox:read` |
-| GET | `/inbox/views` | VIEWER | `inbox:read` |
-| POST | `/inbox/views` | MEMBER | `inbox:write` |
-| PATCH | `/inbox/views/{id}` | MEMBER | `inbox:write` |
-| DELETE | `/inbox/views/{id}` | MEMBER | `inbox:write` |
+| GET | `/inbox/views` | VIEWER | `inbox:read` or `leads:read` |
+| POST | `/inbox/views` | MEMBER | `inbox:write` or `leads:create` |
+| PATCH | `/inbox/views/{id}` | MEMBER | `inbox:write` or `leads:update` |
+| DELETE | `/inbox/views/{id}` | MEMBER | `inbox:write` or `leads:delete` |
 | GET | `/invites` | ADMIN | session only |
 | POST | `/invites` | ADMIN | session only |
 | DELETE | `/invites/{id}` | ADMIN | session only |

@@ -8929,6 +8929,9 @@
         ],
         "x-role": "VIEWER",
         "x-scope": "inbox:read",
+        "x-also-scopes": [
+          "leads:read"
+        ],
         "parameters": [
           {
             "name": "scope",
@@ -8964,6 +8967,9 @@
         ],
         "x-role": "MEMBER",
         "x-scope": "inbox:write",
+        "x-also-scopes": [
+          "leads:create"
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -9175,6 +9181,9 @@
         ],
         "x-role": "MEMBER",
         "x-scope": "inbox:write",
+        "x-also-scopes": [
+          "leads:update"
+        ],
         "parameters": [
           {
             "name": "id",
@@ -9390,6 +9399,9 @@
         ],
         "x-role": "MEMBER",
         "x-scope": "inbox:write",
+        "x-also-scopes": [
+          "leads:delete"
+        ],
         "parameters": [
           {
             "name": "id",

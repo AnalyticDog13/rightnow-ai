@@ -45,7 +45,7 @@ type Ctx<B extends z.ZodType, Q extends z.ZodType, A extends Auth> = {
 /** What `route()` declares, read by `scripts/openapi.ts` and the scope audit. */
 export type RouteMeta = Pick<
   Opts<z.ZodType, z.ZodType, Auth>,
-  "body" | "query" | "role" | "scope"
+  "body" | "query" | "role" | "scope" | "alsoScopes"
 > & {
   auth: Auth;
 };
@@ -145,6 +145,7 @@ export function route<
     auth: opts.auth ?? "session",
     role: opts.role,
     scope: opts.scope,
+    alsoScopes: opts.alsoScopes,
     body: opts.body,
     query: opts.query,
   };

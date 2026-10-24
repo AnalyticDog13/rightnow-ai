@@ -106,7 +106,10 @@ export const aiFeedbackInput = z.strictObject({ vote: z.union([z.literal(1), z.l
 /** Kinds made from a thread's messages: an API key without `inbox:read` does not see them (I1). */
 const THREAD_KINDS: AiSuggestionKind[] = ["SUMMARY", "REPLY_DRAFT", "FOLLOWUP"];
 
-/** `c.scopes` is set for an API key: no thread-derived kinds without `inbox:read`, no `lead` without `leads:read`. */
+/**
+ * `c.scopes` is set for an API key: no thread-derived kinds without `inbox:read`; without `leads:read` no `lead` block
+ * and no PERSONALIZATION (its text is written from the lead's fields).
+ */
 export async function listSuggestions(
   db: Db,
   ws: string,
@@ -114,17 +117,21 @@ export async function listSuggestions(
   c: { scopes?: string[] } = {},
 ) {
   const { cursor, take = 50, ...f } = suggestionQuery.parse(input);
-  const noThreads = c.scopes && !scopeAllows(c.scopes, "inbox:read");
+  const has = (s: string) => !c.scopes || scopeAllows(c.scopes, s);
+  const hidden: AiSuggestionKind[] = [
+    ...(has("inbox:read") ? [] : THREAD_KINDS),
+    ...(has("leads:read") ? [] : (["PERSONALIZATION"] as const)),
+  ];
   const where = {
     workspaceId: ws,
     ...f,
-    ...(noThreads && { AND: [{ kind: { notIn: THREAD_KINDS } }] }),
+    ...(hidden.length && { AND: [{ kind: { notIn: hidden } }] }),
   };
   const [rows, total] = await Promise.all([
     db.aiSuggestion.findMany({
       where,
       // who the text is for: the reviewer must see it (the lead's email, name and company, nothing else)
-      ...((!c.scopes || scopeAllows(c.scopes, "leads:read")) && {
+      ...(has("leads:read") && {
         include: {
           lead: { select: { email: true, firstName: true, lastName: true, companyName: true } },
         },

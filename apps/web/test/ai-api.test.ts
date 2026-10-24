@@ -186,6 +186,7 @@ describe("suggestions and feedback", () => {
     });
     const { lead, sug } = await seed();
     await sug("PERSONALIZATION", "P");
+    await sug("DRAFT", "D");
     for (const kind of ["SUMMARY", "REPLY_DRAFT", "FOLLOWUP"] as const)
       await db.prisma.aiSuggestion.create({
         data: { workspaceId, kind, text: "thread text", leadId: lead.id },
@@ -197,15 +198,23 @@ describe("suggestions and feedback", () => {
         ),
       );
     const bare = await get(["ai:read"]);
-    expect(bare.suggestions.map((s: { kind: string }) => s.kind)).toEqual(["PERSONALIZATION"]);
+    // round C: PERSONALIZATION text is lead data too
+    expect(bare.suggestions.map((s: { kind: string }) => s.kind)).toEqual(["DRAFT"]);
     expect(bare.total).toBe(1);
     expect(bare.suggestions[0].lead).toBeUndefined();
+    const inbox = await get(["ai:read", "inbox:read"]);
+    expect(inbox.suggestions.map((s: { kind: string }) => s.kind).sort()).toEqual([
+      "DRAFT",
+      "FOLLOWUP",
+      "REPLY_DRAFT",
+      "SUMMARY",
+    ]);
     const full = await get(["ai:read", "inbox:read", "leads:read"]);
-    expect(full.suggestions).toHaveLength(4);
+    expect(full.suggestions).toHaveLength(5);
     expect(full.suggestions[0].lead).toMatchObject({ email: lead.email });
     // a session is unaffected
     const s = await json(await list.GET(req("GET", `ai/suggestions?leadId=${lead.id}`)));
-    expect(s.suggestions).toHaveLength(4);
+    expect(s.suggestions).toHaveLength(5);
     expect(s.suggestions[0].lead).toMatchObject({ email: lead.email });
   });
 
@@ -308,9 +317,9 @@ describe("feature routes", () => {
       ["summary", { threadId: "t" }, ["inbox:read"]],
       ["reply-draft", { threadId: "t" }, ["inbox:read"]],
       ["followup", { leadId: "l" }, ["leads:read", "inbox:read"]],
-      ["score", { leadId: "l" }, ["leads:read", "inbox:read"]],
-      ["recommend", { leadId: "l" }, ["leads:read", "inbox:read"]],
-      ["recommend", { opportunityId: "o" }, ["leads:read", "inbox:read", "crm:read"]],
+      ["score", { leadId: "l" }, ["leads:read", "inbox:read", "leads:update"]],
+      ["recommend", { leadId: "l" }, ["leads:read", "inbox:read", "crm:create"]],
+      ["recommend", { opportunityId: "o" }, ["leads:read", "inbox:read", "crm:create", "crm:read"]],
       ["personalize", { leadIds: ["l"] }, ["leads:read"]],
     ];
     for (const [name, body, extra] of needs) {

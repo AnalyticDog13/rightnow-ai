@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 /** Model text is stored for review (D47); nothing is sent. 412 `ai_not_configured` while AI is off. */
 export const POST = route({ auth: "session-or-apikey", scope: "ai:write", body: scoreInput }, (c) =>
   run(async () => {
-    requireScopes(c.scopes, "leads:read", "inbox:read"); // I1: the key also reads what the model is shown
+    requireScopes(c.scopes, "leads:read", "inbox:read", "leads:update"); // I1: reads the thread, writes aiScore
     return score(prisma, systemClock, c.workspaceId, c.body, outEnv());
   }),
 );
