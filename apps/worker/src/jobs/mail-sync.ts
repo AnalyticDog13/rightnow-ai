@@ -7,16 +7,18 @@ import {
   type Env,
   type SyncDeps,
 } from "@rightnow/core";
+import { setTimeout as sleep } from "node:timers/promises";
 import type { PrismaClient } from "@rightnow/db/client";
 import type { JobDef } from "../boss";
 
-/** P4-T05: syncs the due mailboxes and writes the freshness watermark the claim's gate reads (D16). */
+/** P4-T05: syncs the due mailboxes and writes the freshness watermark the claim's gate reads (D16), then re-checks for push requests until `loop.ms`. */
 export async function mailSync(
   prisma: PrismaClient,
   clock: Clock,
   env: Pick<Env, "SYNC_POLL_SEC" | "SYNC_MAX_STALENESS_SEC"> = getEnv(),
   providerFor: SyncDeps["providerFor"] = async (a) => createProvider(a, { prisma, clock }),
   signal?: AbortSignal,
+  loop = { ms: 50_000, pauseMs: 5_000 },
 ) {
   const allowPrivate = getEnv().ALLOW_PRIVATE_HTTP_HOSTS === "1";
   // one classifier per workspace for the whole run, not per mailbox (D47)
@@ -26,7 +28,22 @@ export async function mailSync(
       classifiers.set(ws, aiClassifierFor(prisma, clock, ws, { allowPrivate }));
     return classifiers.get(ws)!;
   };
-  return syncDue(prisma, clock, { providerFor, env, aiClassifyFor }, { maxMs: 50_000, signal });
+  const deps = { providerFor, env, aiClassifyFor };
+  const end = Date.now() + loop.ms;
+  const out = await syncDue(prisma, clock, deps, { maxMs: loop.ms, signal });
+  // D48: push-requested accounts are picked up every 5 s for the rest of the tick
+  while (!signal?.aborted && Date.now() + loop.pauseMs < end) {
+    await sleep(loop.pauseMs, undefined, { signal }).catch(() => {});
+    if (signal?.aborted) break;
+    const r = await syncDue(prisma, clock, deps, {
+      maxMs: end - Date.now(),
+      signal,
+      requestedOnly: true,
+    });
+    out.synced += r.synced;
+    out.failed += r.failed;
+  }
+  return out;
 }
 
 export const mailSyncJob: JobDef = {

@@ -16,7 +16,14 @@ import { withTxRetry } from "../dispatch";
 import { computeLifecycle } from "../deliverability/lifecycle";
 import { warmupReceipt } from "../deliverability/warmup";
 import { classify, type AiClassifier } from "./classify";
-import { codeOf, ingestMessage, sanitizeRemote, syntheticMessageId } from "./ingest";
+import {
+  codeOf,
+  droppable,
+  ingestMessage,
+  matchFor,
+  sanitizeRemote,
+  syntheticMessageId,
+} from "./ingest";
 import { applyInbound } from "./stoprules";
 
 export type SyncDeps = {
@@ -99,6 +106,12 @@ export async function reconcileAccount(
   });
   if (!got.count) return "skipped";
   const acct = await prisma.emailAccount.findUniqueOrThrow({ where: { id: accountId } });
+  const dropNonLead = !(
+    await prisma.workspace.findUniqueOrThrow({
+      where: { id: acct.workspaceId },
+      select: { storeNonLeadMail: true },
+    })
+  ).storeNonLeadMail;
   const own = { id: accountId, syncLeaseId: lease };
   /** Lease-conditional write that also renews the lease (I6). */
   const save = async (data: Prisma.EmailAccountUpdateManyMutationInput) => {
@@ -125,6 +138,7 @@ export async function reconcileAccount(
         await ingestOne(prisma, clock, acct, m, historical, await ai(), {
           random: deps.random,
           renew: () => save({}),
+          dropNonLead,
         });
       } catch (e) {
         if (e instanceof LeaseLost) throw e;
@@ -356,7 +370,12 @@ async function ingestOne(
   m: RemoteMessage,
   historical: boolean,
   ai?: AiClassifier,
-  o: { random?: () => number; original?: RemoteMessage; renew?: () => Promise<void> } = {},
+  o: {
+    random?: () => number;
+    original?: RemoteMessage;
+    renew?: () => Promise<void>;
+    dropNonLead?: boolean;
+  } = {},
 ) {
   const direction = m.from.email.toLowerCase() === acct.email.toLowerCase() ? "OUT" : "IN";
   let c = classify(m, { now: m.date, direction });
@@ -377,7 +396,14 @@ async function ingestOne(
       : c.kind === "AUTO_REPLY" && c.category === "OUT_OF_OFFICE" && !c.oooUntil
         ? "ooo"
         : null;
-  if (ai && want && !historical && !(await stored())) {
+  // R19: discarded mail never reaches the AI; ingestMessage re-checks inside its transaction
+  const drop = async () =>
+    !!o.dropNonLead &&
+    droppable(acct, m, c) &&
+    (await prisma
+      .$transaction((tx) => matchFor(tx, acct, m))
+      .then((x) => !x.threadId && !x.leadId));
+  if (ai && want && !historical && !(await stored()) && !(await drop())) {
     // raced, not trusted to honour the signal: a hung classifier must not hold the run
     let timer: NodeJS.Timeout | undefined;
     const r = await Promise.race([
@@ -406,7 +432,7 @@ async function ingestOne(
   const once = () =>
     withTxRetry(() =>
       prisma.$transaction(async (tx) => {
-        const r = await ingestMessage(tx, acct, m, c, { historical });
+        const r = await ingestMessage(tx, acct, m, c, { historical, dropNonLead: o.dropNonLead });
         if (r.created)
           await applyInbound(tx, clock, {
             workspaceId: acct.workspaceId,
@@ -435,23 +461,28 @@ async function ingestOne(
 /**
  * Syncs the due accounts, 4 at a time: live, with credentials, not NEEDS_ATTENTION, lease free, and never attempted, or
  * whose last run stopped early (`SYNCING`), or attempted at least SYNC_POLL_SEC ago (after errors:
- * min(SYNC_POLL_SEC · 2^(syncErrors−1), 1800) s). No new account starts after `maxMs` or once `signal` fired.
+ * min(SYNC_POLL_SEC · 2^(syncErrors−1), 1800) s), or with a push request newer than its last attempt (and no
+ * errors); `requestedOnly` takes only the latter. No new account starts after `maxMs` or once `signal` fired.
  */
 export async function syncDue(
   prisma: PrismaClient,
   clock: Clock,
   deps: SyncDeps,
-  o: { maxMs: number; signal?: AbortSignal } = { maxMs: 50_000 },
+  o: { maxMs: number; signal?: AbortSignal; requestedOnly?: boolean } = { maxMs: 50_000 },
 ): Promise<{ synced: number; failed: number }> {
   const now = clock.now().toISOString();
   const poll = deps.env.SYNC_POLL_SEC;
+  const polled = !o.requestedOnly;
+  // D48: a push request (set after the last attempt began) is due at once, unless the account is backing off
   const due = await prisma.$queryRaw<{ id: string }[]>`
     SELECT id FROM "EmailAccount"
     WHERE "deletedAt" IS NULL AND "credentialsEnc" IS NOT NULL AND lifecycle <> 'NEEDS_ATTENTION'
       AND ("syncLeaseUntil" IS NULL OR "syncLeaseUntil" < ${now}::timestamp)
-      AND ("lastSyncAttemptAt" IS NULL OR "syncState" = 'SYNCING'
+      AND ((${polled} AND ("lastSyncAttemptAt" IS NULL OR "syncState" = 'SYNCING'
            OR "lastSyncAttemptAt" <= ${now}::timestamp - make_interval(secs =>
-                LEAST(${poll}::int * power(2, GREATEST("syncErrors" - 1, 0)), ${MAX_BACKOFF_SEC}::int)))
+                LEAST(${poll}::int * power(2, GREATEST("syncErrors" - 1, 0)), ${MAX_BACKOFF_SEC}::int))))
+        OR ("syncRequestedAt" IS NOT NULL AND "syncErrors" = 0
+            AND ("lastSyncAttemptAt" IS NULL OR "syncRequestedAt" > "lastSyncAttemptAt")))
     ORDER BY "lastSyncAttemptAt" ASC NULLS FIRST, id`;
   const signal = AbortSignal.any([AbortSignal.timeout(o.maxMs), ...(o.signal ? [o.signal] : [])]);
   const out = { synced: 0, failed: 0 };

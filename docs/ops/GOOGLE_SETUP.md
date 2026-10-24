@@ -42,6 +42,18 @@ Email Accounts > Connect Google. Tick both permission boxes. If you untick one, 
 
 The session cookie must stay `SameSite=Lax` (the default): Google redirects back as a cross-site top-level navigation, and `Strict` would make you look signed out on return.
 
+## 5. Push notifications (optional, VPS only)
+
+Without this, mailboxes are polled every `SYNC_POLL_SEC` (2 min). With it, new mail is synced within seconds. Polling keeps running either way (the freshness gate needs it).
+
+1. In the same Cloud project enable the **Cloud Pub/Sub API** and create a topic, e.g. `projects/<project>/topics/rightnow-gmail`.
+2. On the topic, Permissions > Add principal `gmail-api-push@system.gserviceaccount.com` with the role **Pub/Sub Publisher**. Without it the account drawer shows "Push: pubsub_permission".
+3. Create a service account (e.g. `rightnow-push@<project>.iam.gserviceaccount.com`). It needs no roles of its own; Pub/Sub signs the push tokens as it. The user who creates the subscription needs **Service Account User** on it.
+4. Create a **push** subscription on the topic: endpoint `${APP_URL}/api/push/gmail` (public https), **Enable authentication**, service account = the one from step 3, audience = the same endpoint URL (or a value you put in `GMAIL_PUSH_AUDIENCE`).
+5. In `.env` (with `MODE=vps`): `GMAIL_PUBSUB_TOPIC=projects/<project>/topics/rightnow-gmail`, `GMAIL_PUSH_SA_EMAIL=<service account email>`, and `GMAIL_PUSH_AUDIENCE` only if it differs from `${APP_URL}/api/push/gmail`. Restart; the `push-renew` job subscribes each Gmail mailbox within 30 min.
+
+Every push is checked: an RS256 token from Google's keys, issuer Google, the audience above, `email` = `GMAIL_PUSH_SA_EMAIL` and verified, not expired. Anything else gets 401. A valid push only marks the mailbox for a sync; the mail itself is always read by the sync job.
+
 ## Sending limits
 
 Google enforces its own daily limits per mailbox; we stay at half of them: free Gmail about 400 per rolling 24 h (we cap at 200 per day), Google Workspace about 1,500 (we cap at 750). The cap is set from the address domain (`gmail.com` / `googlemail.com` is free Gmail, anything else is Workspace).

@@ -11,7 +11,13 @@ import type { Classification } from "./classify";
 import { matchMessage, type Match } from "./match";
 
 type Tx = Prisma.TransactionClient;
-export type IngestResult = { created: boolean; messageId: string; threadId: string; match: Match };
+export type IngestResult = {
+  created: boolean;
+  dropped?: true;
+  messageId: string;
+  threadId: string;
+  match: Match;
+};
 
 /** "<sha256hex(from|iso date|subject|text[0..512])@rightnow.synthetic>": stable for a message without a Message-ID. */
 export function syntheticMessageId(
@@ -74,6 +80,29 @@ export function sanitizeRemote(m: RemoteMessage, fallback: Date): RemoteMessage 
   };
 }
 
+/** The thread and lead a provider message belongs to (read-only). */
+export function matchFor(
+  tx: Tx,
+  acct: Pick<EmailAccount, "id" | "workspaceId" | "email">,
+  m: RemoteMessage,
+): Promise<Match> {
+  const out = lower(m.from) === acct.email.toLowerCase();
+  return matchMessage(tx, acct.workspaceId, acct.id, {
+    inReplyTo: m.inReplyTo,
+    references: m.references,
+    providerThreadId: m.providerThreadId,
+    counterpart: out ? (m.to[0] ? lower(m.to[0]) : "") : lower(m.from),
+    subject: m.subject,
+    direction: out ? "OUT" : "IN",
+    ownId: m.rfcMessageId,
+    at: m.date,
+  });
+}
+
+/** Mail `storeNonLeadMail: false` may discard: inbound replies and auto-replies (never DSNs, ARFs, unsubscribes or our own). */
+export const droppable = (acct: Pick<EmailAccount, "email">, m: RemoteMessage, c: Classification) =>
+  lower(m.from) !== acct.email.toLowerCase() && (c.kind === "REPLY" || c.kind === "AUTO_REPLY");
+
 /**
  * Stores one provider message and puts it in a thread (matchMessage). A message already stored for the mailbox
  * (a Gmail label re-report, a UIDVALIDITY resync) only gets its providerMessageId/folder updated. The caller runs the
@@ -84,7 +113,7 @@ export async function ingestMessage(
   acct: Pick<EmailAccount, "id" | "workspaceId" | "email">,
   m: RemoteMessage,
   c: Classification,
-  o: { historical: boolean },
+  o: { historical: boolean; dropNonLead?: boolean },
 ): Promise<IngestResult> {
   const ws = acct.workspaceId;
   const synthetic = !m.rfcMessageId;
@@ -116,16 +145,10 @@ export async function ingestMessage(
   }
 
   const out = lower(m.from) === acct.email.toLowerCase();
-  const match = await matchMessage(tx, ws, acct.id, {
-    inReplyTo: m.inReplyTo,
-    references: m.references,
-    providerThreadId: m.providerThreadId,
-    counterpart: out ? (m.to[0] ? lower(m.to[0]) : "") : lower(m.from),
-    subject: m.subject,
-    direction: out ? "OUT" : "IN",
-    ownId: m.rfcMessageId,
-    at: m.date,
-  });
+  const match = await matchFor(tx, acct, m);
+  // PS-CRM-12: the workspace keeps no inbound reply that matches no thread and no lead
+  if (o.dropNonLead && droppable(acct, m, c) && !match.threadId && !match.leadId)
+    return { created: false, dropped: true, messageId: "", threadId: "", match };
   const own = out
     ? await tx.scheduledMessage.findFirst({
         where: { workspaceId: ws, rfcMessageId: rfc },

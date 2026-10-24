@@ -56,6 +56,8 @@ model Workspace {
   verifierKind         String                @default("mx") // "mx" | "http" (D38)
   verifierConfigEnc    String? // encrypted {url, apiKey, statusPath}
   aiConfigEnc          String? // encrypted AiConfig {baseUrl, apiKey, model, prices?, classifierEnabled} (D47)
+  // PS-CRM-12: false drops inbound replies from non-leads outside known threads (D48)
+  storeNonLeadMail     Boolean               @default(true)
   verifierLastError    String? // short reason code of the last verifier failure, never a body or key
   verifierLastErrorAt  DateTime?
   inactivityDays       Int                   @default(30) // 7 | 14 | 30 | 60 (D33)

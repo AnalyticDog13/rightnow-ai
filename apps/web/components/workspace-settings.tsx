@@ -16,6 +16,7 @@ export function WorkspaceSettings({
   perCompanyDailyLimit,
   disableOpenTracking,
   firstEmailTextOnly,
+  storeNonLeadMail,
 }: {
   timezone: string;
   physicalAddress: string;
@@ -23,6 +24,7 @@ export function WorkspaceSettings({
   perCompanyDailyLimit: number | null;
   disableOpenTracking: boolean;
   firstEmailTextOnly: boolean;
+  storeNonLeadMail: boolean;
 }) {
   const router = useRouter();
   const [msg, setMsg] = useState("");
@@ -40,6 +42,7 @@ export function WorkspaceSettings({
         perCompanyDailyLimit: cap(f.get("perCompanyDailyLimit")),
         disableOpenTracking: f.has("disableOpenTracking"),
         firstEmailTextOnly: f.has("firstEmailTextOnly"),
+        storeNonLeadMail: f.has("storeNonLeadMail"),
       }),
     });
     const j = (await res.json().catch(() => ({}))) as { error?: string };
@@ -99,6 +102,14 @@ export function WorkspaceSettings({
           <input type="checkbox" name="firstEmailTextOnly" defaultChecked={firstEmailTextOnly} />
           Send the first email of every sequence as plain text
         </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" name="storeNonLeadMail" defaultChecked={storeNonLeadMail} />
+          Save emails from non-leads
+        </label>
+        <p className="-mt-3 text-xs text-muted-foreground">
+          When off, replies from people who are not leads and not in a known thread are not saved.
+          Bounces and unsubscribes are always processed.
+        </p>
         <div className="flex items-center gap-3">
           <Button type="submit">Save</Button>
           <p role="status" className="text-sm">

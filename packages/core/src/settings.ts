@@ -22,7 +22,12 @@ const patch = z.strictObject({
   autoRewarm: z.enum(["OFF", "RECOMMEND", "AUTO"]).optional(),
   rewarmExitCleanDays: z.number().int().min(1).max(30).optional(),
   // D40: one currency per workspace (ISO 4217); fixed while a deal carries money (Rev 2 M12)
-  currency: z.string().regex(/^[A-Z]{3}$/, "invalid_currency").optional(),
+  currency: z
+    .string()
+    .regex(/^[A-Z]{3}$/, "invalid_currency")
+    .optional(),
+  // PS-CRM-12 (D48): false drops inbound replies from non-leads outside known threads
+  storeNonLeadMail: z.boolean().optional(),
 });
 const SELECT = {
   timezone: true,
@@ -37,6 +42,7 @@ const SELECT = {
   autoRewarm: true,
   rewarmExitCleanDays: true,
   currency: true,
+  storeNonLeadMail: true,
 } as const;
 
 export async function getWorkspaceSettings(prisma: PrismaClient, ws: string) {
@@ -62,7 +68,10 @@ export async function updateWorkspaceSettings(
     if (rest.currency) {
       // FOR UPDATE conflicts with the FK KEY SHARE of a deal insert, so the count sees in-flight deals
       await tx.$queryRaw`SELECT id FROM "Workspace" WHERE id = ${ws} FOR UPDATE`;
-      const cur = await tx.workspace.findUniqueOrThrow({ where: { id: ws }, select: { currency: true } });
+      const cur = await tx.workspace.findUniqueOrThrow({
+        where: { id: ws },
+        select: { currency: true },
+      });
       const money = { workspaceId: ws, OR: [{ value: { not: 0 } }, { cashCollected: { not: 0 } }] };
       if (cur.currency !== rest.currency && (await tx.opportunity.count({ where: money })))
         throw new AccountError(409, "currency_in_use");

@@ -17,6 +17,7 @@ import { evaluateHealth } from "../src/deliverability/health";
 import type { AiClassifier } from "../src/mail/classify";
 import { reconcileAccount, syncDue, type SyncDeps } from "../src/mail/sync";
 import { seedCampaign } from "./campaign-fixture";
+import { dsn } from "./dsn-fixture";
 
 process.env.FAKE_MAIL_DIR = mkdtempSync(join(tmpdir(), "sync-"));
 
@@ -331,7 +332,11 @@ describe("reconcileAccount", () => {
       lastError: { ...soft, previous: sync },
     });
     await resumeAccount(P(), ws, A.id, { clock });
-    expect(await acct(A.id)).toMatchObject({ lifecycle: "ACTIVE", status: "ERROR", lastError: sync });
+    expect(await acct(A.id)).toMatchObject({
+      lifecycle: "ACTIVE",
+      status: "ERROR",
+      lastError: sync,
+    });
     clock.advance(60_000);
     expect(await run(clock, A)).toBe("caught_up");
     expect(await acct(A.id)).toMatchObject({ status: "CONNECTED", lastError: null });
@@ -356,7 +361,11 @@ describe("reconcileAccount", () => {
     expect(await run(c4, D)).toBe("caught_up");
     expect((await acct(D.id)).lastError).toEqual({ ...soft, message: expect.any(String) });
     await resumeAccount(P(), D.workspaceId, D.id, { clock: c4 });
-    expect(await acct(D.id)).toMatchObject({ lifecycle: "ACTIVE", status: "CONNECTED", lastError: null });
+    expect(await acct(D.id)).toMatchObject({
+      lifecycle: "ACTIVE",
+      status: "CONNECTED",
+      lastError: null,
+    });
 
     // the same, but the sync recovers while the account is paused
     const B = (await setup()).A;
@@ -556,11 +565,18 @@ describe("reconcileAccount", () => {
     const clock = fixedClock(T);
     await run(clock, A);
     await reply(A, leads[0]!.lead.email);
-    const emoji = Array.from({ length: 990 }, () => String.fromCharCode(0x4e00 + Math.floor(Math.random() * 0x4000))).join(""); // 990 chars <= 998 but ~2970 random 3-byte bytes: over the btree limit even compressed
+    const emoji = Array.from({ length: 990 }, () =>
+      String.fromCharCode(0x4e00 + Math.floor(Math.random() * 0x4000)),
+    ).join(""); // 990 chars <= 998 but ~2970 random 3-byte bytes: over the btree limit even compressed
     const p = rewrite(
       A,
       () => true,
-      (m) => ({ ...m, rfcMessageId: `<${emoji}>`, inReplyTo: `<${emoji}>`, references: [`<${emoji}>`] }),
+      (m) => ({
+        ...m,
+        rfcMessageId: `<${emoji}>`,
+        inReplyTo: `<${emoji}>`,
+        references: [`<${emoji}>`],
+      }),
     );
     clock.advance(60_000);
     const at = clock.now();
@@ -585,7 +601,9 @@ describe("reconcileAccount", () => {
       (m) => m.from.email === leads[0]!.lead.email,
       (m) => ({
         ...m,
-        attachments: [{ filename: "a.pdf", contentType: "application/pdf", size: 2 ** 40, content: null }],
+        attachments: [
+          { filename: "a.pdf", contentType: "application/pdf", size: 2 ** 40, content: null },
+        ],
       }),
     );
     const d = deps({ providerFor: async () => p });
@@ -598,8 +616,16 @@ describe("reconcileAccount", () => {
     clock.advance(60_000);
     const third = clock.now();
     expect(await run(clock, A, d)).toBe("caught_up");
-    const m = await P().message.findFirstOrThrow({ where: { accountId: A.id }, include: { attachments: true } });
-    expect(m).toMatchObject({ text: null, html: null, attachments: [], fromEmail: leads[0]!.lead.email });
+    const m = await P().message.findFirstOrThrow({
+      where: { accountId: A.id },
+      include: { attachments: true },
+    });
+    expect(m).toMatchObject({
+      text: null,
+      html: null,
+      attachments: [],
+      fromEmail: leads[0]!.lead.email,
+    });
     expect(m).toMatchObject({ synthetic: true });
     expect(m.rfcMessageId).toContain("synthetic");
     expect(
@@ -742,5 +768,65 @@ describe("syncDue", () => {
     quiet();
     const r = await syncDue(P(), clock, deps(), { maxMs: 10_000 });
     expect(r.failed).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("non-lead mail (PS-CRM-12)", () => {
+  const off = (ws: string) =>
+    P().workspace.update({ where: { id: ws }, data: { storeNonLeadMail: false } });
+  const stored = (accountId: string, fromEmail: string) =>
+    P().message.findMany({ where: { accountId, fromEmail }, select: { kind: true } });
+
+  test("off: a non-lead reply is dropped (never sent to the AI), the cursor still advances", async () => {
+    const { A, ws } = await setup();
+    const clock = fixedClock(T);
+    await run(clock, A);
+    await off(ws);
+    const cursor = (await acct(A.id)).syncCursor;
+    await reply(A, "news@letter.test", "Big news this week.");
+    await reply(A, "hmm@x.test", "Hmm.");
+    let calls = 0;
+    const ai: AiClassifier = async () => (calls++, { category: "INTERESTED" });
+    clock.advance(60_000);
+    expect(await run(clock, A, deps({ aiClassifyFor: async () => ai }))).toBe("caught_up");
+    expect(await stored(A.id, "news@letter.test")).toEqual([]);
+    expect(await stored(A.id, "hmm@x.test")).toEqual([]);
+    expect(calls).toBe(0);
+    const a = await acct(A.id);
+    expect(a.syncCursor).not.toEqual(cursor);
+    expect(a.lastSyncCompletedAt).toEqual(clock.now());
+  });
+
+  test("off: thread replies, lead replies, DSNs and unsubscribes are still processed", async () => {
+    const { A, ws, leads } = await setup();
+    const clock = fixedClock(T);
+    const first = await reply(A, "known@x.test", "Hello there.");
+    await run(clock, A); // stored while the setting is on: the thread exists
+    await off(ws);
+    await fake(A).receiveInbound({
+      from: { email: "known@x.test" },
+      subject: "Re: Hi",
+      text: "Following up.",
+      inReplyTo: first.rfcMessageId,
+    });
+    await reply(A, leads[0]!.lead.email, "Sounds good.");
+    await fake(A).receiveRaw(dsn(A.email, "ghost@x.test", "<nope@send.test>", T));
+    await reply(A, "stranger@x.test", "unsubscribe");
+    clock.advance(60_000);
+    expect(await run(clock, A)).toBe("caught_up");
+    expect(await stored(A.id, "known@x.test")).toHaveLength(2);
+    expect(await stored(A.id, leads[0]!.lead.email)).toHaveLength(1);
+    expect(await stored(A.id, "mailer-daemon@googlemail.com")).toEqual([{ kind: "BOUNCE" }]);
+    expect(await stored(A.id, "stranger@x.test")).toEqual([{ kind: "UNSUBSCRIBE" }]);
+  });
+
+  test("on (the default): a non-lead reply is stored as today", async () => {
+    const { A, ws } = await setup();
+    expect((await P().workspace.findUniqueOrThrow({ where: { id: ws } })).storeNonLeadMail).toBe(
+      true,
+    );
+    await reply(A, "news@letter.test", "Big news this week.");
+    await run(fixedClock(T), A);
+    expect(await stored(A.id, "news@letter.test")).toEqual([{ kind: "REPLY" }]);
   });
 });

@@ -52,6 +52,10 @@ Restart the stack. Without `MS_CLIENT_ID` and `MS_CLIENT_SECRET` the "Connect Mi
 
 Email Accounts > Connect Microsoft, sign in, accept the permissions. A mailbox that stops working shows "needs reconnect": use Reconnect on its row (same account, history kept).
 
+## Push notifications (VPS only)
+
+On a VPS with an `https` `APP_URL`, rightnow subscribes each Microsoft mailbox to Graph change notifications (`${APP_URL}/api/push/graph`) automatically; no extra setup or permission is needed. Graph must reach that URL over public https with a valid certificate (Caddy in the VPS setup). Locally (`MODE=local` or an `http` `APP_URL`) mailboxes are polled every `SYNC_POLL_SEC` instead, and polling keeps running alongside push either way. A notification is accepted only with the subscription's secret `clientState`, and it only marks the mailbox for a sync.
+
 ## Admin consent
 
 Some organizations forbid users from approving apps themselves. The connect then ends with "Your organization requires an administrator to approve this app" (`AADSTS65001` / `AADSTS90094`). A tenant admin can approve it once for everyone in Entra: Enterprise applications > the app > Permissions > Grant admin consent, or send the admin the link `https://login.microsoftonline.com/<tenant>/adminconsent?client_id=<client id>`.
