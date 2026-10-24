@@ -124,10 +124,19 @@ describe("analytics routes", () => {
       () => routes.accounts.GET(get(`analytics/accounts?${DAY}`, bearer(readKey))),
       () => routes.bounces.GET(get(`analytics/bounces?${DAY}`, bearer(readKey))),
       () => routes.crm.GET(get(`analytics/crm?${DAY}`, bearer(readKey))),
-      () => routes.activity.GET(get(`analytics/activity?${DAY}`, bearer(readKey))),
       () => routes.dashboard.GET(get("dashboard", bearer(readKey))),
     ];
     for (const call of all) expect((await call()).status).toBe(200);
+    // m15: the activity CSV lists lead emails, so a key also needs leads:read
+    expect(
+      (await routes.activity.GET(get(`analytics/activity?${DAY}`, bearer(readKey)))).status,
+    ).toBe(403);
+    const both = (
+      await core.createApiKey(db.prisma, workspaceId, "b", ["analytics:read", "leads:read"])
+    ).token;
+    expect((await routes.activity.GET(get(`analytics/activity?${DAY}`, bearer(both)))).status).toBe(
+      200,
+    );
     for (const [name, r] of Object.entries(routes)) {
       const url = name === "dashboard" ? "dashboard" : `analytics?${DAY}`;
       expect((await r.GET(get(url, bearer(leadsKey)))).status, name).toBe(403);

@@ -42,7 +42,7 @@ export async function sendTestEmail(
   // One transaction per account holding an advisory lock: concurrent requests cannot all read "4 so far".
   // The audit row is written before the send, so an unknown outcome still counts.
   await prisma.$transaction(async (tx) => {
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"test-send:" + a.id}))`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(726002, hashtext(${a.id}))`;
     const recent = await tx.auditLog.findMany({
       where: {
         workspaceId: p.workspaceId,

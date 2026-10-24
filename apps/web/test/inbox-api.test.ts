@@ -179,6 +179,28 @@ it("reads for a viewer, writes for members; thread GET never carries attachment 
   expect((await r.thread!.PATCH!(req("PATCH", "x", { nope: 1 }), p(s.t.id))).status).toBe(400);
 });
 
+it("API keys: bulk blocklist and set_interest need the scope of what they change (m13)", async () => {
+  const s = await seed(workspaceId);
+  const { createApiKey } = await import("@rightnow/core");
+  const key = async (...scopes: string[]) => ({
+    authorization: `Bearer ${(await createApiKey(db.prisma, workspaceId, "k", scopes)).token}`,
+  });
+  const post = async (body: object, h: Record<string, string>) => {
+    const res = await r.bulk!.POST!(req("POST", "x", { ids: [s.t.id], ...body }, h), p(s.t.id));
+    return [res.status, res.status === 403 ? (await json(res)).error : ""];
+  };
+  const w = await key("inbox:write");
+  expect(await post({ action: "read" }, w)).toEqual([200, ""]);
+  expect(await post({ action: "blocklist" }, w)).toEqual([403, "scope_required:blocklist:create"]);
+  expect(await post({ action: "set_interest", interestStatus: 1 }, w)).toEqual([
+    403,
+    "scope_required:leads:update",
+  ]);
+  const all = await key("inbox:write", "blocklist:create", "leads:update");
+  expect((await post({ action: "blocklist" }, all))[0]).toBe(200);
+  expect((await post({ action: "set_interest", interestStatus: 1 }, all))[0]).toBe(200);
+});
+
 it("API keys: inbox:read cannot write or reply, inbox:write can", async () => {
   const s = await seed(workspaceId);
   const { createApiKey } = await import("@rightnow/core");

@@ -32,7 +32,9 @@ Details: `docs/RESUME_INSTRUCTIONS.md`.
 - `packages/providers` has no DB or Next dependency; `packages/core` owns everything that touches Prisma
   (`accounts/*`, `oauth.ts`, `rotate.ts`). Every `MailProvider` runs `runProviderContract` (`@rightnow/providers/contract`).
 - Mail credentials: `EmailAccount.credentialsEnc` is written ONLY through `setCredentials()` (clears the refresh lease,
-  bumps `credentialGen`); connects create/revive rows ONLY through `openAccount()`. Never update `credentialsEnc` directly.
+  bumps `credentialGen`), except the lease-guarded token-refresh write in `accounts/credentials.ts` (must not bump
+  `credentialGen`) and the offline `rotate.ts`; connects create/revive rows ONLY through `openAccount()`. Never update
+  `credentialsEnc` directly elsewhere.
   `Workspace.verifierConfigEnc` (email-verifier URL + API key) is written ONLY through `setVerifierSettings()`, is in
   `ENCRYPTED_COLUMNS`, is never returned by any API (GET gives `hasApiKey`), and a changed host needs a new key.
   `PUT /settings/verifier` is a session-only ADMIN route.

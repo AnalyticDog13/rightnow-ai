@@ -1,6 +1,7 @@
 import {
   AmbiguousSendError,
   AuthError,
+  beforeRequest,
   PermanentSendError,
   RateLimitedError,
   TransientBeforeSendError,
@@ -40,12 +41,13 @@ export class GmailHttp {
     this.clock = o.clock ?? { now: () => new Date() };
   }
 
-  private refresh = (c: OAuthCreds) => this.store.refresh(c, (x) => this.oauth.refresh(x));
+  private refresh = (c: OAuthCreds) =>
+    beforeRequest(() => this.store.refresh(c, (x) => this.oauth.refresh(x)));
 
   async call<T>(path: string, o: CallOpts & ({ ok404: true } | { ok400: true })): Promise<T | null>;
   async call<T>(path: string, o?: CallOpts): Promise<T>;
   async call<T>(path: string, o: CallOpts = {}): Promise<T | null> {
-    let creds = await this.store.get();
+    let creds = await beforeRequest(() => this.store.get());
     if (creds.expiresAt < this.clock.now().getTime() + 60_000) creds = await this.refresh(creds);
     for (let retried = false; ; retried = true) {
       const res = await this.once(path, o, creds);

@@ -53,7 +53,7 @@ provider mailbox.
 - **One-click unsubscribes** (`List-Unsubscribe-Post`) and visits to the unsubscribe page while the web app was down.
   The recipient's mail client may show the request as done although it never arrived. The `mailto:` route is not
   affected (it lands in the synced sending mailbox).
-- **Push notifications** from providers (there are none today; sync polls every `SYNC_POLL_SEC`).
+- **Push notifications** (Gmail watch, Graph subscriptions) that arrive while the web app is down are lost; they only hurry a sync along, and the next poll (every `SYNC_POLL_SEC`) picks up the same changes.
 - **Replies filtered to spam/junk.** The sync reads INBOX and Sent only, so a reply the provider put in spam does not
   stop the lead and is not shown in the inbox.
 - **Deletions while the history was expired.** A full reconcile re-reads what is still there; it never marks a stored

@@ -486,6 +486,15 @@ describe("sync", () => {
 });
 
 describe("tokens", () => {
+  test("a plain error from the credential store before any request is transient, not an ambiguous send (m1)", async () => {
+    const { p, fetch, store } = setup([sendRoute(json(200, {}))]);
+    store.get = async () => {
+      throw new Error("no credentials");
+    };
+    expect(await p.send(mime).catch((e) => e)).toBeInstanceOf(TransientBeforeSendError);
+    expect(fetch.calls).toHaveLength(0);
+  });
+
   test("an expiring token is refreshed once and stored; the refresh token is kept when Google omits it", async () => {
     const { p, fetch, store } = setup([tokenRoute(tokenOk()), profile()], {
       expiresAt: Date.now() + 10_000,

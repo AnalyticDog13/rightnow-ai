@@ -321,6 +321,8 @@ describe("feature routes", () => {
       ["recommend", { leadId: "l" }, ["leads:read", "inbox:read", "crm:create"]],
       ["recommend", { opportunityId: "o" }, ["leads:read", "inbox:read", "crm:create", "crm:read"]],
       ["personalize", { leadIds: ["l"] }, ["leads:read"]],
+      ["draft", { stepId: "s" }, ["campaigns:read"]],
+      ["campaign-analysis", { campaignId: "c" }, ["campaigns:read", "analytics:read"]],
     ];
     for (const [name, body, extra] of needs) {
       for (const missing of extra)

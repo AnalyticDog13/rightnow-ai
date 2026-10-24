@@ -577,6 +577,21 @@ describe("error mapping table", () => {
 });
 
 describe("tokens", () => {
+  test("a plain error from the credential store before any request is transient, not an ambiguous send (m1)", async () => {
+    const g = createFakeGraph();
+    const store = {
+      ...g.store,
+      get: async () => {
+        throw new Error("no credentials");
+      },
+    };
+    expect(
+      await make(g.fetch, store)
+        .send(mime)
+        .catch((e) => e),
+    ).toBeInstanceOf(TransientBeforeSendError);
+  });
+
   test("token endpoint 503 -> TransientBeforeSendError, never AuthError", async () => {
     const g = createFakeGraph();
     g.scenario.failNext("token_5xx");

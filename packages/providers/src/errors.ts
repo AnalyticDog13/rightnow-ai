@@ -55,6 +55,15 @@ export class TransientBeforeSendError extends ProviderError {
   }
 }
 
+/** The credential/refresh phase runs before any request: a plain error there (no row, decrypt, DB) cannot have sent anything. */
+export async function beforeRequest<T>(f: () => Promise<T>): Promise<T> {
+  try {
+    return await f();
+  } catch (e) {
+    throw e instanceof ProviderError ? e : new TransientBeforeSendError("credentials unavailable");
+  }
+}
+
 export class AmbiguousSendError extends ProviderError {
   constructor(
     readonly detail?: string,

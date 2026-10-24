@@ -117,6 +117,27 @@ describe("imports routes", () => {
     expect(res.status).toBe(404);
   });
 
+  it("a key needs campaigns:update to enroll into a campaign through an import (S2)", async () => {
+    const { createApiKey } = await import("@rightnow/core");
+    const c = await db.prisma.campaign.create({
+      data: { workspaceId, name: "c", status: "ACTIVE" },
+    });
+    const as = async (scopes: string[]) => {
+      const t = (await createApiKey(db.prisma, workspaceId, "k", scopes)).token;
+      const r = await imports.POST(
+        await upload(
+          "/api/v1/imports",
+          "email\ns2@x.test\n",
+          { options: { ...opts, mapping: ["email"], options: { campaignId: c.id } } },
+          { cookie: "", authorization: `Bearer ${t}` },
+        ),
+      );
+      return [r.status, r.status === 403 ? ((await r.json()) as { error: string }).error : ""];
+    };
+    expect(await as(["leads:create"])).toEqual([403, "scope_required:campaigns:update"]);
+    expect((await as(["leads:create", "campaigns:update"]))[0]).toBe(202);
+  });
+
   it("not authorized is 400; a missing file is 400; a bad lawful basis is 400", async () => {
     expect(
       (
