@@ -68,7 +68,7 @@ export const gmailPush = (jwks = googleJwks) =>
       }));
     if (!ok) return new Response(null, { status: 401 });
     const b = await jsonBody(req);
-    if (b instanceof Response) return b;
+    if (b instanceof Response) return b.status === 400 ? new Response(null, { status: 204 }) : b; // M3: no redelivery
     await handleGmailPush(prisma, systemClock, b.body);
     return new Response(null, { status: 204 });
   });

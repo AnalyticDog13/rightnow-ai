@@ -131,7 +131,7 @@ describe("gmail route", () => {
     expect(r.status).toBe(204);
   });
 
-  it("a 2 MB body → 413, with or without Content-Length; bad JSON → 400", async () => {
+  it("a 2 MB body → 413, with or without Content-Length; a bad payload → 204", async () => {
     const big = "x".repeat(2 * 1024 * 1024);
     expect((await post(big, `Bearer ${await token()}`)).status).toBe(413);
     const stream = new ReadableStream({
@@ -141,7 +141,9 @@ describe("gmail route", () => {
       },
     });
     expect((await post(stream, `Bearer ${await token()}`)).status).toBe(413);
-    expect((await post("{", `Bearer ${await token()}`)).status).toBe(400);
+    // verified but unparseable: 204, so Pub/Sub does not redeliver it until retention expires (M3)
+    expect((await post("{", `Bearer ${await token()}`)).status).toBe(204);
+    expect((await post('{"message":{}}', `Bearer ${await token()}`)).status).toBe(204);
   });
 });
 

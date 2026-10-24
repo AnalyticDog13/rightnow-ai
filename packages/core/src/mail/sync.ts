@@ -152,7 +152,7 @@ export async function reconcileAccount(
           { ...m, rfcMessageId: null, text: null, html: null, attachments: [] },
           historical,
           undefined,
-          { random: deps.random, original: m },
+          { random: deps.random, original: m, dropNonLead },
         );
         stats.note = `placeholder ${codeOf(e)} ${tag}`;
         console.error(`sync: account ${acct.id} stored a header-only placeholder (${stats.note})`);
@@ -397,6 +397,7 @@ async function ingestOne(
         ? "ooo"
         : null;
   // R19: discarded mail never reaches the AI; ingestMessage re-checks inside its transaction
+  // (accepted gap: this read is outside it, so a lead deleted in between lets the AI see mail that is then dropped)
   const drop = async () =>
     !!o.dropNonLead &&
     droppable(acct, m, c) &&

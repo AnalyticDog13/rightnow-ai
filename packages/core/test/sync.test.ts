@@ -820,6 +820,26 @@ describe("non-lead mail (PS-CRM-12)", () => {
     expect(await stored(A.id, "stranger@x.test")).toEqual([{ kind: "UNSUBSCRIBE" }]);
   });
 
+  test("off: a non-lead message that keeps failing is not stored as a placeholder either (M1)", async () => {
+    const { A, ws } = await setup();
+    const clock = fixedClock(T);
+    await run(clock, A);
+    await off(ws);
+    await reply(A, "broken@x.test", "Big news this week.");
+    quiet();
+    // the first transaction of each run (the message's warm-up check) fails: its full ingest never gets past it
+    const tx = vi.spyOn(P(), "$transaction");
+    for (let i = 0; i < 2; i++) {
+      tx.mockRejectedValueOnce(new Error("db_down"));
+      clock.advance(60_000);
+      expect(await run(clock, A)).toBe("failed");
+    }
+    tx.mockRejectedValueOnce(new Error("db_down"));
+    clock.advance(60_000);
+    expect(await run(clock, A)).toBe("caught_up"); // 3rd failure: the placeholder path
+    expect(await stored(A.id, "broken@x.test")).toEqual([]);
+  });
+
   test("on (the default): a non-lead reply is stored as today", async () => {
     const { A, ws } = await setup();
     expect((await P().workspace.findUniqueOrThrow({ where: { id: ws } })).storeNonLeadMail).toBe(

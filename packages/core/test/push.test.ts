@@ -184,7 +184,15 @@ describe("handleGmailPush", () => {
     expect((await acct(g.id)).syncRequestedAt).toBeNull();
   });
 
-  test("malformed payloads are rejected", async () => {
+  test("a FAILED subscription no longer flags syncs (M4)", async () => {
+    const a = await mk("GMAIL", "failed@x.com");
+    const s1 = await sub(a, "h-f");
+    await P().pushSubscription.update({ where: { id: s1.id }, data: { status: "FAILED" } });
+    expect(await handleGmailPush(P(), fixedClock(T0), gmailBody("failed@x.com"))).toBe(0);
+    expect((await acct(a.id)).syncRequestedAt).toBeNull();
+  });
+
+  test("malformed payloads are a no-op, not an error Pub/Sub would redeliver (M3)", async () => {
     const clock = fixedClock(T0);
     const bad = [
       {},
@@ -193,7 +201,7 @@ describe("handleGmailPush", () => {
       { message: { data: Buffer.from("not json").toString("base64") } },
       gmailBody("not-an-address"),
     ];
-    for (const b of bad) await expect(handleGmailPush(P(), clock, b)).rejects.toThrow();
+    for (const b of bad) expect(await handleGmailPush(P(), clock, b)).toBe(0);
   });
 });
 

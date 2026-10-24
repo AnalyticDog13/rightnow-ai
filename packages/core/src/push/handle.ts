@@ -23,26 +23,32 @@ const gmailData = z.object({
   historyId: z.union([z.string().max(64), z.number()]),
 });
 
-/** A Pub/Sub push whose JWT the route verified. Unknown mailboxes are a no-op. Returns the accounts flagged. */
+/**
+ * A Pub/Sub push whose JWT the route verified. Unknown mailboxes and unparseable payloads are a no-op (an error
+ * would make Pub/Sub redeliver it until retention expires). Returns the accounts flagged.
+ */
 export async function handleGmailPush(
   prisma: PrismaClient,
   clock: Clock,
   body: unknown,
 ): Promise<number> {
-  const { data } = gmailEnvelope.parse(body).message;
+  const env = gmailEnvelope.safeParse(body);
+  if (!env.success) return 0;
   let decoded: unknown;
   try {
-    decoded = JSON.parse(Buffer.from(data, "base64").toString("utf8"));
+    decoded = JSON.parse(Buffer.from(env.data.message.data, "base64").toString("utf8"));
   } catch {
-    decoded = null; // a SyntaxError would quote the payload; the zod error below does not
+    return 0;
   }
-  const { emailAddress } = gmailData.parse(decoded);
+  const d = gmailData.safeParse(decoded);
+  if (!d.success) return 0;
+  const { emailAddress } = d.data;
   const accounts = await prisma.emailAccount.findMany({
     where: {
       provider: "GMAIL",
       email: { equals: emailAddress, mode: "insensitive" },
       deletedAt: null,
-      pushSubscription: { externalId: { not: null } },
+      pushSubscription: { externalId: { not: null }, status: "ACTIVE" },
     },
     select: { id: true },
   });
