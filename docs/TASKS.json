@@ -777,12 +777,12 @@
    "id": "P7-T05a",
    "phase": 7,
    "title": "AI foundation: encrypted settings, client + call log, approval workflow, AI classifier, smart pause",
-   "status": "todo",
+   "status": "done",
    "deps": [
     "P7-T04"
    ],
    "model": "sonnet",
-   "commit": null,
+   "commit": "d0db75d",
    "acceptance": "See IMPLEMENTATION_PLAN task + docs/plans/phase-7.md (incl. Revision 2); tests listed there pass"
   },
   {
