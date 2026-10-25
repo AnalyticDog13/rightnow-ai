@@ -1,7 +1,7 @@
 # Handoff
 
 **Phase:** 8 — Final verification (branch `phase-8-final`). Phase 7 DONE and merged to `main`.
-**Current task:** P8-T03 fix round 2 (S1-R: restore + resume re-sends), INTERRUPTED before its tests finished. Uncommitted work in 14 files implements D53 (derived campaign Message-ID + sender settles from a synced Sent copy) and n1-n4; typecheck + lint pass, TESTS UNVERIFIED. Do NOT commit it as-is and do NOT discard it: follow the numbered RESUME steps in ledger .superpowers/sdd/phase-8/progress.md (fresh opus implementer verifies RED/GREEN + full suites + concerns c1-c4, commits; push + CI; round 3 = last review round; then P8-T04). Backup patch: .superpowers/sdd/phase-8/task-03-fix2-interrupted.patch. Accepted, not fixed: m2, m4, m5, m12, m16. P8-T00..T02 done, CI green through d79fb20.
+**Current task:** P8-T04 release legal check (sonnet) per docs/plans/phase-8.md: docs/LICENSES.md (license-checker-rseidelsohn@5.0.1), NOTICE, CONTRIBUTING.md with DCO, README responsible-use + not-affiliated wording, docs/RELEASE_CHECK.md incl. one-off full-history secret scan (purge nothing without user approval); short sonnet review; user decides on lawyer review. Then Phase 8 gate (ff main). P8-T00..T03 done (P8-T03 verdict READY FOR RELEASE, docs/FINAL_ASSESSMENT.md; accepted residuals m2, m4, m5, m12, m16, D53 limits). User still owes D17 live verification with real credentials.
 **Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 (approved). Done step plans: `docs/plans/phase-1.md` … `phase-5.md` (+ `phase-4-review.md`, `phase-5-review.md`).
 **Tests:** ~1290 vitest + Playwright (auth, accounts*, campaign-create, deliverability, inbox, leads, test-send …) green; CI `check`, `compose-smoke`, `imap-real` green. Parity: 311/316 ticked.
 
