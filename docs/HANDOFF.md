@@ -1,7 +1,7 @@
 # Handoff
 
-**Phase:** 8 — Final verification (branch `phase-8-final`). Phase 7 DONE and merged to `main`.
-**Current task:** P8-T04 release legal check (sonnet) per docs/plans/phase-8.md: docs/LICENSES.md (license-checker-rseidelsohn@5.0.1), NOTICE, CONTRIBUTING.md with DCO, README responsible-use + not-affiliated wording, docs/RELEASE_CHECK.md incl. one-off full-history secret scan (purge nothing without user approval); short sonnet review; user decides on lawyer review. Then Phase 8 gate (ff main). P8-T00..T03 done (P8-T03 verdict READY FOR RELEASE, docs/FINAL_ASSESSMENT.md; accepted residuals m2, m4, m5, m12, m16, D53 limits). User still owes D17 live verification with real credentials.
+**Phase:** 8 — Final verification DONE and merged to `main`. All phases complete.
+**Current task:** none. Project complete per IMPLEMENTATION_PLAN. Open items are the user decisions in docs/RELEASE_CHECK.md (lawyer review, RightNow.ai trademark search, LGPL libvips via sharp) and D17 live provider verification with real credentials (docs/ops/LIVE_VERIFICATION.md), required before real Gmail/Graph/IMAP campaign sending. Accepted residuals: docs/FINAL_ASSESSMENT.md.
 **Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 (approved). Done step plans: `docs/plans/phase-1.md` … `phase-5.md` (+ `phase-4-review.md`, `phase-5-review.md`).
 **Tests:** ~1290 vitest + Playwright (auth, accounts*, campaign-create, deliverability, inbox, leads, test-send …) green; CI `check`, `compose-smoke`, `imap-real` green. Parity: 311/316 ticked.
 
