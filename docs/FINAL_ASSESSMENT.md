@@ -334,3 +334,97 @@ possibly-sent request into a transient one.
 **Not release-ready yet: fix S1-R, then round 3 (the last one under the 3-round cap).** n1-n4 are trivial and
 should ride along. After that, the round-1 verdict stands: ready for self-hosted use with the Fake provider, and for
 real sending only after the user completes D17 live verification with real credentials.
+
+## Round 3 (2026-10-24) · opus final reviewer · fix `794ddd4` (D53)
+
+### Method
+
+I read `794ddd4` and the code around it: `dispatch.ts` (claim, `campaignMessageId`), `sender.ts` (`precheck`,
+`syncedCopy`, `settleFromCopy`, `acceptTx`, `recordSent`), `planner.ts` (`upsertScheduled`, `reroute`, step-1
+`pickAccount`), `mail/sync.ts` (when `lastSyncCompletedAt` moves), `mail/ingest.ts` and `match.ts` (how an unmatched
+outbound copy is stored), `providers/src/mime.ts` (`buildMime` and `parseRaw`), the Gmail, Graph and IMAP/SMTP `send`
+and `listChangesSince`, the new tests, the restore scripts, CI and the docs. I ran no suites. CI for `794ddd4` was
+still running when I wrote this.
+
+### Status of round-2 items
+
+| Item | Verdict | Evidence |
+|---|---|---|
+| S1-R (a) rows SCHEDULED in the dump, sent afterwards | **Closed** (residual R3-1) | The claim stores `campaignMessageId(cl, step, domainOf(a.email))` (`dispatch.ts:340`), and `precheck` puts exactly that in `mime.messageId` (`sender.ts:366`). Gmail sends that MIME raw, Graph posts it as the draft MIME, and IMAP/SMTP sends it and appends a copy built from the same `m`. All three syncs read the copy back as raw MIME through `parseRaw`, which keeps the bracketed id and its case (contract suite: `send preserves Message-ID`, exact string). Our id is lower-case hex plus a lower-cased domain, so no normalisation gap exists. Incremental sync covers Sent in all three providers (Gmail history `INBOX`/`SENT`, Graph delta on `sentitems`, IMAP `FOLDERS = INBOX, SENT`), and an expired cursor falls back to a FULL import of at least 30 days. `lastSyncCompletedAt` moves only on a caught-up run (`sync.ts`, `out.done`), and the restored value is the dump's, so a mailbox cannot claim until it has re-read everything since the dump. A provider that rewrote the id would fail open: a duplicate, never a skipped step. |
+| S1-R (b) steps planned after the dump | **Closed** (residual R3-1) | The re-planned row has the same `(campaignLeadId, stepId)` and therefore the same id. `syncedCopy` checks the domains of every mailbox in the workspace, so a step 1 re-planned onto another mailbox still matches once the real sender has synced, and the real sender becomes sticky (`settleFromCopy`, then `recordSent` keeps `cl.accountId`). |
+| n1 API.md scopes | Closed | `docs/API.md:24-30` lists all five handler-level scopes. |
+| n2 IMAP credential load | Closed | `beforeRequest` wraps `credentials()` in `send` and in `withImap`, plus `buildMime`. Every one of them runs before any byte reaches SMTP. |
+| n3 CI restore check | Closed | CI seeds an `ACTIVE` campaign, greps `paused 1 active campaign(s)` (printed by `scripts/pause-campaigns.ts:7`), and asserts both `status = PAUSED` and the audit `reason = restore`. |
+| n4 pause reason | Closed (audit only) | `pauseActiveCampaigns` → `pauseCampaign(..., "restore")` → audit meta `{from, reason}`. The UI status line was not changed, which is acceptable because the audit log shows the reason. |
+
+**Wrongful suppression.** I found none. A match requires a stored `direction: "OUT"` Message in the same workspace
+whose id is the hash of this exact `(campaignLeadId, stepId)`:
+- Manual replies, warm-up, placement and test-send all use `newMessageId` (random ids).
+- A FAILED retry or a HELD release reuses the row and its id, so a copy existing then means the message did go out.
+- `upsertScheduled` revives only CANCELLED rows with `uncertainAt IS NULL`.
+- `CampaignLead` is `createMany(skipDuplicates)` and there is no reset-to-step feature, so a second legitimate send
+  of the same pair cannot exist (the `idempotencyKey` uniqueness already forbade it).
+- Workspaces are filtered by `workspaceId`.
+- A forged inbound copy would need the hash, and `campaignLeadId` and `stepId` are never exposed to recipients (the
+  unsubscribe link carries workspace, lead and campaign; tracking carries the row id).
+
+**Concurrency.** The settle is clean:
+- `syncedCopy` is a read outside any transaction, and a copy, once present, stays present.
+- `settleFromCopy` is one DB-only transaction, conditional on `id + claimToken + SENDING`, in D21 order (row, then
+  CampaignLead), and `acceptTx` re-checks the same token.
+- A second settle, recovery taking over the row, or a late accept all see the token or status changed and get `LOST`.
+- No other row can carry the same `(cl, step)`, so no real send of it can run at the same time.
+- No network call happens inside the transaction.
+
+**Quota (c2).** Accepted. Committing the claim's reservation is the conservative choice after a same-day restore,
+and the stated limit holds: one unit too many for a copy from an earlier day, and in the re-routed case the unit,
+`lastSentAt` and `lastSenderAccountId` are booked on the claiming mailbox. `lastSenderAccountId` only feeds display
+and filters.
+
+**Newly broken by 794ddd4.** Nothing found. The removed `newMessageId` import is unused in `dispatch.ts`. Pre-D53
+rows keep their stored random id, and `syncedCopy` adds `m.rfcMessageId` to the set it checks.
+
+### New findings
+
+#### MINOR
+
+- **R3-1 · A step 1 can still repeat when the mailbox that really sent it has not synced since the restore, and the
+  restore docs do not say so.** `docs/ops/LOCAL.md:28` and `scripts/restore.sh` / `restore.ps1` (echo) say "Resume
+  the campaigns when you are ready", and LOCAL.md adds "a mailbox sends only after a full sync". The code gap is in
+  `planner.ts:662-705` (`reroute`), step-1 `pickAccount` in `planner.ts:584`, and `sender.ts:192` (`syncedCopy`).
+  Scenario:
+  1. Mailbox X sent step 1 to 50 leads after the dump.
+  2. After the restore, X's credentials are the dump's, and the user had reconnected X since then, or its IMAP
+     password changed. X goes `NEEDS_ATTENTION` and never syncs.
+  3. The owner resumes. `reroute` moves X's restored step-1 rows to fresh mailbox Y, and the planner plans the
+     unplanned ones on Y.
+  4. X's Sent copies were never imported, so `syncedCopy` finds nothing and all 50 leads get step 1 a second time
+     from Y.
+
+  D53 lists this case as not covered and says "`docs/ops/LOCAL.md` says what to do then", but LOCAL.md's not-covered
+  list leaves it out.
+
+  Fix (docs only, one sentence in LOCAL.md and both restore echoes): "Resume only after every mailbox shows a sync
+  completed since the restore (none in Needs attention); otherwise a step 1 it sent after the dump can go out again
+  from another mailbox."
+
+  This is MINOR because the pause holds until a human acts, and it needs both a multi-mailbox campaign and a mailbox
+  that stays unsynced.
+
+- **R3-2 · Test note, no action needed.** The D53 tests simulate the synced copy with the Message rows that
+  `recordOutboundMessage` wrote, not with a provider sync through `parseRaw`. The provider round-trip of the id is
+  covered by the contract suite (exact-string `send preserves Message-ID` and Sent-folder sync per provider), and for
+  real providers by D17 live verification (G4, M2/M3/M10).
+
+### Round 3 verdict
+
+Counts: 0 BLOCKER, 0 SIGNIFICANT, 2 MINOR (R3-1 a docs sentence, R3-2 informational). S1-R and n1-n4 are closed.
+
+**READY FOR RELEASE** (once CI for `794ddd4` is green), with these accepted residuals:
+- R3-1: resume after a restore only when every mailbox has synced since. Ideally add the sentence to LOCAL.md.
+- D53's other uncovered cases (copy deleted from Sent, no Sent copy kept, pre-D53 sends) stay documented in
+  LOCAL.md.
+- The c2 quota approximation.
+- n4's UI status line.
+- The round-1 condition stands: real-provider sending only after the user records D17 live verification, which also
+  proves the Message-ID preservation that D53 depends on.
