@@ -1,0 +1,121 @@
+RightNow.ai
+Copyright (c) 2026 rightnow-ai contributors. Licensed under the MIT License (see LICENSE).
+
+This product bundles or installs third-party software under the licenses below. Packages under
+MIT, ISC, Unlicense and similar terms are listed in docs/LICENSES.md. The full license text of each
+package ships in its own node_modules folder. Source: package-lock.json (production closure, dev-only
+packages excluded; platform-specific optional binaries are listed although only the matching one installs).
+
+Format: name@version | license | URL
+
+== 0BSD (1) ==
+tslib@2.8.1 | 0BSD | https://github.com/Microsoft/tslib
+
+== Apache-2.0 AND LGPL-3.0-or-later AND MIT (1) ==
+@img/sharp-wasm32@0.35.5 | Apache-2.0 AND LGPL-3.0-or-later AND MIT | https://github.com/lovell/sharp
+
+== Apache-2.0 AND LGPL-3.0-or-later (3) ==
+@img/sharp-win32-arm64@0.35.5 | Apache-2.0 AND LGPL-3.0-or-later | https://www.npmjs.com/package/@img/sharp-win32-arm64
+@img/sharp-win32-ia32@0.35.5 | Apache-2.0 AND LGPL-3.0-or-later | https://www.npmjs.com/package/@img/sharp-win32-ia32
+@img/sharp-win32-x64@0.35.5 | Apache-2.0 AND LGPL-3.0-or-later | https://github.com/lovell/sharp
+
+== Apache-2.0 (44) ==
+@electric-sql/pglite-socket@0.1.3 | Apache-2.0 | https://github.com/electric-sql/pglite
+@electric-sql/pglite-tools@0.3.3 | Apache-2.0 | https://github.com/electric-sql/pglite
+@electric-sql/pglite@0.4.3 | Apache-2.0 | https://github.com/electric-sql/pglite
+@img/sharp-darwin-arm64@0.35.5 | Apache-2.0 | https://www.npmjs.com/package/@img/sharp-darwin-arm64
+@img/sharp-darwin-x64@0.35.5 | Apache-2.0 | https://www.npmjs.com/package/@img/sharp-darwin-x64
+@img/sharp-freebsd-wasm32@0.35.5 | Apache-2.0 | https://www.npmjs.com/package/@img/sharp-freebsd-wasm32
+@img/sharp-linux-arm@0.35.5 | Apache-2.0 | https://www.npmjs.com/package/@img/sharp-linux-arm
+@img/sharp-linux-arm64@0.35.5 | Apache-2.0 | https://www.npmjs.com/package/@img/sharp-linux-arm64
+@img/sharp-linux-ppc64@0.35.5 | Apache-2.0 | https://www.npmjs.com/package/@img/sharp-linux-ppc64
+@img/sharp-linux-riscv64@0.35.5 | Apache-2.0 | https://www.npmjs.com/package/@img/sharp-linux-riscv64
+@img/sharp-linux-s390x@0.35.5 | Apache-2.0 | https://www.npmjs.com/package/@img/sharp-linux-s390x
+@img/sharp-linux-x64@0.35.5 | Apache-2.0 | https://www.npmjs.com/package/@img/sharp-linux-x64
+@img/sharp-linuxmusl-arm64@0.35.5 | Apache-2.0 | https://www.npmjs.com/package/@img/sharp-linuxmusl-arm64
+@img/sharp-linuxmusl-x64@0.35.5 | Apache-2.0 | https://www.npmjs.com/package/@img/sharp-linuxmusl-x64
+@img/sharp-webcontainers-wasm32@0.35.5 | Apache-2.0 | https://www.npmjs.com/package/@img/sharp-webcontainers-wasm32
+@opentelemetry/api@1.9.1 | Apache-2.0 | open-telemetry/opentelemetry-js
+@playwright/test@1.64.1 | Apache-2.0 | https://github.com/microsoft/playwright
+@prisma/adapter-pg@7.10.1 | Apache-2.0 | https://github.com/prisma/orm
+@prisma/client-runtime-utils@7.10.1 | Apache-2.0 | https://github.com/prisma/orm
+@prisma/client@7.10.1 | Apache-2.0 | https://github.com/prisma/orm
+@prisma/config@7.10.1 | Apache-2.0 | https://github.com/prisma/orm
+@prisma/debug@7.10.1 | Apache-2.0 | https://github.com/prisma/orm
+@prisma/debug@7.2.0 | Apache-2.0 | https://github.com/prisma/prisma
+@prisma/driver-adapter-utils@7.10.1 | Apache-2.0 | https://github.com/prisma/orm
+@prisma/engines-version@8.1.0-1.d1b3f377ca835d73fd50954a5e22128b9ebdd6b8 | Apache-2.0 | https://github.com/prisma/engines-wrapper
+@prisma/engines@7.10.1 | Apache-2.0 | https://github.com/prisma/orm
+@prisma/fetch-engine@7.10.1 | Apache-2.0 | https://github.com/prisma/orm
+@prisma/get-platform@7.10.1 | Apache-2.0 | https://github.com/prisma/orm
+@prisma/get-platform@7.2.0 | Apache-2.0 | https://github.com/prisma/prisma
+@prisma/query-plan-executor@7.2.0 | Apache-2.0 | https://github.com/prisma/prisma
+@prisma/streams-local@0.1.11 | Apache-2.0 | https://github.com/prisma/streams
+@prisma/studio-core@0.33.0 | Apache-2.0 | https://github.com/prisma/studio
+@swc/helpers@0.5.23 | Apache-2.0 | https://github.com/swc-project/swc
+baseline-browser-mapping@2.11.30 | Apache-2.0 | https://github.com/web-platform-dx/baseline-browser-mapping
+class-variance-authority@0.7.1 | Apache-2.0 | https://github.com/joe-bell/cva
+detect-libc@2.1.2 | Apache-2.0 | git://github.com/lovell/detect-libc
+expect-type@1.4.0 | Apache-2.0 | https://github.com/mmkal/expect-type
+long@5.3.2 | Apache-2.0 | https://github.com/dcodeIO/long.js
+playwright-core@1.64.1 | Apache-2.0 | https://github.com/microsoft/playwright
+playwright@1.64.1 | Apache-2.0 | https://github.com/microsoft/playwright
+prisma@7.10.1 | Apache-2.0 | https://github.com/prisma/orm
+sharp@0.35.5 | Apache-2.0 | https://github.com/lovell/sharp
+temporal-spec@1.0.1 | Apache-2.0 | https://github.com/fullcalendar/temporal-polyfill
+typescript@5.9.3 | Apache-2.0 | https://github.com/microsoft/TypeScript
+
+== BSD-2-Clause (11) ==
+domelementtype@2.3.0 | BSD-2-Clause | git://github.com/fb55/domelementtype
+domelementtype@3.0.0 | BSD-2-Clause | git://github.com/fb55/domelementtype
+domhandler@5.0.3 | BSD-2-Clause | git://github.com/fb55/domhandler
+domhandler@6.0.1 | BSD-2-Clause | git://github.com/fb55/domhandler
+domutils@3.2.2 | BSD-2-Clause | git://github.com/fb55/domutils
+domutils@4.0.2 | BSD-2-Clause | git://github.com/fb55/domutils
+dotenv@17.4.2 | BSD-2-Clause | git://github.com/motdotla/dotenv
+dotenv@18.0.8 | BSD-2-Clause | git://github.com/motdotla/dotenv
+entities@4.5.0 | BSD-2-Clause | git://github.com/fb55/entities
+entities@7.0.1 | BSD-2-Clause | https://github.com/fb55/entities
+entities@8.1.0 | BSD-2-Clause | https://github.com/fb55/entities
+
+== BSD-3-Clause (4) ==
+d3-ease@3.0.1 | BSD-3-Clause | https://github.com/d3/d3-ease
+deepmerge-ts@8.0.2 | BSD-3-Clause | https://github.com/RebeccaStevens/deepmerge-ts
+fast-uri@3.1.9 | BSD-3-Clause | https://github.com/fastify/fast-uri
+source-map-js@1.2.2 | BSD-3-Clause | 7rulnik/source-map-js
+
+== CC-BY-4.0 (1) ==
+caniuse-lite@1.0.30001816 | CC-BY-4.0 | browserslist/caniuse-lite
+
+== EPL-2.0 (1) ==
+elkjs@0.11.1 | EPL-2.0 | https://github.com/kieler/elkjs
+
+== LGPL-3.0-or-later (10) ==
+@img/sharp-libvips-darwin-arm64@1.3.4 | LGPL-3.0-or-later | https://www.npmjs.com/package/@img/sharp-libvips-darwin-arm64
+@img/sharp-libvips-darwin-x64@1.3.4 | LGPL-3.0-or-later | https://www.npmjs.com/package/@img/sharp-libvips-darwin-x64
+@img/sharp-libvips-linux-arm@1.3.4 | LGPL-3.0-or-later | https://www.npmjs.com/package/@img/sharp-libvips-linux-arm
+@img/sharp-libvips-linux-arm64@1.3.4 | LGPL-3.0-or-later | https://www.npmjs.com/package/@img/sharp-libvips-linux-arm64
+@img/sharp-libvips-linux-ppc64@1.3.4 | LGPL-3.0-or-later | https://www.npmjs.com/package/@img/sharp-libvips-linux-ppc64
+@img/sharp-libvips-linux-riscv64@1.3.4 | LGPL-3.0-or-later | https://www.npmjs.com/package/@img/sharp-libvips-linux-riscv64
+@img/sharp-libvips-linux-s390x@1.3.4 | LGPL-3.0-or-later | https://www.npmjs.com/package/@img/sharp-libvips-linux-s390x
+@img/sharp-libvips-linux-x64@1.3.4 | LGPL-3.0-or-later | https://www.npmjs.com/package/@img/sharp-libvips-linux-x64
+@img/sharp-libvips-linuxmusl-arm64@1.3.4 | LGPL-3.0-or-later | https://www.npmjs.com/package/@img/sharp-libvips-linuxmusl-arm64
+@img/sharp-libvips-linuxmusl-x64@1.3.4 | LGPL-3.0-or-later | https://www.npmjs.com/package/@img/sharp-libvips-linuxmusl-x64
+
+== MPL-2.0 (12) ==
+lightningcss-android-arm64@1.33.0 | MPL-2.0 | https://www.npmjs.com/package/lightningcss-android-arm64
+lightningcss-darwin-arm64@1.33.0 | MPL-2.0 | https://www.npmjs.com/package/lightningcss-darwin-arm64
+lightningcss-darwin-x64@1.33.0 | MPL-2.0 | https://www.npmjs.com/package/lightningcss-darwin-x64
+lightningcss-freebsd-x64@1.33.0 | MPL-2.0 | https://www.npmjs.com/package/lightningcss-freebsd-x64
+lightningcss-linux-arm-gnueabihf@1.33.0 | MPL-2.0 | https://www.npmjs.com/package/lightningcss-linux-arm-gnueabihf
+lightningcss-linux-arm64-gnu@1.33.0 | MPL-2.0 | https://www.npmjs.com/package/lightningcss-linux-arm64-gnu
+lightningcss-linux-arm64-musl@1.33.0 | MPL-2.0 | https://www.npmjs.com/package/lightningcss-linux-arm64-musl
+lightningcss-linux-x64-gnu@1.33.0 | MPL-2.0 | https://www.npmjs.com/package/lightningcss-linux-x64-gnu
+lightningcss-linux-x64-musl@1.33.0 | MPL-2.0 | https://www.npmjs.com/package/lightningcss-linux-x64-musl
+lightningcss-win32-arm64-msvc@1.33.0 | MPL-2.0 | https://www.npmjs.com/package/lightningcss-win32-arm64-msvc
+lightningcss-win32-x64-msvc@1.33.0 | MPL-2.0 | https://github.com/parcel-bundler/lightningcss
+lightningcss@1.33.0 | MPL-2.0 | https://github.com/parcel-bundler/lightningcss
+
+Notes: LGPL-3.0-or-later packages (@img/sharp-libvips-*, sharp wasm/win32 builds) are unmodified prebuilt
+libvips binaries loaded by sharp, an optional Next.js dependency. MPL-2.0 (lightningcss) and EPL-2.0
+(elkjs) packages are used unmodified; their source is available from the URLs above.

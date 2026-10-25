@@ -27,6 +27,18 @@ deals in a built-in CRM. The same codebase runs on your laptop (Docker Compose) 
 Honesty rules built in: no fake engagement, no spoofed senders, no claims that warm-up guarantees inbox
 placement, and every campaign email carries a working unsubscribe.
 
+RightNow.ai is an independent project. It is not affiliated with or endorsed by Instantly.ai; "Instantly" is a
+trademark of its owner and is used here only to describe the workflows this project is compatible with.
+
+## Responsible use
+
+You are responsible for how you use this software. Before you email anyone you need a lawful basis to do so
+(for example CAN-SPAM in the US, GDPR/PECR in the EU and UK, CASL in Canada, as applicable to you and your
+recipients). Send only as your own, honestly identified sender. An unsubscribe link is built into every campaign
+email and cannot be disabled, and unsubscribes are always honored. Your mailbox providers' terms also apply and
+can restrict cold email. The software is provided without warranty (see [LICENSE](LICENSE)); nothing here is legal
+advice. More detail: [docs/COMPLIANCE.md](docs/COMPLIANCE.md) and [docs/PROVIDER_COMPLIANCE.md](docs/PROVIDER_COMPLIANCE.md).
+
 ## Architecture
 
 ```
@@ -83,9 +95,9 @@ Docker Compose (local and VPS modes, backup/restore, HTTPS): [docs/ops/LOCAL.md]
 
 ## Contributing
 
-This project is built with Claude Code following the process in [CLAUDE.md](CLAUDE.md): small tasks, tests
+See [CONTRIBUTING.md](CONTRIBUTING.md) (tests, conventional commits, DCO sign-off, security reports). This project is built with Claude Code following the process in [CLAUDE.md](CLAUDE.md): small tasks, tests
 first, independent review, one branch per phase. Resuming work in a new session: [docs/RESUME_INSTRUCTIONS.md](docs/RESUME_INSTRUCTIONS.md).
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). Third-party dependency licenses: [docs/LICENSES.md](docs/LICENSES.md) and [NOTICE](NOTICE).
