@@ -23,8 +23,11 @@ when they differ, `openapi.json` wins.
   `scope_required:<scope>`.
 - A route marked `a` or `b` in the table takes either scope; the handler enforces the one the request needs (saved
   views: `inbox:*` or `leads:*`). Some routes also need the scopes of the data they read or write: the AI routes
-  (`inbox:read` for thread input, `leads:read` for lead input, `leads:update` for `score`, `crm:create` for `recommend`),
-  and webhook create/update (`inbox:read` for reply events, `leads:read` for lead events).
+  (`inbox:read` for thread input, `leads:read` for lead input, `leads:update` for `score`, `crm:create` for `recommend`,
+  `campaigns:read` for `draft`, `campaigns:read` and `analytics:read` for `campaign-analysis`), `POST /imports` with a
+  `campaignId` (`campaigns:update`), `POST /inbox/threads/bulk` (`blocklist:create` for `blocklist`, `leads:update` for
+  `set_interest`), the `GET /analytics/activity` CSV (`leads:read`), and webhook create/update (`inbox:read` for reply
+  events, `leads:read` for lead events).
 - Reads trim what a key may not see instead of refusing. `GET /leads/{id}/export` leaves out `threads` without
   `inbox:read` and notes, tasks and deals without `crm:read`, and names them in `omitted` (e.g.
   `"omitted": ["threads", "crm"]`). `GET /leads/{id}/timeline` drops its note, task and deal entries without

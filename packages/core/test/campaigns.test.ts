@@ -404,7 +404,9 @@ describe("status machine", () => {
       "COMPLETED",
       "ACTIVE",
     ]);
-    expect((await audits("campaign.pause")).filter((x) => x.target === a)).toHaveLength(1);
+    expect((await audits("campaign.pause")).filter((x) => x.target === a)).toMatchObject([
+      { actorId: null, meta: { from: "ACTIVE", reason: "restore" } },
+    ]);
     expect(await pauseActiveCampaigns(P())).toBe(0);
   });
 

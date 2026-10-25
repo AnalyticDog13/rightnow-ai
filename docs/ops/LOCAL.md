@@ -25,7 +25,7 @@
 | Restore | `scripts/restore.sh backups/rightnow-<timestamp>.dump` (replaces current data; asks for `yes`, or pass `--yes`) |
 | Upgrade | `scripts/upgrade.sh`: backs up, then git pull, rebuild, run migrations, restart. |
 
-**Restore pauses every active campaign.** Messages sent after the dump was taken are `SCHEDULED` again in the restored data and would be sent a second time. After a restore, check each mailbox's Sent folder, then resume the campaigns yourself. The script keeps a `pre-restore-*` dump of the data it replaced and prints its path (also if the restore fails).
+**Restore pauses every active campaign** (audit log: `campaign.pause` with reason `restore`). Messages sent after the dump was taken are missing from the restored data, but they are not sent again: a mailbox sends only after a full sync, and a campaign step whose copy is already in that workspace's Sent folders is recorded as sent instead (D53). Resume the campaigns when you are ready. Not covered: a sent message deleted from the Sent folder, a mailbox that keeps no Sent copy, and sends made by a version before D53; if any of these applies, cancel the affected leads' rows under Scheduled messages before resuming. The script keeps a `pre-restore-*` dump of the data it replaced and prints its path (also if the restore fails).
 
 Data lives in the Docker volume `pgdata`. `docker compose down -v` deletes it; the scripts never do.
 

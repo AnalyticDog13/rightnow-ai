@@ -3,7 +3,13 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createPrisma } from "@rightnow/db/create";
-import type { AccountProvider, EmailAccount, PrismaClient } from "@rightnow/db/client";
+import type {
+  AccountProvider,
+  CampaignLead,
+  EmailAccount,
+  PrismaClient,
+  ScheduledMessage,
+} from "@rightnow/db/client";
 import { createTestDb } from "@rightnow/db/test-db";
 import {
   AmbiguousSendError,
@@ -20,7 +26,7 @@ import { resumeAccount } from "../src/accounts/service";
 import { removeCampaignLead, resumeCampaignLead } from "../src/campaigns/enroll";
 import { claimDue, sendableProviders, type ClaimOpts, type Claimed } from "../src/dispatch";
 import { whyNotSending } from "../src/explain";
-import { recordOutboundMessage } from "../src/mail/ingest";
+import { ingestMessage, recordOutboundMessage } from "../src/mail/ingest";
 import { planDue } from "../src/planner";
 import { releaseUsage } from "../src/quota";
 import {
@@ -1179,5 +1185,165 @@ describe("deleted sticky account (P3-T10b re-review)", () => {
     await resumeCampaignLead(P(), s.ws, null, clId);
     await plan();
     expect(await row(step2.id)).toMatchObject({ status: "SCHEDULED", accountId: c.accountId });
+  });
+});
+
+describe("D53: a restore of an older dump never repeats a send", () => {
+  const ALL_SENT = async (s: { accounts: EmailAccount[] }) =>
+    (await Promise.all(s.accounts.map(sent))).reduce((x, y) => x + y, 0);
+  const plan = (clock: { now(): Date }) =>
+    planDue(P(), clock, { stalenessSec: 300, sendableProviders: ALL, env });
+  /** Puts the send rows and the lead back as the dump had them; the synced Sent copies stay, matched to no row. */
+  async function restore(cl: CampaignLead, rows: ScheduledMessage[]) {
+    await P().message.updateMany({ data: { scheduledMessageId: null, outsideApp: true } });
+    await P().scheduledMessage.deleteMany({ where: { campaignLeadId: cl.id } });
+    for (const r of rows) await P().scheduledMessage.create({ data: r });
+    const { id, ...rest } = cl;
+    await P().campaignLead.update({ where: { id }, data: rest });
+  }
+  const tick = (clock: { now(): Date }) =>
+    dispatchTick(P(), clock, {
+      ...deps(),
+      bootId: "boot-1",
+      stalenessSec: 300,
+      sendableProviders: ALL,
+    });
+  const toStep2 = async (
+    clock: ReturnType<typeof fixedClock>,
+    s: { accounts: EmailAccount[] },
+    clId: string,
+  ) => {
+    const due = (await P().campaignLead.findUniqueOrThrow({ where: { id: clId } })).nextDueAt!;
+    clock.advance(due.getTime() - clock.now().getTime());
+    await markFresh(
+      P(),
+      s.accounts.map((a) => a.id),
+      clock.now(),
+    );
+    await plan(clock);
+  };
+
+  test("(a) a row SCHEDULED in the dump and sent after it is settled from its synced Sent copy, not sent again", async () => {
+    const clock = fixedClock(T);
+    const s = await seedCampaign(P(), { at: T, rows: 1, steps: 2, accounts: [{}] });
+    const clId = s.leads[0]!.cl.id;
+    const dumpRow = await P().scheduledMessage.findFirstOrThrow({
+      where: { campaignLeadId: clId },
+    });
+    const dumpCl = await P().campaignLead.findUniqueOrThrow({ where: { id: clId } });
+    expect((await tick(clock)).SENT).toBe(1);
+    const sentAt = (await row(dumpRow.id)).sentAt;
+
+    clock.advance(3600_000);
+    await restore(dumpCl, [dumpRow]);
+    await markFresh(P(), [s.accounts[0]!.id], clock.now());
+    expect((await tick(clock)).SENT).toBe(1); // settled, not sent
+    expect(await ALL_SENT(s)).toBe(1);
+    expect(await row(dumpRow.id)).toMatchObject({ status: "SENT", sentAt });
+    const msg = await P().message.findFirstOrThrow({ where: { leadId: s.leads[0]!.lead.id } });
+    expect(msg).toMatchObject({ scheduledMessageId: dumpRow.id, outsideApp: false });
+    expect(await P().campaignLead.findUniqueOrThrow({ where: { id: clId } })).toMatchObject({
+      currentStepId: s.steps[1]!.id,
+    });
+    // the next step still goes out
+    await toStep2(clock, s, clId);
+    expect((await tick(clock)).SENT).toBe(1);
+    expect(await ALL_SENT(s)).toBe(2);
+  });
+
+  test("(b) a step planned and sent after the dump is re-planned by the planner and still not sent again", async () => {
+    const clock = fixedClock(T);
+    const s = await seedCampaign(P(), { at: T, rows: 1, steps: 2, accounts: [{}, {}] });
+    const clId = s.leads[0]!.cl.id;
+    expect((await tick(clock)).SENT).toBe(1);
+    const dumpRows = await P().scheduledMessage.findMany({ where: { campaignLeadId: clId } });
+    const dumpCl = await P().campaignLead.findUniqueOrThrow({ where: { id: clId } });
+    await toStep2(clock, s, clId);
+    expect((await tick(clock)).SENT).toBe(1);
+    expect(await ALL_SENT(s)).toBe(2);
+
+    clock.advance(3600_000);
+    await restore(dumpCl, dumpRows);
+    await markFresh(
+      P(),
+      s.accounts.map((a) => a.id),
+      clock.now(),
+    );
+    expect((await plan(clock)).planned).toBe(1); // the step-2 row the dump did not have
+    expect((await tick(clock)).SENT).toBe(1); // settled from the Sent copy
+    expect(await ALL_SENT(s)).toBe(2);
+    expect(await P().campaignLead.findUniqueOrThrow({ where: { id: clId } })).toMatchObject({
+      state: "COMPLETED",
+    });
+  });
+
+  test("(b) a step 1 the dump had not planned, re-planned onto another mailbox, is settled and keeps the real sender", async () => {
+    const clock = fixedClock(T);
+    const s = await seedCampaign(P(), {
+      at: T,
+      leads: 1,
+      steps: 2,
+      accounts: [{}, { email: `other-${randomBytes(3).toString("hex")}@other.test` }],
+    });
+    const clId = s.leads[0]!.cl.id;
+    const dumpCl = await P().campaignLead.findUniqueOrThrow({ where: { id: clId } });
+    await plan(clock);
+    expect((await tick(clock)).SENT).toBe(1);
+    const realSender = (await P().scheduledMessage.findFirstOrThrow()).accountId;
+
+    clock.advance(3600_000);
+    await restore(dumpCl, []);
+    await P().campaignAccount.deleteMany({ where: { accountId: realSender } }); // the planner must pick the other one
+    await markFresh(
+      P(),
+      s.accounts.map((a) => a.id),
+      clock.now(),
+    );
+    await plan(clock);
+    expect((await P().scheduledMessage.findFirstOrThrow()).accountId).not.toBe(realSender);
+    expect((await tick(clock)).SENT).toBe(1);
+    expect(await ALL_SENT(s)).toBe(1);
+    expect(await P().campaignLead.findUniqueOrThrow({ where: { id: clId } })).toMatchObject({
+      accountId: realSender,
+      currentStepId: s.steps[1]!.id,
+    });
+  });
+
+  test("a manual reply to the lead from the inbox (same thread subject) does not suppress the next step", async () => {
+    const clock = fixedClock(T);
+    const s = await seedCampaign(P(), { at: T, rows: 1, steps: 2, accounts: [{}] });
+    const A = s.accounts[0]!;
+    const clId = s.leads[0]!.cl.id;
+    expect((await tick(clock)).SENT).toBe(1);
+    const first = await P().scheduledMessage.findFirstOrThrow({ where: { campaignLeadId: clId } });
+    clock.advance(60_000);
+    // what sync imports for a reply the owner wrote by hand: our address, the lead, "Re:", in the campaign thread
+    await P().$transaction((tx) =>
+      ingestMessage(
+        tx,
+        A,
+        {
+          providerMessageId: "manual-1",
+          rfcMessageId: `<manual-${clId}@send.test>`,
+          folder: "SENT",
+          inReplyTo: first.rfcMessageId,
+          references: [first.rfcMessageId!],
+          from: { email: A.email },
+          to: [{ email: s.leads[0]!.lead.email }],
+          cc: [],
+          subject: "Re: Hi",
+          date: clock.now(),
+          text: "Just checking in",
+          html: null,
+          headers: {},
+          attachments: [],
+        },
+        { kind: "OUTBOUND" },
+        { historical: false },
+      ),
+    );
+    await toStep2(clock, s, clId);
+    expect((await tick(clock)).SENT).toBe(1);
+    expect(await ALL_SENT(s)).toBe(2);
   });
 });

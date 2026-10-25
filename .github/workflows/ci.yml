@@ -82,6 +82,8 @@ jobs:
         run: |
           docker compose exec -T postgres psql -U rightnow -d rightnow -c "create table ci_marker as select 42 as v"
           docker compose run --rm --no-deps migrate migration-check seed
+          # one sending campaign (no leads, nothing to send): the restore must pause it
+          docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U rightnow -d rightnow -c "insert into \"Campaign\" (id, \"workspaceId\", name, status, \"updatedAt\") select 'ci-active', id, 'ci', 'ACTIVE', now() from \"Workspace\" where slug = 'migration-check'"
           sh scripts/backup.sh
       - name: Fresh volume
         run: |
@@ -100,7 +102,9 @@ jobs:
           if docker compose exec -T postgres psql -U rightnow -d rightnow -tAc "select v from ci_marker"; then echo "marker present before restore"; exit 1; fi
           out=$(sh scripts/restore.sh --yes backups/rightnow-*.dump)
           echo "$out"
-          echo "$out" | grep -q 'Active campaigns were paused'
+          echo "$out" | grep -q 'paused 1 active campaign(s)'
+          docker compose exec -T postgres psql -U rightnow -d rightnow -tAc "select status from \"Campaign\" where id = 'ci-active'" | grep -qx PAUSED
+          docker compose exec -T postgres psql -U rightnow -d rightnow -tAc "select meta->>'reason' from \"AuditLog\" where action = 'campaign.pause' and target = 'ci-active'" | grep -qx restore
           ls -l backups
           test "$(stat -c %a backups)" = 700
           test "$(stat -c %a backups/rightnow-*.dump)" = 600

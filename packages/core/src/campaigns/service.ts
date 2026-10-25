@@ -159,7 +159,14 @@ const FROM = {
 } satisfies Record<string, CampaignStatus[]>;
 const TO = { pause: "PAUSED", archive: "ARCHIVED" } as const;
 
-async function move(prisma: Db, ws: string, actorId: Actor, id: string, kind: keyof typeof FROM) {
+async function move(
+  prisma: Db,
+  ws: string,
+  actorId: Actor,
+  id: string,
+  kind: keyof typeof FROM,
+  reason?: string,
+) {
   return prisma.$transaction(async (tx) => {
     const was = await liveCampaign(tx, ws, id);
     const r = await tx.campaign.updateMany({
@@ -168,19 +175,22 @@ async function move(prisma: Db, ws: string, actorId: Actor, id: string, kind: ke
     });
     if (r.count !== 1) throw new CampaignError(409, `cannot_${kind}_${was.status.toLowerCase()}`);
     if (kind === "archive") await cancelCampaignRows(tx, id);
-    await audit(tx, ctx(ws, actorId), `campaign.${kind}`, id, { from: was.status });
+    await audit(tx, ctx(ws, actorId), `campaign.${kind}`, id, {
+      from: was.status,
+      ...(reason && { reason }),
+    });
     return liveCampaign(tx, ws, id);
   });
 }
 const cancelCampaignRows = (tx: Tx, id: string) =>
   cancelRows(tx, Prisma.sql`"campaignId" = ${id}`, ["SCHEDULED", "HELD"]);
 
-export const pauseCampaign = (p: Db, ws: string, a: Actor, id: string) =>
-  move(p, ws, a, id, "pause");
+export const pauseCampaign = (p: Db, ws: string, a: Actor, id: string, reason?: string) =>
+  move(p, ws, a, id, "pause", reason);
 /**
- * After restoring an older dump (scripts/restore.sh): rows sent since the dump are SCHEDULED again, so every sending
- * campaign (any workspace) is paused until the owner has checked the Sent folders. ACCOUNTS_UNHEALTHY is included
- * because it flips back to ACTIVE by itself. Returns how many were paused.
+ * After restoring an older dump (scripts/restore.sh), defence in depth for D53: every sending campaign (any workspace)
+ * is paused, audited with reason "restore", until the owner resumes it. ACCOUNTS_UNHEALTHY is included because it
+ * flips back to ACTIVE by itself. Returns how many were paused.
  */
 export async function pauseActiveCampaigns(prisma: Db): Promise<number> {
   const rows = await prisma.campaign.findMany({
@@ -189,7 +199,7 @@ export async function pauseActiveCampaigns(prisma: Db): Promise<number> {
   });
   let n = 0;
   for (const c of rows)
-    n += await pauseCampaign(prisma, c.workspaceId, null, c.id).then(
+    n += await pauseCampaign(prisma, c.workspaceId, null, c.id, "restore").then(
       () => 1,
       (e) => (e instanceof CampaignError && e.status === 409 ? 0 : Promise.reject(e)), // changed meanwhile
     );

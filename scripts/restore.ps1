@@ -1,6 +1,7 @@
 # usage: scripts\restore.ps1 [-Yes] backups\rightnow-<ts>.dump  (replaces current data; asks first unless -Yes)
 # Validates the dump, saves a pre-restore backup of the current data, recreates the database, migrates and pauses
-# every active campaign (rows sent after the dump would otherwise be sent again) before web and worker start.
+# every active campaign (defence in depth; sends after the dump are recognised from the Sent folders, D53) before
+# web and worker start.
 param([Parameter(Mandatory)][string]$File, [switch]$Yes)
 $ErrorActionPreference = "Stop"
 if (-not (Test-Path $File -PathType Leaf)) { throw "dump not found: $File" }
@@ -19,5 +20,5 @@ cmd /c "docker compose exec -T postgres pg_restore -U rightnow -d rightnow --no-
 if ($LASTEXITCODE -ne 0) { throw "restore failed; web and worker are stopped. Your previous data is in $safety" }
 X docker compose @P run --rm migrate
 X docker compose @P run --rm --no-deps migrate pause-campaigns
-"Active campaigns were paused: sends after this dump would otherwise repeat. Resume them after checking the Sent folders."
+"Active campaigns were paused (audit reason: restore). Steps sent after this dump are recognised from each mailbox's Sent folder before anything is sent and are not repeated. Resume the campaigns when ready (docs/ops/LOCAL.md, Restore)."
 X docker compose @P up -d web worker

@@ -1,6 +1,5 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { Prisma, type AccountProvider, type PrismaClient } from "@rightnow/db/client";
-import { newMessageId } from "@rightnow/providers";
 import type { Clock } from "./clock";
 import { stopLead } from "./campaigns/hooks";
 import type { EspRule } from "./campaigns/schema";
@@ -74,6 +73,13 @@ export async function sendableProviders(
   });
   return rows.map((r) => r.provider);
 }
+
+/**
+ * D53: the Message-ID of a campaign send is fixed by (lead in campaign, step) and the sender's domain, so a send the
+ * database lost (an older dump restored) is recognised from its synced Sent copy instead of going out again.
+ */
+export const campaignMessageId = (campaignLeadId: string, stepId: string, domain: string) =>
+  `<${createHash("sha256").update(`${campaignLeadId}:${stepId}`).digest("hex").slice(0, 32)}@${domain}>`;
 
 const asDate = (ymd: string) => new Date(`${ymd}T00:00:00Z`);
 
@@ -331,7 +337,8 @@ async function claimOne(
       }
 
       const claimToken = randomUUID();
-      const rfcMessageId = m.rfcMessageId ?? newMessageId(domainOf(a.email));
+      const rfcMessageId =
+        m.rfcMessageId ?? campaignMessageId(m.campaignLeadId, m.stepId, domainOf(a.email));
       const done = await set({
         status: "SENDING",
         claimToken,

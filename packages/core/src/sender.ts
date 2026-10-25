@@ -1,4 +1,9 @@
-import { Prisma, type EmailAccount, type PrismaClient } from "@rightnow/db/client";
+import {
+  Prisma,
+  type EmailAccount,
+  type PrismaClient,
+  type ScheduledMessage,
+} from "@rightnow/db/client";
 import {
   AuthError,
   PermanentSendError,
@@ -14,7 +19,8 @@ import {
 import { recordProviderError } from "./accounts/health";
 import { stopLead } from "./campaigns/hooks";
 import type { Clock } from "./clock";
-import { claimDue, withTxRetry, type ClaimOpts, type Claimed } from "./dispatch";
+import { campaignMessageId, claimDue, withTxRetry, type ClaimOpts, type Claimed } from "./dispatch";
+import { domainOf } from "./leads/domain";
 import { isSuppressed, suppress } from "./leads/suppression";
 import { advanceLead } from "./planner";
 import { commitUsage, creditSent, releaseUsage, type UsageRef } from "./quota";
@@ -179,6 +185,67 @@ export async function sendClaimed(
   return recordAccepted(db, clock, c, res);
 }
 
+/**
+ * D53: a Sent copy of this (lead, step) from any mailbox of the workspace (the claim's freshness gate means the row's
+ * own mailbox has synced). Only a send of ours carries that Message-ID, so a manual reply never matches.
+ */
+async function syncedCopy(db: PrismaClient, m: ScheduledMessage) {
+  const accounts = await db.emailAccount.findMany({
+    where: { workspaceId: m.workspaceId },
+    select: { email: true },
+  });
+  const ids = new Set(
+    accounts.map((a) => campaignMessageId(m.campaignLeadId, m.stepId, domainOf(a.email))),
+  );
+  if (m.rfcMessageId) ids.add(m.rfcMessageId);
+  return db.message.findFirst({
+    // OUT: an inbound copy (a campaign mailing another mailbox of the workspace) must not become the sticky sender
+    where: { workspaceId: m.workspaceId, rfcMessageId: { in: [...ids] }, direction: "OUT" },
+    orderBy: { sentAt: "asc" },
+    include: { thread: { select: { providerThreadId: true } } },
+  });
+}
+
+/** Settles a claimed row as SENT from the copy, without calling the provider; the copy's mailbox becomes sticky. */
+async function settleFromCopy(
+  db: PrismaClient,
+  clock: Clock,
+  c: Claimed,
+  copy: NonNullable<Awaited<ReturnType<typeof syncedCopy>>>,
+): Promise<SendOutcome> {
+  const out = await withTxRetry(() =>
+    db.$transaction(async (tx) => {
+      // D21 order: the row, then its CampaignLead (acceptTx takes both again)
+      const r = await tx.scheduledMessage.updateMany({
+        where: { id: c.id, claimToken: c.claimToken, status: "SENDING" },
+        data: { rfcMessageId: copy.rfcMessageId },
+      });
+      if (!r.count) return "LOST" as const;
+      await tx.campaignLead.updateMany({
+        where: { id: c.campaignLeadId, accountId: null },
+        data: { accountId: copy.accountId },
+      });
+      return acceptTx(
+        tx,
+        clock,
+        c,
+        {
+          rfcMessageId: copy.rfcMessageId,
+          ...(copy.providerMessageId && { providerMessageId: copy.providerMessageId }),
+          ...(copy.thread.providerThreadId && { providerThreadId: copy.thread.providerThreadId }),
+        },
+        copy.sentAt,
+      );
+    }, TX),
+  );
+  if (out === "SENT")
+    await db.message.updateMany({
+      where: { id: copy.id, scheduledMessageId: null },
+      data: { scheduledMessageId: c.id, outsideApp: false },
+    });
+  return out;
+}
+
 /** Review Focus 2 / I1 / M1: everything that may have changed since the claim, read once right before the provider call. */
 async function precheck(
   db: PrismaClient,
@@ -192,6 +259,8 @@ async function precheck(
   const m = await db.scheduledMessage.findUnique({ where: { id: c.id } });
   // whoever changed the token (late accept, recovery) owns the reservation now: never release it from here
   if (!m || m.status !== "SENDING" || m.claimToken !== c.claimToken) return "LOST";
+  const copy = await syncedCopy(db, m);
+  if (copy) return settleFromCopy(db, clock, c, copy);
   const cl = await db.campaignLead.findUniqueOrThrow({ where: { id: m.campaignLeadId } });
   const lead = await db.lead.findUniqueOrThrow({ where: { id: cl.leadId } });
   const step = await db.sequenceStep.findUniqueOrThrow({ where: { id: m.stepId } });

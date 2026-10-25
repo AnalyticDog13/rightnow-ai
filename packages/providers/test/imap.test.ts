@@ -7,6 +7,7 @@ import {
   MS_SMTP_DISABLED_HINT,
   PermanentSendError,
   RateLimitedError,
+  ImapSmtpProvider,
   TransientBeforeSendError,
   buildMime,
   imapOptions,
@@ -741,5 +742,32 @@ describe("error mapping", () => {
       .catch((k) => k);
     expect(e).toBeInstanceOf(AmbiguousSendError);
     expect(e.message).not.toMatch(/\bp\b/);
+  });
+});
+
+describe("credential load (m1/n2)", () => {
+  const withCreds = (credentials: () => Promise<never>) =>
+    new ImapSmtpProvider({ address: ADDRESS, credentials, mode: "local", allowPrivate: false });
+  const mime = {
+    from: { email: ADDRESS },
+    to: [x],
+    subject: "s",
+    text: "t",
+    messageId: "<m@rn.test>",
+  };
+
+  it("a plain error loading the credentials is transient before send (send and IMAP reads); a ProviderError passes", async () => {
+    const plain = withCreds(async () => {
+      throw new Error("decrypt failed");
+    });
+    expect(await plain.send(mime).catch((e) => e)).toBeInstanceOf(TransientBeforeSendError);
+    expect(await plain.findSent("<a@rn.test>").catch((e) => e)).toBeInstanceOf(
+      TransientBeforeSendError,
+    );
+    const auth = new AuthError("invalid_grant");
+    const p = withCreds(async () => {
+      throw auth;
+    });
+    expect(await p.send(mime).catch((e) => e)).toBe(auth);
   });
 });

@@ -2,7 +2,12 @@ import { isIP } from "node:net";
 import { Readable } from "node:stream";
 import { ImapFlow, type ImapFlowOptions } from "imapflow";
 import SMTPConnection from "nodemailer/lib/smtp-connection";
-import { PermanentSendError, ProviderError, TransientBeforeSendError } from "../errors";
+import {
+  PermanentSendError,
+  ProviderError,
+  TransientBeforeSendError,
+  beforeRequest,
+} from "../errors";
 import { buildMime, parseRaw } from "../mime";
 import { assertPublicHost } from "../net";
 import type {
@@ -164,7 +169,7 @@ export class ImapSmtpProvider implements MailProvider {
 
   /** One connection per operation: connect, work, logout. */
   private async withImap<T>(fn: (c: ImapFlow) => Promise<T>): Promise<T> {
-    const creds = await this.o.credentials();
+    const creds = await beforeRequest(() => this.o.credentials());
     let c: ImapFlow;
     try {
       c = await this.openImap(creds.imap);
@@ -227,8 +232,8 @@ export class ImapSmtpProvider implements MailProvider {
   async send(m: OutboundMime, opts: { signal?: AbortSignal } = {}): Promise<SendResult> {
     if (m.from.email.toLowerCase() !== this.address) throw new PermanentSendError("from_mismatch");
     opts.signal?.throwIfAborted();
-    const creds = await this.o.credentials();
-    const raw = await buildMime(m);
+    const creds = await beforeRequest(() => this.o.credentials());
+    const raw = await beforeRequest(() => buildMime(m));
     const to = [...m.to, ...(m.cc ?? []), ...(m.bcc ?? [])].map((a) => a.email);
     try {
       await this.smtpSession(creds.smtp, {
