@@ -2,9 +2,9 @@ RightNow.ai
 Copyright (c) 2026 rightnow-ai contributors. Licensed under the MIT License (see LICENSE).
 
 This product bundles or installs third-party software under the licenses below. Packages under
-MIT, ISC, Unlicense and similar terms are listed in docs/LICENSES.md. The full license text of each
+MIT, ISC, Unlicense and similar terms are summarised by count in docs/LICENSES.md. The full license text of each
 package ships in its own node_modules folder. Source: package-lock.json (production closure, dev-only
-packages excluded; platform-specific optional binaries are listed although only the matching one installs).
+packages excluded, dev-optional included; platform-specific optional binaries are listed although only the matching one installs).
 
 Format: name@version | license | URL
 

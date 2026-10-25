@@ -13,8 +13,10 @@ Run from the repo root, the tool saw only the root package (all dependencies liv
 hoisted), and per-workspace runs missed hoisted packages. The table below therefore comes from the same data
 source, `package-lock.json`: every non-dev entry (406 packages, workspace packages excluded), with the license
 read from the lockfile and, where absent, from the installed `package.json`. Platform-specific optional binaries
-(sharp, lightningcss) are all counted although only the matching one installs on a given machine. Raw JSON is
-kept outside the repo.
+(sharp, lightningcss) are all counted although only the matching one installs on a given machine. "Non-dev"
+means entries without `"dev": true`, so `devOptional` entries (Playwright, TypeScript, some lightningcss
+copies) are included: a deliberate over-count. The extraction was an ad-hoc script over the lockfile, not
+committed; raw JSON is kept outside the repo.
 
 ## Summary (production closure, 406 packages)
 
@@ -46,7 +48,7 @@ Permissive (MIT, ISC, BSD-2/3, Apache-2.0, 0BSD, MIT-0, Unlicense, CC0, and the 
 
 | Package(s) | License | Pulled in by | Disposition |
 |---|---|---|---|
-| `@img/sharp-libvips-*` (10), plus `@img/sharp-win32-*` and `@img/sharp-wasm32` (4) | LGPL-3.0-or-later (some `Apache-2.0 AND LGPL-3.0-or-later`) | `sharp`, an optional dependency of `next` | **Finding for the user.** Weak copyleft; prebuilt libvips binaries, unmodified, loaded dynamically by sharp. Not swapped or removed. Typical reading is that using them unmodified is fine, but that is for you or a lawyer to confirm. |
+| `@img/sharp-libvips-*` (10), plus `@img/sharp-win32-*` and `@img/sharp-wasm32` (4) | LGPL-3.0-or-later (some `Apache-2.0 AND LGPL-3.0-or-later`) | `sharp`, an optional dependency of `next` | **Finding for the user.** Weak copyleft; prebuilt libvips binaries, unmodified, loaded dynamically by sharp. Not swapped or removed. LGPL is commonly understood to permit dynamic use of unmodified libraries; confirm with counsel. |
 | `lightningcss` and 11 platform builds | MPL-2.0 | `@tailwindcss/node`, `vite` | File-level copyleft; unmodified use. Source is available from the project. No action proposed. |
 | `elkjs` | EPL-2.0 | `@prisma/studio-core` (Prisma CLI) | Weak copyleft, unmodified use. Listed in NOTICE. |
 | `@zone-eu/mailsplit` | `MIT OR EUPL-1.1+` | `imapflow`, `mailparser` | Dual license; MIT is the one relied on. |
