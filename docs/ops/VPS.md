@@ -39,7 +39,7 @@ Webhook URLs, the AI base URL and the verifier URL must be public by default. `A
 0 3 * * * cd /home/you/rightnow-ai && mkdir -p backups && scripts/backup.sh >> backups/cron.log 2>&1 && find backups -name '*.dump' -mtime +14 -delete
 ```
 
-Copy `backups/` off the server (rsync, object storage); a backup on the same disk does not survive losing the VPS. **Store `ENCRYPTION_KEY` with them, in a password manager or other separate secure place.** Without the key, restored mailbox credentials are unreadable. Test a restore occasionally on a separate machine or volume, never over the live stack: a restore replaces the data and pauses every active campaign, and the live stack then needs `--yes` or a typed `yes` to proceed. Messages sent after the dump are recognised from the Sent folders and not sent again (see the Restore note in `LOCAL.md` for what is not covered); resume the campaigns when ready.
+Copy `backups/` off the server (rsync, object storage); a backup on the same disk does not survive losing the VPS. **Store `ENCRYPTION_KEY` with them, in a password manager or other separate secure place.** Without the key, restored mailbox credentials are unreadable. Test a restore occasionally on a separate machine or volume, never over the live stack: a restore replaces the data and pauses every active campaign, and the live stack then needs `--yes` or a typed `yes` to proceed. Messages sent after the dump are recognised from the Sent folders and not sent again (see the Restore note in `LOCAL.md` for what is not covered); resume the campaigns only after every mailbox has synced since the restore.
 
 ## 3b. Tracking domain (optional)
 

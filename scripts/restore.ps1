@@ -20,5 +20,5 @@ cmd /c "docker compose exec -T postgres pg_restore -U rightnow -d rightnow --no-
 if ($LASTEXITCODE -ne 0) { throw "restore failed; web and worker are stopped. Your previous data is in $safety" }
 X docker compose @P run --rm migrate
 X docker compose @P run --rm --no-deps migrate pause-campaigns
-"Active campaigns were paused (audit reason: restore). Steps sent after this dump are recognised from each mailbox's Sent folder before anything is sent and are not repeated. Resume the campaigns when ready (docs/ops/LOCAL.md, Restore)."
+"Active campaigns were paused (audit reason: restore). Steps sent after this dump are recognised from each mailbox's Sent folder before anything is sent and are not repeated. Resume the campaigns only after every mailbox shows a sync completed since the restore (docs/ops/LOCAL.md, Restore)."
 X docker compose @P up -d web worker
