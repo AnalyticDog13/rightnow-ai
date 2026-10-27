@@ -15,3 +15,8 @@ packages/db/src/generated/
 *.tsbuildinfo
 next-env.d.ts
 apps/web/AGENTS.md
+
+# private release notes (kept local)
+docs/FINAL_ASSESSMENT.md
+docs/RELEASE_CHECK.md
+docs/ops/LIVE_VERIFICATION.md
