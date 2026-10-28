@@ -62,7 +62,8 @@ that sat idle for a while is re-warmed automatically.
 1. **Leads:** import a CSV, map its columns (name, company, custom fields) and the app removes duplicates.
    Add anyone who must never be emailed to the blocklist.
 2. **Campaigns:** write step 1 and the follow-ups, with merge fields like `{{firstName}}` and A/B variants. Then
-   set the sending days and hours, the time zone, the daily limit and which mailboxes send.
+   set the sending days and hours, the time zone, the daily limit and which mailboxes send. In the campaign
+   options you can swap the footer's unsubscribe link for an opt-out message ("reply unsubscribe").
 3. Send yourself a test email, then launch.
 
 Follow-ups always go from the mailbox that sent step 1. A lead stops getting emails when they reply, bounce
@@ -104,8 +105,9 @@ Developers can also plug an external pool in through the `WarmupProvider` interf
 
 You are responsible for how you use this software. Before you email anyone you need a lawful basis to do so
 (for example CAN-SPAM in the US, GDPR/PECR in the EU and UK, CASL in Canada, as applicable to you and your
-recipients). Send only as your own, honestly identified sender. An unsubscribe link is built into every campaign
-email and cannot be disabled, and unsubscribes are always honored. Your mailbox providers' terms also apply and
+recipients). Send only as your own, honestly identified sender. Every campaign email carries a List-Unsubscribe
+header, and unsubscribes are always honored. The visible unsubscribe link in the footer can be replaced
+per campaign with an opt-out message (campaign options); replies like "unsubscribe" are detected and the lead is suppressed. Your mailbox providers' terms also apply and
 can restrict cold email. The software is provided without warranty (see [LICENSE](LICENSE)); nothing here is legal
 advice. More detail: [docs/COMPLIANCE.md](docs/COMPLIANCE.md) and [docs/PROVIDER_COMPLIANCE.md](docs/PROVIDER_COMPLIANCE.md).
 

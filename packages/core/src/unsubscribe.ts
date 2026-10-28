@@ -121,19 +121,34 @@ const ENT: Record<string, string> = {
 };
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ENT[c]!);
 
-/** The address is always added; the link only when the body did not already use {{unsubscribeLink}}. */
+/** Suggested footer text for campaigns without a link; classify.ts reads a reply of "unsubscribe" as an opt-out. */
+export const DEFAULT_OPT_OUT_TEXT =
+  'Not interested? Just reply "unsubscribe" and I won\'t email you again.';
+
+/**
+ * The address is always added. Unless the body already used {{unsubscribeLink}}, the footer adds the link, or with
+ * `link: false` the opt-out message instead.
+ */
 export function withComplianceFooter(
   body: { html: string | null; text: string },
-  p: { unsubscribeUrl: string; physicalAddress: string; hasLinkVariable: boolean },
+  p: {
+    unsubscribeUrl: string;
+    physicalAddress: string;
+    hasLinkVariable: boolean;
+    link?: boolean;
+    optOutText?: string | null;
+  },
 ): { html: string | null; text: string } {
   if (!p.physicalAddress.trim()) throw new Error("physical_address_required");
-  const link = !p.hasLinkVariable;
+  const off = p.link === false && !p.hasLinkVariable;
+  const link = !p.hasLinkVariable && !off;
+  const msg = off ? p.optOutText?.trim() || DEFAULT_OPT_OUT_TEXT : "";
   return {
     html:
       body.html === null
         ? null
-        : `${body.html}<p style="font-size:12px;color:#666">${esc(p.physicalAddress)}${link ? `<br><a href="${esc(p.unsubscribeUrl)}">Unsubscribe</a>` : ""}</p>`,
-    text: `${body.text}\n\n--\n${p.physicalAddress}${link ? `\nUnsubscribe: ${p.unsubscribeUrl}` : ""}`,
+        : `${body.html}<p style="font-size:12px;color:#666">${esc(p.physicalAddress)}${link ? `<br><a href="${esc(p.unsubscribeUrl)}">Unsubscribe</a>` : ""}${msg ? `<br>${esc(msg)}` : ""}</p>`,
+    text: `${body.text}\n\n--\n${p.physicalAddress}${link ? `\nUnsubscribe: ${p.unsubscribeUrl}` : ""}${msg ? `\n${msg}` : ""}`,
   };
 }
 

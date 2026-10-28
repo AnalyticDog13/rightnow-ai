@@ -37,6 +37,8 @@ const FIELDS: { k: string; label: string; kind: Kind; hint?: string }[] = [
   { k: "matchProvider", label: "Match lead's email provider", kind: "bool" },
   { k: "allowRisky", label: "Email risky addresses", kind: "bool" },
   { k: "bounceProtect", label: "Bounce protection", kind: "bool" },
+  { k: "unsubscribeLink", label: "Include unsubscribe link in the footer", kind: "bool" },
+  { k: "optOutText", label: "Opt-out message", kind: "text" },
   { k: "cc", label: "CC (comma separated)", kind: "list" },
   { k: "bcc", label: "BCC (comma separated)", kind: "list" },
   { k: "plValue", label: "Pipeline value per lead", kind: "int" },
@@ -49,6 +51,8 @@ const FIELDS: { k: string; label: string; kind: Kind; hint?: string }[] = [
   },
   { k: "abResetDaily", label: "Reset variant balance daily", kind: "bool" },
 ];
+// Same text as DEFAULT_OPT_OUT_TEXT in @rightnow/core (a client component cannot import it).
+const DEFAULT_OPT_OUT = 'Not interested? Just reply "unsubscribe" and I won\'t email you again.';
 type Rule = { action: string; recipientEsp: string; senderEsp: string };
 const ESP = ["all", "google", "outlook", "other"];
 const sel = "h-10 rounded-md border border-border bg-card px-3 text-sm";
@@ -80,7 +84,11 @@ export function OptionsTab({
     Object.fromEntries(
       FIELDS.map((f) => [
         f.k,
-        f.kind === "bool" ? Boolean(campaign[f.k]) : initial(campaign[f.k], f.kind),
+        f.kind === "bool"
+          ? Boolean(campaign[f.k])
+          : f.k === "optOutText"
+            ? String(campaign[f.k] ?? DEFAULT_OPT_OUT)
+            : initial(campaign[f.k], f.kind),
       ]),
     ),
   );
@@ -120,7 +128,7 @@ export function OptionsTab({
       }}
     >
       <fieldset disabled={!canEdit} className="grid gap-3 sm:grid-cols-2">
-        {FIELDS.map((f) =>
+        {FIELDS.filter((f) => f.k !== "optOutText" || !form.unsubscribeLink).map((f) =>
           f.kind === "bool" ? (
             <label key={f.k} className="flex items-center gap-2 text-sm">
               <input
@@ -157,8 +165,14 @@ export function OptionsTab({
                   step={f.k === "plValue" ? "any" : undefined}
                   value={form[f.k] as string}
                   onChange={(e) => set(f.k, e.target.value)}
-                  aria-describedby={f.hint ? `opt-${f.k}-hint` : undefined}
+                  aria-describedby={f.hint || f.k === "optOutText" ? `opt-${f.k}-hint` : undefined}
                 />
+              )}
+              {f.k === "optOutText" && (
+                <p id="opt-optOutText-hint" className="text-xs text-muted-foreground">
+                  Replaces the link. Replies asking to unsubscribe are detected automatically and
+                  the lead is suppressed.
+                </p>
               )}
               {f.hint && (
                 <p id={`opt-${f.k}-hint`} className="text-xs text-muted-foreground">

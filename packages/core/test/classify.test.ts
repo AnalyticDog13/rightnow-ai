@@ -2,6 +2,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { parseRaw } from "@rightnow/providers";
 import { describe, expect, it } from "vitest";
+import { DEFAULT_OPT_OUT_TEXT } from "../src/unsubscribe";
 import { classify, INTEREST_OF, stripQuoted } from "../src/mail/classify";
 
 const dir = join(__dirname, "fixtures", "mail");
@@ -10,6 +11,18 @@ const expected = JSON.parse(readFileSync(join(dir, "expected.json"), "utf8")) as
   { _now?: string; _direction?: "IN" | "OUT" } & Record<string, unknown>
 >;
 const files = readdirSync(dir).filter((f) => f.endsWith(".eml"));
+
+describe("default opt-out message", () => {
+  it("is honored: a reply of the word it asks for classifies as UNSUBSCRIBE", async () => {
+    expect(DEFAULT_OPT_OUT_TEXT).toContain('"unsubscribe"');
+    const raw =
+      "From: a@x.test\r\nTo: b@y.test\r\nSubject: Re: Hello\r\nMessage-ID: <1@x.test>\r\nDate: Mon, 15 Jun 2026 10:00:00 +0000\r\n\r\nunsubscribe\r\n";
+    const m = await parseRaw(Buffer.from(raw), { providerMessageId: "", folder: "INBOX" });
+    expect(classify(m, { now: new Date("2026-06-15T12:00:00Z"), direction: "IN" })).toEqual({
+      kind: "UNSUBSCRIBE",
+    });
+  });
+});
 
 describe("rule classifier corpus", () => {
   it("has at least 30 emails and an expectation for each", () => {
@@ -65,9 +78,18 @@ describe("hostile input (FR C1)", () => {
     attachments: [],
   });
   it.each([
-    ["mailer-daemon, a@ + word chars", msg("mailer-daemon@x.test", "Undeliverable", `a@${"a".repeat(MB2)}`)],
-    ["mailer-daemon, dotted labels", msg("postmaster@x.test", "failure notice", `x@${"a.".repeat(MB2 / 2)}`)],
-    ["reply, whitespace run before unsubscribe", msg("p@x.test", "Re: hi", `${" ".repeat(MB2)}unsubscribe`)],
+    [
+      "mailer-daemon, a@ + word chars",
+      msg("mailer-daemon@x.test", "Undeliverable", `a@${"a".repeat(MB2)}`),
+    ],
+    [
+      "mailer-daemon, dotted labels",
+      msg("postmaster@x.test", "failure notice", `x@${"a.".repeat(MB2 / 2)}`),
+    ],
+    [
+      "reply, whitespace run before unsubscribe",
+      msg("p@x.test", "Re: hi", `${" ".repeat(MB2)}unsubscribe`),
+    ],
     ["reply, header-like lines", msg("p@x.test", "Re: hi", "From: a\n".repeat(MB2 / 8))],
     ["ooo, keyword run", msg("p@x.test", "Out of office", "back ".repeat(MB2 / 5))],
   ])("a 2 MB body classifies in < 100 ms: %s", (_, m) => {

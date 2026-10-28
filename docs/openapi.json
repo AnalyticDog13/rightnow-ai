@@ -4042,6 +4042,21 @@
                     "type": "boolean",
                     "const": true
                   },
+                  "unsubscribeLink": {
+                    "type": "boolean"
+                  },
+                  "optOutText": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 300
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "cc": {
                     "maxItems": 10,
                     "type": "array",
@@ -4334,6 +4349,21 @@
                   "unsubscribeHeader": {
                     "type": "boolean",
                     "const": true
+                  },
+                  "unsubscribeLink": {
+                    "type": "boolean"
+                  },
+                  "optOutText": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 300
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "cc": {
                     "maxItems": 10,
@@ -6451,6 +6481,21 @@
                       "unsubscribeHeader": {
                         "type": "boolean",
                         "const": true
+                      },
+                      "unsubscribeLink": {
+                        "type": "boolean"
+                      },
+                      "optOutText": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 300
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       },
                       "cc": {
                         "maxItems": 10,

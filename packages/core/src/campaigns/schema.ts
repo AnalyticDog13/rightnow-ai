@@ -37,6 +37,8 @@ export const campaignFields = {
   bounceProtect: z.boolean(),
   // D19: every campaign email carries List-Unsubscribe, so the toggle only accepts true.
   unsubscribeHeader: z.literal(true, { error: "unsubscribe_header_required" }),
+  unsubscribeLink: z.boolean(),
+  optOutText: text(300).nullable(),
   cc: emails,
   bcc: emails,
   ownerId: text(100).nullable(),

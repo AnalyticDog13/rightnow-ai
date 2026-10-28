@@ -130,7 +130,13 @@ afterAll(async () => {
 describe("campaign routes", () => {
   it("create, get, patch, schedules, accounts, account view, status moves, delete", async () => {
     const c = await json(await list.POST(req("POST", "/api/v1/campaigns", { name: "A" })));
-    expect(c).toMatchObject({ status: "DRAFT", minGapSec: 540, unsubscribeHeader: true });
+    expect(c).toMatchObject({
+      status: "DRAFT",
+      minGapSec: 540,
+      unsubscribeHeader: true,
+      unsubscribeLink: true,
+      optOutText: null,
+    });
     const off = { name: "B", unsubscribeHeader: false };
     expect((await list.POST(req("POST", "/api/v1/campaigns", off))).status).toBe(400);
     expect(
@@ -139,6 +145,14 @@ describe("campaign routes", () => {
 
     const patched = await one.PATCH(req("PATCH", "/x", { dailyLimit: 10 }), p(c.id));
     expect((await json(patched)).dailyLimit).toBe(10);
+
+    const oo = await one.PATCH(
+      req("PATCH", "/x", { unsubscribeLink: false, optOutText: " Reply stop " }),
+      p(c.id),
+    );
+    expect(await json(oo)).toMatchObject({ unsubscribeLink: false, optOutText: "Reply stop" });
+    const tooLong = { optOutText: "x".repeat(301) };
+    expect((await one.PATCH(req("PATCH", "/x", tooLong), p(c.id))).status).toBe(400);
 
     const sch = await schedules.PUT(req("PUT", "/x", office), p(c.id));
     expect((await json(sch)).schedules[0]).toMatchObject({ days: 62, timezone: "UTC" });

@@ -335,6 +335,10 @@ Every transaction that touches send state locks `ScheduledMessage` → `Campaign
   - **`leadTimeline`** keeps its 200-entry CRM cap, recorded as a shortcut (comment in `leads/timeline.ts`).
 - **D52 · Local-to-VPS migration is proven in CI with a seeded fixture** (PS-DEPLOY-11). `compose-smoke` seeds a `NEEDS_ATTENTION` mailbox credential and a 4096-byte attachment (`migration-check seed`, no worker job contacts a provider for it) before the backup and verifies both after restore, under a wrong key (must fail) and under the rotated key. Redirect-URI rotation, the DNS switch and the UI attachment download are procedural, checked by the "Moving from local to a VPS" checklist in `docs/ops/VPS.md`.
 
+## Opt-out message (after Phase 8)
+
+- **D54 · The visible unsubscribe link is optional per campaign; the footer then carries an opt-out reply message.** `Campaign.unsubscribeLink` (default true) and `optOutText` (max 300, default `DEFAULT_OPT_OUT_TEXT`: ask the lead to reply "unsubscribe"). With the link off, `withComplianceFooter` renders the physical address (still mandatory) plus the message instead of the link; a body that uses `{{unsubscribeLink}}` renders it unchanged. The `List-Unsubscribe` / `List-Unsubscribe-Post` headers (D19) stay on every campaign email. Reply opt-outs are honored through `classify.ts` (UNSUBSCRIBE, then `optOutTx`), so a custom message should still ask for a reply the classifier recognises ("unsubscribe", "remove me", "opt out", "stop emailing").
+
 ## Phase 8 (P8-T03)
 
 - **D53 · A restore never repeats a send: campaign Message-IDs are derived, and the sender settles from a synced copy.** A campaign send's Message-ID is `<sha256(campaignLeadId:stepId)[0..32]@sender domain>` (`campaignMessageId`, assigned at claim; opaque, nothing the recipient can read). Before the provider call, the sender looks for a stored outbound Message with that id (any mailbox domain of the workspace, the existing `Message @@index([workspaceId, rfcMessageId])`); if one exists the row is settled SENT from it through `acceptTx` (lead advanced, the copy's mailbox made sticky, the copy linked) and nothing is sent.

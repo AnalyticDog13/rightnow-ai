@@ -11,6 +11,7 @@ import {
   unsubscribeUrl,
   verifyUnsubscribe,
   withComplianceFooter,
+  DEFAULT_OPT_OUT_TEXT,
 } from "../src/unsubscribe";
 
 const K1 = Buffer.alloc(32, 1).toString("base64");
@@ -94,6 +95,41 @@ describe("headers and footer", () => {
   });
 });
 
+describe("opt-out message footer", () => {
+  const p = {
+    unsubscribeUrl: "https://h/u/t",
+    physicalAddress: "1 Main St",
+    hasLinkVariable: false,
+    link: false,
+  };
+  test("replaces the link with the default or a custom message, escaped", () => {
+    const d = withComplianceFooter({ html: "<p>Hi</p>", text: "Hi" }, p);
+    expect(d.html).not.toContain("<a ");
+    expect(d.html).toContain(
+      `1 Main St<br>${DEFAULT_OPT_OUT_TEXT.replace(/"/g, "&quot;").replace(/'/g, "&#39;")}</p>`,
+    );
+    expect(d.text).toBe(`Hi\n\n--\n1 Main St\n${DEFAULT_OPT_OUT_TEXT}`);
+    const c = withComplianceFooter(
+      { html: "<p>Hi</p>", text: "Hi" },
+      { ...p, optOutText: "  Reply <stop> & done  " },
+    );
+    expect(c.html).toContain("1 Main St<br>Reply &lt;stop&gt; &amp; done</p>");
+    expect(c.text).toBe("Hi\n\n--\n1 Main St\nReply <stop> & done");
+    expect(
+      withComplianceFooter({ html: null, text: "Hi" }, { ...p, optOutText: " " }).text,
+    ).toContain(DEFAULT_OPT_OUT_TEXT);
+  });
+  test("the address stays mandatory", () => {
+    expect(() =>
+      withComplianceFooter({ html: null, text: "x" }, { ...p, physicalAddress: "" }),
+    ).toThrow("physical_address_required");
+  });
+  test("a body using {{unsubscribeLink}} adds no message", () => {
+    const r = withComplianceFooter({ html: null, text: "Hi" }, { ...p, hasLinkVariable: true });
+    expect(r.text).toBe("Hi\n\n--\n1 Main St");
+  });
+});
+
 describe("unsubscribeLead", () => {
   let db: Awaited<ReturnType<typeof createTestDb>>;
   let ws: string;
@@ -166,7 +202,6 @@ describe("unsubscribeLead", () => {
     );
     expect(await rows("c@acme.test")).toHaveLength(0);
   });
-
 });
 
 describe("workspace settings", () => {

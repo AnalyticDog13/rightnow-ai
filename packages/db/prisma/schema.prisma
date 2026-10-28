@@ -628,6 +628,8 @@ model Campaign {
   allowRisky            Boolean              @default(false)
   bounceProtect         Boolean              @default(true)
   unsubscribeHeader     Boolean              @default(true)
+  unsubscribeLink       Boolean              @default(true)
+  optOutText            String?
   cc                    String[]
   bcc                   String[]
   startAt               DateTime?

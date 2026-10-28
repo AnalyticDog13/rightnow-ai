@@ -136,6 +136,8 @@ export function renderForLead(p: {
       unsubscribeUrl: url,
       physicalAddress: w.physicalAddress ?? "",
       hasLinkVariable: templateVariables(v.body).includes("unsubscribeLink"),
+      link: c.unsubscribeLink,
+      optOutText: c.optOutText,
     },
   );
   return { subject, html: out.html, text: out.text, headers };
