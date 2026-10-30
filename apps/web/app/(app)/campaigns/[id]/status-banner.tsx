@@ -1,9 +1,24 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { call } from "../../accounts/api-client";
+import { AlertCircle, Info } from "lucide-react";
+import Link from "next/link";
+import { Button } from "../../../../components/ui/button";
+import { cn } from "../../../../lib/utils";
 
 type Reason = { code: string; message: string; blocking: boolean };
+export type Why = { sending: boolean; reasons: Reason[] };
+
+/** Reasons a tab (or another page) fixes: the row ends with an "Open {Tab}" link-button. */
+const FIX_AT: Record<string, { tab: string; label: string } | { href: string; label: string }> = {
+  no_accounts: { tab: "accounts", label: "Accounts" },
+  accounts_unavailable: { tab: "accounts", label: "Accounts" },
+  outside_window: { tab: "schedule", label: "Schedule" },
+  no_eligible_leads: { tab: "leads", label: "Leads" },
+  leads_paused: { tab: "leads", label: "Leads" },
+  held_messages: { href: "/scheduled", label: "Scheduled emails" },
+  account_inactive: { href: "/accounts", label: "Email Accounts" },
+  no_physical_address: { href: "/settings", label: "Settings" },
+};
 
 // One sentence per reason code. The API message is the fallback for a code added later.
 const SENTENCE: Record<string, string> = {
@@ -30,30 +45,58 @@ const SENTENCE: Record<string, string> = {
 };
 
 /** Why the campaign is or is not sending (explainer, P3-T10a): blocking reasons first, then notes. */
-export function StatusBanner({ campaignId, version }: { campaignId: string; version: number }) {
-  const [why, setWhy] = useState<{ sending: boolean; reasons: Reason[] } | null>(null);
-  useEffect(() => {
-    let live = true;
-    void call(`/api/v1/campaigns/${campaignId}/status`, "GET").then((r) => {
-      if (live && r.ok) setWhy(r.json as typeof why);
-    });
-    return () => {
-      live = false;
-    };
-  }, [campaignId, version]);
+export function StatusBanner({ why, onOpen }: { why: Why | null; onOpen: (tab: string) => void }) {
   if (!why) return null;
   const sorted = [...why.reasons].sort((a, b) => Number(b.blocking) - Number(a.blocking));
   return (
     <section
       aria-label="Campaign status"
-      className="rounded-md border border-border bg-card p-3 text-sm"
+      className="flex flex-col gap-2 rounded-lg border border-border bg-surface px-4 py-3 text-sm"
     >
-      <p className="font-medium">{why.sending ? "Sending" : "Not sending right now"}</p>
-      <ul className="list-disc pl-5">
-        {sorted.map((r) => (
-          <li key={r.code}>{SENTENCE[r.code] ?? r.message}</li>
-        ))}
-      </ul>
+      <p className="flex items-center gap-2 font-medium">
+        <span
+          aria-hidden
+          className={cn(
+            "size-2 rounded-full",
+            why.sending ? "animate-pulse-dot bg-success-solid" : "bg-warning-solid",
+          )}
+        />
+        {why.sending ? "Sending" : "Not sending right now"}
+      </p>
+      {sorted.length > 0 && (
+        <ul className="flex flex-col gap-1.5">
+          {sorted.map((r) => {
+            const fix = FIX_AT[r.code];
+            const Icon = r.blocking ? AlertCircle : Info;
+            return (
+              <li key={r.code} className="flex flex-wrap items-start gap-x-2 gap-y-1">
+                <Icon
+                  className={cn(
+                    "mt-0.5 size-4 shrink-0",
+                    r.blocking ? "text-danger" : "text-fg-muted",
+                  )}
+                  aria-hidden
+                />
+                <span className="min-w-0 flex-1">{SENTENCE[r.code] ?? r.message}</span>
+                {fix &&
+                  ("tab" in fix ? (
+                    <Button
+                      variant="link"
+                      className="text-[13px]/5"
+                      onClick={() => onOpen(fix.tab)}
+                    >
+                      Open {fix.label}
+                    </Button>
+                  ) : (
+                    <Button asChild variant="link" className="text-[13px]/5">
+                      <Link href={fix.href}>Open {fix.label}</Link>
+                    </Button>
+                  ))}
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </section>
   );
 }

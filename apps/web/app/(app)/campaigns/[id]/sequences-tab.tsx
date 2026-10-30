@@ -1,9 +1,24 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  AlertTriangle,
+  ChevronRight,
+  Eye,
+  ListOrdered,
+  Pencil,
+  Plus,
+  Sparkles,
+  Trash2,
+} from "lucide-react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Callout } from "../../../../components/callout";
+import { EmptyState } from "../../../../components/empty-state";
 import { Button } from "../../../../components/ui/button";
 import { Card } from "../../../../components/ui/card";
-import { Input } from "../../../../components/ui/input";
+import { Input, Textarea } from "../../../../components/ui/input";
+import { Select } from "../../../../components/ui/select";
+import { Switch } from "../../../../components/ui/switch";
+import { cn } from "../../../../lib/utils";
 import { call, errorText } from "../../accounts/api-client";
 import { toHtml } from "../../inbox/composer";
 import { AiAssist } from "../../../../components/ai-assist";
@@ -33,7 +48,6 @@ type Common = {
   onChange: () => void;
 };
 type Issue = { field?: string; message: string };
-const sel = "h-10 rounded-md border border-border bg-card px-3 text-sm";
 
 /** Errors from the API (template_invalid carries validateTemplate's issues) as readable lines. */
 function problems(r: { json: Record<string, unknown> }): string[] {
@@ -98,34 +112,66 @@ function VariantEditor({
 
   return (
     <fieldset
-      className="flex flex-col gap-2 rounded-md border border-border p-3"
+      id={variant ? `variant-${variant.id}` : undefined}
+      className={cn(
+        "flex min-w-0 scroll-mt-24 flex-col gap-3 rounded-md border border-border p-4",
+        !variant && "border-dashed",
+        variant && !variant.active && "bg-sunken",
+      )}
       disabled={!canEdit}
     >
-      <legend className="px-1 text-sm font-medium">
+      <legend className="flex items-center gap-2 px-1 text-sm font-semibold">
         {variant ? `Variant ${variant.label}` : "Add a variant"}
+        {variant && !variant.active && (
+          <span className="font-normal text-fg-subtle" aria-hidden>
+            (off)
+          </span>
+        )}
       </legend>
+      {variant && !variant.active && variant.autoPausedMetric && (
+        <Callout tone="warning">
+          Auto-paused (
+          {variant.autoPausedMetric === "open"
+            ? "open rate, estimated"
+            : `${variant.autoPausedMetric} rate`}
+          )
+        </Callout>
+      )}
       <Input
         aria-label={`Subject of ${name}`}
         placeholder="Subject"
         value={subject}
         onChange={(e) => setSubject(e.target.value)}
       />
-      <textarea
+      <Textarea
         ref={area}
         aria-label={`Body of ${name}`}
         placeholder="Body (HTML)"
-        rows={5}
-        className="w-full rounded-md border border-border bg-card p-3 text-sm focus-visible:outline-2 focus-visible:outline-primary"
+        rows={6}
+        className="min-h-40 font-mono text-[13px]/5"
         value={body}
         onChange={(e) => setBody(e.target.value)}
       />
-      <details className="text-sm">
-        <summary className="cursor-pointer">Draft with AI</summary>
-        <div className="mt-2 flex flex-col gap-2">
-          <Input aria-label="Tone" value={tone} onChange={(e) => setTone(e.target.value)} />
+      <details className="group rounded-sm border border-border text-sm">
+        <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 px-3 md:min-h-9 [&::-webkit-details-marker]:hidden">
+          <ChevronRight
+            className="size-3.5 text-fg-muted transition-transform duration-(--dur-2) group-open:rotate-90"
+            aria-hidden
+          />
+          <Sparkles className="size-3 text-ai" aria-hidden />
+          Draft with AI
+        </summary>
+        <div className="flex flex-col gap-2 border-t border-border p-3 md:flex-row md:flex-wrap md:items-start">
+          <Input
+            aria-label="Tone"
+            className="md:w-40"
+            value={tone}
+            onChange={(e) => setTone(e.target.value)}
+          />
           <Input
             aria-label="Offer"
             placeholder="Offer (optional)"
+            className="md:w-64"
             value={offer}
             onChange={(e) => setOffer(e.target.value)}
           />
@@ -142,9 +188,10 @@ function VariantEditor({
         </div>
       </details>
       <div className="flex flex-wrap items-center gap-2">
-        <select
+        <Select
+          size="sm"
           aria-label={`Insert variable into ${name}`}
-          className={sel}
+          className="w-auto"
           value=""
           onChange={(e) => e.target.value && insert(e.target.value)}
         >
@@ -152,51 +199,51 @@ function VariantEditor({
           {variables.map((v) => (
             <option key={v}>{v}</option>
           ))}
-        </select>
-        <label className="flex items-center gap-1 text-sm">
+        </Select>
+        <label className="flex items-center gap-2 text-[13px]/[18px] text-fg-muted">
           Weight
           <Input
             type="number"
             min={1}
-            className="w-20"
+            className="w-20 md:h-8"
             value={weight}
             onChange={(e) => setWeight(e.target.value)}
           />
         </label>
         {variant && (
-          <label className="flex items-center gap-1 text-sm">
-            <input
-              type="checkbox"
-              checked={variant.active}
-              onChange={(e) => void toggle(e.target.checked)}
-            />
-            Active
-          </label>
+          <Switch
+            label="Active"
+            className="text-[13px]/[18px]"
+            checked={variant.active}
+            onChange={(e) => void toggle(e.target.checked)}
+          />
         )}
-        {variant && !variant.active && variant.autoPausedMetric && (
-          <span className="rounded bg-muted px-2 py-0.5 text-xs">
-            Auto-paused (
-            {variant.autoPausedMetric === "open"
-              ? "open rate, estimated"
-              : `${variant.autoPausedMetric} rate`}
-            )
-          </span>
-        )}
-        <Button onClick={() => void save()} disabled={!subject.trim() || !body.trim()}>
-          {variant ? "Save variant" : "Add variant"}
-        </Button>
-        {onPreview && (
+        <span className="flex gap-2 max-md:w-full md:ml-auto">
+          {onPreview && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="max-md:flex-1"
+              onClick={onPreview}
+              aria-label={`Preview variant ${variant!.label}`}
+            >
+              <Eye aria-hidden />
+              Preview
+            </Button>
+          )}
           <Button
-            variant="outline"
-            onClick={onPreview}
-            aria-label={`Preview variant ${variant!.label}`}
+            size="sm"
+            variant={variant ? "default" : "outline"}
+            className="max-md:flex-1"
+            onClick={() => void save()}
+            disabled={!subject.trim() || !body.trim()}
           >
-            Preview
+            {variant ? "Save variant" : "Add variant"}
           </Button>
-        )}
+        </span>
       </div>
       {errors.length > 0 && (
-        <ul role="alert" className="list-disc pl-5 text-sm text-destructive">
+        <ul role="alert" className="list-disc pl-5 text-[13px]/[18px] text-danger">
           {errors.map((e, n) => (
             <li key={n}>{e}</li>
           ))}
@@ -206,16 +253,41 @@ function VariantEditor({
   );
 }
 
+const UNIT: Record<string, [string, string]> = {
+  MINUTES: ["minute", "minutes"],
+  HOURS: ["hour", "hours"],
+  DAYS: ["day", "days"],
+};
+const waitText = (s: Step) =>
+  `Wait ${s.delayValue} ${UNIT[s.delayUnit]![s.delayValue === 1 ? 0 : 1]}`;
+
+/** What is unfinished in a step (B4.19 honest unset state), or null when it can send. */
+function problem(s: Step) {
+  const on = s.variants.filter((v) => v.active);
+  if (s.variants.length === 0 || on.length === 0) return "No active variant";
+  if (on.some((v) => !v.subject.trim())) return "Subject not set";
+  if (on.some((v) => !v.body.trim())) return "Body not set";
+  return null;
+}
+
 /** Steps with their variants, for the main sequence (`subsequenceId` null) or one subsequence. */
 export function StepsEditor({
   steps,
   subsequenceId,
   reload,
   ...c
-}: Common & { steps: Step[]; subsequenceId: string | null; reload: () => void }) {
-  const [preview, setPreview] = useState<{ stepId: string; variantId: string } | null>(null);
+}: Common & {
+  steps: Step[];
+  subsequenceId: string | null;
+  reload: () => void;
+}) {
+  const [preview, setPreview] = useState<{
+    stepId: string;
+    variantId: string;
+  } | null>(null);
   const [msg, setMsg] = useState("");
   const [delays, setDelays] = useState<Record<string, { v: string; u: string }>>({});
+  const [editing, setEditing] = useState<string | null>(null);
   const api = `/api/v1/campaigns/${c.campaignId}/steps`;
   const done = () => {
     reload();
@@ -226,53 +298,108 @@ export function StepsEditor({
     const res = await r;
     setMsg(res.ok ? "" : errorText(res));
     if (res.ok) done();
+    return res.ok;
   }
+  const addStep = () =>
+    void act(
+      call(api, "POST", {
+        delayValue: steps.length ? 2 : 0,
+        delayUnit: "DAYS",
+        ...(subsequenceId && { subsequenceId }),
+      }),
+    );
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex w-full max-w-190 flex-col xl:mx-auto">
       {msg && (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="mb-3 text-sm text-danger">
           {msg}
         </p>
       )}
+      {steps.length === 0 && (
+        <Card className="p-0 md:p-0">
+          <EmptyState
+            icon={ListOrdered}
+            title="No steps yet."
+            body="Add a first step with at least one active variant."
+            actions={
+              c.canEdit && (
+                <Button onClick={addStep}>
+                  <Plus aria-hidden />
+                  Add step
+                </Button>
+              )
+            }
+          />
+        </Card>
+      )}
       {steps.map((s) => {
         const d = delays[s.id] ?? { v: String(s.delayValue), u: s.delayUnit };
+        const bad = problem(s);
+        const on = s.variants.filter((v) => v.active).length;
         return (
-          <Card key={s.id} className="flex flex-col gap-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="font-medium">Step {s.order}</h3>
-              {s.order === 1 ? (
-                <p className="text-sm text-muted-foreground">Sent first, no delay</p>
-              ) : (
-                c.canEdit && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <label className="flex items-center gap-1">
+          <Fragment key={s.id}>
+            {s.order > 1 && (
+              <div className="relative flex flex-col items-center">
+                <span aria-hidden className="h-4 w-0.5 bg-border-strong" />
+                {c.canEdit ? (
+                  <button
+                    type="button"
+                    aria-expanded={editing === s.id}
+                    aria-label={`${waitText(s)} before step ${s.order}, edit the delay`}
+                    onClick={() => setEditing(editing === s.id ? null : s.id)}
+                    className="inline-flex h-11 items-center gap-1.5 rounded-full border border-border-strong bg-surface px-3 text-[13px]/[18px] font-medium transition-colors duration-(--dur-1) hover:bg-hover md:h-7"
+                  >
+                    {waitText(s)}
+                    <Pencil className="size-3 text-fg-muted" aria-hidden />
+                  </button>
+                ) : (
+                  <span className="inline-flex h-7 items-center rounded-full border border-border-strong bg-surface px-3 text-[13px]/[18px] font-medium">
+                    {waitText(s)}
+                  </span>
+                )}
+                <span aria-hidden className="h-4 w-0.5 bg-border-strong" />
+                {editing === s.id && (
+                  <div
+                    role="group"
+                    aria-label={`Edit the delay of step ${s.order}`}
+                    onKeyDown={(e) => e.key === "Escape" && setEditing(null)}
+                    className="absolute top-full z-(--z-popover) -mt-3 flex flex-wrap items-center gap-2 rounded-md bg-elevated p-3 text-sm shadow-e2"
+                  >
+                    <label className="flex items-center gap-2">
                       Wait
                       <Input
                         type="number"
                         min={0}
-                        className="w-20"
+                        className="w-20 md:h-8"
                         aria-label={`Delay of step ${s.order}`}
                         value={d.v}
                         onChange={(e) =>
-                          setDelays({ ...delays, [s.id]: { ...d, v: e.target.value } })
+                          setDelays({
+                            ...delays,
+                            [s.id]: { ...d, v: e.target.value },
+                          })
                         }
                       />
                     </label>
-                    <select
+                    <Select
+                      size="sm"
                       aria-label={`Delay unit of step ${s.order}`}
-                      className={sel}
+                      className="w-auto"
                       value={d.u}
                       onChange={(e) =>
-                        setDelays({ ...delays, [s.id]: { ...d, u: e.target.value } })
+                        setDelays({
+                          ...delays,
+                          [s.id]: { ...d, u: e.target.value },
+                        })
                       }
                     >
                       <option value="MINUTES">minutes</option>
                       <option value="HOURS">hours</option>
                       <option value="DAYS">days</option>
-                    </select>
+                    </Select>
                     <Button
-                      variant="outline"
+                      size="sm"
                       aria-label={`Save delay of step ${s.order}`}
                       onClick={() =>
                         void act(
@@ -280,67 +407,107 @@ export function StepsEditor({
                             delayValue: Number(d.v) || 0,
                             delayUnit: d.u,
                           }),
-                        )
+                        ).then((ok) => ok && setEditing(null))
                       }
                     >
                       Save delay
                     </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>
+                      Cancel
+                    </Button>
                   </div>
-                )
-              )}
-              {c.canEdit && (
-                <Button
-                  variant="outline"
-                  aria-label={`Delete step ${s.order}`}
-                  onClick={() => {
-                    if (confirm(`Delete step ${s.order} and its variants?`))
-                      void act(call(`${api}/${s.id}`, "DELETE"));
-                  }}
-                >
-                  Delete step
-                </Button>
-              )}
-            </div>
-            {s.variants.map((v) => (
-              <VariantEditor
-                key={`${v.id}:${v.subject}:${v.body}:${v.weight}`}
-                campaignId={c.campaignId}
-                variant={v}
-                stepId={s.id}
-                variables={c.variables}
-                canEdit={c.canEdit}
-                onSaved={done}
-                onPreview={() => setPreview({ stepId: s.id, variantId: v.id })}
-              />
-            ))}
-            {c.canEdit && (
-              <VariantEditor
-                campaignId={c.campaignId}
-                stepId={s.id}
-                variables={c.variables}
-                canEdit
-                onSaved={done}
-              />
+                )}
+              </div>
             )}
-          </Card>
+            <Card
+              className={cn(
+                "flex flex-col gap-4 md:px-5 md:py-4",
+                bad && s.variants.length > 0 && "border-warning-solid",
+              )}
+            >
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <h3 className="text-sm font-semibold">Step {s.order}</h3>
+                <p className="flex min-w-0 flex-1 items-center gap-1.5 text-[13px]/[18px] text-fg-muted">
+                  {s.order === 1 ? "Sends when the lead starts" : waitText(s)} · Email ·{" "}
+                  {s.variants.length} variant
+                  {s.variants.length === 1 ? "" : "s"} · {on} active
+                  {bad && (
+                    <span className="inline-flex items-center gap-1 text-warning">
+                      <AlertTriangle className="size-3.5" aria-hidden />
+                      {bad}
+                    </span>
+                  )}
+                </p>
+                {c.canEdit && (
+                  <Button
+                    variant="danger-ghost"
+                    size="sm"
+                    aria-label={`Delete step ${s.order}`}
+                    onClick={() => {
+                      if (confirm(`Delete step ${s.order} and its variants?`))
+                        void act(call(`${api}/${s.id}`, "DELETE"));
+                    }}
+                  >
+                    <Trash2 aria-hidden />
+                    Delete step
+                  </Button>
+                )}
+              </div>
+              {s.variants.length > 0 && (
+                <nav
+                  aria-label={`Variants of step ${s.order}`}
+                  className="flex gap-1.5 overflow-x-auto [scrollbar-width:none]"
+                >
+                  {s.variants.map((v) => (
+                    <a
+                      key={v.id}
+                      href={`#variant-${v.id}`}
+                      className={cn(
+                        "inline-flex h-7 shrink-0 items-center rounded-sm border px-2.5 font-mono text-xs font-medium",
+                        v.active
+                          ? "border-fg bg-fg text-bg"
+                          : "border-border-strong text-fg-subtle",
+                      )}
+                    >
+                      {v.label}
+                      {!v.active && " (off)"}
+                    </a>
+                  ))}
+                </nav>
+              )}
+              {s.variants.map((v) => (
+                <VariantEditor
+                  key={`${v.id}:${v.subject}:${v.body}:${v.weight}`}
+                  campaignId={c.campaignId}
+                  variant={v}
+                  stepId={s.id}
+                  variables={c.variables}
+                  canEdit={c.canEdit}
+                  onSaved={done}
+                  onPreview={() => setPreview({ stepId: s.id, variantId: v.id })}
+                />
+              ))}
+              {c.canEdit && (
+                <VariantEditor
+                  campaignId={c.campaignId}
+                  stepId={s.id}
+                  variables={c.variables}
+                  canEdit
+                  onSaved={done}
+                />
+              )}
+            </Card>
+          </Fragment>
         );
       })}
-      {c.canEdit && (
-        <Button
-          variant="outline"
-          className="self-start"
-          onClick={() =>
-            void act(
-              call(api, "POST", {
-                delayValue: steps.length ? 2 : 0,
-                delayUnit: "DAYS",
-                ...(subsequenceId && { subsequenceId }),
-              }),
-            )
-          }
-        >
-          Add step
-        </Button>
+      {c.canEdit && steps.length > 0 && (
+        <div className="flex flex-col items-center">
+          <span aria-hidden className="h-8 w-0.5 bg-border-strong" />
+          <Button variant="outline" onClick={addStep}>
+            <Plus aria-hidden />
+            Add step
+          </Button>
+        </div>
       )}
       {preview && (
         <PreviewPanel
@@ -363,6 +530,11 @@ export function SequencesTab(c: Common) {
   useEffect(() => {
     void reload();
   }, [reload]);
-  if (!steps) return <p className="text-sm text-muted-foreground">Loading...</p>;
+  if (!steps)
+    return (
+      <p role="status" className="text-sm text-fg-muted">
+        Loading...
+      </p>
+    );
   return <StepsEditor {...c} steps={steps} subsequenceId={null} reload={() => void reload()} />;
 }

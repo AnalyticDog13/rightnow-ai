@@ -1,9 +1,14 @@
 "use client";
 
+import { GitBranch } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { EmptyState } from "../../../../components/empty-state";
+import { StatusPill } from "../../../../components/status-pill";
 import { Button } from "../../../../components/ui/button";
 import { Card } from "../../../../components/ui/card";
 import { Input } from "../../../../components/ui/input";
+import { Select } from "../../../../components/ui/select";
+import { Switch } from "../../../../components/ui/switch";
 import { call, errorText } from "../../accounts/api-client";
 import { StepsEditor, type Step } from "./sequences-tab";
 
@@ -14,7 +19,6 @@ type Sub = {
   trigger: { kind: string; interest?: number[]; activity?: string; phrases?: string[] };
   steps: Step[];
 };
-const sel = "h-10 rounded-md border border-border bg-card px-3 text-sm";
 // What a user can pick; each maps to one trigger the API accepts.
 const TRIGGERS: Record<string, { label: string; build: (words: string) => object }> = {
   interested: {
@@ -81,88 +85,108 @@ export function SubsequencesTab(c: {
       c.onChange();
     }
   }
-  if (!subs) return <p className="text-sm text-muted-foreground">Loading...</p>;
+  if (!subs)
+    return (
+      <p role="status" className="text-sm text-fg-muted">
+        Loading...
+      </p>
+    );
 
   return (
     <div className="flex flex-col gap-4">
       {c.canEdit && (
-        <form
-          className="flex flex-wrap items-end gap-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void act(
-              call(`/api/v1/campaigns/${c.campaignId}/subsequences`, "POST", {
-                name,
-                trigger: TRIGGERS[kind]!.build(words),
-              }),
-            );
-          }}
-        >
-          <Input
-            aria-label="New subsequence name"
-            placeholder="Subsequence name"
-            className="max-w-xs"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-          <select
-            aria-label="Trigger"
-            className={sel}
-            value={kind}
-            onChange={(e) => setKind(e.target.value)}
+        <Card>
+          <form
+            className="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void act(
+                call(`/api/v1/campaigns/${c.campaignId}/subsequences`, "POST", {
+                  name,
+                  trigger: TRIGGERS[kind]!.build(words),
+                }),
+              );
+            }}
           >
-            {Object.entries(TRIGGERS).map(([k, t]) => (
-              <option key={k} value={k}>
-                {t.label}
-              </option>
-            ))}
-          </select>
-          {kind === "keyword" && (
             <Input
-              aria-label="Phrases (comma separated)"
-              placeholder="Phrases, comma separated"
-              className="max-w-xs"
-              value={words}
-              onChange={(e) => setWords(e.target.value)}
+              aria-label="New subsequence name"
+              placeholder="Subsequence name"
+              className="md:w-60"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
             />
-          )}
-          <Button type="submit" disabled={!name.trim()}>
-            Create subsequence
-          </Button>
-        </form>
+            <Select
+              aria-label="Trigger"
+              className="md:w-72"
+              value={kind}
+              onChange={(e) => setKind(e.target.value)}
+            >
+              {Object.entries(TRIGGERS).map(([k, t]) => (
+                <option key={k} value={k}>
+                  {t.label}
+                </option>
+              ))}
+            </Select>
+            {kind === "keyword" && (
+              <Input
+                aria-label="Phrases (comma separated)"
+                placeholder="Phrases, comma separated"
+                className="md:w-60"
+                value={words}
+                onChange={(e) => setWords(e.target.value)}
+              />
+            )}
+            <Button type="submit" disabled={!name.trim()}>
+              Create subsequence
+            </Button>
+          </form>
+        </Card>
       )}
       {msg && (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="text-sm text-danger">
           {msg}
         </p>
       )}
       {subs.map((s) => (
         <Card key={s.id} className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h3 className="font-medium">{s.name}</h3>
-              <p className="text-sm text-muted-foreground">{describe(s.trigger)}</p>
+            <div className="flex min-w-0 flex-col gap-1">
+              <h3 className="flex flex-wrap items-center gap-2 text-sm font-semibold">
+                {s.name}
+                <StatusPill tone={s.active ? "info" : "neutral"} icon={GitBranch}>
+                  {s.active ? "Running" : "Off"}
+                </StatusPill>
+              </h3>
+              <p className="text-[13px]/[18px] text-fg-muted">
+                When: {describe(s.trigger)} · {s.steps.length} step
+                {s.steps.length === 1 ? "" : "s"}
+              </p>
             </div>
-            <label className="flex items-center gap-1 text-sm">
-              <input
-                type="checkbox"
-                disabled={!c.canEdit}
-                checked={s.active}
-                onChange={(e) =>
-                  void act(
-                    call(`/api/v1/campaigns/${c.campaignId}/subsequences/${s.id}`, "PATCH", {
-                      active: e.target.checked,
-                    }),
-                  )
-                }
-              />
-              Active
-            </label>
+            <Switch
+              label="Active"
+              disabled={!c.canEdit}
+              checked={s.active}
+              onChange={(e) =>
+                void act(
+                  call(`/api/v1/campaigns/${c.campaignId}/subsequences/${s.id}`, "PATCH", {
+                    active: e.target.checked,
+                  }),
+                )
+              }
+            />
           </div>
           <StepsEditor {...c} steps={s.steps} subsequenceId={s.id} reload={() => void reload()} />
         </Card>
       ))}
-      {subs.length === 0 && <p className="text-sm text-muted-foreground">No subsequences yet.</p>}
+      {subs.length === 0 && (
+        <Card className="p-0 md:p-0">
+          <EmptyState
+            icon={GitBranch}
+            title="No subsequences yet."
+            body="A subsequence sends its own steps when a lead matches its trigger."
+          />
+        </Card>
+      )}
     </div>
   );
 }
