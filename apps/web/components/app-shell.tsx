@@ -36,6 +36,7 @@ export function AppShell({
   const [wide, setWide] = useState(true); // >= 1280
   const [kbd, setKbd] = useState("Ctrl K");
   const menuButton = useRef<HTMLButtonElement>(null);
+  const railButton = useRef<HTMLButtonElement>(null);
   const sidebar = useRef<HTMLElement>(null);
   const palette = useCommandPalette();
   const summary = useSendSummary();
@@ -58,16 +59,16 @@ export function AppShell({
     return () => mq.removeEventListener("change", sync);
   }, []);
 
-  // drawer / overlay: Escape closes; the drawer locks page scroll, takes focus and gives it back
-  const drawerOpened = useRef(false);
+  // drawer / overlay: Escape closes and focus returns to the opener; the drawer locks page scroll and takes focus
+  const opener = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
     if (!open && !overlay) {
-      if (drawerOpened.current) menuButton.current?.focus();
-      drawerOpened.current = false;
+      opener.current?.focus();
+      opener.current = null;
       return;
     }
+    opener.current = open ? menuButton.current : railButton.current;
     if (open) {
-      drawerOpened.current = true;
       sidebar.current?.querySelector<HTMLElement>("nav a")?.focus();
       document.body.style.overflow = "hidden";
     }
@@ -269,6 +270,7 @@ export function AppShell({
           <Button
             variant="ghost"
             size="icon"
+            ref={railButton}
             aria-label={expanded ? "Collapse sidebar" : "Expand sidebar"}
             aria-expanded={expanded}
             aria-controls="sidebar"
@@ -280,7 +282,7 @@ export function AppShell({
         </div>
       </aside>
 
-      <div inert={open || undefined} className="flex min-w-0 flex-1 flex-col">
+      <div inert={open || (overlay && !wide) || undefined} className="flex min-w-0 flex-1 flex-col">
         <div className="sticky top-0 z-(--z-topbar) hidden h-12 shrink-0 items-center justify-end border-b border-border bg-bg px-6 md:flex xl:px-8">
           <button
             type="button"
