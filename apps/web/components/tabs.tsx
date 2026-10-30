@@ -1,9 +1,12 @@
 "use client";
 
-import { useRef, type KeyboardEvent, type ReactNode } from "react";
-import { cn } from "../lib/utils";
+import { useEffect, useRef, type KeyboardEvent, type ReactNode } from "react";
+import { showTab, tabItem, tabList } from "./section-tabs";
 
-/** WAI-ARIA tabs with automatic activation: arrow keys, Home and End move between tabs (one tab stop). */
+/**
+ * WAI-ARIA tabs with automatic activation: arrow keys, Home and End move between tabs (one tab stop). A tab may show
+ * a count (aria-hidden: tab names are matched exactly) and a "needs attention" dot.
+ */
 export function Tabs({
   label,
   tabs,
@@ -12,13 +15,15 @@ export function Tabs({
   children,
 }: {
   label: string;
-  tabs: { id: string; label: string }[];
+  tabs: { id: string; label: string; count?: number; attention?: boolean }[];
   value: string;
   onChange: (id: string) => void;
   children: ReactNode;
 }) {
   const refs = useRef<Record<string, HTMLButtonElement | null>>({});
   const i = tabs.findIndex((t) => t.id === value);
+  // on mount only: a narrow tab list shows the active tab
+  useEffect(() => showTab(refs.current[value]), []);
 
   function onKey(e: KeyboardEvent) {
     const to =
@@ -39,12 +44,7 @@ export function Tabs({
 
   return (
     <div className="flex flex-col gap-4">
-      <div
-        role="tablist"
-        aria-label={label}
-        onKeyDown={onKey}
-        className="flex flex-wrap gap-1 border-b border-border"
-      >
+      <div role="tablist" aria-label={label} onKeyDown={onKey} className={tabList}>
         {tabs.map((t) => (
           <button
             key={t.id}
@@ -57,14 +57,18 @@ export function Tabs({
             aria-controls={t.id === value ? `panel-${t.id}` : undefined}
             tabIndex={t.id === value ? 0 : -1}
             onClick={() => onChange(t.id)}
-            className={cn(
-              "-mb-px rounded-t-md border-b-2 px-3 py-2 text-sm font-medium focus-visible:outline-2 focus-visible:outline-primary",
-              t.id === value
-                ? "border-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground",
-            )}
+            className={tabItem(t.id === value)}
           >
             {t.label}
+            {t.count !== undefined && (
+              <span
+                aria-hidden
+                className="min-w-4.5 rounded-full bg-sunken px-1.25 font-mono text-[11px]/[18px] font-medium text-fg-muted"
+              >
+                {t.count}
+              </span>
+            )}
+            {t.attention && <span aria-hidden className="size-1.5 rounded-full bg-warning-solid" />}
           </button>
         ))}
       </div>
