@@ -1,8 +1,12 @@
 "use client";
 
-import { ArrowDown, ArrowUp } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { ArrowDown, ArrowUp, ChevronsUpDown, Search } from "lucide-react";
+import { useEffect, useState, type ComponentProps, type ReactNode } from "react";
+import { cn } from "../lib/utils";
+import { EmptyState } from "./empty-state";
 import { Button } from "./ui/button";
+import { Input } from "./ui/input";
+import { Select } from "./ui/select";
 
 // PS-UI-02: the conventions every list table follows: sortable headers (aria-sort), a Next control past one
 // page, row selection with a bulk bar that shows the count, and a tag filter.
@@ -39,23 +43,24 @@ export function SortTh({
   sort,
   onSort,
   children,
-}: {
+  ...th
+}: Omit<ComponentProps<"th">, "children"> & {
   col: string;
   sort: Sort;
   onSort: (col: string) => void;
   children: ReactNode;
 }) {
   const dir = sort?.col === col ? sort.dir : undefined;
+  const Icon = dir === "ascending" ? ArrowUp : dir === "descending" ? ArrowDown : ChevronsUpDown;
   return (
-    <th scope="col" aria-sort={dir ?? "none"} className="p-3 font-medium">
+    <th scope="col" aria-sort={dir ?? "none"} {...th}>
       <button
         type="button"
         onClick={() => onSort(col)}
-        className="inline-flex items-center gap-1 rounded-sm font-medium focus-visible:outline-2 focus-visible:outline-primary"
+        className="inline-flex items-center gap-1 rounded-xs uppercase hover:text-fg"
       >
         {children}
-        {dir === "ascending" && <ArrowUp className="size-3" aria-hidden />}
-        {dir === "descending" && <ArrowDown className="size-3" aria-hidden />}
+        <Icon className={cn("size-3", dir ? "text-fg" : "text-fg-subtle")} aria-hidden />
       </button>
     </th>
   );
@@ -80,16 +85,26 @@ export function Pager({
 }) {
   if (pages < 2) return null;
   return (
-    <nav aria-label="Pagination" className="flex items-center gap-2 text-sm">
-      <Button variant="outline" disabled={page === 0} onClick={() => onPage(page - 1)}>
-        Previous page
-      </Button>
-      <span>
+    <nav
+      aria-label="Pagination"
+      className="flex min-h-12 flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-2"
+    >
+      <span className="text-[13px]/[18px] text-fg-muted tabular-nums">
         Page {page + 1} of {pages}
       </span>
-      <Button variant="outline" disabled={page >= pages - 1} onClick={() => onPage(page + 1)}>
-        Next page
-      </Button>
+      <span className="flex gap-2">
+        <Button variant="outline" size="sm" disabled={page === 0} onClick={() => onPage(page - 1)}>
+          Previous page
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={page >= pages - 1}
+          onClick={() => onPage(page + 1)}
+        >
+          Next page
+        </Button>
+      </span>
     </nav>
   );
 }
@@ -97,7 +112,7 @@ export function Pager({
 /** The "Next page" control of a cursor-paged list (it appends the next page to the rows shown). */
 export function NextPage({ onClick }: { onClick: () => void }) {
   return (
-    <Button variant="outline" className="self-start" onClick={onClick}>
+    <Button variant="outline" size="sm" className="self-start" onClick={onClick}>
       Next page
     </Button>
   );
@@ -115,14 +130,31 @@ export function useSelection() {
   return { selected, toggle, setAll, clear: () => setSelected(new Set()) };
 }
 
-export function BulkToolbar({ count, children }: { count: number; children: ReactNode }) {
+/**
+ * B4.6 bulk bar: an inverse bar that replaces the toolbar row while rows are selected. Buttons inside it render as
+ * inverse ghost buttons; selects and inputs keep their own box.
+ */
+export function BulkToolbar({
+  count,
+  onClear,
+  children,
+}: {
+  count: number;
+  onClear?: () => void;
+  children: ReactNode;
+}) {
   return (
     <div
       role="toolbar"
       aria-label="Bulk actions"
-      className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card p-3"
+      className="sticky top-0 z-(--z-sticky) flex min-h-12 flex-wrap items-center gap-1 rounded-md bg-fg py-1.5 pr-2 pl-3 text-bg md:top-12 [&_button]:border-0 [&_button]:bg-transparent [&_button]:text-bg [&_button]:shadow-none [&_button:not(:disabled):hover]:bg-white/12 dark:[&_button:not(:disabled):hover]:bg-black/12"
     >
-      <span className="text-sm font-medium">{count} selected</span>
+      <span className="mr-1 text-sm font-medium tabular-nums">{count} selected</span>
+      {onClear && (
+        <Button variant="ghost" size="sm" onClick={onClear}>
+          Clear
+        </Button>
+      )}
       {children}
     </div>
   );
@@ -146,9 +178,10 @@ export function TagSelect({
       .catch(() => {});
   }, [kind]);
   return (
-    <select
+    <Select
+      size="sm"
       aria-label="Filter by tag"
-      className="h-10 rounded-md border border-border bg-card px-3 text-sm"
+      className="w-auto"
       value={value}
       onChange={(e) => onChange(e.target.value)}
     >
@@ -156,6 +189,56 @@ export function TagSelect({
       {tags.map((t) => (
         <option key={t}>{t}</option>
       ))}
-    </select>
+    </Select>
+  );
+}
+
+/** B4.6 toolbar search: 240px with a leading Search icon, full width below 640. */
+export function SearchInput({ className, ...props }: ComponentProps<"input">) {
+  return (
+    <span className={cn("relative w-full sm:w-60", className)}>
+      <Search
+        className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-fg-muted"
+        aria-hidden
+      />
+      <Input type="search" className="pl-8 md:h-8 md:text-[13px]/[18px]" {...props} />
+    </span>
+  );
+}
+
+/**
+ * B4.6 table frame: radius 12, its own horizontal scroll (the page never scrolls sideways), mono uppercase headers,
+ * hairline rows. Row hooks: `aria-selected` (signal tint + stripe), `data-stripe="warning" | "danger"` (object in a
+ * bad state; duplicates its pill). Cell hooks: `data-pin="check"` / `data-pin="id"` keep the checkbox and
+ * identity cells in view below 768. `footer` holds the Pager.
+ */
+export function TableFrame({
+  children,
+  footer,
+  className,
+}: {
+  children: ReactNode;
+  footer?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn("overflow-hidden rounded-lg border border-border bg-surface", className)}>
+      <div className="table-frame relative overflow-x-auto">{children}</div>
+      {footer}
+    </div>
+  );
+}
+
+/** B4.6 empty state inside a table: one full-width row. */
+export function TableEmpty({
+  colSpan,
+  ...props
+}: { colSpan: number } & ComponentProps<typeof EmptyState>) {
+  return (
+    <tr>
+      <td colSpan={colSpan}>
+        <EmptyState {...props} />
+      </td>
+    </tr>
   );
 }

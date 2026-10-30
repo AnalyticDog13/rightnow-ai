@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { BulkToolbar } from "../../../components/table-kit";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
+import { Select } from "../../../components/ui/select";
 import { call, errorText } from "./api-client";
 import { isNumeric } from "./numeric";
 
@@ -20,12 +22,14 @@ export function BulkBar({
   ids,
   names,
   isAdmin,
+  onClear,
   onDone,
 }: {
   ids: string[];
   /** id to email, for the clamp notice. */
   names: Record<string, string>;
   isAdmin: boolean;
+  onClear: () => void;
   onDone: (message: string) => void;
 }) {
   const [setting, setSetting] = useState<Setting>("set_daily_limit");
@@ -84,27 +88,23 @@ export function BulkBar({
   }
 
   return (
-    <div
-      role="toolbar"
-      aria-label="Bulk actions"
-      className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card p-3"
-    >
-      <span className="text-sm font-medium">{ids.length} selected</span>
-      <Button variant="outline" disabled={busy} onClick={() => run("pause")}>
+    <BulkToolbar count={ids.length} onClear={onClear}>
+      <Button variant="ghost" size="sm" disabled={busy} onClick={() => run("pause")}>
         Pause
       </Button>
-      <Button variant="outline" disabled={busy} onClick={() => run("resume")}>
+      <Button variant="ghost" size="sm" disabled={busy} onClick={() => run("resume")}>
         Resume
       </Button>
-      <Button variant="outline" disabled={busy} onClick={() => run("warmup_enable")}>
+      <Button variant="ghost" size="sm" disabled={busy} onClick={() => run("warmup_enable")}>
         Enable warm-up
       </Button>
-      <Button variant="outline" disabled={busy} onClick={() => run("warmup_disable")}>
+      <Button variant="ghost" size="sm" disabled={busy} onClick={() => run("warmup_disable")}>
         Disable warm-up
       </Button>
-      <select
+      <Select
+        size="sm"
         aria-label="Bulk setting"
-        className="h-10 rounded-md border border-border bg-card px-3 text-sm"
+        className="w-auto"
         value={setting}
         onChange={(e) => setSetting(e.target.value as Setting)}
       >
@@ -113,26 +113,26 @@ export function BulkBar({
             {SETTINGS[k].label}
           </option>
         ))}
-      </select>
+      </Select>
       <Input
         aria-label="Bulk value"
-        className="max-w-48"
+        className="w-32 md:h-8"
         value={value}
         onChange={(e) => setValue(e.target.value)}
       />
-      <Button disabled={busy} onClick={apply}>
+      <Button size="sm" disabled={busy} onClick={apply}>
         Apply
       </Button>
-      {problem && (
-        <p role="alert" className="w-full text-sm text-destructive">
-          {problem}
-        </p>
-      )}
       {isAdmin && (
-        <Button variant="outline" disabled={busy} onClick={() => run("delete")}>
+        <Button variant="danger-ghost" size="sm" disabled={busy} onClick={() => run("delete")}>
           Delete
         </Button>
       )}
-    </div>
+      {problem && (
+        <p role="alert" className="w-full text-[13px]/[18px]">
+          {problem}
+        </p>
+      )}
+    </BulkToolbar>
   );
 }

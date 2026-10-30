@@ -1,11 +1,13 @@
 "use client";
 
+import { Server as ServerIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { ActionCard } from "../../../components/empty-state";
 import { Button } from "../../../components/ui/button";
-import { Card } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
+import { Select } from "../../../components/ui/select";
 import { call } from "./api-client";
 
 type Server = { host: string; port: string; secure: boolean; username: string; password: string };
@@ -43,13 +45,13 @@ function Fields({
   const set = (k: keyof Server, v: string | boolean) => onChange({ ...value, [k]: v });
   const err = (k: string) =>
     errors[`${id}.${k}`] && (
-      <span role="alert" className="text-xs text-destructive">
+      <span role="alert" className="text-[13px]/[18px] text-danger">
         {errors[`${id}.${k}`]}
       </span>
     );
   return (
     <fieldset className="grid gap-3 sm:grid-cols-2">
-      <legend className="mb-1 text-sm font-semibold">{title}</legend>
+      <legend className="mb-2 text-sm font-semibold">{title}</legend>
       <div className="flex flex-col gap-1">
         <Label htmlFor={`${id}-host`}>{title} host</Label>
         <Input
@@ -73,15 +75,14 @@ function Fields({
         </div>
         <div className="flex flex-1 flex-col gap-1">
           <Label htmlFor={`${id}-security`}>{title} security</Label>
-          <select
+          <Select
             id={`${id}-security`}
-            className="h-10 rounded-md border border-border bg-card px-3 text-sm"
             value={value.secure ? "tls" : "starttls"}
             onChange={(e) => set("secure", e.target.value === "tls")}
           >
             <option value="tls">SSL/TLS</option>
             <option value="starttls">STARTTLS</option>
-          </select>
+          </Select>
         </div>
       </div>
       <div className="flex flex-col gap-1">
@@ -109,13 +110,18 @@ function Fields({
   );
 }
 
-/** `reconnect` re-enters the credentials of an existing account (same id, email fixed) instead of adding one. */
+/**
+ * `reconnect` re-enters the credentials of an existing account (same id, email fixed) inline in the account drawer
+ * (one dialog at a time); a new connection opens in a 640px dialog. `card` shows the trigger as an empty-state card.
+ */
 export function ConnectSmtp({
   reconnect,
   onDone,
+  card,
 }: {
   reconnect?: { id: string; email: string };
   onDone?: () => void;
+  card?: boolean;
 } = {}) {
   const router = useRouter();
   const [open, setOpen] = useState(!!reconnect);
@@ -129,6 +135,10 @@ export function ConnectSmtp({
   const [tested, setTested] = useState(false); // the current values passed Test connection
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    if (open && !reconnect) dialog.current?.showModal();
+  }, [open, reconnect]);
 
   // Any edit invalidates a passed test: Save only ever stores what was tested.
   const edit =
@@ -216,72 +226,70 @@ export function ConnectSmtp({
     }
   }
 
-  if (!open)
-    return (
-      <div>
-        <Button variant="outline" onClick={() => setOpen(true)}>
-          Connect with SMTP/IMAP
-        </Button>
-      </div>
-    );
-  return (
-    <Card className="flex flex-col gap-4">
-      <h2 className="text-lg font-semibold">
+  const trigger = card ? (
+    <ActionCard
+      icon={ServerIcon}
+      title="Connect with SMTP/IMAP"
+      description="Any mailbox with IMAP and SMTP access"
+      onClick={() => setOpen(true)}
+    />
+  ) : (
+    <Button variant="outline" onClick={() => setOpen(true)}>
+      Connect with SMTP/IMAP
+    </Button>
+  );
+  const close = () => {
+    setOpen(false);
+    onDone?.();
+  };
+  const form = (
+    <>
+      <h2 className="text-lg/6.5 font-semibold">
         {reconnect ? "Update SMTP/IMAP credentials" : "Connect with SMTP/IMAP"}
       </h2>
       <div className={reconnect ? "hidden" : "grid gap-3 sm:grid-cols-3"}>
-        <div className="flex flex-col gap-1">
-          <Label htmlFor="smtp-email">Email</Label>
+        <Field id="smtp-email" label="Email" error={errors.email}>
           <Input
             id="smtp-email"
             type="email"
             value={email}
             onChange={(e) => edit(setEmail)(e.target.value)}
           />
-          {errors.email && (
-            <span role="alert" className="text-xs text-destructive">
-              {errors.email}
-            </span>
-          )}
-        </div>
-        <div className="flex flex-col gap-1">
-          <Label htmlFor="smtp-first">First name</Label>
+        </Field>
+        <Field id="smtp-first" label="First name" error={errors.firstName}>
           <Input
             id="smtp-first"
             value={firstName}
             onChange={(e) => edit(setFirstName)(e.target.value)}
           />
-          {errors.firstName && (
-            <span role="alert" className="text-xs text-destructive">
-              {errors.firstName}
-            </span>
-          )}
-        </div>
-        <div className="flex flex-col gap-1">
-          <Label htmlFor="smtp-last">Last name</Label>
+        </Field>
+        <Field id="smtp-last" label="Last name">
           <Input
             id="smtp-last"
             value={lastName}
             onChange={(e) => edit(setLastName)(e.target.value)}
           />
-        </div>
+        </Field>
       </div>
       <Fields id="imap" title="IMAP" value={imap} onChange={edit(setImap)} errors={errors} />
       <Fields id="smtp" title="SMTP" value={smtp} onChange={edit(setSmtp)} errors={errors} />
       {checks && (
         <ul aria-label="Connection checks" className="flex flex-col gap-1 text-sm">
           {checks.map((c) => (
-            <li key={c.name} className={c.ok ? "" : "text-destructive"}>
+            <li key={c.name} className={c.ok ? "" : "text-danger"}>
               <strong>{CHECK_LABEL[c.name] ?? c.name}</strong>: {c.ok ? "passed" : "failed"}
               {!c.ok && c.message ? `. ${c.message}` : ""}
             </li>
           ))}
         </ul>
       )}
-      <p role="alert" className="min-h-5 text-sm text-destructive">
+      <p role="alert" className="text-[13px]/[18px] text-danger empty:hidden">
         {msg}
       </p>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button variant="ghost" onClick={() => (reconnect ? close() : dialog.current?.close())}>
+          Cancel
+        </Button>
         {reconnect ? (
           // the server runs the checks and saves only if they pass
           <Button disabled={busy} onClick={() => run("save")}>
@@ -297,16 +305,50 @@ export function ConnectSmtp({
             </Button>
           </>
         )}
-        <Button
-          variant="ghost"
-          onClick={() => {
-            setOpen(false);
-            onDone?.();
-          }}
-        >
-          Cancel
-        </Button>
       </div>
-    </Card>
+    </>
+  );
+  if (reconnect)
+    return open ? (
+      <div className="flex flex-col gap-4 rounded-lg border border-border p-4">{form}</div>
+    ) : null;
+  return (
+    <>
+      {trigger}
+      {open && (
+        <dialog
+          ref={dialog}
+          aria-label="Connect with SMTP/IMAP"
+          onClose={close}
+          className="m-auto w-[min(640px,calc(100vw-32px))] max-w-none overflow-y-auto rounded-xl bg-surface p-6 text-fg shadow-e3 open:animate-pop max-md:mb-0 max-md:max-h-[90dvh] max-md:w-screen max-md:rounded-b-none md:max-h-[calc(100dvh-64px)]"
+        >
+          <div className="flex flex-col gap-4">{form}</div>
+        </dialog>
+      )}
+    </>
+  );
+}
+
+function Field({
+  id,
+  label,
+  error,
+  children,
+}: {
+  id: string;
+  label: string;
+  error?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label htmlFor={id}>{label}</Label>
+      {children}
+      {error && (
+        <span role="alert" className="text-[13px]/[18px] text-danger">
+          {error}
+        </span>
+      )}
+    </div>
   );
 }

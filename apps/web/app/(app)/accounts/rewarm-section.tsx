@@ -70,11 +70,8 @@ export function RewarmSection({
   }
 
   return (
-    <section
-      aria-label="Re-warm"
-      className="mt-4 flex flex-col gap-2 border-t border-border pt-4 text-sm"
-    >
-      <h3 className="font-medium">Re-warm</h3>
+    <div className="flex flex-col gap-3">
+      <h3 className="text-sm font-semibold">Re-warm</h3>
       <p>
         Last campaign send {account.idleDays} day{account.idleDays === 1 ? "" : "s"} ago.
       </p>
@@ -89,11 +86,14 @@ export function RewarmSection({
             aria-label="Re-warm progress"
             max={100}
             value={plan.progressPct}
-            className="w-full"
+            className="h-1.5 w-full"
           />
           {canEdit && (
             <div>
-              <Button variant="outline" onClick={() => act("DELETE", url, "Re-warm cancelled.")}>
+              <Button
+                variant="danger-ghost"
+                onClick={() => act("DELETE", url, "Re-warm cancelled.")}
+              >
                 Cancel re-warm
               </Button>
             </div>
@@ -104,8 +104,8 @@ export function RewarmSection({
         <p>Inactive: no campaign mail is sent until you re-warm it or resume at full volume.</p>
       )}
       {canStart && (
-        <div className="grid gap-2 sm:grid-cols-2">
-          <div className="flex flex-col gap-1">
+        <div className="grid gap-x-4 gap-y-3 sm:grid-cols-2">
+          <div className="flex flex-col gap-1.5">
             <Label htmlFor="rw-start">Re-warm start volume (per day)</Label>
             <Input
               id="rw-start"
@@ -116,7 +116,7 @@ export function RewarmSection({
               onChange={(e) => setStart(e.target.value)}
             />
           </div>
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col gap-1.5">
             <Label htmlFor="rw-step">Re-warm increase per sending day</Label>
             <Input
               id="rw-step"
@@ -127,7 +127,7 @@ export function RewarmSection({
               onChange={(e) => setStep(e.target.value)}
             />
           </div>
-          <label className="flex items-center gap-2 sm:col-span-2">
+          <label className="flex min-h-11 items-center gap-2 sm:col-span-2 md:min-h-0">
             <input
               type="checkbox"
               checked={withWarmup}
@@ -158,12 +158,12 @@ export function RewarmSection({
       )}
       <p aria-live="polite">{msg}</p>
       {notes.length > 0 && (
-        <ul className="list-disc pl-5">
+        <ul className="list-disc pl-5 text-fg-muted">
           {notes.map((n) => (
             <li key={n}>{n}</li>
           ))}
         </ul>
       )}
-    </section>
+    </div>
   );
 }

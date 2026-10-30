@@ -1,16 +1,21 @@
 "use client";
 
 import type { ApiAccount } from "@rightnow/core";
-import { pushLine } from "./push-line";
-import { useEffect, useRef, useState } from "react";
+import { X } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { HealthRing } from "../../../components/health-ring";
+import { pillFor, StatusPill, SYNC } from "../../../components/status-pill";
 import { Button } from "../../../components/ui/button";
-import { Input } from "../../../components/ui/input";
+import { Helper, Input, Textarea } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
+import { Switch } from "../../../components/ui/switch";
+import { AccountPill } from "./account-status";
 import { call, errorText } from "./api-client";
-import { ConnectMenu, type Provider } from "./connect-menu";
+import { ConnectMenu, NotConfigured, type Provider } from "./connect-menu";
 import { ConnectSmtp } from "./connect-smtp";
 import { DomainSection } from "./domain-section";
 import { isNumeric } from "./numeric";
+import { pushLine } from "./push-line";
 import { RewarmSection } from "./rewarm-section";
 import { WarmupSection } from "./warmup-section";
 
@@ -42,6 +47,15 @@ const REASON: Record<string, string> = {
   provider_min_gap: "the provider's minimum gap",
 };
 const FIELD_LABEL = Object.fromEntries(FIELDS.map((f) => [f.k, f.label]));
+// recommended values from the deliverability guidance (30 campaign emails per account per day)
+const HELP: Partial<Record<keyof ApiAccount, string>> = { dailyLimit: "Recommended 30 per day" };
+const JUMP = [
+  ["acc-settings", "Settings"],
+  ["acc-sync", "Sync"],
+  ["acc-domain", "Domain"],
+  ["acc-warmup", "Warm-up"],
+  ["acc-rewarm", "Re-warm"],
+] as const;
 
 const show = (a: ApiAccount, f: (typeof FIELDS)[number]) => {
   const v = a[f.k] as string | number | null;
@@ -57,11 +71,40 @@ const toForm = (a: ApiAccount) => ({
 });
 type Form = ReturnType<typeof toForm>;
 
+/** B4.8 drawer section: a hairline above, an h3 title, a jump-bar target. */
+export function DrawerSection({
+  id,
+  label,
+  title,
+  children,
+}: {
+  id?: string;
+  label: string;
+  title?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <section
+      id={id}
+      aria-label={label}
+      className="flex scroll-mt-4 flex-col gap-3 border-t border-border pt-6 text-sm first:border-t-0 first:pt-0"
+    >
+      {title && <h3 className="text-sm font-semibold">{title}</h3>}
+      {children}
+    </section>
+  );
+}
+
+/**
+ * B4.8 / B5.3 account drawer: a native modal <dialog> shown as a 640px right sheet (full screen below 768), with a
+ * sticky header, a jump bar to every section (all sections stay rendered) and a sticky footer holding Save.
+ */
 export function AccountDrawer({
   account,
   canEdit,
   isAdmin,
   configured,
+  staleAfterSec,
   onClose,
   onChanged,
 }: {
@@ -69,6 +112,8 @@ export function AccountDrawer({
   canEdit: boolean;
   isAdmin: boolean;
   configured: Record<Provider, boolean>;
+  /** SYNC_MAX_STALENESS_SEC: a mailbox not synced within it does not send. */
+  staleAfterSec: number;
   onClose: () => void;
   onChanged: () => void;
 }) {
@@ -167,186 +212,264 @@ export function AccountDrawer({
   }
 
   const broken = account.status !== "CONNECTED" || account.lifecycle === "NEEDS_ATTENTION";
+  const oauth: Provider = account.provider === "GMAIL" ? "google" : "microsoft";
+  const jump = (id: string) => (e: React.MouseEvent) => {
+    e.preventDefault(); // scroll the drawer body; no hash in the URL
+    document.getElementById(id)?.scrollIntoView({ block: "start" });
+  };
   return (
     <dialog
       ref={dialog}
       aria-labelledby="drawer-title"
       onClose={onClose}
-      className="m-auto w-full max-w-2xl rounded-xl border border-border bg-card p-6 text-foreground backdrop:bg-black/40"
+      className="m-0 ml-auto h-dvh max-h-dvh w-screen max-w-none overflow-hidden border-border bg-surface text-fg shadow-e3 open:animate-sheet-right md:w-[min(640px,100vw)] md:border-l"
     >
-      <div className="mb-4 flex items-start justify-between gap-4">
-        <h2 id="drawer-title" className="text-lg font-semibold">
-          {account.email}
-        </h2>
-        <Button variant="outline" onClick={() => dialog.current?.close()}>
-          Close
-        </Button>
-      </div>
-      <form onSubmit={save} className="grid gap-3 sm:grid-cols-2">
-        {FIELDS.map((f) => (
-          <div key={f.k} className="flex flex-col gap-1">
-            <Label htmlFor={`f-${f.k}`}>{f.label}</Label>
-            <Input
-              id={`f-${f.k}`}
-              type={f.kind === "number" || f.kind === "minutes" ? "number" : "text"}
-              step={f.kind === "minutes" ? "any" : undefined}
-              min={f.kind === "number" || f.kind === "minutes" ? 0 : undefined}
-              disabled={!canEdit}
-              value={form[f.k as keyof Form] as string}
-              onChange={(e) => set(f.k, e.target.value)}
-            />
-          </div>
-        ))}
-        <div className="flex flex-col gap-1 sm:col-span-2">
-          <Label htmlFor="f-tags">Tags (comma separated)</Label>
-          <Input
-            id="f-tags"
-            disabled={!canEdit}
-            value={form.tags}
-            onChange={(e) => set("tags", e.target.value)}
-          />
-        </div>
-        <div className="flex flex-col gap-1 sm:col-span-2">
-          <Label htmlFor="f-signature">Signature</Label>
-          <textarea
-            id="f-signature"
-            rows={4}
-            disabled={!canEdit}
-            className="rounded-md border border-border bg-card p-3 text-sm focus-visible:outline-2 focus-visible:outline-primary"
-            value={form.signature}
-            onChange={(e) => set("signature", e.target.value)}
-          />
-        </div>
-        {BOOLS.map((b) => (
-          <label key={b.k} className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              disabled={!canEdit}
-              checked={form[b.k as "slowRamp"]}
-              onChange={(e) => set(b.k, e.target.checked)}
-            />
-            {b.label}
-          </label>
-        ))}
-        {canEdit && (
-          <div className="flex items-center gap-3 sm:col-span-2">
-            <Button type="submit">Save</Button>
-            <p role="status" className="text-sm">
-              {notes.join(" ")}
-            </p>
-          </div>
-        )}
-      </form>
-      <p role="alert" className="min-h-5 text-sm text-destructive">
-        {error}
-      </p>
-      <SyncStatus sync={account.sync} push={account.push} />
-      <DomainSection email={account.email} canEdit={canEdit} />
-      <WarmupSection accountId={account.id} canEdit={canEdit} />
-      <RewarmSection account={account} canEdit={canEdit} onChanged={onChanged} />
-      {canEdit && (
-        <section
-          aria-label="Connection"
-          className="mt-4 flex flex-col gap-3 border-t border-border pt-4"
+      <div className="flex h-full flex-col">
+        <header className="flex min-h-14 shrink-0 items-center gap-3 border-b border-border py-2 pr-2 pl-5 md:pr-5">
+          <h2
+            id="drawer-title"
+            className="min-w-0 truncate text-base font-semibold"
+            title={account.email}
+          >
+            {account.email}
+          </h2>
+          <AccountPill account={account} />
+          <HealthRing score={account.health.score} size={24} className="max-sm:hidden" />
+          <Button variant="ghost" className="ml-auto" onClick={() => dialog.current?.close()}>
+            <X aria-hidden />
+            Close
+          </Button>
+        </header>
+        <nav
+          aria-label="Drawer sections"
+          className="flex shrink-0 gap-1 overflow-x-auto border-b border-border px-4 py-1.5 [scrollbar-width:none]"
         >
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={diagnose}>
-              Run diagnostics
-            </Button>
-            {broken && (
-              <Button variant="outline" onClick={markFixed}>
-                Mark as fixed
-              </Button>
-            )}
-          </div>
-          {checks.length > 0 && (
-            <ul className="text-sm">
-              {checks.map((c) => (
-                <li key={c.name}>
-                  {c.name}: {c.ok ? "ok" : `failed${c.code ? ` (${c.code})` : ""}`}
-                </li>
+          {JUMP.map(([id, label]) => (
+            <a
+              key={id}
+              href={`#${id}`}
+              onClick={jump(id)}
+              className="inline-flex h-8 shrink-0 items-center rounded-sm px-2.5 text-[13px]/[18px] font-medium text-fg-muted hover:bg-hover hover:text-fg max-md:h-11"
+            >
+              {label}
+            </a>
+          ))}
+        </nav>
+        <div className="flex flex-1 flex-col gap-6 overflow-y-auto p-5">
+          <DrawerSection id="acc-settings" label="Settings" title="Settings">
+            <form
+              id="account-settings"
+              onSubmit={save}
+              className="grid gap-x-4 gap-y-3 sm:grid-cols-2"
+            >
+              {FIELDS.map((f) => (
+                <div key={f.k} className="flex flex-col gap-1.5">
+                  <Label htmlFor={`f-${f.k}`}>{f.label}</Label>
+                  <Input
+                    id={`f-${f.k}`}
+                    type={f.kind === "number" || f.kind === "minutes" ? "number" : "text"}
+                    step={f.kind === "minutes" ? "any" : undefined}
+                    min={f.kind === "number" || f.kind === "minutes" ? 0 : undefined}
+                    disabled={!canEdit}
+                    aria-describedby={HELP[f.k] ? `h-${f.k}` : undefined}
+                    value={form[f.k as keyof Form] as string}
+                    onChange={(e) => set(f.k, e.target.value)}
+                  />
+                  {HELP[f.k] && <Helper id={`h-${f.k}`}>{HELP[f.k]}</Helper>}
+                </div>
               ))}
-            </ul>
-          )}
-          {isAdmin && (
-            <form onSubmit={sendTest} aria-label="Send test email" className="flex flex-col gap-2">
-              <Label htmlFor="test-to">Send test email to</Label>
-              <Input
-                id="test-to"
-                type="email"
-                value={testTo}
-                onChange={(e) => setTestTo(e.target.value)}
-              />
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={testOk}
-                  onChange={(e) => setTestOk(e.target.checked)}
+              <div className="flex flex-col gap-1.5 sm:col-span-2">
+                <Label htmlFor="f-tags">Tags (comma separated)</Label>
+                <Input
+                  id="f-tags"
+                  disabled={!canEdit}
+                  value={form.tags}
+                  onChange={(e) => set("tags", e.target.value)}
                 />
-                I am authorized to send from this account
-              </label>
-              <div className="flex items-center gap-3">
-                <Button
-                  type="submit"
-                  variant="outline"
-                  disabled={!testOk || !testTo.trim() || sending}
-                >
-                  Send test email
-                </Button>
-                <p aria-live="polite" className="text-sm">
-                  {testMsg}
-                </p>
+              </div>
+              <div className="flex flex-col gap-1.5 sm:col-span-2">
+                <Label htmlFor="f-signature">Signature</Label>
+                <Textarea
+                  id="f-signature"
+                  rows={4}
+                  disabled={!canEdit}
+                  value={form.signature}
+                  onChange={(e) => set("signature", e.target.value)}
+                />
+              </div>
+              <div className="flex flex-col sm:col-span-2">
+                {BOOLS.map((b) => (
+                  <Switch
+                    key={b.k}
+                    label={b.label}
+                    disabled={!canEdit}
+                    checked={form[b.k as "slowRamp"]}
+                    onChange={(e) => set(b.k, e.target.checked)}
+                  />
+                ))}
               </div>
             </form>
+            <p role="alert" className="text-[13px]/[18px] text-danger empty:hidden">
+              {error}
+            </p>
+          </DrawerSection>
+          <SyncStatus sync={account.sync} push={account.push} staleAfterSec={staleAfterSec} />
+          <DrawerSection id="acc-domain" label="Domain">
+            <DomainSection email={account.email} canEdit={canEdit} />
+          </DrawerSection>
+          <DrawerSection id="acc-warmup" label="Warm-up">
+            <WarmupSection accountId={account.id} canEdit={canEdit} />
+          </DrawerSection>
+          <DrawerSection id="acc-rewarm" label="Re-warm">
+            <RewarmSection account={account} canEdit={canEdit} onChanged={onChanged} />
+          </DrawerSection>
+          {canEdit && (
+            <DrawerSection label="Connection" title="Connection">
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" onClick={diagnose}>
+                  Run diagnostics
+                </Button>
+                {broken && (
+                  <Button variant="outline" onClick={markFixed}>
+                    Mark as fixed
+                  </Button>
+                )}
+              </div>
+              {checks.length > 0 && (
+                <ul className="flex flex-col gap-1.5">
+                  {checks.map((c) => (
+                    <li key={c.name} className="flex items-center gap-2">
+                      <StatusPill tone={c.ok ? "success" : "danger"} size="sm">
+                        {c.ok ? "ok" : "failed"}
+                      </StatusPill>
+                      {c.name}
+                      {!c.ok && c.code ? ` (${c.code})` : ""}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {isAdmin && (
+                <form
+                  onSubmit={sendTest}
+                  aria-label="Send test email"
+                  className="flex flex-col gap-3 rounded-lg border border-border p-4"
+                >
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="test-to">Send test email to</Label>
+                    <Input
+                      id="test-to"
+                      type="email"
+                      value={testTo}
+                      onChange={(e) => setTestTo(e.target.value)}
+                    />
+                  </div>
+                  <label className="flex min-h-11 items-center gap-2 md:min-h-0">
+                    <input
+                      type="checkbox"
+                      checked={testOk}
+                      onChange={(e) => setTestOk(e.target.checked)}
+                    />
+                    I am authorized to send from this account
+                  </label>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Button
+                      type="submit"
+                      variant="outline"
+                      disabled={!testOk || !testTo.trim() || sending}
+                    >
+                      Send test email
+                    </Button>
+                    <p aria-live="polite" className="text-[13px]/[18px]">
+                      {testMsg}
+                    </p>
+                  </div>
+                </form>
+              )}
+              {isAdmin &&
+                account.provider === "SMTP" &&
+                (editCreds ? (
+                  <ConnectSmtp
+                    reconnect={{ id: account.id, email: account.email }}
+                    onDone={() => {
+                      setEditCreds(false);
+                      onChanged();
+                    }}
+                  />
+                ) : (
+                  <div>
+                    <Button variant="outline" onClick={() => setEditCreds(true)}>
+                      Reconnect with new credentials
+                    </Button>
+                  </div>
+                ))}
+              {isAdmin && account.provider !== "SMTP" && (
+                <>
+                  <div className="flex flex-wrap gap-2">
+                    <ConnectMenu
+                      configured={configured}
+                      reconnect={{ id: account.id, provider: oauth }}
+                    />
+                  </div>
+                  <NotConfigured providers={configured[oauth] ? [] : [oauth]} />
+                </>
+              )}
+            </DrawerSection>
           )}
-          {isAdmin &&
-            account.provider === "SMTP" &&
-            (editCreds ? (
-              <ConnectSmtp
-                reconnect={{ id: account.id, email: account.email }}
-                onDone={() => {
-                  setEditCreds(false);
-                  onChanged();
-                }}
-              />
-            ) : (
-              <Button variant="outline" onClick={() => setEditCreds(true)}>
-                Reconnect with new credentials
-              </Button>
-            ))}
-          {isAdmin && account.provider !== "SMTP" && (
-            <ConnectMenu
-              configured={configured}
-              reconnect={{
-                id: account.id,
-                provider: account.provider === "GMAIL" ? "google" : "microsoft",
-              }}
-            />
-          )}
-        </section>
-      )}
+        </div>
+        {canEdit && (
+          <footer className="flex min-h-16 shrink-0 items-center gap-3 border-t border-border px-5 pt-3 pb-[max(12px,env(safe-area-inset-bottom))]">
+            <p role="status" className="min-w-0 flex-1 text-[13px]/[18px]">
+              {notes.join(" ")}
+            </p>
+            <Button type="submit" form="account-settings">
+              Save
+            </Button>
+          </footer>
+        )}
+      </div>
     </dialog>
   );
 }
 
 const SYNC_STATE = { IDLE: "Up to date", SYNCING: "Syncing", FAILED: "Last sync failed" } as const;
 
+/** The B4.4 sync pill, or null for a mailbox synced within the freshness gate ("Synced 3 min ago"). */
+export function syncPill(sync: ApiAccount["sync"], staleAfterSec: number) {
+  if (sync.state === "SYNCING") return "Syncing";
+  if (sync.state === "FAILED") return "Sync failing";
+  if (sync.lagSec === null || sync.lagSec > staleAfterSec) return "Waiting for sync";
+  return null;
+}
+const ago = (sec: number) => (sec < 60 ? "just now" : `${Math.round(sec / 60)} min ago`);
+
 /** PS-ACC-31: sync state, lag and import progress. A mailbox that has not synced recently does not send. */
-function SyncStatus({ sync, push }: { sync: ApiAccount["sync"]; push: ApiAccount["push"] }) {
+function SyncStatus({
+  sync,
+  push,
+  staleAfterSec,
+}: {
+  sync: ApiAccount["sync"];
+  push: ApiAccount["push"];
+  staleAfterSec: number;
+}) {
   const err = sync.lastError as { code?: string } | null;
+  const pill = syncPill(sync, staleAfterSec);
   return (
-    <section
-      aria-label="Sync"
-      className="mt-4 flex flex-col gap-1 border-t border-border pt-4 text-sm"
-    >
-      <h3 className="font-medium">Sync</h3>
+    <DrawerSection id="acc-sync" label="Sync" title="Sync">
       <p>
+        {pill ? (
+          <StatusPill {...pillFor(SYNC, pill)}>{pill}</StatusPill>
+        ) : (
+          <span className="text-fg-subtle">Synced {ago(sync.lagSec ?? 0)}</span>
+        )}
+      </p>
+      <p className="text-fg-muted">
         {SYNC_STATE[sync.state]}
         {sync.lastCompletedAt
           ? ` · last completed ${new Date(sync.lastCompletedAt).toLocaleString()} (${sync.lagSec} s ago)`
           : " · never completed: campaigns do not send from this account yet"}
       </p>
-      {push && <p>{pushLine(push)}</p>}
+      {push && <p className="text-fg-muted">{pushLine(push)}</p>}
       {sync.progress && (
         <p>
           {sync.progress.mode === "HISTORICAL" ? "Importing history" : "Full re-sync"} since{" "}
@@ -355,11 +478,11 @@ function SyncStatus({ sync, push }: { sync: ApiAccount["sync"]; push: ApiAccount
         </p>
       )}
       {sync.errors > 0 && (
-        <p className="text-destructive">
+        <p className="text-danger">
           {sync.errors} failed sync{sync.errors === 1 ? "" : "s"} in a row
           {err?.code ? ` (${err.code})` : ""}
         </p>
       )}
-    </section>
+    </DrawerSection>
   );
 }

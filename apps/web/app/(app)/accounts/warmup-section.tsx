@@ -2,9 +2,13 @@
 
 import type { WarmupDay } from "@rightnow/core";
 import { useEffect, useState } from "react";
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Callout } from "../../../components/callout";
+import { pillFor, StatusPill, WARMUP } from "../../../components/status-pill";
 import { Button } from "../../../components/ui/button";
-import { Input } from "../../../components/ui/input";
+import { Helper, Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
+import { Switch } from "../../../components/ui/switch";
 import { call, errorText } from "./api-client";
 import { isNumeric } from "./numeric";
 
@@ -26,16 +30,30 @@ const STATE: Record<string, string> = {
   PLACEMENT_UNKNOWN: "Waiting for a second opted-in mailbox in this workspace",
   SUSPENDED: "Suspended: the account is disconnected",
 };
+// the B4.4 pill word of each state
+const PILL: Record<string, string> = {
+  PAUSED: "Paused",
+  ACTIVE: "Active",
+  PROVIDER_BLOCKED: "Blocked",
+  PLACEMENT_UNKNOWN: "No peers",
+  SUSPENDED: "Suspended",
+};
 const NUMBERS = [
-  ["dailyLimit", "Warm-up messages per day"],
-  ["startVolume", "Warm-up first-day volume"],
-  ["increasePerDay", "Warm-up increase per day"],
-  ["replyRatePct", "Warm-up reply rate (%)"],
+  ["dailyLimit", "Warm-up messages per day", "Recommended 10 per day"],
+  ["startVolume", "Warm-up first-day volume", ""],
+  ["increasePerDay", "Warm-up increase per day", ""],
+  ["replyRatePct", "Warm-up reply rate (%)", ""],
 ] as const;
 const FLAGS = [
   ["enabled", "Enable warm-up"],
   ["slowWarmup", "Ramp up warm-up volume"],
   ["weekdaysOnly", "Warm up on weekdays only"],
+] as const;
+// B4.16 stacked warm-up bars: inbox success, spam danger, not found neutral (placement measured once per message)
+const SERIES = [
+  ["inbox", "Inbox", "var(--success-solid)"],
+  ["spam", "Spam", "var(--danger-solid)"],
+  ["missing", "Not found", "var(--neutral-solid)"],
 ] as const;
 
 /** PS-WARM-01..13, -21: cooperative warm-up settings, state, 30-day stats and what it does and does not do (D36). */
@@ -80,51 +98,61 @@ export function WarmupSection({ accountId, canEdit }: { accountId: string; canEd
   }
   const set = (k: string, v: string | boolean) => setForm((f) => ({ ...f, [k]: v }));
   const active = days.filter((d) => d.sent || d.received);
+  const pill = view && (view.settings.enabled ? (PILL[view.state] ?? "Paused") : "Off");
 
   return (
-    <section
-      aria-label="Warm-up"
-      className="mt-4 flex flex-col gap-2 border-t border-border pt-4 text-sm"
-    >
-      <h3 className="font-medium">Warm-up</h3>
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <h3 className="mr-1 text-sm font-semibold">Warm-up</h3>
+        {pill && <StatusPill {...pillFor(WARMUP, pill)}>{pill}</StatusPill>}
+      </div>
       {view && (
         <p>
           State: {STATE[view.state]}. Today&apos;s target: {view.todayTarget}. Opted-in peers:{" "}
           {view.peers}.
         </p>
       )}
-      <p className="text-muted-foreground">
+      <p className="text-fg-muted">
         Plan for 30 campaign emails and 10 warm-up emails per account per day, and warm up new
         accounts for at least 2 weeks.
       </p>
       {view && (
-        <form onSubmit={save} className="grid gap-3 sm:grid-cols-2">
-          {FLAGS.map(([k, label]) => (
-            <label key={k} className="flex items-center gap-2">
-              <input
-                type="checkbox"
+        <form onSubmit={save} className="flex flex-col gap-3">
+          <div className="flex flex-col">
+            {FLAGS.map(([k, label]) => (
+              <Switch
+                key={k}
+                label={label}
                 disabled={!canEdit}
                 checked={form[k] as boolean}
                 onChange={(e) => set(k, e.target.checked)}
               />
-              {label}
-            </label>
-          ))}
-          {NUMBERS.map(([k, label]) => (
-            <div key={k} className="flex flex-col gap-1">
-              <Label htmlFor={`w-${k}`}>{label}</Label>
-              <Input
-                id={`w-${k}`}
-                type="number"
-                min={0}
-                disabled={!canEdit}
-                value={form[k] as string}
-                onChange={(e) => set(k, e.target.value)}
-              />
-            </div>
-          ))}
+            ))}
+          </div>
+          {form.slowWarmup === false && (
+            <Callout tone="warning">
+              Turning the ramp off on an account younger than 2 weeks risks its reputation.
+            </Callout>
+          )}
+          <div className="grid gap-x-4 gap-y-3 sm:grid-cols-2">
+            {NUMBERS.map(([k, label, help]) => (
+              <div key={k} className="flex flex-col gap-1.5">
+                <Label htmlFor={`w-${k}`}>{label}</Label>
+                <Input
+                  id={`w-${k}`}
+                  type="number"
+                  min={0}
+                  disabled={!canEdit}
+                  aria-describedby={help ? `wh-${k}` : undefined}
+                  value={form[k] as string}
+                  onChange={(e) => set(k, e.target.value)}
+                />
+                {help && <Helper id={`wh-${k}`}>{help}</Helper>}
+              </div>
+            ))}
+          </div>
           {canEdit && (
-            <div className="sm:col-span-2">
+            <div>
               <Button type="submit" variant="outline">
                 Apply warm-up settings
               </Button>
@@ -133,8 +161,107 @@ export function WarmupSection({ accountId, canEdit }: { accountId: string; canEd
         </form>
       )}
       <p aria-live="polite">{msg}</p>
-      <div>
-        <h4 className="font-medium">What warm-up does</h4>
+      {active.length > 0 && (
+        <figure className="flex flex-col gap-2">
+          <figcaption className="flex flex-wrap items-center gap-3 text-[13px]/[18px]">
+            <span className="font-medium">Where warm-up mail landed, last 30 days</span>
+            {SERIES.map(([, label, color]) => (
+              <span key={label} className="inline-flex items-center gap-1.5 text-fg-muted">
+                <span aria-hidden className="size-2" style={{ background: color }} />
+                {label}
+              </span>
+            ))}
+          </figcaption>
+          <div
+            role="img"
+            aria-label={`Warm-up placement per day: ${active.map((d) => `${d.day}: ${d.inbox} inbox, ${d.spam} spam, ${d.missing} not found`).join("; ")}`}
+            className="h-40"
+          >
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={days} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
+                <CartesianGrid vertical={false} stroke="var(--chart-grid)" strokeDasharray="3 3" />
+                <XAxis
+                  dataKey="day"
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fill: "var(--chart-axis)", fontSize: 12 }}
+                  tickFormatter={(d: string) =>
+                    new Date(`${d}T00:00:00Z`).toLocaleDateString("en", {
+                      month: "short",
+                      day: "numeric",
+                      timeZone: "UTC",
+                    })
+                  }
+                  minTickGap={24}
+                />
+                <YAxis
+                  width={32}
+                  allowDecimals={false}
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fill: "var(--chart-axis)", fontSize: 12 }}
+                />
+                <Tooltip
+                  cursor={{ fill: "var(--hover)" }}
+                  contentStyle={{
+                    background: "var(--surface-elevated)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 8,
+                    fontSize: 13,
+                  }}
+                />
+                {SERIES.map(([key, label, color], i) => (
+                  <Bar
+                    key={key}
+                    dataKey={key}
+                    name={label}
+                    stackId="w"
+                    fill={color}
+                    maxBarSize={24}
+                    radius={i === SERIES.length - 1 ? [3, 3, 0, 0] : undefined}
+                    isAnimationActive={false}
+                  />
+                ))}
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </figure>
+      )}
+      <details className="text-[13px]/[18px]">
+        <summary className="cursor-pointer text-signal">Show as table</summary>
+        <table className="mt-2 w-full text-left tabular-nums">
+          <caption className="text-left font-medium">Last 30 days</caption>
+          <thead>
+            <tr className="text-fg-muted">
+              {["Day", "Sent", "Received", "Replied", "Inbox", "Spam", "Missing"].map((h) => (
+                <th key={h} scope="col" className="py-1 font-medium">
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {active.length === 0 ? (
+              <tr>
+                <td colSpan={7}>No warm-up activity yet.</td>
+              </tr>
+            ) : (
+              active.map((d) => (
+                <tr key={d.day} className="border-t border-border">
+                  <td className="py-1">{d.day}</td>
+                  <td>{d.sent}</td>
+                  <td>{d.received}</td>
+                  <td>{d.replied}</td>
+                  <td>{d.inbox}</td>
+                  <td>{d.spam}</td>
+                  <td>{d.missing}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </details>
+      <Callout tone="neutral" title="What warm-up does">
         <ul className="list-disc pl-5">
           <li>
             Sends short plain-text messages between mailboxes of this workspace that you opted in,
@@ -149,15 +276,13 @@ export function WarmupSection({ accountId, canEdit }: { accountId: string; canEd
             measures once where each message landed.
           </li>
         </ul>
-        <h4 className="mt-2 font-medium">What warm-up does not do</h4>
+        <p className="mt-2 font-medium">What warm-up does not do</p>
         <ul className="list-disc pl-5">
           <li>
             It never opens, reads, stars, marks important, archives or deletes mail, and never moves
             mail out of spam or marks it &quot;not spam&quot;.
           </li>
-          <li>
-            It never spins or randomises message content to evade filters.
-          </li>
+          <li>It never spins or randomises message content to evade filters.</li>
           <li>
             It never mails addresses outside your opted-in mailboxes and never joins a third-party
             pool.
@@ -167,38 +292,7 @@ export function WarmupSection({ accountId, canEdit }: { accountId: string; canEd
             Reply rate is a cooperative-mailbox action.
           </li>
         </ul>
-      </div>
-      <table className="w-full text-left">
-        <caption className="text-left font-medium">Last 30 days</caption>
-        <thead>
-          <tr>
-            {["Day", "Sent", "Received", "Replied", "Inbox", "Spam", "Missing"].map((h) => (
-              <th key={h} scope="col">
-                {h}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {active.length === 0 ? (
-            <tr>
-              <td colSpan={7}>No warm-up activity yet.</td>
-            </tr>
-          ) : (
-            active.map((d) => (
-              <tr key={d.day}>
-                <td>{d.day}</td>
-                <td>{d.sent}</td>
-                <td>{d.received}</td>
-                <td>{d.replied}</td>
-                <td>{d.inbox}</td>
-                <td>{d.spam}</td>
-                <td>{d.missing}</td>
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
-    </section>
+      </Callout>
+    </div>
   );
 }

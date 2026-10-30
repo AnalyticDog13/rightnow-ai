@@ -1,7 +1,10 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { Mail } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Callout } from "../../../components/callout";
+import { ActionCard } from "../../../components/empty-state";
 import { Button } from "../../../components/ui/button";
 
 export type Provider = "google" | "microsoft";
@@ -23,6 +26,14 @@ const MESSAGES: Record<string, string> = {
   server_error:
     "Something went wrong connecting the account. If you were reconnecting, it may have been deleted.",
 };
+const BLURB: Record<Provider, string> = {
+  google: "Gmail or Google Workspace via OAuth",
+  microsoft: "Outlook or Microsoft 365 via OAuth",
+};
+const DOC: Record<Provider, string> = {
+  google: "docs/ops/GOOGLE_SETUP.md",
+  microsoft: "docs/ops/MICROSOFT_SETUP.md",
+};
 const KEY = "oauth-session";
 const PKEY = "oauth-provider"; // which provider a full-page flow was started for
 
@@ -31,10 +42,13 @@ type Poll = { status: "pending" | "success" | "error" | "expired"; errorCode?: s
 export function ConnectMenu({
   configured,
   reconnect,
+  cards,
 }: {
   configured: Record<Provider, boolean>;
   /** Reconnect this account (with its own provider) instead of connecting a new one. */
   reconnect?: { id: string; provider: Provider };
+  /** The empty state's action cards instead of buttons (B5.3). */
+  cards?: boolean;
 }) {
   const router = useRouter();
   const [msg, setMsg] = useState("");
@@ -149,36 +163,70 @@ export function ConnectMenu({
 
   const verb = reconnect ? "Reconnect" : "Connect";
   const providers = reconnect ? [reconnect.provider] : (["google", "microsoft"] as const);
-  const missing = providers.filter((p) => !configured[p]);
-  return (
-    <div className="flex flex-col gap-2">
-      <div className="flex gap-2">
+  const label = (p: Provider) =>
+    busy && active === p ? `Waiting for ${NAME[p]}...` : `${verb} ${NAME[p]}`;
+  const why = (p: Provider) => `Not configured on this server (see ${DOC[p]})`;
+  const cancelButton = busy && (
+    <Button variant="outline" onClick={cancel}>
+      Cancel
+    </Button>
+  );
+  const alert = (
+    <p role="alert" className="w-full text-[13px]/[18px] text-danger empty:hidden">
+      {msg}
+    </p>
+  );
+  if (cards)
+    return (
+      <>
         {providers.map((p) => (
-          <Button key={p} onClick={() => connect(p)} disabled={busy || !configured[p]}>
-            {busy && active === p ? `Waiting for ${NAME[p]}...` : `${verb} ${NAME[p]}`}
-          </Button>
+          <ActionCard
+            key={p}
+            icon={Mail}
+            title={label(p)}
+            description={configured[p] ? BLURB[p] : why(p)}
+            onClick={() => connect(p)}
+            disabled={busy || !configured[p]}
+          />
         ))}
-        {busy && (
-          <Button variant="outline" onClick={cancel}>
-            Cancel
-          </Button>
-        )}
-      </div>
-      {missing.includes("google") && (
-        <p className="text-sm text-muted-foreground">
-          Google is not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET (see
-          docs/ops/GOOGLE_SETUP.md).
+        {cancelButton && <div>{cancelButton}</div>}
+        {alert}
+      </>
+    );
+  return (
+    <>
+      {providers.map((p) => (
+        <Button
+          key={p}
+          variant="outline"
+          onClick={() => connect(p)}
+          disabled={busy || !configured[p]}
+          title={configured[p] ? undefined : why(p)}
+        >
+          {label(p)}
+        </Button>
+      ))}
+      {cancelButton}
+      {alert}
+    </>
+  );
+}
+
+const ENV: Record<Provider, string> = {
+  google: "GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET",
+  microsoft: "MS_CLIENT_ID and MS_CLIENT_SECRET",
+};
+
+/** Says which providers this server cannot connect, and how to configure them (the buttons are disabled). */
+export function NotConfigured({ providers }: { providers: Provider[] }) {
+  if (providers.length === 0) return null;
+  return (
+    <Callout tone="neutral">
+      {providers.map((p) => (
+        <p key={p}>
+          {NAME[p]} is not configured. Set {ENV[p]} (see {DOC[p]}).
         </p>
-      )}
-      {missing.includes("microsoft") && (
-        <p className="text-sm text-muted-foreground">
-          Microsoft is not configured. Set MS_CLIENT_ID and MS_CLIENT_SECRET (see
-          docs/ops/MICROSOFT_SETUP.md).
-        </p>
-      )}
-      <p role="alert" className="min-h-5 text-sm text-destructive">
-        {msg}
-      </p>
-    </div>
+      ))}
+    </Callout>
   );
 }
