@@ -1,13 +1,25 @@
 "use client";
 
+import { ListPlus, Pencil, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { Callout } from "../../../../components/callout";
+import { PageHeader } from "../../../../components/page-header";
+import { SectionTabs } from "../../../../components/section-tabs";
+import { TableEmpty, TableFrame } from "../../../../components/table-kit";
 import { Button } from "../../../../components/ui/button";
-import { Card } from "../../../../components/ui/card";
 import { Input } from "../../../../components/ui/input";
 import { call, errorText } from "../../accounts/api-client";
-import { VERIFICATION } from "../labels";
+import { LEAD_TABS, VERIFICATION } from "../labels";
+
+// B5.9 status bar: verified / risky / invalid in success / warning / danger, everything else neutral
+const SEGMENTS: [string, string[]][] = [
+  ["bg-success-solid", ["VERIFIED"]],
+  ["bg-warning-solid", ["RISKY", "CATCH_ALL", "JOB_CHANGE"]],
+  ["bg-danger-solid", ["INVALID"]],
+  ["bg-neutral-solid", ["NOT_VERIFIED", "PENDING", "PENDING_JOB"]],
+];
 
 type Row = { id: string; name: string; count: number; stats: Record<string, number> };
 
@@ -28,92 +40,137 @@ export function ListsManager({ lists, canEdit }: { lists: Row[]; canEdit: boolea
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      {canEdit && (
-        <form
-          className="flex gap-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void act(call("/api/v1/lead-lists", "POST", { name }));
-          }}
-        >
-          <Input
-            aria-label="New list name"
-            placeholder="New list name"
-            className="max-w-xs"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-          <Button type="submit" disabled={!name.trim()}>
-            Create list
-          </Button>
-        </form>
-      )}
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Lead Lists"
+        description="Named groups of leads you can enroll in campaigns."
+        tabs={<SectionTabs tabs={LEAD_TABS} />}
+        actions={
+          canEdit && (
+            <form
+              className="flex w-full gap-2 md:w-auto"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void act(call("/api/v1/lead-lists", "POST", { name }));
+              }}
+            >
+              <Input
+                aria-label="New list name"
+                placeholder="New list name"
+                className="md:w-56"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+              <Button type="submit" disabled={!name.trim()}>
+                <Plus aria-hidden />
+                Create list
+              </Button>
+            </form>
+          )
+        }
+      />
       {msg && (
-        <p role="alert" className="text-sm text-destructive">
+        <Callout tone="danger" role="alert">
           {msg}
-        </p>
+        </Callout>
       )}
-      <Card className="overflow-x-auto p-0">
-        <table aria-label="Lead lists" className="w-full text-left text-sm">
+      <TableFrame>
+        <table aria-label="Lead lists">
           <thead>
-            <tr className="border-b border-border">
-              {["List", "Leads", "Verification", "Actions"].map((h) => (
-                <th key={h} className="p-3 font-medium">
-                  {h}
-                </th>
-              ))}
+            <tr>
+              <th scope="col">List</th>
+              <th scope="col" className="text-right">
+                Leads
+              </th>
+              <th scope="col" className="hidden md:table-cell">
+                Verification
+              </th>
+              <th scope="col" className="text-right">
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody>
-            {lists.map((l) => (
-              <tr key={l.id} className="border-b border-border">
-                <td className="p-3">
-                  {editing?.id === l.id ? (
-                    <form
-                      className="flex gap-2"
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        void act(
-                          call(`/api/v1/lead-lists/${l.id}`, "PATCH", { name: editing.name }),
-                        );
-                      }}
-                    >
-                      <Input
-                        aria-label={`New name for ${l.name}`}
-                        value={editing.name}
-                        onChange={(e) => setEditing({ id: l.id, name: e.target.value })}
-                      />
-                      <Button type="submit">Save</Button>
-                    </form>
-                  ) : (
-                    <Link href={`/leads?listId=${l.id}`} className="underline">
-                      {l.name}
-                    </Link>
-                  )}
-                </td>
-                <td className="p-3 tabular-nums">{l.count}</td>
-                <td className="p-3 text-xs">
-                  {Object.entries(l.stats)
-                    .filter(([, n]) => n > 0)
-                    .map(([k, n]) => `${VERIFICATION[k]}: ${n}`)
-                    .join(" · ") || "No leads"}
-                </td>
-                <td className="p-3">
-                  {canEdit && (
-                    <div className="flex gap-1">
-                      <Button
-                        variant="outline"
-                        className="h-8 px-2 text-xs"
-                        aria-label={`Rename ${l.name}`}
-                        onClick={() => setEditing({ id: l.id, name: l.name })}
+            {lists.map((l) => {
+              const parts = Object.entries(l.stats).filter(([, n]) => n > 0);
+              const summary =
+                parts.map(([k, n]) => `${VERIFICATION[k]}: ${n}`).join(" · ") || "No leads";
+              const sum = parts.reduce((a, [, n]) => a + n, 0);
+              return (
+                <tr key={l.id}>
+                  <td className="max-w-72">
+                    {editing?.id === l.id ? (
+                      <form
+                        className="flex gap-2"
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          void act(
+                            call(`/api/v1/lead-lists/${l.id}`, "PATCH", { name: editing.name }),
+                          );
+                        }}
                       >
-                        Rename
-                      </Button>
-                      {
+                        <Input
+                          aria-label={`New name for ${l.name}`}
+                          className="md:h-8"
+                          value={editing.name}
+                          onChange={(e) => setEditing({ id: l.id, name: e.target.value })}
+                        />
+                        <Button type="submit" size="sm">
+                          Save
+                        </Button>
+                      </form>
+                    ) : (
+                      <Link
+                        href={`/leads?listId=${l.id}`}
+                        className="block truncate font-medium text-signal underline-offset-2 hover:underline"
+                      >
+                        {l.name}
+                      </Link>
+                    )}
+                  </td>
+                  <td className="text-right tabular-nums">{l.count}</td>
+                  <td className="hidden md:table-cell">
+                    {sum > 0 ? (
+                      <span className="flex items-center gap-3">
+                        <span
+                          aria-hidden
+                          title={summary}
+                          className="flex h-1.5 w-32 overflow-hidden rounded-xs bg-sunken"
+                        >
+                          {SEGMENTS.map(([cls, keys]) => {
+                            const n = parts
+                              .filter(([k]) => keys.includes(k))
+                              .reduce((a, [, x]) => a + x, 0);
+                            return n ? (
+                              <span
+                                key={cls}
+                                className={cls}
+                                style={{ width: `${(n / sum) * 100}%` }}
+                              />
+                            ) : null;
+                          })}
+                        </span>
+                        <span className="truncate text-[13px]/[18px] text-fg-muted">{summary}</span>
+                      </span>
+                    ) : (
+                      <span className="text-[13px]/[18px] text-fg-subtle">No leads</span>
+                    )}
+                  </td>
+                  <td>
+                    {canEdit && (
+                      <div className="flex justify-end gap-1">
                         <Button
-                          variant="outline"
-                          className="h-8 px-2 text-xs"
+                          variant="ghost"
+                          size="sm"
+                          aria-label={`Rename ${l.name}`}
+                          onClick={() => setEditing({ id: l.id, name: l.name })}
+                        >
+                          <Pencil aria-hidden />
+                          <span className="max-md:sr-only">Rename</span>
+                        </Button>
+                        <Button
+                          variant="danger-ghost"
+                          size="sm"
                           aria-label={`Delete ${l.name}`}
                           onClick={() => {
                             if (
@@ -124,24 +181,26 @@ export function ListsManager({ lists, canEdit }: { lists: Row[]; canEdit: boolea
                               void act(call(`/api/v1/lead-lists/${l.id}`, "DELETE"));
                           }}
                         >
-                          Delete
+                          <Trash2 aria-hidden />
+                          <span className="max-md:sr-only">Delete</span>
                         </Button>
-                      }
-                    </div>
-                  )}
-                </td>
-              </tr>
-            ))}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
             {lists.length === 0 && (
-              <tr>
-                <td colSpan={4} className="p-6 text-center text-muted-foreground">
-                  No lists yet.
-                </td>
-              </tr>
+              <TableEmpty
+                colSpan={4}
+                icon={ListPlus}
+                title="No lead lists yet."
+                body="Lists group leads for enrollment. Create one, then add leads from the Leads table or an import."
+              />
             )}
           </tbody>
         </table>
-      </Card>
+      </TableFrame>
     </div>
   );
 }

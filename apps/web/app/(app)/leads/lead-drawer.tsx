@@ -1,11 +1,39 @@
 "use client";
 
 import type { ApiLead } from "@rightnow/core";
+import {
+  Ban,
+  CheckCircle2,
+  Eye,
+  FileUp,
+  GitMerge,
+  Handshake,
+  ListChecks,
+  MailX,
+  MousePointerClick,
+  Plus,
+  Reply,
+  Send,
+  ShieldOff,
+  StickyNote,
+  UserPlus,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { AiAssist, useAiOn } from "../../../components/ai-assist";
+import { sheetClass, sheetFooter, sheetHeader } from "../../../components/overlay";
+import {
+  INTEREST as INTEREST_PILL,
+  pillFor,
+  StatusPill,
+  VERIFICATION as VERIFICATION_PILL,
+} from "../../../components/status-pill";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
+import { Select } from "../../../components/ui/select";
+import { DrawerSection } from "../accounts/account-drawer";
 import { call, errorText } from "../accounts/api-client";
 import { ESP, INTEREST, VERIFICATION } from "./labels";
 
@@ -26,6 +54,22 @@ const FIELDS = [
   ],
 ] as const;
 type TimelineItem = { at: string; kind: string; detail: Record<string, unknown> };
+// B5.8 timeline: one 24px icon disc per event kind (suppression is the fallback)
+const ICON: Record<string, LucideIcon> = {
+  imported: FileUp,
+  enrolled: UserPlus,
+  sent: Send,
+  status_changed: CheckCircle2,
+  merged: GitMerge,
+  unsubscribed: MailX,
+  opened: Eye,
+  clicked: MousePointerClick,
+  replied: Reply,
+  bounced: Ban,
+  note: StickyNote,
+  task: ListChecks,
+  opportunity: Handshake,
+};
 const describe = (t: TimelineItem) => {
   const d = t.detail;
   switch (t.kind) {
@@ -94,10 +138,9 @@ function LeadAi({ lead, onChanged }: { lead: ApiLead; onChanged: () => void }) {
   const on = useAiOn();
   if (!on) return null;
   return (
-    <section aria-label="AI" className="mt-4 flex flex-col gap-2 border-t border-border pt-4">
-      <h3 className="text-sm font-medium">AI</h3>
+    <DrawerSection label="AI" title="AI">
       <div className="flex flex-wrap items-start gap-2">
-        <Button variant="outline" onClick={() => void rate()}>
+        <Button variant="outline" size="sm" onClick={() => void rate()}>
           Score lead
         </Button>
         <AiAssist
@@ -108,21 +151,22 @@ function LeadAi({ lead, onChanged }: { lead: ApiLead; onChanged: () => void }) {
         />
       </div>
       {scored && (
-        <p role="status" className="text-sm">
-          Score {scored.aiScore}/100. {scored.aiScoreReason}
+        <p role="status" className="text-[13px]/[18px]">
+          <span className="font-medium text-ai">Score {scored.aiScore}/100.</span>{" "}
+          {scored.aiScoreReason}
         </p>
       )}
       {copied && (
-        <p role="status" className="text-sm">
+        <p role="status" className="text-[13px]/[18px]">
           Follow-up copied. Paste it into a reply.
         </p>
       )}
       {err && (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="text-[13px]/[18px] text-danger">
           {err}
         </p>
       )}
-    </section>
+    </DrawerSection>
   );
 }
 
@@ -183,153 +227,192 @@ export function LeadDrawer({
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
   const stat = (label: string, v: string | number) => (
-    <div key={label}>
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd>{v}</dd>
+    <div key={label} className="flex flex-col gap-0.5">
+      <dt className="micro text-fg-muted">{label}</dt>
+      <dd className="text-sm font-medium tabular-nums">{v}</dd>
     </div>
   );
+  const interest = lead.interestStatus === null ? null : INTEREST[String(lead.interestStatus)];
+  const verification = VERIFICATION[lead.verificationStatus] ?? "";
 
   return (
-    <dialog
-      ref={dialog}
-      aria-labelledby="lead-title"
-      onClose={onClose}
-      className="m-auto max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-border bg-card p-6 text-foreground backdrop:bg-black/40"
-    >
-      <div className="mb-4 flex items-start justify-between gap-4">
-        <h2 id="lead-title" className="text-lg font-semibold">
-          {lead.email}
-        </h2>
-        <Button variant="outline" onClick={() => dialog.current?.close()}>
-          Close
-        </Button>
-      </div>
-      <dl className="mb-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-        {stat("Verification", VERIFICATION[lead.verificationStatus] ?? "")}
-        {stat("ESP", ESP[lead.espType] ?? "")}
-        {stat("Emails sent", lead.emailsSent)}
-        {stat("Replies", lead.replies)}
-      </dl>
-      <form onSubmit={save} className="grid gap-3 sm:grid-cols-2">
-        {FIELDS.map(([k, label]) => (
-          <div key={k} className="flex flex-col gap-1">
-            <Label htmlFor={`lead-${k}`}>{label}</Label>
-            <Input
-              id={`lead-${k}`}
-              disabled={!canEdit}
-              value={form[k]}
-              onChange={(e) => set(k, e.target.value)}
-            />
-          </div>
-        ))}
-        <div className="flex flex-col gap-1">
-          <Label htmlFor="lead-interest">Interest status</Label>
-          <select
-            id="lead-interest"
-            disabled={!canEdit}
-            className="h-10 rounded-md border border-border bg-card px-3 text-sm"
-            value={form.interest}
-            onChange={(e) => set("interest", e.target.value)}
+    <dialog ref={dialog} aria-labelledby="lead-title" onClose={onClose} className={sheetClass()}>
+      <div className="flex h-full flex-col">
+        <header className={sheetHeader}>
+          <h2
+            id="lead-title"
+            className="min-w-0 truncate text-base font-semibold"
+            title={lead.email}
           >
-            <option value="">Lead (no status)</option>
-            {Object.entries(INTEREST).map(([k, v]) => (
-              <option key={k} value={k}>
-                {v}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex flex-col gap-1">
-          <Label htmlFor="lead-tags">Tags (comma separated)</Label>
-          <Input
-            id="lead-tags"
-            disabled={!canEdit}
-            value={form.tags}
-            onChange={(e) => set("tags", e.target.value)}
-          />
-        </div>
-        <fieldset className="flex flex-col gap-2 sm:col-span-2">
-          <legend className="text-sm font-medium">Custom fields</legend>
-          {custom.map((c, i) => (
-            <div key={i} className="flex gap-2">
-              <Input
-                aria-label={`Custom field ${i + 1} name`}
-                disabled={!canEdit}
-                value={c.key}
-                onChange={(e) =>
-                  setCustom((o) => o.map((x, j) => (j === i ? { ...x, key: e.target.value } : x)))
-                }
-              />
-              <Input
-                aria-label={`Custom field ${i + 1} value`}
-                disabled={!canEdit}
-                value={c.value}
-                onChange={(e) =>
-                  setCustom((o) => o.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))
-                }
-              />
-              {canEdit && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  aria-label={`Remove custom field ${i + 1}`}
-                  onClick={() => setCustom((o) => o.filter((_, j) => j !== i))}
-                >
-                  Remove
-                </Button>
-              )}
-            </div>
-          ))}
-          {canEdit && (
-            <Button
-              type="button"
-              variant="outline"
-              className="self-start"
-              onClick={() => setCustom((o) => [...o, { key: "", value: "" }])}
-            >
-              Add custom field
-            </Button>
+            {lead.email}
+          </h2>
+          {interest && (
+            <StatusPill {...pillFor(INTEREST_PILL, interest)} className="max-sm:hidden">
+              {interest}
+            </StatusPill>
           )}
-        </fieldset>
-        {error && (
-          <p role="alert" className="text-sm text-destructive sm:col-span-2">
-            {error}
-          </p>
-        )}
-        {msg && (
-          <p role="status" className="text-sm sm:col-span-2">
-            {msg}
-          </p>
-        )}
+          <StatusPill {...pillFor(VERIFICATION_PILL, verification)} className="max-sm:hidden">
+            {verification}
+          </StatusPill>
+          <Button variant="ghost" className="ml-auto" onClick={() => dialog.current?.close()}>
+            <X aria-hidden />
+            Close
+          </Button>
+        </header>
+        <div className="flex flex-1 flex-col gap-6 overflow-y-auto p-5">
+          <DrawerSection label="Details" title="Details">
+            <dl className="grid grid-cols-2 gap-3 rounded-lg border border-border bg-sunken px-4 py-3 sm:grid-cols-4">
+              {stat("Verification", verification)}
+              {stat("ESP", ESP[lead.espType] ?? "")}
+              {stat("Emails sent", lead.emailsSent)}
+              {stat("Replies", lead.replies)}
+            </dl>
+            <form id="lead-form" onSubmit={save} className="grid gap-x-4 gap-y-3 sm:grid-cols-2">
+              {FIELDS.map(([k, label]) => (
+                <div key={k} className="flex flex-col gap-1.5">
+                  <Label htmlFor={`lead-${k}`}>{label}</Label>
+                  <Input
+                    id={`lead-${k}`}
+                    disabled={!canEdit}
+                    value={form[k]}
+                    onChange={(e) => set(k, e.target.value)}
+                  />
+                </div>
+              ))}
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="lead-interest">Interest status</Label>
+                <Select
+                  id="lead-interest"
+                  disabled={!canEdit}
+                  value={form.interest}
+                  onChange={(e) => set("interest", e.target.value)}
+                >
+                  <option value="">Lead (no status)</option>
+                  {Object.entries(INTEREST).map(([k, v]) => (
+                    <option key={k} value={k}>
+                      {v}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="lead-tags">Tags (comma separated)</Label>
+                <Input
+                  id="lead-tags"
+                  disabled={!canEdit}
+                  value={form.tags}
+                  onChange={(e) => set("tags", e.target.value)}
+                />
+              </div>
+              <fieldset className="flex flex-col gap-2 sm:col-span-2">
+                <legend className="mb-1.5 text-[13px]/[18px] font-medium">Custom fields</legend>
+                {custom.map((c, i) => (
+                  <div key={i} className="flex gap-2">
+                    <Input
+                      aria-label={`Custom field ${i + 1} name`}
+                      disabled={!canEdit}
+                      value={c.key}
+                      onChange={(e) =>
+                        setCustom((o) =>
+                          o.map((x, j) => (j === i ? { ...x, key: e.target.value } : x)),
+                        )
+                      }
+                    />
+                    <Input
+                      aria-label={`Custom field ${i + 1} value`}
+                      disabled={!canEdit}
+                      value={c.value}
+                      onChange={(e) =>
+                        setCustom((o) =>
+                          o.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)),
+                        )
+                      }
+                    />
+                    {canEdit && (
+                      <Button
+                        type="button"
+                        variant="danger-ghost"
+                        aria-label={`Remove custom field ${i + 1}`}
+                        onClick={() => setCustom((o) => o.filter((_, j) => j !== i))}
+                      >
+                        Remove
+                      </Button>
+                    )}
+                  </div>
+                ))}
+                {canEdit && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="self-start"
+                    onClick={() => setCustom((o) => [...o, { key: "", value: "" }])}
+                  >
+                    <Plus aria-hidden />
+                    Add custom field
+                  </Button>
+                )}
+              </fieldset>
+            </form>
+            {canEdit && (
+              <p className="text-[13px]/[18px]">
+                <a
+                  className="text-signal underline underline-offset-2"
+                  href={`/api/v1/leads/${lead.id}/export`}
+                >
+                  Export data (JSON)
+                </a>
+              </p>
+            )}
+          </DrawerSection>
+          {canEdit && <LeadAi lead={lead} onChanged={onChanged} />}
+          <DrawerSection label="Timeline" title="Timeline">
+            {timeline.length ? (
+              <ol className="flex flex-col">
+                {timeline.map((t, i) => {
+                  const Icon = ICON[t.kind] ?? ShieldOff;
+                  return (
+                    <li
+                      key={i}
+                      className="relative flex gap-3 pb-3 text-[13px]/[18px] last:pb-0 [&:not(:last-child)]:before:absolute [&:not(:last-child)]:before:top-6 [&:not(:last-child)]:before:bottom-0 [&:not(:last-child)]:before:left-3 [&:not(:last-child)]:before:w-px [&:not(:last-child)]:before:bg-border"
+                    >
+                      <span className="grid size-6 shrink-0 place-items-center rounded-full bg-sunken">
+                        <Icon className="size-3 text-fg-muted" aria-hidden />
+                      </span>
+                      <span className="min-w-0 flex-1 pt-0.5 break-words">{describe(t)}</span>
+                      <time dateTime={t.at} className="shrink-0 pt-0.5 text-fg-subtle tabular-nums">
+                        {new Date(t.at).toLocaleString(undefined, {
+                          month: "short",
+                          day: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </time>
+                    </li>
+                  );
+                })}
+              </ol>
+            ) : (
+              <p className="text-[13px]/[18px] text-fg-muted">No activity yet.</p>
+            )}
+          </DrawerSection>
+        </div>
         {canEdit && (
-          <div className="sm:col-span-2">
-            <Button type="submit">Save</Button>
-          </div>
+          <footer className={sheetFooter}>
+            <div className="mr-auto min-w-0 flex-1 text-[13px]/[18px]">
+              {error && (
+                <p role="alert" className="text-danger">
+                  {error}
+                </p>
+              )}
+              {msg && <p role="status">{msg}</p>}
+            </div>
+            <Button type="submit" form="lead-form">
+              Save
+            </Button>
+          </footer>
         )}
-      </form>
-      {canEdit && <LeadAi lead={lead} onChanged={onChanged} />}
-      {canEdit && (
-        <p className="mt-4 text-sm">
-          <a className="text-primary underline" href={`/api/v1/leads/${lead.id}/export`}>
-            Export data (JSON)
-          </a>
-        </p>
-      )}
-      <section aria-label="Timeline" className="mt-4 border-t border-border pt-4">
-        <h3 className="mb-2 text-sm font-medium">Timeline</h3>
-        {timeline.length ? (
-          <ul className="flex flex-col gap-1 text-sm">
-            {timeline.map((t, i) => (
-              <li key={i}>
-                <span className="text-muted-foreground">{new Date(t.at).toLocaleString()}</span>{" "}
-                {describe(t)}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm text-muted-foreground">No activity yet.</p>
-        )}
-      </section>
+      </div>
     </dialog>
   );
 }

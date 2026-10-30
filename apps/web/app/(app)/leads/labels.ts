@@ -37,3 +37,9 @@ export const REASON: Record<string, string> = {
   NOT_INTERESTED: "Not interested",
   GDPR_ERASURE: "Erased (GDPR)",
 };
+/** B3.3 section tabs shared by the Leads, Lead lists and Blocklist pages. */
+export const LEAD_TABS = [
+  { href: "/leads", label: "Leads" },
+  { href: "/leads/lists", label: "Lead lists" },
+  { href: "/blocklist", label: "Blocklist" },
+];

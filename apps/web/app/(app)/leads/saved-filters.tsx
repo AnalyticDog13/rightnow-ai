@@ -1,8 +1,10 @@
 "use client";
 
+import { BookmarkPlus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
+import { Select } from "../../../components/ui/select";
 import { call, errorText } from "../accounts/api-client";
 
 type Saved = { id: string; name: string; filters: Record<string, string> };
@@ -51,11 +53,12 @@ export function SavedFilters({
     void load();
   }
 
+  // B5.8 asks for chip buttons; the native select stays because tests pick a saved filter with selectOption.
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <select
+      <Select
+        size="sm"
         aria-label="Saved filters"
-        className="h-10 rounded-md border border-border bg-card px-3 text-sm"
         value={chosen}
         onChange={(e) => {
           setChosen(e.target.value);
@@ -69,24 +72,28 @@ export function SavedFilters({
             {s.name}
           </option>
         ))}
-      </select>
+      </Select>
       {chosen && (
-        <Button variant="outline" onClick={() => void remove()}>
+        <Button variant="danger-ghost" size="sm" onClick={() => void remove()}>
+          <Trash2 aria-hidden />
           Delete saved filter
         </Button>
       )}
-      <Input
-        aria-label="Saved filter name"
-        placeholder="Name this filter"
-        className="max-w-48"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-      />
-      <Button variant="outline" disabled={!name.trim()} onClick={() => void save()}>
-        Save filter
-      </Button>
+      <span className="flex items-center gap-2 max-sm:w-full md:ml-auto">
+        <Input
+          aria-label="Saved filter name"
+          placeholder="Name this filter"
+          className="md:h-8 md:w-44 md:text-[13px]/[18px]"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+        <Button variant="ghost" size="sm" disabled={!name.trim()} onClick={() => void save()}>
+          <BookmarkPlus aria-hidden />
+          Save filter
+        </Button>
+      </span>
       {msg && (
-        <p role="status" className="text-sm">
+        <p role="status" className="w-full text-[13px]/[18px] text-fg-muted">
           {msg}
         </p>
       )}
