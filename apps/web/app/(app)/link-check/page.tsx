@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { linkTarget } from "../../../lib/link-check";
+import { Callout } from "../../../components/callout";
 import { LinkCheck } from "./link-check";
 
 export const metadata: Metadata = { title: "Check this link" };
@@ -18,8 +19,8 @@ export default async function Page({
   const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
   const target = linkTarget(one(sp.to));
   return (
-    <div className="flex max-w-xl flex-col gap-4">
-      <h1 className="text-2xl font-semibold tracking-tight">Check this link</h1>
+    <div className="flex max-w-140 flex-col gap-4">
+      <h1 className="text-xl/7 font-semibold tracking-[-0.01em] md:text-2xl/8">Check this link</h1>
       {target ? (
         <LinkCheck
           url={target.url}
@@ -28,7 +29,9 @@ export default async function Page({
           shown={one(sp.shown)?.slice(0, 253) ?? ""}
         />
       ) : (
-        <p role="alert">This link is not a web address, so it was not opened.</p>
+        <Callout tone="danger" role="alert">
+          This link is not a web address, so it was not opened.
+        </Callout>
       )}
     </div>
   );
