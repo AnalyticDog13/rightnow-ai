@@ -65,6 +65,7 @@ function VariantEditor({
   canEdit,
   onSaved,
   onPreview,
+  onCancel,
 }: {
   campaignId: string;
   variant?: Variant;
@@ -73,6 +74,7 @@ function VariantEditor({
   canEdit: boolean;
   onSaved: () => void;
   onPreview?: () => void;
+  onCancel?: () => void;
 }) {
   const [subject, setSubject] = useState(variant?.subject ?? "");
   const [body, setBody] = useState(variant?.body ?? "");
@@ -81,6 +83,11 @@ function VariantEditor({
   const [tone, setTone] = useState("friendly");
   const [offer, setOffer] = useState("");
   const area = useRef<HTMLTextAreaElement>(null);
+  const subjectInput = useRef<HTMLInputElement>(null);
+  // the add form is revealed by "+ Add variant": focus moves to its Subject field
+  useEffect(() => {
+    if (!variant) subjectInput.current?.focus();
+  }, [variant]);
   const name = variant ? `variant ${variant.label}` : "new variant";
   const url = `/api/v1/campaigns/${campaignId}/steps/${stepId}/variants`;
 
@@ -138,6 +145,7 @@ function VariantEditor({
         </Callout>
       )}
       <Input
+        ref={subjectInput}
         aria-label={`Subject of ${name}`}
         placeholder="Subject"
         value={subject}
@@ -231,6 +239,11 @@ function VariantEditor({
               Preview
             </Button>
           )}
+          {onCancel && (
+            <Button variant="ghost" size="sm" className="max-md:flex-1" onClick={onCancel}>
+              Cancel
+            </Button>
+          )}
           <Button
             size="sm"
             variant={variant ? "default" : "outline"}
@@ -288,6 +301,13 @@ export function StepsEditor({
   const [msg, setMsg] = useState("");
   const [delays, setDelays] = useState<Record<string, { v: string; u: string }>>({});
   const [editing, setEditing] = useState<string | null>(null);
+  const [adding, setAdding] = useState<string | null>(null); // step whose add-variant form is open
+  // closing the add form gives focus back to that step's "+ Add variant" chip
+  const added = useRef<string | null>(null);
+  useEffect(() => {
+    if (!adding && added.current) document.getElementById(`add-variant-${added.current}`)?.focus();
+    added.current = adding;
+  }, [adding]);
   const api = `/api/v1/campaigns/${c.campaignId}/steps`;
   const done = () => {
     reload();
@@ -453,7 +473,7 @@ export function StepsEditor({
                   </Button>
                 )}
               </div>
-              {s.variants.length > 0 && (
+              {(s.variants.length > 0 || (c.canEdit && adding !== s.id)) && (
                 <nav
                   aria-label={`Variants of step ${s.order}`}
                   className="flex gap-1.5 overflow-x-auto [scrollbar-width:none]"
@@ -473,6 +493,18 @@ export function StepsEditor({
                       {!v.active && " (off)"}
                     </a>
                   ))}
+                  {c.canEdit && adding !== s.id && (
+                    <Button
+                      id={`add-variant-${s.id}`}
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 shrink-0"
+                      onClick={() => setAdding(s.id)}
+                    >
+                      <Plus aria-hidden />
+                      Add variant
+                    </Button>
+                  )}
                 </nav>
               )}
               {s.variants.map((v) => (
@@ -487,13 +519,17 @@ export function StepsEditor({
                   onPreview={() => setPreview({ stepId: s.id, variantId: v.id })}
                 />
               ))}
-              {c.canEdit && (
+              {c.canEdit && adding === s.id && (
                 <VariantEditor
                   campaignId={c.campaignId}
                   stepId={s.id}
                   variables={c.variables}
                   canEdit
-                  onSaved={done}
+                  onSaved={() => {
+                    setAdding(null);
+                    done();
+                  }}
+                  onCancel={() => setAdding(null)}
                 />
               )}
             </Card>

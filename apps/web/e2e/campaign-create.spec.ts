@@ -81,6 +81,8 @@ test("create, preview, launch gate, launch, held rows, keyboard", async ({ page 
   // sequence: step 1 and step 2, two variants each
   await tab(page, "Sequences").click();
   const variantForm = async (n: "first" | "last", subject: string, body: string) => {
+    // "+ Add variant" chip reveals the form (the chip hides while it is open)
+    await page.getByRole("button", { name: "Add variant" })[n]().click();
     const s = page.getByLabel("Subject of new variant")[n]();
     await s.fill(subject);
     await page.getByLabel("Body of new variant")[n]().fill(body);
@@ -104,6 +106,7 @@ test("create, preview, launch gate, launch, held rows, keyboard", async ({ page 
   await expect(page.getByRole("group", { name: "Variant B" })).toHaveCount(2);
 
   // an unknown variable is refused inline
+  await page.getByRole("button", { name: "Add variant" }).last().click();
   await page.getByLabel("Subject of new variant").last().fill("Hi {{nope}}");
   await page.getByLabel("Body of new variant").last().fill("x");
   await page.getByRole("button", { name: "Add variant" }).last().click();
