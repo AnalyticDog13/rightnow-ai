@@ -2,44 +2,398 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Sidebar rail (B3.2): the rail is the default at 768-1279 unless the overlay is open, and the user's choice at >= 1280. */
+@custom-variant rail {
+  @media (min-width: 48rem) and (max-width: 79.99rem) {
+    &:where(.sb:not([data-overlay]), .sb:not([data-overlay]) *) {
+      @slot;
+    }
+  }
+  @media (min-width: 80rem) {
+    &:where(.sb[data-collapsed], .sb[data-collapsed] *) {
+      @slot;
+    }
+  }
+}
+
+/* Design tokens: docs/design/DESIGN_SPEC.md B2 (Signal Desk). */
 :root {
-  --background: oklch(0.985 0.003 250);
-  --foreground: oklch(0.2 0.02 260);
-  --card: oklch(1 0 0);
-  --muted: oklch(0.955 0.006 250);
-  --muted-foreground: oklch(0.44 0.02 260);
-  --border: oklch(0.9 0.008 250);
-  --primary: oklch(0.45 0.16 265);
-  --primary-foreground: oklch(0.99 0 0);
-  --destructive: oklch(0.5 0.2 27);
+  --bg: #f8f7f4;
+  --surface: #ffffff;
+  --surface-sunken: #f0efea;
+  --surface-elevated: #ffffff;
+  --hover: #eae8e2;
+  --active-nav: #e6e4dd;
+  --border: #e3e1db;
+  --border-strong: #cfccc4;
+  --input: #8f8b81;
+  --fg: #1c1b18;
+  --fg-muted: #5e5b53;
+  --fg-subtle: #6b6860;
+  --fg-disabled: #a8a59c;
+  --primary: #1c1b18;
+  --primary-fg: #ffffff;
+  --primary-hover: #34322d;
+  --signal: #0b6f75;
+  --signal-tint: #e2f1f1;
+  --ring: var(--signal);
+  --danger-btn: #b42318;
+  --success-fg: #16704a;
+  --success-tint: #e5f3ea;
+  --success-solid: #2e9a66;
+  --warning-fg: #8a4b00;
+  --warning-tint: #fcefd9;
+  --warning-solid: #b87300;
+  --danger-fg: #b42318;
+  --danger-tint: #fcebe9;
+  --danger-solid: #d92d20;
+  --info-fg: #3b49b0;
+  --info-tint: #ecedfb;
+  --info-solid: #5464d8;
+  --neutral-fg: #4a4842;
+  --neutral-tint: #eeede8;
+  --neutral-solid: #8f8b81;
+  --ai-fg: #6d3fb5;
+  --ai-tint: #f1ebfb;
+  --ai-solid: #8b5cd6;
+  --chart-1: #0e8a90;
+  --chart-2: #5363d6;
+  --chart-3: #b7790b;
+  --chart-4: #b0428f;
+  --chart-5: #6b7280;
+  --chart-6: #5e7d1f;
+  --chart-grid: #e9e7e1;
+  --chart-axis: var(--fg-muted);
+  --overlay: rgb(28 27 24 / 0.4);
+  --shadow-1: 0 1px 2px rgb(28 27 24 / 0.06);
+  --shadow-2: 0 6px 20px -4px rgb(28 27 24 / 0.14), 0 0 0 1px var(--border);
+  --shadow-3: 0 24px 64px -12px rgb(28 27 24 / 0.28), 0 0 0 1px var(--border);
+  --dur-1: 100ms;
+  --dur-2: 160ms;
+  --dur-3: 220ms;
+  --dur-4: 1200ms;
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --z-sticky: 10;
+  --z-sidebar: 20;
+  --z-topbar: 30;
+  --z-popover: 40;
+  --z-drawer: 50;
+  --z-dialog: 60;
+  --z-palette: 70;
+  --z-toast: 80;
+  --z-skip: 100;
+  color-scheme: light;
 }
 .dark {
-  --background: oklch(0.17 0.015 260);
-  --foreground: oklch(0.95 0.005 250);
-  --card: oklch(0.21 0.017 260);
-  --muted: oklch(0.26 0.018 260);
-  --muted-foreground: oklch(0.74 0.02 255);
-  --border: oklch(0.32 0.02 260);
-  --primary: oklch(0.72 0.14 265);
-  --primary-foreground: oklch(0.17 0.015 260);
-  --destructive: oklch(0.72 0.17 25);
+  --bg: #121210;
+  --surface: #1a1917;
+  --surface-sunken: #161614;
+  --surface-elevated: #22211e;
+  --hover: #262522;
+  --active-nav: #2a2926;
+  --border: #2e2d29;
+  --border-strong: #3d3b36;
+  --input: #6b6860;
+  --fg: #eceae4;
+  --fg-muted: #a8a59c;
+  --fg-subtle: #8e8b82;
+  --fg-disabled: #5e5b53;
+  --primary: #eceae4;
+  --primary-fg: #121210;
+  --primary-hover: #d6d3cb;
+  --signal: #45c2c7;
+  --signal-tint: #10302f;
+  --danger-btn: #c2352a;
+  --success-fg: #5ccb92;
+  --success-tint: #12291d;
+  --success-solid: #3fb57c;
+  --warning-fg: #f1b24a;
+  --warning-tint: #2d2210;
+  --warning-solid: #e0a030;
+  --danger-fg: #ff8a7e;
+  --danger-tint: #351713;
+  --danger-solid: #f0574a;
+  --info-fg: #9ba5ff;
+  --info-tint: #1d2040;
+  --info-solid: #7c88f0;
+  --neutral-fg: #c9c6bd;
+  --neutral-tint: #262522;
+  --neutral-solid: #6b6860;
+  --ai-fg: #c4a2ff;
+  --ai-tint: #271d3a;
+  --ai-solid: #a985f0;
+  --chart-1: #3bb9bf;
+  --chart-2: #8592f5;
+  --chart-3: #e3a63a;
+  --chart-4: #e07bc4;
+  --chart-5: #9aa1ad;
+  --chart-6: #9cc255;
+  --chart-grid: #2a2926;
+  --overlay: rgb(0 0 0 / 0.6);
+  --shadow-1: none;
+  --shadow-2: 0 6px 20px -4px rgb(0 0 0 / 0.55), 0 0 0 1px var(--border-strong);
+  --shadow-3: 0 24px 64px -12px rgb(0 0 0 / 0.7), 0 0 0 1px var(--border-strong);
+  color-scheme: dark;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-sunken: var(--surface-sunken);
+  --color-elevated: var(--surface-elevated);
+  --color-hover: var(--hover);
+  --color-active-nav: var(--active-nav);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--input);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+  --color-fg-disabled: var(--fg-disabled);
   --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-destructive: var(--destructive);
-  --font-sans: ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  --color-primary-foreground: var(--primary-fg);
+  --color-primary-hover: var(--primary-hover);
+  --color-signal: var(--signal);
+  --color-signal-tint: var(--signal-tint);
+  --color-ring: var(--ring);
+  --color-danger-btn: var(--danger-btn);
+  --color-success: var(--success-fg);
+  --color-success-tint: var(--success-tint);
+  --color-success-solid: var(--success-solid);
+  --color-warning: var(--warning-fg);
+  --color-warning-tint: var(--warning-tint);
+  --color-warning-solid: var(--warning-solid);
+  --color-danger: var(--danger-fg);
+  --color-danger-tint: var(--danger-tint);
+  --color-danger-solid: var(--danger-solid);
+  --color-info: var(--info-fg);
+  --color-info-tint: var(--info-tint);
+  --color-info-solid: var(--info-solid);
+  --color-neutral: var(--neutral-fg);
+  --color-neutral-tint: var(--neutral-tint);
+  --color-neutral-solid: var(--neutral-solid);
+  --color-ai: var(--ai-fg);
+  --color-ai-tint: var(--ai-tint);
+  --color-ai-solid: var(--ai-solid);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-chart-6: var(--chart-6);
+  --color-chart-grid: var(--chart-grid);
+  /* compatibility aliases so existing class names keep working during the migration (B7.1; removed in B7.3 step 6) */
+  --color-background: var(--bg);
+  --color-foreground: var(--fg);
+  --color-card: var(--surface);
+  --color-muted: var(--surface-sunken);
+  --color-muted-foreground: var(--fg-muted);
+  --color-destructive: var(--danger-fg);
+  --font-sans: var(--font-plex-sans), ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, "SFMono-Regular", Consolas, monospace;
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --shadow-e1: var(--shadow-1);
+  --shadow-e2: var(--shadow-2);
+  --shadow-e3: var(--shadow-3);
+  --animate-sheet-right: sheet-right var(--dur-3) var(--ease-out);
+  --animate-sheet-left: sheet-left var(--dur-3) var(--ease-out);
+  --animate-pop: pop var(--dur-3) var(--ease-out);
+  --animate-shimmer: shimmer var(--dur-4) ease-in-out infinite;
+  --animate-pulse-dot: pulse-dot 2000ms ease-in-out infinite;
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-sans);
+@keyframes sheet-right {
+  from {
+    transform: translateX(16px);
+    opacity: 0;
+  }
+}
+@keyframes sheet-left {
+  from {
+    transform: translateX(-16px);
+    opacity: 0;
+  }
+}
+@keyframes pop {
+  from {
+    transform: scale(0.98);
+    opacity: 0;
+  }
+}
+@keyframes shimmer {
+  50% {
+    opacity: 0.5;
+  }
+}
+@keyframes pulse-dot {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* B2.5 micro: mono 11/16 500 uppercase, for table headers, nav group labels and field micro-labels */
+@utility micro {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+/* B2.8 signal stripe: a 3px left edge that duplicates a warning/danger pill or marks the selected row */
+@utility stripe-warning {
+  box-shadow: inset 3px 0 0 var(--warning-solid);
+}
+@utility stripe-danger {
+  box-shadow: inset 3px 0 0 var(--danger-solid);
+}
+@utility stripe-signal {
+  box-shadow: inset 3px 0 0 var(--signal);
+}
+
+/* B4.6 table inside TableFrame (components/table-kit.tsx): the rules live here so every table picks them up. */
+@layer components {
+  .table-frame table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    text-align: left;
+    font-size: 14px;
+    line-height: 20px;
+  }
+  .table-frame th {
+    position: sticky;
+    top: 0;
+    z-index: var(--z-sticky);
+    height: 36px;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-sunken);
+    color: var(--fg-muted);
+    white-space: nowrap;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .table-frame td {
+    height: 44px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+  }
+  .table-frame tr > :first-child {
+    padding-left: 16px;
+  }
+  .table-frame tr > :last-child {
+    padding-right: 16px;
+  }
+  .table-frame tbody tr {
+    scroll-margin-top: 96px;
+  }
+  .table-frame tbody tr:last-child > td {
+    border-bottom: 0;
+  }
+  .table-frame tbody tr:hover > td {
+    background: var(--hover);
+  }
+  .table-frame tbody tr[aria-selected="true"] > td {
+    background: var(--signal-tint);
+  }
+  .table-frame tr[data-stripe="warning"] > td:first-child {
+    box-shadow: inset 3px 0 0 var(--warning-solid);
+  }
+  .table-frame tr[data-stripe="danger"] > td:first-child {
+    box-shadow: inset 3px 0 0 var(--danger-solid);
+  }
+  .table-frame tbody tr[aria-selected="true"] > td:first-child {
+    box-shadow: inset 3px 0 0 var(--signal);
+  }
+  @media (max-width: 47.99rem) {
+    .table-frame [data-pin] {
+      position: sticky;
+      z-index: calc(var(--z-sticky) + 1);
+    }
+    .table-frame td[data-pin] {
+      background: var(--surface);
+    }
+    .table-frame [data-pin="check"] {
+      left: 0;
+      width: 44px;
+    }
+    .table-frame [data-pin="id"] {
+      left: 44px;
+      box-shadow: 4px 0 6px -4px rgb(28 27 24 / 0.12);
+    }
+  }
+}
+
+/* base rules sit in the base layer so Tailwind utilities (e.g. -outline-offset-2, h-1.5) still win */
+@layer base {
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 20px;
+  }
+  table,
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
+  input[type="checkbox"],
+  input[type="radio"] {
+    accent-color: var(--primary);
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  ::placeholder {
+    color: var(--fg-subtle);
+  }
+  dialog::backdrop {
+    background: var(--overlay);
+  }
+  /* B4.23 progress bars: 6px, radius 4, sunken track, chart-1 fill (native element, so names and roles stay) */
+  progress {
+    appearance: none;
+    height: 6px;
+    border: 0;
+    border-radius: 4px;
+    background: var(--surface-sunken);
+    overflow: hidden;
+  }
+  progress::-webkit-progress-bar {
+    background: var(--surface-sunken);
+  }
+  progress::-webkit-progress-value {
+    background: var(--chart-1);
+    border-radius: 4px;
+  }
+  progress::-moz-progress-bar {
+    background: var(--chart-1);
+    border-radius: 4px;
+  }
+  ::selection {
+    background: var(--signal-tint);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
