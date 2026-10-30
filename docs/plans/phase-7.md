@@ -94,7 +94,7 @@
     `docs/API.md` tells consumers to reject `|now − t| > 300 s` and to dedupe on the event id.
   - **Delivery.** At-least-once, unordered, documented.
     - `webhook-deliver` (cron each minute, a loop of up to 50 s with a 2 s idle sleep, stately) claims ≤ 20 rows `status = PENDING AND nextAttemptAt <= now` joined to an ACTIVE webhook, `FOR UPDATE SKIP LOCKED`, and sets `SENDING, leaseUntil = now + 60 s, attempts + 1`. Then it commits.
-    - The POST runs through `safeRequest` (10 s timeout, 64 KB of the response read and discarded, `User-Agent: rightnow-Webhooks/1`), 5 at a time.
+    - The POST runs through `safeRequest` (10 s timeout, 64 KB of the response read and discarded, `User-Agent: rightnow-webhooks/1`), 5 at a time.
     - The result write is conditioned on `WHERE id AND status = 'SENDING' AND attempts = :n`. A 2xx → `DELIVERED`. Anything else (3xx, since redirects are not followed, 4xx, 5xx, network error, timeout) → `PENDING` with `nextAttemptAt = now + max(BACKOFF[n−1], Retry-After)`, Retry-After capped at 8 h. After 8 attempts → `FAILED`.
     - `BACKOFF_SEC = [60, 300, 1800, 7200, 18000, 28800, 28800]`, about 23.6 h over 8 attempts (PS-AUTO-08).
     - A lease that expires (worker died mid-request) puts the row back to `PENDING`, and the attempt counts.
