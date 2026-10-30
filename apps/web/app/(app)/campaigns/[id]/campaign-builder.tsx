@@ -78,6 +78,7 @@ export function CampaignBuilder(p: Props) {
     if (r.status === 422 && Array.isArray(r.json.issues)) setBlocked(r.json.issues as Issue[]);
     else if (!r.ok) setError(errorText(r));
     setNotes(r.ok && Array.isArray(r.json.warnings) ? (r.json.warnings as Issue[]) : []);
+    window.dispatchEvent(new Event("sending:changed")); // the shell's send meter reloads
     changed();
   }
 
