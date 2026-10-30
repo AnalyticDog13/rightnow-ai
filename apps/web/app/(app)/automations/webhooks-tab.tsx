@@ -1,24 +1,46 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Legend,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-import { focusOnMount, useInlineEditor } from "../../../components/inline-editor";
+  Copy,
+  FileJson,
+  KeyRound,
+  List,
+  Pencil,
+  Play,
+  RotateCcw,
+  Send,
+  Trash2,
+  Webhook,
+  type LucideIcon,
+} from "lucide-react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ComponentProps,
+  type FormEvent,
+} from "react";
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Callout } from "../../../components/callout";
+import { EmptyState } from "../../../components/empty-state";
+import { focusOnMount, type useInlineEditor } from "../../../components/inline-editor";
+import { chipClass } from "../../../components/overlay";
+import {
+  DELIVERY_STATUS,
+  pillFor,
+  StatusPill,
+  WEBHOOK_STATUS,
+} from "../../../components/status-pill";
+import { TableEmpty, TableFrame } from "../../../components/table-kit";
 import { Button } from "../../../components/ui/button";
 import { Card } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
+import { Select } from "../../../components/ui/select";
 import { call, errorText } from "../accounts/api-client";
 import type { Named } from "../leads/bulk-bar";
-import { Err, Head, sel } from "./ui";
+import { Err, Head } from "./ui";
 
 export type Hook = {
   id: string;
@@ -58,6 +80,7 @@ export function WebhooksTab({
   campaigns,
   events,
   labels,
+  editor,
 }: {
   hooks: Hook[] | null;
   reload: () => void;
@@ -65,10 +88,13 @@ export function WebhooksTab({
   campaigns: Named[];
   events: string[];
   labels: string[];
+  /** the "New webhook" button lives in the page header */
+  editor: ReturnType<typeof useInlineEditor<Hook>>;
 }) {
-  const { editing, open: openEditor, close: closeEditor } = useInlineEditor<Hook>();
+  const { editing, open: openEditor, close: closeEditor } = editor;
   const [viewing, setViewing] = useState<Hook | null>(null);
   const [secret, setSecret] = useState<{ name: string; value: string } | null>(null);
+  const [copied, setCopied] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
@@ -100,8 +126,10 @@ export function WebhooksTab({
           ? `Test of ${label(h)} failed: ${String(r.json.error)}`
           : `Test of ${label(h)}: HTTP ${String(r.json.status)} in ${String(r.json.latencyMs)} ms`,
       );
-    if (r.ok && what === "rotate-secret")
+    if (r.ok && what === "rotate-secret") {
+      setCopied(false);
       setSecret({ name: label(h), value: String(r.json.secret) });
+    }
     if (r.ok && what === "delete" && viewing?.id === h.id) setViewing(null);
     setTick((t) => t + 1);
     reload();
@@ -117,136 +145,165 @@ export function WebhooksTab({
         onCancel={closeEditor}
         onSaved={(created) => {
           closeEditor();
-          if (created) setSecret(created);
+          if (created) {
+            setCopied(false);
+            setSecret(created);
+          }
           reload();
         }}
       />
     );
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-sm text-muted-foreground">
+      <p className="text-[13px]/[18px] text-fg-muted">
         Each event is sent as a signed JSON POST (header X-RightNow-Signature) to your URL.
       </p>
-      {canEdit && (
-        <div>
-          <Button data-opener="new" onClick={() => openEditor("new", "new")}>
-            New webhook
-          </Button>
-        </div>
-      )}
       {secret && (
-        <Card role="region" aria-label="Signing secret" className="flex flex-col gap-2">
+        <Card role="region" aria-label="Signing secret" className="flex flex-col gap-3">
           <p className="text-sm font-medium">
             Signing secret for {secret.name}. It is shown only once; copy it now.
           </p>
-          <Input
-            readOnly
-            aria-label="Signing secret value"
-            value={secret.value}
-            onFocus={(e) => e.target.select()}
-          />
-          <div>
-            <Button variant="outline" onClick={() => setSecret(null)}>
-              I have saved it
+          <div className="flex gap-2">
+            <Input
+              readOnly
+              aria-label="Signing secret value"
+              className="font-mono md:text-[13px]"
+              value={secret.value}
+              onFocus={(e) => e.target.select()}
+            />
+            <Button
+              variant="outline"
+              onClick={() =>
+                void navigator.clipboard?.writeText(secret.value).then(() => setCopied(true))
+              }
+            >
+              <Copy aria-hidden />
+              {copied ? "Copied" : "Copy"}
             </Button>
           </div>
+          <Callout tone="warning">Copy it now. It will not be shown again.</Callout>
+          <Button
+            variant="outline"
+            size="sm"
+            className="self-start"
+            onClick={() => setSecret(null)}
+          >
+            I have saved it
+          </Button>
         </Card>
       )}
       <Err text={error} />
-      <p role="status" className="text-sm">
+      <p role="status" className="text-[13px]/[18px] empty:hidden">
         {notice}
       </p>
-      {hooks && !hooks.length && <p className="text-sm text-muted-foreground">No webhooks yet.</p>}
+      {hooks && !hooks.length && (
+        <div className="rounded-lg border border-border bg-surface">
+          <EmptyState
+            icon={Webhook}
+            title="No webhooks."
+            body="Send events such as reply received or lead unsubscribed to your own endpoint."
+          />
+        </div>
+      )}
       {!!hooks?.length && (
-        <Card className="overflow-x-auto p-0">
-          <table aria-label="Webhooks" className="w-full text-left text-sm">
-            <Head cols={["Name", "Events", "Status", "Actions"]} />
+        <TableFrame>
+          <table aria-label="Webhooks">
+            <Head cols={["Webhook", "Events", "Status", "Actions"]} right={["Actions"]} />
             <tbody>
               {hooks.map((h) => (
-                <tr key={h.id} className="border-b border-border align-top">
-                  <td className="p-3">
-                    <div className="font-medium">{label(h)}</div>
+                <tr key={h.id} data-stripe={h.status === "ERROR" ? "danger" : undefined}>
+                  <td className="max-w-72 py-2.5">
+                    <div className="truncate font-medium">{label(h)}</div>
                     {h.name && (
-                      <div className="break-all text-xs text-muted-foreground">{h.url}</div>
+                      <div className="truncate font-mono text-xs text-fg-subtle" title={h.url}>
+                        {h.url}
+                      </div>
                     )}
                   </td>
-                  <td className="p-3">{h.events.join(", ")}</td>
-                  <td className="p-3">
+                  <td className="max-w-72">
+                    <span className="flex flex-wrap gap-1">
+                      {h.events.slice(0, 3).map((e) => (
+                        <span key={e} className={chipClass}>
+                          {e}
+                        </span>
+                      ))}
+                      {h.events.length > 3 && (
+                        <span className={chipClass} title={h.events.slice(3).join(", ")}>
+                          +{h.events.length - 3}
+                        </span>
+                      )}
+                    </span>
+                  </td>
+                  <td className="text-[13px]/[18px]">
                     {h.status === "ACTIVE" ? (
-                      "Active"
+                      <StatusPill {...pillFor(WEBHOOK_STATUS, "Active")}>Active</StatusPill>
                     ) : (
-                      <span className="text-destructive">
-                        Error since {h.disabledAt ? when(h.disabledAt) : "unknown"}
-                        {h.lastError && <span className="block text-xs">{h.lastError}</span>}
+                      <span className="flex flex-col items-start gap-1">
+                        <span>
+                          <StatusPill {...pillFor(WEBHOOK_STATUS, "Error")}>Error</StatusPill> since{" "}
+                          {h.disabledAt ? when(h.disabledAt) : "unknown"}
+                        </span>
+                        {h.lastError && <span className="text-fg-muted">{h.lastError}</span>}
                       </span>
                     )}
                   </td>
-                  <td className="flex flex-wrap gap-2 p-3">
-                    <Button
-                      variant="outline"
-                      className="h-8 px-2 text-xs"
-                      aria-label={`Deliveries of ${label(h)}`}
-                      onClick={() => setViewing(h)}
-                    >
-                      Deliveries
-                    </Button>
-                    {canEdit && (
-                      <>
-                        <Button
-                          variant="outline"
-                          className="h-8 px-2 text-xs"
-                          aria-label={`Test ${label(h)}`}
-                          disabled={busy === h.id}
-                          onClick={() => void act(h, "test")}
-                        >
-                          Test
-                        </Button>
-                        {h.status === "ERROR" && (
-                          <Button
-                            variant="outline"
-                            className="h-8 px-2 text-xs"
-                            aria-label={`Resume ${label(h)}`}
+                  <td>
+                    <div className="flex flex-wrap justify-end gap-1">
+                      <RowAction
+                        icon={List}
+                        text="Deliveries"
+                        aria-label={`Deliveries of ${label(h)}`}
+                        onClick={() => setViewing(h)}
+                      />
+                      {canEdit && (
+                        <>
+                          <RowAction
+                            icon={Send}
+                            text="Test"
+                            aria-label={`Test ${label(h)}`}
                             disabled={busy === h.id}
-                            onClick={() => void act(h, "resume")}
-                          >
-                            Resume
-                          </Button>
-                        )}
-                        <Button
-                          variant="outline"
-                          className="h-8 px-2 text-xs"
-                          aria-label={`Edit ${label(h)}`}
-                          data-opener={h.id}
-                          onClick={() => openEditor(h, h.id)}
-                        >
-                          Edit
-                        </Button>
-                        <Button
-                          variant="outline"
-                          className="h-8 px-2 text-xs"
-                          aria-label={`Rotate secret of ${label(h)}`}
-                          disabled={busy === h.id}
-                          onClick={() => void act(h, "rotate-secret")}
-                        >
-                          Rotate secret
-                        </Button>
-                        <Button
-                          variant="outline"
-                          className="h-8 px-2 text-xs"
-                          aria-label={`Delete ${label(h)}`}
-                          disabled={busy === h.id}
-                          onClick={() => void act(h, "delete")}
-                        >
-                          Delete
-                        </Button>
-                      </>
-                    )}
+                            onClick={() => void act(h, "test")}
+                          />
+                          {h.status === "ERROR" && (
+                            <RowAction
+                              icon={Play}
+                              text="Resume"
+                              aria-label={`Resume ${label(h)}`}
+                              disabled={busy === h.id}
+                              onClick={() => void act(h, "resume")}
+                            />
+                          )}
+                          <RowAction
+                            icon={Pencil}
+                            text="Edit"
+                            aria-label={`Edit ${label(h)}`}
+                            data-opener={h.id}
+                            onClick={() => openEditor(h, h.id)}
+                          />
+                          <RowAction
+                            icon={KeyRound}
+                            text="Rotate secret"
+                            aria-label={`Rotate secret of ${label(h)}`}
+                            disabled={busy === h.id}
+                            onClick={() => void act(h, "rotate-secret")}
+                          />
+                          <RowAction
+                            icon={Trash2}
+                            text="Delete"
+                            danger
+                            aria-label={`Delete ${label(h)}`}
+                            disabled={busy === h.id}
+                            onClick={() => void act(h, "delete")}
+                          />
+                        </>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </Card>
+        </TableFrame>
       )}
       <Overview tick={tick} />
       {viewing && (
@@ -262,6 +319,27 @@ export function WebhooksTab({
         />
       )}
     </div>
+  );
+}
+
+/** B4.6 row action: icon + short label; the label collapses to the icon below 1536 (the aria-label names it). */
+function RowAction({
+  icon: Icon,
+  text,
+  danger,
+  ...props
+}: ComponentProps<typeof Button> & { icon: LucideIcon; text: string; danger?: boolean }) {
+  return (
+    <Button
+      variant={danger ? "danger-ghost" : "ghost"}
+      size="sm"
+      className="max-2xl:w-8 max-2xl:px-0 max-md:w-11"
+      title={text}
+      {...props}
+    >
+      <Icon aria-hidden />
+      <span className="max-2xl:sr-only">{text}</span>
+    </Button>
   );
 }
 
@@ -322,12 +400,12 @@ function HookForm({
         className="flex flex-col gap-4"
         aria-label={hook ? "Edit webhook" : "New webhook"}
       >
-        <h2 ref={focusOnMount} tabIndex={-1} className="text-lg font-medium outline-none">
+        <h2 ref={focusOnMount} tabIndex={-1} className="text-base font-semibold outline-none">
           {hook ? "Edit webhook" : "New webhook"}
         </h2>
         <Err text={error} />
         <div className="flex flex-wrap gap-3">
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col gap-1.5">
             <Label htmlFor="hook-name">Name</Label>
             <Input
               id="hook-name"
@@ -336,9 +414,10 @@ function HookForm({
               onChange={(e) => setName(e.target.value)}
             />
           </div>
-          <div className="flex min-w-72 flex-1 flex-col gap-1">
+          <div className="flex min-w-60 flex-1 flex-col gap-1.5">
             <Label htmlFor="hook-url">URL</Label>
             <Input
+              className="font-mono md:text-[13px]"
               id="hook-url"
               type="url"
               required
@@ -347,11 +426,10 @@ function HookForm({
               onChange={(e) => setUrl(e.target.value)}
             />
           </div>
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col gap-1.5">
             <Label htmlFor="hook-campaign">Campaign</Label>
-            <select
+            <Select
               id="hook-campaign"
-              className={sel}
               value={campaignId}
               onChange={(e) => setCampaignId(e.target.value)}
             >
@@ -361,14 +439,14 @@ function HookForm({
                   {c.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
         </div>
         <fieldset className="flex flex-col gap-2 rounded-md border border-border p-3">
-          <legend className="px-1 text-sm font-medium">Events</legend>
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
+          <legend className="micro px-1 text-fg-muted">Events</legend>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-[13px]">
             {["all_events", ...events, ...labels].map((e) => (
-              <label key={e} className="flex items-center gap-1">
+              <label key={e} className="flex min-h-11 items-center gap-1.5 md:min-h-7">
                 <input type="checkbox" checked={chosen.includes(e)} onChange={() => toggle(e)} />
                 {e}
               </label>
@@ -376,9 +454,9 @@ function HookForm({
           </div>
         </fieldset>
         <fieldset className="flex flex-col gap-2 rounded-md border border-border p-3">
-          <legend className="px-1 text-sm font-medium">Custom headers</legend>
+          <legend className="micro px-1 text-fg-muted">Custom headers</legend>
           {hook && (
-            <label className="flex items-center gap-2 text-sm">
+            <label className="flex items-center gap-2 text-[13px]/[18px]">
               <input
                 type="checkbox"
                 checked={replace}
@@ -394,7 +472,7 @@ function HookForm({
             <>
               {rows.map((r, i) => (
                 <div key={i} className="flex flex-wrap items-end gap-2">
-                  <div className="flex flex-col gap-1">
+                  <div className="flex flex-col gap-1.5">
                     <Label htmlFor={`hdr-k-${i}`}>Header name {i + 1}</Label>
                     <Input
                       id={`hdr-k-${i}`}
@@ -403,7 +481,7 @@ function HookForm({
                       onChange={(e) => setRow(i, { k: e.target.value })}
                     />
                   </div>
-                  <div className="flex flex-col gap-1">
+                  <div className="flex flex-col gap-1.5">
                     <Label htmlFor={`hdr-v-${i}`}>Header value {i + 1}</Label>
                     <Input
                       id={`hdr-v-${i}`}
@@ -414,7 +492,7 @@ function HookForm({
                   </div>
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="danger-ghost"
                     aria-label={`Remove header ${i + 1}`}
                     onClick={() => setRows((x) => x.filter((_, j) => j !== i))}
                   >
@@ -425,7 +503,8 @@ function HookForm({
               <div>
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="ghost"
+                  size="sm"
                   disabled={rows.length >= 10}
                   onClick={() => setRows((x) => [...x, { k: "", v: "" }])}
                 >
@@ -435,11 +514,11 @@ function HookForm({
             </>
           )}
         </fieldset>
-        <div className="flex gap-2">
-          <Button type="submit">Save webhook</Button>
+        <div className="flex justify-end gap-2 border-t border-border pt-4">
           <Button type="button" variant="ghost" onClick={onCancel}>
             Cancel
           </Button>
+          <Button type="submit">Save webhook</Button>
         </div>
       </form>
     </Card>
@@ -504,12 +583,12 @@ function Deliveries({
   return (
     <Card role="region" aria-label={`Deliveries of ${label(hook)}`} className="flex flex-col gap-3">
       <div className="flex flex-wrap items-end gap-3">
-        <h2 className="text-lg font-medium">Deliveries: {label(hook)}</h2>
-        <div className="flex flex-col gap-1">
+        <h2 className="min-w-0 truncate text-base font-semibold">Deliveries: {label(hook)}</h2>
+        <div className="flex flex-col gap-1.5">
           <Label htmlFor="deliv-status">Status</Label>
-          <select
+          <Select
             id="deliv-status"
-            className={sel}
+            size="sm"
             value={status}
             onChange={(e) => setStatus(e.target.value)}
           >
@@ -519,81 +598,96 @@ function Deliveries({
                 {s}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
         <Button className="ml-auto" variant="ghost" onClick={onClose}>
           Close deliveries
         </Button>
       </div>
       <Err text={error} />
-      {rows && !rows.length && <p className="text-sm text-muted-foreground">No deliveries.</p>}
-      {!!rows?.length && (
-        <div className="overflow-x-auto">
-          <table aria-label="Deliveries" className="w-full text-left text-sm">
+      {rows && (
+        <TableFrame>
+          <table aria-label="Deliveries">
             <Head
               cols={["Event", "Status", "Code", "Latency", "Attempts", "Next attempt", "Actions"]}
+              right={["Code", "Latency", "Attempts", "Actions"]}
             />
             <tbody>
-              {rows.map((d) => (
-                <tr key={d.id} className="border-b border-border">
-                  <td className="p-3">{d.eventType}</td>
-                  <td className="p-3">
-                    {d.status}
-                    {d.lastError && (
-                      <span className="block text-xs text-muted-foreground">{d.lastError}</span>
-                    )}
-                  </td>
-                  <td className="p-3">{d.lastStatus ?? "-"}</td>
-                  <td className="p-3">
-                    {d.lastLatencyMs === null ? "-" : `${d.lastLatencyMs} ms`}
-                  </td>
-                  <td className="p-3">{d.attempts}</td>
-                  <td className="p-3">{d.status === "PENDING" ? when(d.nextAttemptAt) : "-"}</td>
-                  <td className="flex gap-2 p-3">
-                    <Button
-                      variant="outline"
-                      className="h-8 px-2 text-xs"
-                      aria-label={`View payload of ${d.eventType} ${d.eventId}`}
-                      onClick={() => setOpen(d)}
-                    >
-                      Payload
-                    </Button>
-                    {canEdit && (d.status === "DELIVERED" || d.status === "FAILED") && (
-                      <Button
-                        variant="outline"
-                        className="h-8 px-2 text-xs"
-                        aria-label={`Redeliver ${d.eventType} ${d.eventId}`}
-                        onClick={() => void redeliver(d)}
-                      >
-                        Redeliver
-                      </Button>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {rows.map((d) => {
+                const word = d.status.charAt(0) + d.status.slice(1).toLowerCase();
+                return (
+                  <tr key={d.id} data-stripe={d.status === "FAILED" ? "danger" : undefined}>
+                    <td className="font-mono text-[13px]">{d.eventType}</td>
+                    <td>
+                      {/* the raw status stays the text (tests read it); CSS shows it as a word */}
+                      <StatusPill {...pillFor(DELIVERY_STATUS, word)}>
+                        <span className="inline-block lowercase first-letter:uppercase">
+                          {d.status}
+                        </span>
+                      </StatusPill>
+                      {d.lastError && (
+                        <span className="mt-1 block text-[13px]/[18px] text-fg-muted">
+                          {d.lastError}
+                        </span>
+                      )}
+                    </td>
+                    <td className="text-right tabular-nums">{d.lastStatus ?? "-"}</td>
+                    <td className="text-right whitespace-nowrap tabular-nums">
+                      {d.lastLatencyMs === null ? "-" : `${d.lastLatencyMs} ms`}
+                    </td>
+                    <td className="text-right tabular-nums">{d.attempts}</td>
+                    <td className="whitespace-nowrap text-fg-muted">
+                      {d.status === "PENDING" ? when(d.nextAttemptAt) : "-"}
+                    </td>
+                    <td>
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          aria-label={`View payload of ${d.eventType} ${d.eventId}`}
+                          onClick={() => setOpen(d)}
+                        >
+                          <FileJson aria-hidden />
+                          Payload
+                        </Button>
+                        {canEdit && (d.status === "DELIVERED" || d.status === "FAILED") && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            aria-label={`Redeliver ${d.eventType} ${d.eventId}`}
+                            onClick={() => void redeliver(d)}
+                          >
+                            <RotateCcw aria-hidden />
+                            Redeliver
+                          </Button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {!rows.length && <TableEmpty colSpan={7} icon={Webhook} title="No deliveries." />}
             </tbody>
           </table>
-        </div>
+        </TableFrame>
       )}
       {next && (
-        <div>
-          <Button variant="outline" onClick={() => void load(next)}>
-            Load more
-          </Button>
-        </div>
+        <Button variant="outline" size="sm" className="self-start" onClick={() => void load(next)}>
+          Load more
+        </Button>
       )}
       {open && (
         <div role="region" aria-label="Payload" className="flex flex-col gap-2">
           <div className="flex items-center gap-3">
-            <h3 className="font-medium">Payload of {open.eventType}</h3>
-            <Button variant="ghost" onClick={() => setOpen(null)}>
+            <h3 className="text-sm font-semibold">Payload of {open.eventType}</h3>
+            <Button variant="ghost" size="sm" onClick={() => setOpen(null)}>
               Close payload
             </Button>
           </div>
           <pre
             tabIndex={0}
             aria-label="Payload JSON"
-            className="max-h-80 overflow-auto rounded-md border border-border p-3 text-xs"
+            className="max-h-80 overflow-auto rounded-md border border-border bg-sunken p-3 font-mono text-[13px]/5"
           >
             {JSON.stringify(open.payload, null, 2)}
           </pre>
@@ -619,52 +713,88 @@ function Overview({ tick }: { tick: number }) {
       setDays(r.json.days as Day[]);
     });
   }, [tick]);
-  const axis = { tick: { fontSize: 12 }, stroke: "currentColor" };
+  // B4.16: axis and grid from tokens, bars 3px top radius, delivered success / failed danger
+  const axis = {
+    tick: { fontSize: 12, fill: "var(--chart-axis)" },
+    axisLine: false,
+    tickLine: false,
+  };
   return (
     <figure
       aria-label="Deliveries per day"
-      className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4"
+      className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4 md:p-5"
     >
-      <figcaption className="text-sm font-medium">
-        Deliveries per day, last 14 days{" "}
-        <span className="font-normal text-muted-foreground">(figures in the table below)</span>
-      </figcaption>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <figcaption className="text-base font-semibold">
+          Deliveries per day, last 14 days{" "}
+          <span className="text-[13px]/[18px] font-normal text-fg-muted">
+            (figures in the table below)
+          </span>
+        </figcaption>
+        <span aria-hidden className="flex gap-3 text-[13px]/[18px] text-fg-muted">
+          <span className="flex items-center gap-1.5">
+            <span className="size-2 bg-success-solid" /> Delivered
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="size-2 bg-danger-solid" /> Failed
+          </span>
+        </span>
+      </div>
       <Err text={error} />
       {days && !days.length && (
-        <p className="text-sm text-muted-foreground">No delivery attempts yet.</p>
+        <p className="text-[13px]/[18px] text-fg-muted">No delivery attempts yet.</p>
       )}
       {!!days?.length && (
         <>
-          <div className="h-52">
+          <div className="h-60">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={days}>
-                <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                <CartesianGrid vertical={false} stroke="var(--chart-grid)" strokeDasharray="3 3" />
                 <XAxis dataKey="day" {...axis} />
-                <YAxis allowDecimals={false} {...axis} />
-                <Tooltip />
-                <Legend />
+                <YAxis allowDecimals={false} width={40} {...axis} />
+                <Tooltip
+                  cursor={{ fill: "var(--hover)" }}
+                  contentStyle={{
+                    background: "var(--surface-elevated)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 8,
+                    fontSize: 13,
+                  }}
+                />
                 <Bar
                   dataKey="delivered"
                   name="Delivered"
-                  fill="#059669"
+                  fill="var(--success-solid)"
+                  radius={[3, 3, 0, 0]}
+                  maxBarSize={24}
                   isAnimationActive={false}
                 />
-                <Bar dataKey="failed" name="Failed" fill="#dc2626" isAnimationActive={false} />
+                <Bar
+                  dataKey="failed"
+                  name="Failed"
+                  fill="var(--danger-solid)"
+                  radius={[3, 3, 0, 0]}
+                  maxBarSize={24}
+                  isAnimationActive={false}
+                />
               </BarChart>
             </ResponsiveContainer>
           </div>
-          <table aria-label="Deliveries by day" className="w-full text-left text-sm">
-            <Head cols={["Day", "Delivered", "Failed"]} />
-            <tbody>
-              {days.map((d) => (
-                <tr key={d.day} className="border-b border-border">
-                  <td className="p-2">{d.day}</td>
-                  <td className="p-2">{d.delivered}</td>
-                  <td className="p-2">{d.failed}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          {/* the table stays open: it is the chart's text alternative and tests read it */}
+          <TableFrame>
+            <table aria-label="Deliveries by day">
+              <Head cols={["Day", "Delivered", "Failed"]} right={["Delivered", "Failed"]} />
+              <tbody>
+                {days.map((d) => (
+                  <tr key={d.day}>
+                    <td className="tabular-nums">{d.day}</td>
+                    <td className="text-right tabular-nums">{d.delivered}</td>
+                    <td className="text-right tabular-nums">{d.failed}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableFrame>
         </>
       )}
     </figure>

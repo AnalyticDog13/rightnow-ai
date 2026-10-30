@@ -1,19 +1,25 @@
-export const sel = "h-10 rounded-md border border-border bg-card px-3 text-sm";
+import { AlertCircle } from "lucide-react";
 
+/** An action's error, announced; tests read it as `p[role=alert]`. */
 export function Err({ text }: { text: string }) {
   return text ? (
-    <p role="alert" className="text-sm text-destructive">
+    <p
+      role="alert"
+      className="flex items-start gap-2 rounded-md border border-danger-solid/30 bg-danger-tint px-3.5 py-3 text-[13px]/[18px] text-fg"
+    >
+      <AlertCircle className="mt-px size-4 shrink-0 text-danger" aria-hidden />
       {text}
     </p>
   ) : null;
 }
 
-export function Head({ cols }: { cols: string[] }) {
+/** Column headers for a table inside TableFrame (which styles them). */
+export function Head({ cols, right = [] }: { cols: string[]; right?: string[] }) {
   return (
     <thead>
-      <tr className="border-b border-border">
+      <tr>
         {cols.map((h) => (
-          <th key={h} className="p-3 font-medium">
+          <th key={h} scope="col" className={right.includes(h) ? "text-right" : undefined}>
             {h}
           </th>
         ))}
