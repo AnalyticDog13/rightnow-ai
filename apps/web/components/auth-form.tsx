@@ -49,13 +49,20 @@ export function AuthForm() {
       {FIELDS.map((f) => (
         <div key={f.name} className="flex flex-col gap-1.5">
           <Label htmlFor={f.name}>{f.label}</Label>
-          <Input id={f.name} name={f.name} type={f.type} autoComplete={f.autoComplete} required />
+          <Input
+            className="md:h-11"
+            id={f.name}
+            name={f.name}
+            type={f.type}
+            autoComplete={f.autoComplete}
+            required
+          />
         </div>
       ))}
-      <p role="alert" className="min-h-5 text-sm text-destructive">
+      <p role="alert" className="min-h-5 text-[13px]/[18px] text-danger">
         {error}
       </p>
-      <Button type="submit" disabled={busy || !ready}>
+      <Button type="submit" size="lg" className="w-full" disabled={busy || !ready}>
         Sign in
       </Button>
     </form>

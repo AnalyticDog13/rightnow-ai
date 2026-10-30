@@ -38,23 +38,27 @@ export function TwoFactorForm() {
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="code">{backup ? "Backup code" : "Authentication code"}</Label>
         <Input
+          className={
+            backup ? "font-mono md:h-11" : "font-mono text-xl tracking-[0.3em] md:h-11 md:text-xl"
+          }
           id="code"
           name="code"
           key={String(backup)}
           autoComplete="one-time-code"
           inputMode={backup ? "text" : "numeric"}
+          maxLength={backup ? undefined : 6}
           required
         />
       </div>
-      <p role="alert" className="min-h-5 text-sm text-destructive">
+      <p role="alert" className="min-h-5 text-[13px]/[18px] text-danger">
         {error}
       </p>
-      <Button type="submit" disabled={busy || !ready}>
+      <Button type="submit" size="lg" className="w-full" disabled={busy || !ready}>
         Verify
       </Button>
       <button
         type="button"
-        className="text-sm text-primary underline"
+        className="self-center text-[13px]/[18px] text-signal underline underline-offset-2"
         onClick={() => {
           setBackup(!backup);
           setError("");

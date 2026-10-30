@@ -1,7 +1,7 @@
 import { prisma } from "@rightnow/db";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Card } from "../../../../components/ui/card";
+import { Callout } from "../../../../components/callout";
 import { InviteForm } from "../../../../components/invite-form";
 
 export const metadata: Metadata = { title: "Join workspace" };
@@ -15,25 +15,27 @@ export default async function Invite({ params }: { params: Promise<{ id: string 
   });
   const ok = inv && inv.status === "pending" && inv.expiresAt.getTime() > Date.now();
   return (
-    <Card className="flex flex-col gap-4">
-      <h1 className="text-xl font-semibold">Join a workspace</h1>
+    <div className="flex flex-col gap-4 rounded-xl border border-border bg-surface p-6 md:p-8">
+      <h1 className="text-xl/7 font-semibold">Join a workspace</h1>
       {ok ? (
         <>
-          <p className="text-sm text-muted-foreground">
-            You were invited to {inv.workspace.name}. Choose a name and password to continue.
+          <p className="text-[13px]/[18px] text-fg-muted">
+            You were invited to{" "}
+            <strong className="font-medium text-fg">{inv.workspace.name}</strong>. Choose a name and
+            password to continue.
           </p>
           <InviteForm invitationId={id} email={inv.email} />
         </>
       ) : (
-        <p role="status" className="text-sm text-muted-foreground">
+        <Callout tone="neutral" role="status">
           This invite link is not valid: it may have expired, been canceled or already been used.
           Ask the workspace admin for a new one, or{" "}
-          <Link className="text-primary underline" href="/sign-in">
+          <Link className="text-signal underline underline-offset-2" href="/sign-in">
             sign in
           </Link>
           .
-        </p>
+        </Callout>
       )}
-    </Card>
+    </div>
   );
 }

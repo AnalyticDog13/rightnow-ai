@@ -55,15 +55,16 @@ export function InviteForm({ invitationId, email }: { invitationId: string; emai
     <form onSubmit={submit} className="flex flex-col gap-4">
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="invite-email">Email</Label>
-        <Input id="invite-email" value={email} readOnly />
+        <Input className="md:h-11" id="invite-email" value={email} readOnly />
       </div>
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="name">Your name</Label>
-        <Input id="name" name="name" autoComplete="name" required />
+        <Input className="md:h-11" id="name" name="name" autoComplete="name" required />
       </div>
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="password">Password (12+ characters)</Label>
         <Input
+          className="md:h-11"
           id="password"
           name="password"
           type="password"
@@ -72,10 +73,10 @@ export function InviteForm({ invitationId, email }: { invitationId: string; emai
           required
         />
       </div>
-      <p role="alert" className="min-h-5 text-sm text-destructive">
+      <p role="alert" className="min-h-5 text-[13px]/[18px] text-danger">
         {error}
       </p>
-      <Button type="submit" disabled={busy || !ready}>
+      <Button type="submit" size="lg" className="w-full" disabled={busy || !ready}>
         Join workspace
       </Button>
     </form>
