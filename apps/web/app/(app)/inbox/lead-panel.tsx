@@ -3,7 +3,10 @@
 import Link from "next/link";
 import { useState } from "react";
 import { Button } from "../../../components/ui/button";
-import { Input } from "../../../components/ui/input";
+import { chipClass } from "../../../components/overlay";
+import { INTEREST as INTEREST_PILL, pillFor, StatusPill } from "../../../components/status-pill";
+import { Input, Textarea } from "../../../components/ui/input";
+import { Label } from "../../../components/ui/label";
 import { call, errorText } from "../accounts/api-client";
 import { INTEREST } from "../leads/labels";
 import type { Detail } from "./types";
@@ -45,45 +48,77 @@ export function LeadPanel({
     onChanged();
   }
 
+  const interest = lead?.interestStatus == null ? null : INTEREST[String(lead.interestStatus)];
   return (
     <aside
       aria-label="Lead"
-      className="flex flex-col gap-3 rounded-md border border-border p-3 text-sm"
+      className="flex flex-col gap-5 border-t border-border bg-surface p-4 text-sm @4xl:overflow-y-auto @4xl:border-t-0 @4xl:border-l"
     >
       {lead ? (
         <>
-          <div>
-            <p className="font-medium">
+          <div className="flex flex-col gap-1">
+            <h3 className="micro text-fg-subtle">Lead</h3>
+            <p className="text-base font-semibold">
               {[lead.firstName, lead.lastName].filter(Boolean).join(" ") || lead.email}
             </p>
-            <p className="break-all text-muted-foreground">{lead.email}</p>
-            {lead.companyName && <p>{lead.companyName}</p>}
-            {lead.jobTitle && <p>{lead.jobTitle}</p>}
-            {lead.interestStatus !== null && <p>Status: {INTEREST[String(lead.interestStatus)]}</p>}
-            {lead.labels.length > 0 && <p>Labels: {lead.labels.join(", ")}</p>}
-            {lead.deletedAt && <p className="text-muted-foreground">This lead was deleted.</p>}
+            <p className="break-all text-[13px]/[18px] text-fg-muted">{lead.email}</p>
+            {(lead.jobTitle || lead.companyName) && (
+              <p className="text-[13px]/[18px]">
+                {[lead.jobTitle, lead.companyName].filter(Boolean).join(" · ")}
+              </p>
+            )}
+            {(interest || lead.labels.length > 0) && (
+              <div className="mt-1 flex flex-wrap gap-1">
+                {interest && (
+                  <StatusPill {...pillFor(INTEREST_PILL, interest)}>Status: {interest}</StatusPill>
+                )}
+                {lead.labels.map((l) => (
+                  <span key={l} className={chipClass}>
+                    {l}
+                  </span>
+                ))}
+              </div>
+            )}
+            {lead.deletedAt && <p className="text-fg-muted">This lead was deleted.</p>}
           </div>
-          {d.origin && (
-            <p>
-              Campaign: {d.origin.campaign.name}
-              <br />
-              Started by Step {d.origin.step.order}
-              {d.origin.variant ? `, Variant ${d.origin.variant.label}` : ""}
-            </p>
-          )}
-          {ooo && <p>Out of office until {day(ooo.oooUntil!)}. Follow-ups resume then.</p>}
-          {next && (
-            <p>
-              Next email: {next.renderedSubject} on {new Date(next.dueAt).toLocaleString()}{" "}
-              <Link href="/scheduled" className="underline">
-                Scheduled emails
-              </Link>
-            </p>
+          {(d.origin || ooo || next) && (
+            <dl className="flex flex-col gap-3 border-t border-border pt-4 text-[13px]/[18px]">
+              {d.origin && (
+                <div>
+                  <dt className="micro text-fg-subtle">Campaign</dt>
+                  <dd>
+                    {d.origin.campaign.name}
+                    <br />
+                    <span className="text-fg-muted">
+                      Started by Step {d.origin.step.order}
+                      {d.origin.variant ? `, Variant ${d.origin.variant.label}` : ""}
+                    </span>
+                  </dd>
+                </div>
+              )}
+              {ooo && (
+                <div>
+                  <dt className="micro text-fg-subtle">Out of office</dt>
+                  <dd>Out of office until {day(ooo.oooUntil!)}. Follow-ups resume then.</dd>
+                </div>
+              )}
+              {next && (
+                <div>
+                  <dt className="micro text-fg-subtle">Next email</dt>
+                  <dd>
+                    Next email: {next.renderedSubject} on {new Date(next.dueAt).toLocaleString()}{" "}
+                    <Link href="/scheduled" className="text-signal underline underline-offset-2">
+                      Scheduled emails
+                    </Link>
+                  </dd>
+                </div>
+              )}
+            </dl>
           )}
         </>
       ) : (
         <div className="flex flex-col gap-2">
-          <p>No lead is linked to this conversation.</p>
+          <p className="text-fg-muted">No lead is linked to this conversation.</p>
           {canEdit && (
             <>
               <Input
@@ -92,33 +127,48 @@ export function LeadPanel({
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
-              <Button variant="outline" disabled={!email.trim()} onClick={() => void attach()}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="self-start"
+                disabled={!email.trim()}
+                onClick={() => void attach()}
+              >
                 Attach lead
               </Button>
             </>
           )}
         </div>
       )}
-      <div className="flex flex-col gap-2">
-        <h3 className="font-medium">Notes</h3>
-        <ul className="flex flex-col gap-1">
+      <div className="flex flex-col gap-2 border-t border-border pt-4">
+        <h3 className="micro text-fg-subtle">Notes</h3>
+        <ul className="flex flex-col gap-1.5">
           {[...d.leadNotes, ...d.notes].map((n) => (
-            <li key={n.id} className="rounded bg-muted p-2">
+            <li
+              key={n.id}
+              className="rounded-md border border-border bg-sunken px-3 py-2 text-[13px]/[18px] whitespace-pre-wrap"
+            >
               {n.body}
             </li>
           ))}
         </ul>
         {canEdit && (
           <>
-            <label htmlFor="new-note">New note</label>
-            <textarea
+            <Label htmlFor="new-note">New note</Label>
+            <Textarea
               id="new-note"
               rows={3}
+              className="min-h-20"
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              className="rounded-md border border-border bg-card p-2 focus-visible:outline-2 focus-visible:outline-primary"
             />
-            <Button variant="outline" disabled={!note.trim()} onClick={() => void addNote()}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="self-start"
+              disabled={!note.trim()}
+              onClick={() => void addNote()}
+            >
               Add note
             </Button>
           </>

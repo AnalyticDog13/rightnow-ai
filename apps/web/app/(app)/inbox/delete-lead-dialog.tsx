@@ -2,6 +2,7 @@
 
 import { FREE_MAIL_DOMAINS } from "@rightnow/core/domain";
 import { useEffect, useRef, useState } from "react";
+import { dialogClass } from "../../../components/overlay";
 import { Button } from "../../../components/ui/button";
 import { call, errorText } from "../accounts/api-client";
 
@@ -54,15 +55,10 @@ export function DeleteLeadDialog({
     onDone("Done.");
   }
 
-  const box = "flex items-start gap-2 text-sm";
+  const box = "flex min-h-11 items-start gap-2 text-sm md:min-h-0 [&>input]:mt-0.5";
   return (
-    <dialog
-      ref={ref}
-      aria-labelledby="dl-title"
-      onClose={onClose}
-      className="m-auto w-full max-w-md rounded-xl border border-border bg-card p-6 text-foreground backdrop:bg-black/40"
-    >
-      <h2 id="dl-title" className="mb-3 text-lg font-semibold">
+    <dialog ref={ref} aria-labelledby="dl-title" onClose={onClose} className={dialogClass(480)}>
+      <h2 id="dl-title" className="mb-4 text-lg/[26px] font-semibold break-all">
         Delete or block {lead.email}
       </h2>
       <div className="flex flex-col gap-3">
@@ -85,15 +81,19 @@ export function DeleteLeadDialog({
           Block future outreach to {shared ? "this address" : `this address and @${domain}`}
         </label>
         {err && (
-          <p role="alert" className="text-sm text-red-600">
+          <p role="alert" className="text-[13px]/[18px] text-danger">
             {err}
           </p>
         )}
-        <div className="flex justify-end gap-2">
-          <Button variant="outline" onClick={() => ref.current?.close()}>
+        <div className="mt-2 flex justify-end gap-2">
+          <Button variant="ghost" onClick={() => ref.current?.close()}>
             Cancel
           </Button>
-          <Button disabled={!del && !same && !block} onClick={() => void apply()}>
+          <Button
+            variant="destructive"
+            disabled={!del && !same && !block}
+            onClick={() => void apply()}
+          >
             Apply
           </Button>
         </div>

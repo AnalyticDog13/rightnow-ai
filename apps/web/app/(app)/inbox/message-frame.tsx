@@ -28,11 +28,11 @@ export function MessageFrame({ html, text }: { html: string | null; text: string
     <div className="flex flex-col gap-2">
       {html && (
         <div className="flex gap-2">
-          <Button variant="outline" className="h-8 px-2" onClick={() => setPlain(!plain)}>
+          <Button variant="ghost" size="sm" onClick={() => setPlain(!plain)}>
             {plain ? "Show formatted" : "Plain text"}
           </Button>
           {!plain && !images && (
-            <Button variant="outline" className="h-8 px-2" onClick={() => setImages(true)}>
+            <Button variant="ghost" size="sm" onClick={() => setImages(true)}>
               Show images
             </Button>
           )}

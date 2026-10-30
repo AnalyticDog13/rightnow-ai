@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { dialogClass } from "../../../components/overlay";
 import { Button } from "../../../components/ui/button";
-import { Input } from "../../../components/ui/input";
+import { Helper, Input, Textarea } from "../../../components/ui/input";
+import { Label } from "../../../components/ui/label";
 import { call, errorText } from "../accounts/api-client";
 
 export type Macro = { id: string; name: string; body: string };
@@ -47,23 +49,25 @@ export function MacrosDialog({
   }
 
   return (
-    <dialog
-      ref={ref}
-      aria-labelledby="macros-title"
-      onClose={onClose}
-      className="m-auto w-full max-w-lg rounded-xl border border-border bg-card p-6 text-foreground backdrop:bg-black/40"
-    >
-      <h2 id="macros-title" className="mb-3 text-lg font-semibold">
+    <dialog ref={ref} aria-labelledby="macros-title" onClose={onClose} className={dialogClass(640)}>
+      <h2 id="macros-title" className="mb-1 text-lg/[26px] font-semibold">
         Macros
       </h2>
-      <ul className="mb-4 flex flex-col divide-y divide-border">
+      <p className="mb-4 text-[13px]/[18px] text-fg-muted">
+        Saved replies you can insert into the composer.
+      </p>
+      <ul className="mb-4 flex flex-col divide-y divide-border rounded-lg border border-border empty:hidden">
         {macros.map((m) => (
-          <li key={m.id} className="flex items-center justify-between gap-2 py-2 text-sm">
-            <span className="truncate">{m.name}</span>
-            <span className="flex shrink-0 gap-2">
+          <li
+            key={m.id}
+            className="flex items-center justify-between gap-2 py-1.5 pr-2 pl-4 text-sm"
+          >
+            <span className="truncate font-medium">{m.name}</span>
+            <span className="flex shrink-0 gap-1">
               <Button
                 type="button"
-                variant="outline"
+                variant="ghost"
+                size="sm"
                 aria-label={`Edit ${m.name}`}
                 onClick={() => {
                   setEditing(m.id);
@@ -75,7 +79,8 @@ export function MacrosDialog({
               </Button>
               <Button
                 type="button"
-                variant="outline"
+                variant="danger-ghost"
+                size="sm"
                 aria-label={`Delete ${m.name}`}
                 onClick={() => void remove(m.id)}
               >
@@ -86,46 +91,43 @@ export function MacrosDialog({
         ))}
       </ul>
       <form
-        className="flex flex-col gap-2"
+        className="flex flex-col gap-1.5"
         onSubmit={(e) => {
           e.preventDefault();
           void save();
         }}
       >
-        <label htmlFor="macro-name" className="text-sm">
-          Name
-        </label>
+        <Label htmlFor="macro-name">Name</Label>
         <Input
           id="macro-name"
           value={name}
           maxLength={100}
           onChange={(e) => setName(e.target.value)}
         />
-        <label htmlFor="macro-body" className="text-sm">
+        <Label htmlFor="macro-body" className="mt-2">
           Body
-        </label>
-        <textarea
+        </Label>
+        <Textarea
           id="macro-body"
           value={body}
           rows={5}
           maxLength={10_000}
           aria-describedby="macro-hint"
           onChange={(e) => setBody(e.target.value)}
-          className="rounded-md border border-border bg-card p-3 text-sm focus-visible:outline-2 focus-visible:outline-primary"
         />
-        <p id="macro-hint" className="text-xs text-muted-foreground">
+        <Helper id="macro-hint">
           Variables such as {"{{firstName}}"}, {"{{companyName}}"} or{" "}
           {"{{sendingAccountFirstName}}"} are filled in from the conversation&apos;s lead and
           mailbox.
-        </p>
+        </Helper>
         {err && (
-          <p role="alert" className="text-sm text-red-600">
+          <p role="alert" className="text-[13px]/[18px] text-danger">
             {err}
           </p>
         )}
-        <div className="flex justify-end gap-2">
+        <div className="mt-3 flex flex-wrap justify-end gap-2">
           {editing && (
-            <Button type="button" variant="outline" onClick={reset}>
+            <Button type="button" variant="ghost" onClick={reset}>
               Cancel edit
             </Button>
           )}

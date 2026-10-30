@@ -1,7 +1,10 @@
 "use client";
 
+import { ChevronLeft, Inbox } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Button } from "../../../components/ui/button";
+import { cn } from "../../../lib/utils";
 import { call, errorText } from "../accounts/api-client";
 import { BulkBar } from "./bulk-bar";
 import { Sidebar } from "./sidebar";
@@ -11,6 +14,10 @@ import type { Filter, ThreadRow } from "./types";
 
 const NO_COUNTS = { primary: 0, others: 0, total: 0, remindersDue: 0 };
 
+/**
+ * B5.11 three panes: views (224px) | list (360px) | thread. From 1024 they fill the viewport height and scroll on
+ * their own; below 768 one pane shows at a time (a selected thread replaces the list, with a back button).
+ */
 export function InboxApp({ canEdit, isAdmin }: { canEdit: boolean; isAdmin: boolean }) {
   const [filter, setFilter] = useState<Filter>({ view: "primary" });
   const [threads, setThreads] = useState<ThreadRow[]>([]);
@@ -73,30 +80,44 @@ export function InboxApp({ canEdit, isAdmin }: { canEdit: boolean; isAdmin: bool
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Unified inbox</h1>
+    <div className="flex flex-col gap-3 lg:h-[calc(100dvh-96px)]">
+      <div className="flex min-h-10 flex-wrap items-center justify-between gap-2">
+        <h1 className="text-xl/7 font-semibold tracking-[-0.01em]">Unified inbox</h1>
         {filter.view === "scheduled" && (
-          <Link href="/scheduled" className="text-sm underline">
-            Open Scheduled emails
-          </Link>
+          <Button asChild variant="link">
+            <Link href="/scheduled">Open Scheduled emails</Link>
+          </Button>
         )}
       </div>
-      <div className="grid gap-4 lg:grid-cols-[13rem_minmax(18rem,22rem)_1fr]">
-        <Sidebar
-          filter={filter}
-          counts={counts}
-          canEdit={canEdit}
-          onFilter={(f) => {
-            setFilter(f);
-            setSelected(null);
-          }}
-        />
-        <div className="flex min-w-0 flex-col gap-2">
-          {checked.size > 0 && canEdit && (
-            <BulkBar count={checked.size} onAction={(a, i) => void bulk(a, i)} />
+      <div className="grid min-h-0 flex-1 gap-3 md:grid-cols-[320px_minmax(0,1fr)] lg:grid-cols-[224px_360px_minmax(0,1fr)]">
+        <div className={cn("min-w-0 md:col-span-2 lg:col-span-1", selected && "max-md:hidden")}>
+          <Sidebar
+            filter={filter}
+            counts={counts}
+            canEdit={canEdit}
+            onFilter={(f) => {
+              setFilter(f);
+              setSelected(null);
+            }}
+          />
+        </div>
+        <div
+          className={cn(
+            "flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-surface",
+            selected && "max-md:hidden",
           )}
-          <p role="status" className="text-sm">
+        >
+          {checked.size > 0 && canEdit && (
+            <BulkBar
+              count={checked.size}
+              onClear={() => setChecked(new Set())}
+              onAction={(a, i) => void bulk(a, i)}
+            />
+          )}
+          <p
+            role="status"
+            className="px-4 text-[13px]/[18px] text-fg-muted empty:hidden [&:not(:empty)]:pt-2"
+          >
             {msg}
           </p>
           <ThreadList
@@ -105,6 +126,7 @@ export function InboxApp({ canEdit, isAdmin }: { canEdit: boolean; isAdmin: bool
             checked={checked}
             hasMore={!!next}
             loaded={loaded}
+            bulk={checked.size > 0 && canEdit}
             q={filter.q ?? ""}
             attachmentsOnly={!!filter.hasAttachment}
             onSelect={setSelected}
@@ -122,26 +144,46 @@ export function InboxApp({ canEdit, isAdmin }: { canEdit: boolean; isAdmin: bool
             onAttachments={(on) => setFilter({ ...filter, hasAttachment: on || undefined })}
           />
         </div>
-        <div className="min-w-0">
+        <div
+          className={cn(
+            "min-h-0 min-w-0 overflow-hidden rounded-lg border border-border bg-sunken",
+            !selected && "max-md:hidden",
+          )}
+        >
           {selected ? (
-            <ThreadView
-              id={selected}
-              canEdit={canEdit}
-              isAdmin={isAdmin}
-              onRead={() => {
-                setThreads((ts) => ts.map((t) => (t.id === selected ? { ...t, isRead: true } : t)));
-                void refreshCounts();
-              }}
-              onChanged={changed}
-              onDeleted={() => {
-                setSelected(null);
-                changed();
-              }}
-            />
+            <div className="flex h-full flex-col">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="m-2 self-start md:hidden"
+                onClick={() => setSelected(null)}
+              >
+                <ChevronLeft aria-hidden />
+                Conversations
+              </Button>
+              <ThreadView
+                id={selected}
+                canEdit={canEdit}
+                isAdmin={isAdmin}
+                onRead={() => {
+                  setThreads((ts) =>
+                    ts.map((t) => (t.id === selected ? { ...t, isRead: true } : t)),
+                  );
+                  void refreshCounts();
+                }}
+                onChanged={changed}
+                onDeleted={() => {
+                  setSelected(null);
+                  setMsg("Conversation deleted.");
+                  changed();
+                }}
+              />
+            </div>
           ) : (
-            <p className="rounded-md border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-              Select a conversation to read it.
-            </p>
+            <div className="flex h-full min-h-60 flex-col items-center justify-center gap-3 p-8 text-center">
+              <Inbox className="size-10 text-fg-subtle" aria-hidden />
+              <p className="text-sm text-fg-muted">Select a conversation</p>
+            </div>
           )}
         </div>
       </div>
