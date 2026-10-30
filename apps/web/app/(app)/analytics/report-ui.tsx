@@ -1,5 +1,7 @@
 import type { Metrics } from "@rightnow/core";
 import type { ReactNode } from "react";
+import { Download } from "lucide-react";
+import { TableFrame } from "../../../components/table-kit";
 import { Button } from "../../../components/ui/button";
 import { csvText } from "./query";
 import type { Row } from "./metrics-def";
@@ -52,9 +54,11 @@ export type VariantInfo = { campaignId: string; stepId: string; active: boolean 
 
 export const KEY = "analytics.hiddenMetrics";
 export const API = "/api/v1/analytics";
-export const th = "px-2 py-1 text-left font-medium";
-export const td = "px-2 py-1 tabular-nums";
-export const note = "text-xs text-muted-foreground";
+/** Header cells get the B4.6 micro look from TableFrame; `th` is for row headers, which read as body text. */
+export const th =
+  "static h-11 border-b border-border bg-transparent py-2 text-left font-sans text-sm font-medium tracking-normal whitespace-normal text-fg normal-case";
+export const td = "text-right tabular-nums";
+export const note = "text-[13px]/[18px] text-fg-subtle";
 
 export function download(name: string, rows: unknown[][]) {
   const url = URL.createObjectURL(new Blob([csvText(rows)], { type: "text/csv" }));
@@ -74,9 +78,9 @@ export function Section({
 }) {
   const id = `s-${title.replace(/\W+/g, "-").toLowerCase()}`;
   return (
-    <section aria-labelledby={id} className="flex flex-col gap-2">
+    <section aria-labelledby={id} className="flex min-w-0 flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 id={id} className="text-lg font-medium">
+        <h2 id={id} className="text-base font-semibold">
           {title}
         </h2>
         {action}
@@ -87,7 +91,8 @@ export function Section({
 }
 
 export const CsvFile = ({ name, rows }: { name: string; rows: unknown[][] }) => (
-  <Button variant="outline" onClick={() => download(name, rows)}>
+  <Button variant="outline" size="sm" onClick={() => download(name, rows)}>
+    <Download aria-hidden />
     Download CSV
   </Button>
 );
@@ -95,20 +100,23 @@ export const CsvFile = ({ name, rows }: { name: string; rows: unknown[][] }) => 
 export function Table({
   caption,
   heads,
+  left = 1,
   children,
 }: {
   caption: string;
   heads: ReactNode[];
+  /** leading text columns; the rest are numbers, right-aligned */
+  left?: number;
   children: ReactNode;
 }) {
   return (
-    <div className="overflow-x-auto rounded-md border border-border">
-      <table className="w-full text-sm">
+    <TableFrame>
+      <table>
         <caption className="sr-only">{caption}</caption>
-        <thead className="bg-muted">
+        <thead>
           <tr>
             {heads.map((h, i) => (
-              <th key={i} scope="col" className={th}>
+              <th key={i} scope="col" className={i >= left ? "text-right" : undefined}>
                 {h}
               </th>
             ))}
@@ -116,6 +124,6 @@ export function Table({
         </thead>
         <tbody>{children}</tbody>
       </table>
-    </div>
+    </TableFrame>
   );
 }

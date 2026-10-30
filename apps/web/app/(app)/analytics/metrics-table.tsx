@@ -1,4 +1,5 @@
 import type { Metrics } from "@rightnow/core";
+import { Download } from "lucide-react";
 import type { ReactNode } from "react";
 import { pct } from "../../../components/stat-tile";
 import { Button } from "../../../components/ui/button";
@@ -29,11 +30,17 @@ export function MetricsTable({
   const cell = (m: Metrics, d: (typeof METRICS)[number]) => {
     const rate = d.rate?.(m, b);
     return (
-      <td key={d.id} className={td}>
+      <td key={d.id} className={`${td} text-right whitespace-nowrap`}>
         {/* the tooltip is for the mouse; screen readers get the same words once, from the sr-only span */}
-        <span aria-hidden={rate ? true : undefined} title={rate?.tip}>
-          {d.count(m)}
-          {rate && ` (${pct(rate.value)})`}
+        <span aria-hidden={rate ? true : undefined} title={rate?.tip} className="flex flex-col">
+          {rate ? (
+            <>
+              <span>{pct(rate.value)}</span>
+              <span className="text-[13px]/[18px] text-fg-subtle">{d.count(m)}</span>
+            </>
+          ) : (
+            d.count(m)
+          )}
         </span>
         {rate && (
           <span className="sr-only">
@@ -47,8 +54,9 @@ export function MetricsTable({
     <Section
       title={title}
       action={
-        <Button asChild variant="outline">
+        <Button asChild variant="outline" size="sm">
           <a href={`${API}?${query(by)}&format=csv`} download>
+            <Download aria-hidden />
             Download CSV
           </a>
         </Button>
@@ -69,22 +77,23 @@ export function MetricsTable({
           )),
         ]}
       >
-        {r.rows.map((row) => (
-          <tr key={row.key} className="border-t border-border">
-            <th scope="row" className={`${th} font-normal`}>
-              {row.label}
-            </th>
-            {extra && <td className={td}>{extra.cell(row)}</td>}
-            {shown.map((d) => cell(row, d))}
-          </tr>
-        ))}
-        <tr className="border-t border-border bg-muted font-medium">
+        {/* B5.13: the totals row first, on the sunken background */}
+        <tr className="bg-sunken font-medium [&>td]:bg-sunken">
           <th scope="row" className={th}>
             Total
           </th>
           {extra && <td />}
           {shown.map((d) => cell(r.total, d))}
         </tr>
+        {r.rows.map((row) => (
+          <tr key={row.key}>
+            <th scope="row" className={`${th} max-w-64 font-normal`}>
+              {row.label}
+            </th>
+            {extra && <td className="text-right">{extra.cell(row)}</td>}
+            {shown.map((d) => cell(row, d))}
+          </tr>
+        ))}
       </Table>
       <p className={note}>{CONTACTED_NOTE}</p>
     </Section>

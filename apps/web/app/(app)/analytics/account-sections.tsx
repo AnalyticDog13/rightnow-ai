@@ -62,7 +62,7 @@ export function AccountsSection({ accounts }: { accounts: Acct[] }) {
         ]}
       >
         {accounts.map((a) => (
-          <tr key={a.id} className="border-t border-border">
+          <tr key={a.id}>
             <th scope="row" className={`${th} font-normal`}>
               {a.email}
             </th>
@@ -103,11 +103,11 @@ export function BouncesSection({ bounces }: { bounces: Bounces }) {
       <p className="text-sm">
         Hard {bounces.hard}, soft {bounces.soft}, unknown {bounces.unknown} leads.
       </p>
-      <Table caption="Top bounce and failure reasons" heads={["Type", "Reason", "Count"]}>
+      <Table caption="Top bounce and failure reasons" heads={["Type", "Reason", "Count"]} left={2}>
         {bounces.reasons.map((x) => (
-          <tr key={`${x.type}${x.reason}`} className="border-t border-border">
-            <td className={td}>{x.type}</td>
-            <td className={td}>{x.reason}</td>
+          <tr key={`${x.type}${x.reason}`}>
+            <td>{x.type}</td>
+            <td>{x.reason}</td>
             <td className={td}>{x.count}</td>
           </tr>
         ))}
@@ -157,7 +157,7 @@ export function RevenueSection({
         heads={["Conversion by current stage", "Deals", "Reached"]}
       >
         {revenue.conversionByStage.map((s) => (
-          <tr key={s.stageId} className="border-t border-border">
+          <tr key={s.stageId}>
             <th scope="row" className={`${th} font-normal`}>
               {s.name}
             </th>
@@ -168,7 +168,7 @@ export function RevenueSection({
       </Table>
       <Table caption="Revenue by campaign" heads={["Campaign", "Won", "Cash collected"]}>
         {revenue.revenueByCampaign.map((c) => (
-          <tr key={c.campaignId ?? "none"} className="border-t border-border">
+          <tr key={c.campaignId ?? "none"}>
             <th scope="row" className={`${th} font-normal`}>
               {c.name}
             </th>

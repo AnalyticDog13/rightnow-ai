@@ -1,9 +1,14 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { BarChart3, Download } from "lucide-react";
 import { AiAssist } from "../../../components/ai-assist";
+import { Callout } from "../../../components/callout";
+import { EmptyState } from "../../../components/empty-state";
+import { PageHeader } from "../../../components/page-header";
 import { Button } from "../../../components/ui/button";
+import { Card } from "../../../components/ui/card";
 import { call, errorText } from "../accounts/api-client";
 import type { Member, Named } from "../leads/bulk-bar";
 import { AccountsSection, BouncesSection, RevenueSection } from "./account-sections";
@@ -14,7 +19,7 @@ import { METRICS } from "./metrics-def";
 import { MetricsTable } from "./metrics-table";
 import { MetricMenu } from "./metric-menu";
 import { Funnel, Tiles } from "./summary";
-import { apiParams, todayIn } from "./query";
+import { apiParams, preset, todayIn } from "./query";
 import { API, type Data, KEY, note, type VariantInfo } from "./report-ui";
 
 export function AnalyticsClient({
@@ -35,6 +40,8 @@ export function AnalyticsClient({
   canEdit: boolean;
 }) {
   const sp = useSearchParams();
+  const router = useRouter();
+  const path = usePathname();
   const qs = sp.toString();
   const tz = sp.get("tz") || "UTC";
   const [today, setToday] = useState("");
@@ -147,25 +154,29 @@ export function AnalyticsClient({
   const total = d?.campaign.total;
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Analytics</h1>
-        <MetricMenu
-          hidden={hidden}
-          toggleMetric={toggleMetric}
-          before={
-            today && (
-              <Button asChild variant="outline">
-                <a href={`${API}/activity?${query()}`} download>
-                  Export sending activity
-                </a>
-              </Button>
-            )
-          }
-        />
-      </div>
+      <PageHeader
+        title="Analytics"
+        description={`Results for the selected range, in ${tz}. Opens are estimated.`}
+        actions={
+          <MetricMenu
+            hidden={hidden}
+            toggleMetric={toggleMetric}
+            before={
+              today && (
+                <Button asChild variant="outline">
+                  <a href={`${API}/activity?${query()}`} download>
+                    <Download aria-hidden />
+                    Export sending activity
+                  </a>
+                </Button>
+              )
+            }
+          />
+        }
+      />
 
       {/* reserved height: the filter row mounts after the zone-dependent day is known */}
-      <div className="min-h-28">
+      <div className="min-h-11 md:min-h-28">
         {today && (
           <Filters
             campaigns={campaigns}
@@ -183,12 +194,37 @@ export function AnalyticsClient({
       </p>
 
       {error && (
-        <p role="alert" className="text-sm text-red-600">
+        <Callout tone="danger" role="alert">
           {error}
+        </Callout>
+      )}
+      {!d && !error && (
+        <p role="status" className="text-sm text-fg-muted">
+          Loading analytics
         </p>
       )}
-      {!d && !error && <p role="status">Loading analytics</p>}
 
+      {d && total && total.sent === 0 && (
+        <Card className="p-0 md:p-0">
+          <EmptyState
+            icon={BarChart3}
+            title="No sends in this range."
+            body="Pick a longer range or check that a campaign is active."
+            actions={
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  const p = new URLSearchParams(qs);
+                  for (const [k, v] of Object.entries(preset(30, today))) p.set(k, v);
+                  router.replace(`${path}?${p}`, { scroll: false });
+                }}
+              >
+                Last 30 days
+              </Button>
+            }
+          />
+        </Card>
+      )}
       {d && total && (
         <>
           <Tiles total={total} shown={shown} base={base} />
@@ -248,9 +284,9 @@ export function AnalyticsClient({
             <AiAssist label="Analyze campaign" path="campaign-analysis" body={{ campaignId }} />
           )}
           {toggleError && (
-            <p role="alert" className="text-sm text-red-600">
+            <Callout tone="danger" role="alert">
               {toggleError}
-            </p>
+            </Callout>
           )}
           <MetricsTable
             shown={shown}

@@ -27,7 +27,7 @@ export function MetricMenu({
   return (
     <div
       ref={menuBox}
-      className="relative flex gap-2"
+      className="relative flex flex-wrap gap-2 max-md:w-full max-md:[&>*]:flex-1"
       onKeyDown={(e) => {
         if (e.key !== "Escape" || !menu) return;
         setMenu(false);
@@ -47,11 +47,16 @@ export function MetricMenu({
       {menu && (
         <fieldset
           id="metric-menu"
-          className="absolute right-0 top-12 z-10 flex flex-col gap-1 rounded-md border border-border bg-card p-3 text-sm shadow-md"
+          className="absolute top-full right-0 z-(--z-popover) mt-1 flex min-w-52 flex-col rounded-md bg-elevated p-1 text-sm shadow-e2"
         >
-          <legend className="px-1 font-medium">Show metrics</legend>
+          <legend className="micro float-left w-full px-2 pt-1.5 pb-1 text-fg-muted">
+            Show metrics
+          </legend>
           {METRICS.map((m) => (
-            <label key={m.id} className="flex items-center gap-2">
+            <label
+              key={m.id}
+              className="flex min-h-11 cursor-pointer items-center gap-2 rounded-sm px-2 hover:bg-hover md:min-h-8"
+            >
               <input
                 type="checkbox"
                 checked={!hidden.includes(m.id)}

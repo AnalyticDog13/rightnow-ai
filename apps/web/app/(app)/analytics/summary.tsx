@@ -13,7 +13,7 @@ export function Tiles({
   base: string;
 }) {
   return (
-    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="grid gap-3 min-[480px]:grid-cols-2 lg:grid-cols-4">
       {shown.map((m) => {
         const rate = m.rate?.(total, base);
         return (
@@ -38,7 +38,7 @@ export function Funnel({ total }: { total: Metrics }) {
       <p className={note}>
         Positive and Won count campaign deals only; Revenue below counts every deal.
       </p>
-      <ol className="flex flex-wrap gap-x-6 text-sm">
+      <ol className="flex flex-col gap-2 rounded-lg border border-border bg-surface p-4 md:p-5">
         {(
           [
             ["Sent", total.sent],
@@ -47,11 +47,32 @@ export function Funnel({ total }: { total: Metrics }) {
             ["Meeting", total.meetings],
             ["Won (campaign deals)", total.won],
           ] as const
-        ).map(([k, n]) => (
-          <li key={k}>
-            {k}: {n}
-          </li>
-        ))}
+        ).map(([k, n], i, all) => {
+          const prev = i ? all[i - 1]![1] : 0;
+          return (
+            <li
+              key={k}
+              className="grid grid-cols-[8rem_1fr] items-center gap-3 text-sm max-md:grid-cols-1 max-md:gap-1"
+            >
+              <span>
+                {k}: <span className="font-medium tabular-nums">{n}</span>
+                {i > 0 && (
+                  <span className="text-[13px]/[18px] text-fg-subtle tabular-nums">
+                    {" "}
+                    · {prev ? `${Math.round((n / prev) * 1000) / 10}%` : "-"}
+                  </span>
+                )}
+              </span>
+              {/* the bar repeats the number above; the pale remainder runs to Sent */}
+              <span aria-hidden className="h-3 overflow-hidden rounded-xs bg-sunken">
+                <span
+                  className="block h-full rounded-xs bg-chart-1"
+                  style={{ width: `${total.sent ? Math.min(100, (n / total.sent) * 100) : 0}%` }}
+                />
+              </span>
+            </li>
+          );
+        })}
       </ol>
     </Section>
   );
