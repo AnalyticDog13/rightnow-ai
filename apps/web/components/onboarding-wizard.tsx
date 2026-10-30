@@ -91,8 +91,14 @@ export function OnboardingWizard() {
     if (step === 1) {
       if (!valid({ token: v.token ? undefined : "Paste the setup token." })) return;
       setBusy(true);
-      const r = await post("/api/setup/verify-token", { token: v.token });
-      setBusy(false);
+      let r;
+      try {
+        r = await post("/api/setup/verify-token", { token: v.token });
+      } catch {
+        return valid({ token: "Could not reach the server. Try again." });
+      } finally {
+        setBusy(false);
+      }
       if (r.status === 200) return go(2);
       return valid({
         token:
