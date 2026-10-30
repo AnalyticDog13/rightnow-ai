@@ -7,14 +7,19 @@ import {
 import { prisma } from "@rightnow/db";
 import type { Metadata } from "next";
 import { headers } from "next/headers";
-import Link from "next/link";
 import { redirect } from "next/navigation";
+import { Callout } from "../../../components/callout";
+import { PageHeader } from "../../../components/page-header";
+import { SectionTabs } from "../../../components/section-tabs";
+import { StatTile } from "../../../components/stat-tile";
+import { Card } from "../../../components/ui/card";
 import { getWebEnv } from "../../../lib/env";
 import { getSessionInfo } from "../../../lib/workspace";
 import { DeliverabilitySettings } from "./deliverability-settings";
 import { DomainSection } from "../accounts/domain-section";
 import { DeliverabilityTable } from "./deliverability-table";
 import { HealthFormula } from "./health-trend";
+import { DELIVERABILITY_TABS } from "./section";
 
 export const metadata: Metadata = { title: "Deliverability" };
 export const dynamic = "force-dynamic";
@@ -38,36 +43,50 @@ export default async function Page({
     admin ? getWorkspaceSettings(prisma, info.workspaceId) : null,
   ]);
   const account = wanted ? rows.find((r) => r.dns?.domain === wanted) : undefined;
+  const count = (s: (typeof rows)[number]["status"]) => rows.filter((r) => r.status === s).length;
+  const attention = count("Needs Attention");
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Deliverability</h1>
-        <Link href="/deliverability/placement" className="text-sm underline">
-          Inbox placement tests
-        </Link>
-      </div>
-      <p className="max-w-3xl text-sm text-muted-foreground">
-        Warm-up and re-warm-up cannot guarantee inbox placement. Health is an internal indicator,
-        not a reputation guarantee.
-      </p>
-      <ul className="max-w-3xl list-disc pl-5 text-sm text-muted-foreground">
-        <li>Recommended: about 30 campaign emails and 10 warm-up emails per account and day.</li>
-        <li>
-          Warm a new account for at least two weeks before full volume; four weeks is safer for a
-          new domain.
-        </li>
-        <li>
-          Warm-up knobs: reply rate is a cooperative-mailbox action. Read emulation, open rate, spam
-          protection and mark important are not provided.
-        </li>
-      </ul>
+      <PageHeader
+        title="Deliverability"
+        description="Warm-up and re-warm-up cannot guarantee inbox placement. Health is an internal indicator, not a reputation guarantee."
+        tabs={<SectionTabs tabs={DELIVERABILITY_TABS} />}
+      />
+      <Callout tone="neutral" title="Recommended limits" className="max-w-3xl">
+        <ul className="list-disc pl-4">
+          <li>Recommended: about 30 campaign emails and 10 warm-up emails per account and day.</li>
+          <li>
+            Warm a new account for at least two weeks before full volume; four weeks is safer for a
+            new domain.
+          </li>
+          <li>
+            Warm-up knobs: reply rate is a cooperative-mailbox action. Read emulation, open rate,
+            spam protection and mark important are not provided.
+          </li>
+        </ul>
+      </Callout>
+      {rows.length > 0 && (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <StatTile label="Accounts sending" value={String(count("Active"))} of={rows.length} />
+          <StatTile
+            label="Needs attention"
+            value={String(attention)}
+            className={attention > 0 ? "stripe-danger" : undefined}
+          />
+          <StatTile label="Re-warming" value={String(count("Re-Warming"))} />
+          <StatTile
+            label="DNS issues"
+            value={String(rows.filter((r) => r.dns && r.dns.level !== "ok").length)}
+          />
+        </div>
+      )}
       <DeliverabilityTable rows={rows} canEdit={info.role !== "VIEWER"} />
       <HealthFormula />
       {/* the DNS chip links here; only a domain of one of the accounts above is shown */}
       {account && (
-        <div id="dns" className="max-w-3xl scroll-mt-4">
+        <Card id="dns" className="max-w-3xl scroll-mt-16">
           <DomainSection email={account.email} canEdit={info.role !== "VIEWER"} />
-        </div>
+        </Card>
       )}
       {settings && <DeliverabilitySettings {...settings} />}
     </div>

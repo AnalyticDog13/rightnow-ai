@@ -1,13 +1,35 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 import { Button } from "../../../components/ui/button";
 import { Card } from "../../../components/ui/card";
-import { Input } from "../../../components/ui/input";
+import { Helper, Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
+import { Select } from "../../../components/ui/select";
 
-const sel = "h-10 rounded-md border border-border bg-card px-3 text-sm";
+/** B4.2 settings row: label + helper on the left, control on the right; stacked below 768. */
+function Row({
+  id,
+  label,
+  help,
+  children,
+}: {
+  id: string;
+  label: string;
+  help?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5 border-t border-border py-3.5 md:flex-row md:items-start md:justify-between md:gap-6">
+      <div className="flex flex-col gap-1 md:max-w-1/2">
+        <Label htmlFor={id}>{label}</Label>
+        {help && <Helper id={`${id}-help`}>{help}</Helper>}
+      </div>
+      <div className="md:w-60 md:shrink-0">{children}</div>
+    </div>
+  );
+}
 
 /** Workspace settings behind the dashboard: PATCH /settings/workspace (ADMIN, session only). */
 export function DeliverabilitySettings(v: {
@@ -42,34 +64,35 @@ export function DeliverabilitySettings(v: {
   }
 
   return (
-    <Card>
-      <form onSubmit={save} className="flex flex-col gap-4">
-        <h2 className="text-lg font-medium">Deliverability settings</h2>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="inactivityDays">Inactive after (days without a campaign send)</Label>
-          <select
+    <Card className="max-w-3xl">
+      <form onSubmit={save} className="flex flex-col">
+        <h2 className="pb-4 text-base font-semibold">Deliverability settings</h2>
+        <Row id="inactivityDays" label="Inactive after (days without a campaign send)">
+          <Select
             id="inactivityDays"
             name="inactivityDays"
             defaultValue={v.inactivityDays}
-            className={sel}
+            className="w-full"
           >
             {[7, 14, 30, 60].map((d) => (
               <option key={d} value={d}>
                 {d} days
               </option>
             ))}
-          </select>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="autoRewarm">When an account becomes inactive</Label>
-          <select id="autoRewarm" name="autoRewarm" defaultValue={v.autoRewarm} className={sel}>
+          </Select>
+        </Row>
+        <Row id="autoRewarm" label="When an account becomes inactive">
+          <Select id="autoRewarm" name="autoRewarm" defaultValue={v.autoRewarm} className="w-full">
             <option value="AUTO">Start a re-warm automatically</option>
             <option value="RECOMMEND">Stop sending and recommend a re-warm</option>
             <option value="OFF">Do nothing</option>
-          </select>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="bounceThresholdPct">Pause at a hard bounce rate above (%)</Label>
+          </Select>
+        </Row>
+        <Row
+          id="bounceThresholdPct"
+          label="Pause at a hard bounce rate above (%)"
+          help="Pauses an account (after at least 50 accepted sends in 7 days) and campaigns with BounceProtect. Between 0.5 and 20, default 3."
+        >
           <Input
             id="bounceThresholdPct"
             name="bounceThresholdPct"
@@ -78,17 +101,15 @@ export function DeliverabilitySettings(v: {
             max={20}
             step={0.5}
             defaultValue={v.bounceThresholdPct}
+            aria-describedby="bounceThresholdPct-help"
             required
           />
-          <p className="text-xs text-muted-foreground">
-            Pauses an account (after at least 50 accepted sends in 7 days) and campaigns with
-            BounceProtect. Between 0.5 and 20, default 3.
-          </p>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="healthSlowdownPct">
-            Share of the allowance kept when health slows an account (%)
-          </Label>
+        </Row>
+        <Row
+          id="healthSlowdownPct"
+          label="Share of the allowance kept when health slows an account (%)"
+          help="Between 10 and 90, default 50."
+        >
           <Input
             id="healthSlowdownPct"
             name="healthSlowdownPct"
@@ -97,12 +118,11 @@ export function DeliverabilitySettings(v: {
             max={90}
             step={1}
             defaultValue={v.healthSlowdownPct}
+            aria-describedby="healthSlowdownPct-help"
             required
           />
-          <p className="text-xs text-muted-foreground">Between 10 and 90, default 50.</p>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="rewarmExitCleanDays">Clean days before a re-warm ends</Label>
+        </Row>
+        <Row id="rewarmExitCleanDays" label="Clean days before a re-warm ends">
           <Input
             id="rewarmExitCleanDays"
             name="rewarmExitCleanDays"
@@ -113,11 +133,12 @@ export function DeliverabilitySettings(v: {
             defaultValue={v.rewarmExitCleanDays}
             required
           />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="rewarmExitBouncePct">
-            Hard bounce rate that keeps a re-warm going (%)
-          </Label>
+        </Row>
+        <Row
+          id="rewarmExitBouncePct"
+          label="Hard bounce rate that keeps a re-warm going (%)"
+          help="A re-warm ends only when the clean days stay at or under this rate. Between 0.5 and 10, default 2."
+        >
           <Input
             id="rewarmExitBouncePct"
             name="rewarmExitBouncePct"
@@ -126,14 +147,11 @@ export function DeliverabilitySettings(v: {
             max={10}
             step={0.5}
             defaultValue={v.rewarmExitBouncePct}
+            aria-describedby="rewarmExitBouncePct-help"
             required
           />
-          <p className="text-xs text-muted-foreground">
-            A re-warm ends only when the clean days stay at or under this rate. Between 0.5 and 10,
-            default 2.
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
+        </Row>
+        <div className="flex items-center gap-3 border-t border-border pt-4">
           <Button type="submit">Save</Button>
           <p role="status" className="text-sm">
             {msg}

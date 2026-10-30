@@ -1,10 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { FlaskConical } from "lucide-react";
+import Link from "next/link";
+import { EmptyState } from "../../../../components/empty-state";
+import { pillFor, StatusPill, type PillSpec } from "../../../../components/status-pill";
+import { TableFrame } from "../../../../components/table-kit";
 import { Button } from "../../../../components/ui/button";
 import { Card } from "../../../../components/ui/card";
-import { Input } from "../../../../components/ui/input";
+import { Input, Textarea } from "../../../../components/ui/input";
 import { Label } from "../../../../components/ui/label";
+import { Select } from "../../../../components/ui/select";
 import { call, errorText } from "../../accounts/api-client";
 
 type Test = { id: string; accountId: string; subject: string; createdAt: string };
@@ -15,13 +21,19 @@ type Report = {
   spamAssassin: string;
 };
 type Account = { id: string; email: string };
-const sel = "h-10 rounded-md border border-border bg-card px-3 text-sm";
 const FOLDER: Record<string, string> = {
   INBOX: "Inbox",
   SPAM: "Spam",
   OTHER: "Other folder",
   MISSING: "Not found",
   PENDING: "Waiting for the result",
+};
+const FOLDER_PILL: Record<string, PillSpec> = {
+  Inbox: { tone: "success" },
+  Spam: { tone: "danger" },
+  "Other folder": { tone: "warning" },
+  "Not found": { tone: "warning" },
+  "Waiting for the result": { tone: "info" },
 };
 const ERRORS: Record<string, string> = {
   no_seeds:
@@ -43,9 +55,11 @@ export function PlacementManager({ isAdmin }: { isAdmin: boolean }) {
   const [shown, setShown] = useState("");
   const [msg, setMsg] = useState("");
   const [reload, setReload] = useState(0);
+  const [loaded, setLoaded] = useState(false);
 
   const loadTests = useCallback(async () => {
     const r = await call("/api/v1/placement-tests", "GET");
+    setLoaded(true);
     if (!r.ok) return;
     const t = r.json.tests as Test[];
     setTests(t);
@@ -111,89 +125,122 @@ export function PlacementManager({ isAdmin }: { isAdmin: boolean }) {
   return (
     <div className="flex flex-col gap-6">
       {isAdmin && (
-        <Card>
-          <form onSubmit={start} className="flex max-w-xl flex-col gap-3">
-            <Label htmlFor="pl-account">Account to test</Label>
-            <select
-              id="pl-account"
-              className={sel}
-              value={accountId}
-              onChange={(e) => setAccountId(e.target.value)}
-            >
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.email}
-                </option>
-              ))}
-            </select>
-            <Label htmlFor="pl-subject">Test subject</Label>
-            <Input
-              id="pl-subject"
-              value={subject}
-              maxLength={500}
-              onChange={(e) => setSubject(e.target.value)}
-              required
-            />
-            <Label htmlFor="pl-body">Test message</Label>
-            <textarea
-              id="pl-body"
-              className="min-h-24 rounded-md border border-border bg-card p-3 text-sm"
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              required
-            />
-            <div className="flex items-center gap-3">
-              <Button type="submit" disabled={!accountId}>
+        <Card className="max-w-3xl">
+          <form onSubmit={start} className="flex flex-col gap-4">
+            <h2 className="text-base font-semibold">Run a placement test</h2>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="pl-account">Account to test</Label>
+              <Select
+                id="pl-account"
+                value={accountId}
+                onChange={(e) => setAccountId(e.target.value)}
+              >
+                {accounts.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.email}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="pl-subject">Test subject</Label>
+              <Input
+                id="pl-subject"
+                value={subject}
+                maxLength={500}
+                onChange={(e) => setSubject(e.target.value)}
+                required
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="pl-body">Test message</Label>
+              <Textarea
+                id="pl-body"
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                required
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button type="submit" disabled={!accountId} className="max-md:w-full">
                 Start placement test
               </Button>
-              <span role="status" className="text-sm text-muted-foreground">
+              <span role="status" className="text-[13px]/[18px] text-fg-muted">
                 {msg}
               </span>
             </div>
           </form>
         </Card>
       )}
+      {loaded && tests.length === 0 && (
+        <Card className="max-w-3xl p-0 md:p-0">
+          <EmptyState
+            icon={FlaskConical}
+            title="No placement tests yet."
+            body="Mark one of your own mailboxes as a placement seed in its account settings, then run a test."
+            actions={
+              <Button asChild variant="link">
+                <Link href="/accounts">Open Email Accounts</Link>
+              </Button>
+            }
+          />
+        </Card>
+      )}
       {tests.length > 0 && (
-        <div className="flex flex-col gap-2">
+        <div className="flex max-w-3xl flex-col gap-1.5">
           <Label htmlFor="pl-past">Past tests</Label>
-          <select
-            id="pl-past"
-            className={sel}
-            value={shown}
-            onChange={(e) => setShown(e.target.value)}
-          >
+          <Select id="pl-past" value={shown} onChange={(e) => setShown(e.target.value)}>
             {tests.map((t) => (
               <option key={t.id} value={t.id}>
                 {new Date(t.createdAt).toLocaleString()} - {email(t.accountId)} - {t.subject}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
       )}
       {report && (
-        <Card className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <caption className="mb-2 text-left font-medium">Where the test message landed</caption>
-            <thead>
-              <tr>
-                <th className="py-1 pr-4">Seed mailbox</th>
-                <th className="py-1 pr-4">Provider</th>
-                <th className="py-1">Folder</th>
-              </tr>
-            </thead>
-            <tbody>
-              {report.seeds.map((s) => (
-                <tr key={s.accountId}>
-                  <td className="py-1 pr-4">{s.email}</td>
-                  <td className="py-1 pr-4">{s.esp}</td>
-                  <td className="py-1">{FOLDER[s.folder] ?? s.folder}</td>
+        <div className="flex max-w-3xl flex-col gap-3">
+          <TableFrame>
+            <table>
+              <caption className="border-b border-border px-4 py-3 text-left text-base font-semibold">
+                Where the test message landed
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col" data-pin="check">
+                    Seed mailbox
+                  </th>
+                  <th scope="col" className="hidden md:table-cell">
+                    Provider
+                  </th>
+                  <th scope="col">Folder</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-          <p className="mt-3 text-sm">Blocklists: {dnsbl}</p>
-          <p className="text-sm text-muted-foreground">SpamAssassin: {report.spamAssassin}</p>
-        </Card>
+              </thead>
+              <tbody>
+                {report.seeds.map((s) => {
+                  const folder = FOLDER[s.folder] ?? s.folder;
+                  return (
+                    <tr key={s.accountId}>
+                      <td
+                        data-pin="check"
+                        className="max-w-56 truncate font-medium"
+                        title={s.email}
+                      >
+                        {s.email}
+                      </td>
+                      <td className="hidden md:table-cell">{s.esp}</td>
+                      <td>
+                        <StatusPill {...pillFor(FOLDER_PILL, folder)}>{folder}</StatusPill>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </TableFrame>
+          <p className="text-sm">Blocklists: {dnsbl}</p>
+          <p className="text-[13px]/[18px] text-fg-muted">SpamAssassin: {report.spamAssassin}</p>
+        </div>
       )}
     </div>
   );

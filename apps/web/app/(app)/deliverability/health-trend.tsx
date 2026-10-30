@@ -1,6 +1,8 @@
 "use client";
 
+import { ChevronRight } from "lucide-react";
 import { Line, LineChart, YAxis } from "recharts";
+import { healthBand } from "../../../components/health-ring";
 
 /** Health score history (HealthSnapshot) as a small line; the numbers are in the label for screen readers. */
 export function HealthTrend({ trend }: { trend: { day: string; score: number }[] }) {
@@ -22,9 +24,22 @@ export function HealthTrend({ trend }: { trend: { day: string; score: number }[]
         <Line
           type="linear"
           dataKey="score"
-          stroke="currentColor"
+          stroke="var(--fg-muted)"
           strokeWidth={1.5}
-          dot={false}
+          dot={(p: { cx?: number; cy?: number; index?: number }) =>
+            // B4.23: only the last point, colored by its band
+            p.index === trend.length - 1 ? (
+              <circle
+                key="last"
+                cx={p.cx}
+                cy={p.cy}
+                r={2.5}
+                fill={healthBand(trend.at(-1)!.score).color}
+              />
+            ) : (
+              <g key={p.index} />
+            )
+          }
           isAnimationActive={false}
         />
       </LineChart>
@@ -35,9 +50,15 @@ export function HealthTrend({ trend }: { trend: { day: string; score: number }[]
 /** The D34 terms, in the order and with the numbers of packages/core/src/deliverability/health.ts `healthScore`. */
 export function HealthFormula() {
   return (
-    <details className="max-w-3xl text-sm">
-      <summary className="cursor-pointer font-medium">How the score is computed</summary>
-      <ol className="mt-2 list-decimal pl-5 text-muted-foreground">
+    <details className="group max-w-3xl rounded-lg border border-border bg-surface text-sm">
+      <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 px-4 font-medium [&::-webkit-details-marker]:hidden">
+        <ChevronRight
+          className="size-4 text-fg-muted transition-transform duration-(--dur-2) group-open:rotate-90"
+          aria-hidden
+        />
+        How the score is computed
+      </summary>
+      <ol className="mx-4 list-decimal border-t border-border pt-3 pl-5 text-fg-muted">
         <li>Start at 100. The result is rounded and kept between 0 and 100.</li>
         <li>
           Hard bounces, last 7 days: minus 10 for each percent of accepted sends (counted against at
@@ -63,7 +84,7 @@ export function HealthFormula() {
         </li>
         <li>Only events after the account&apos;s last health reset count.</li>
       </ol>
-      <p className="mt-2 text-muted-foreground">
+      <p className="mx-4 mt-2 mb-4 text-fg-muted">
         An internal indicator, not a reputation guarantee.
       </p>
     </details>

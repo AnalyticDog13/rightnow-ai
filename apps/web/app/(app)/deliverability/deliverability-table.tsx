@@ -1,20 +1,26 @@
 "use client";
 
 import type { AccountDeliverability } from "@rightnow/core";
+import { Flame, Mail, Play } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { EmptyState } from "../../../components/empty-state";
+import { HealthRing } from "../../../components/health-ring";
+import { CapacityBar } from "../../../components/send-meter";
+import {
+  DNS,
+  LIFECYCLE,
+  pillFor,
+  StatusPill,
+  WARMUP as WARMUP_PILL,
+} from "../../../components/status-pill";
+import { TableFrame } from "../../../components/table-kit";
 import { Button } from "../../../components/ui/button";
+import { Card } from "../../../components/ui/card";
 import { call, errorText } from "../accounts/api-client";
 import { HealthTrend } from "./health-trend";
 
-const BADGE: Record<AccountDeliverability["status"], string> = {
-  Active: "bg-green-100 text-green-900",
-  Inactive: "bg-amber-100 text-amber-900",
-  "Re-Warming": "bg-blue-100 text-blue-900",
-  Paused: "bg-muted text-foreground",
-  "Needs Attention": "bg-red-100 text-red-900",
-};
 const WARMUP: Record<string, string> = {
   ACTIVE: "Active",
   PAUSED: "Paused",
@@ -22,6 +28,12 @@ const WARMUP: Record<string, string> = {
   PLACEMENT_UNKNOWN: "No peers",
   SUSPENDED: "Suspended",
 };
+const DNS_LABEL: Record<string, string> = {
+  ok: "DNS OK",
+  warn: "DNS warning",
+  block: "DNS blocks sending",
+};
+const md = "hidden md:table-cell";
 
 export function DeliverabilityTable({
   rows,
@@ -58,158 +70,194 @@ export function DeliverabilityTable({
 
   if (!rows.length)
     return (
-      <p className="text-sm text-muted-foreground">
-        No email accounts yet.{" "}
-        <Link className="underline" href="/accounts">
-          Connect one
-        </Link>
-        .
-      </p>
+      <Card className="p-0 md:p-0">
+        <EmptyState
+          icon={Mail}
+          title="No email accounts yet."
+          body="Connect one to see its warm-up, health and DNS here."
+          actions={
+            <Button asChild>
+              <Link href="/accounts">Connect account</Link>
+            </Button>
+          }
+        />
+      </Card>
     );
   return (
     <div className="flex flex-col gap-2">
-      <p role="status" className="text-sm">
+      <p role="status" className="text-sm empty:hidden">
         {msg}
       </p>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[60rem] text-left text-sm">
+      <TableFrame>
+        <table>
           <caption className="sr-only">Deliverability per email account</caption>
           <thead>
             <tr>
-              {[
-                "Account",
-                "Status",
-                "Idle days",
-                "Allowance",
-                "Health",
-                "Last 30 days",
-                "DNS",
-                "Warm-up",
-                "Warnings",
-                "Actions",
-              ].map((h) => (
-                <th key={h} scope="col" className="p-2 font-medium">
-                  {h}
-                </th>
-              ))}
+              <th scope="col" data-pin="check">
+                Account
+              </th>
+              <th scope="col">Status</th>
+              <th scope="col" className={md}>
+                Idle days
+              </th>
+              <th scope="col" className={md}>
+                Allowance
+              </th>
+              <th scope="col">Health</th>
+              <th scope="col" className={md}>
+                Last 30 days
+              </th>
+              <th scope="col" className={md}>
+                DNS
+              </th>
+              <th scope="col" className={md}>
+                Warm-up
+              </th>
+              <th scope="col" className={md}>
+                Warnings
+              </th>
+              <th scope="col" className="text-right">
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
-              <tr key={r.id} className="border-t border-border align-top">
-                <th scope="row" className="p-2 font-normal">
-                  {r.email}
-                </th>
-                <td className="p-2">
-                  <span className={`rounded-full px-2 py-0.5 text-xs ${BADGE[r.status]}`}>
-                    {r.status}
-                  </span>
-                </td>
-                <td className="p-2">{r.idleDays}</td>
-                <td className="p-2">
-                  {r.allowance} of {r.target} per day
-                  {r.plan && (
-                    <>
-                      <progress
-                        aria-label={`Re-warm progress for ${r.email}`}
-                        max={100}
-                        value={r.plan.progressPct}
-                        className="block w-32"
-                      />
-                      <span className="block max-w-56 text-xs text-muted-foreground">
-                        Estimated: {r.plan.estimatedDaysLeft} more day
-                        {r.plan.estimatedDaysLeft === 1 ? "" : "s"} - {r.plan.label}
-                      </span>
-                    </>
-                  )}
-                </td>
-                <td className="p-2">
-                  {r.health.score ?? "-"}
-                  <HealthTrend trend={r.health.trend} />
-                  {r.health.cap !== null && (
-                    <span className="block text-xs">Throttled to {r.health.cap}/day</span>
-                  )}
-                </td>
-                <td className="p-2">
-                  <span className="block">Sent {r.sent30d}</span>
-                  <span className="block">Hard {r.hardBouncePct30d}%</span>
-                  <span className="block">Soft {r.softBouncePct30d}%</span>
-                  <span className="block">Replies {r.replyPct30d}%</span>
-                  <span className="block">Complaints {r.complaintPct30d}%</span>
-                  <span className="block max-w-48 text-xs text-muted-foreground">
-                    Complaint data only when a feedback loop delivers to a connected mailbox (Gmail
-                    sends none).
-                  </span>
-                  {r.lastBounceReasons.length > 0 && (
-                    <span className="block max-w-48 text-xs">
-                      Latest bounces: {r.lastBounceReasons.join("; ")}
+            {rows.map((r) => {
+              const bad = r.status === "Needs Attention" || r.dns?.level === "block";
+              const warm = r.warmup ? (WARMUP[r.warmup.state] ?? r.warmup.state) : "Off";
+              const dns = r.dns ? (DNS_LABEL[r.dns.level] ?? "DNS not checked") : "";
+              return (
+                <tr key={r.id} data-stripe={bad ? "danger" : undefined}>
+                  <th
+                    scope="row"
+                    data-pin="check"
+                    className="max-w-40 truncate text-left font-medium md:max-w-56"
+                    title={r.email}
+                  >
+                    {r.email}
+                  </th>
+                  <td>
+                    <StatusPill {...pillFor(LIFECYCLE, r.status)}>{r.status}</StatusPill>
+                  </td>
+                  <td className={`${md} tabular-nums`}>{r.idleDays}</td>
+                  <td className={md}>
+                    <span className="whitespace-nowrap tabular-nums">
+                      {r.allowance} of {r.target} per day
                     </span>
-                  )}
-                  {r.recentErrors > 0 && (
-                    <span className="block text-xs">Errors in 24 h: {r.recentErrors}</span>
-                  )}
-                </td>
-                <td className="p-2">
-                  {r.dns ? (
-                    <Link
-                      href={`/deliverability?domain=${encodeURIComponent(r.dns.domain)}#dns`}
-                      aria-label={`DNS ${r.dns.level} for ${r.dns.domain}, show the DNS checks`}
-                      className="rounded-full border border-border px-2 py-0.5 text-xs"
-                    >
-                      {r.dns.level}
-                    </Link>
-                  ) : (
-                    "-"
-                  )}
-                </td>
-                <td className="p-2">
-                  {r.warmup ? (
-                    <>
-                      {WARMUP[r.warmup.state]}
-                      <span className="block text-xs">
+                    <CapacityBar sent={r.allowance} max={r.target} className="mt-1 w-16" />
+                    {r.plan && (
+                      <>
+                        <progress
+                          aria-label={`Re-warm progress for ${r.email}`}
+                          max={100}
+                          value={r.plan.progressPct}
+                          className="mt-2 block w-32"
+                        />
+                        <span className="mt-1 block max-w-56 text-[13px]/[18px] text-fg-subtle">
+                          Estimated: {r.plan.estimatedDaysLeft} more day
+                          {r.plan.estimatedDaysLeft === 1 ? "" : "s"} - {r.plan.label}
+                        </span>
+                      </>
+                    )}
+                  </td>
+                  <td>
+                    <span className="flex items-center gap-2">
+                      <HealthRing score={r.health.score} size={24} />
+                      <HealthTrend trend={r.health.trend} />
+                    </span>
+                    {r.health.cap !== null && (
+                      <StatusPill tone="warning" size="sm" className="mt-1">
+                        Throttled to {r.health.cap}/day
+                      </StatusPill>
+                    )}
+                  </td>
+                  <td className={`${md} text-[13px]/[18px] tabular-nums`}>
+                    <span className="block">Sent {r.sent30d}</span>
+                    <span className="block">Hard {r.hardBouncePct30d}%</span>
+                    <span className="block">Soft {r.softBouncePct30d}%</span>
+                    <span className="block">Replies {r.replyPct30d}%</span>
+                    <span className="block">Complaints {r.complaintPct30d}%</span>
+                    <span className="mt-1 block max-w-48 text-fg-subtle">
+                      Complaint data only when a feedback loop delivers to a connected mailbox
+                      (Gmail sends none).
+                    </span>
+                    {r.lastBounceReasons.length > 0 && (
+                      <span className="mt-1 block max-w-48">
+                        Latest bounces: {r.lastBounceReasons.join("; ")}
+                      </span>
+                    )}
+                    {r.recentErrors > 0 && (
+                      <span className="block">Errors in 24 h: {r.recentErrors}</span>
+                    )}
+                  </td>
+                  <td className={md}>
+                    {r.dns ? (
+                      <Link
+                        href={`/deliverability?domain=${encodeURIComponent(r.dns.domain)}#dns`}
+                        aria-label={`DNS ${r.dns.level} for ${r.dns.domain}, show the DNS checks`}
+                        className="inline-flex rounded-full hover:underline"
+                      >
+                        <StatusPill {...pillFor(DNS, dns)}>{dns}</StatusPill>
+                      </Link>
+                    ) : (
+                      <span className="text-fg-subtle">-</span>
+                    )}
+                  </td>
+                  <td className={md}>
+                    <StatusPill {...pillFor(WARMUP_PILL, warm)}>{warm}</StatusPill>
+                    {r.warmup && (
+                      <span className="mt-1 block text-[13px]/[18px] whitespace-nowrap text-fg-subtle tabular-nums">
                         Sent in 7 days: {r.warmup.last7.reduce((n, d) => n + d.sent, 0)}
                       </span>
-                    </>
-                  ) : (
-                    "Off"
-                  )}
-                </td>
-                <td className="p-2">
-                  <ul className="list-disc pl-4">
-                    {r.warnings.map((w) => (
-                      <li key={w}>{w}</li>
-                    ))}
-                  </ul>
-                </td>
-                <td className="p-2">
-                  {canEdit && (r.status === "Inactive" || r.status === "Active") && (
-                    <div className="flex flex-wrap gap-1">
-                      <Button
-                        variant="outline"
-                        className="h-8 px-2 text-xs"
-                        aria-label={`Re-warm ${r.email}`}
-                        onClick={() => rewarm(r)}
-                      >
-                        Re-warm
-                      </Button>
-                      {r.status === "Inactive" && (
+                    )}
+                  </td>
+                  <td className={md}>
+                    <ul className="flex min-w-40 flex-col items-start gap-1">
+                      {r.warnings.map((w) => (
+                        <li key={w}>
+                          <StatusPill
+                            tone="warning"
+                            size="sm"
+                            className="h-auto py-0.5 whitespace-normal"
+                          >
+                            {w}
+                          </StatusPill>
+                        </li>
+                      ))}
+                    </ul>
+                  </td>
+                  <td className="text-right">
+                    {canEdit && (r.status === "Inactive" || r.status === "Active") && (
+                      <div className="flex flex-wrap justify-end gap-1">
                         <Button
-                          variant="outline"
-                          className="h-8 px-2 text-xs"
-                          aria-label={`Resume ${r.email} at full volume`}
-                          onClick={() => resumeFull(r)}
+                          variant="ghost"
+                          size="sm"
+                          aria-label={`Re-warm ${r.email}`}
+                          onClick={() => rewarm(r)}
                         >
-                          Resume at full volume
+                          <Flame aria-hidden />
+                          Re-warm
                         </Button>
-                      )}
-                    </div>
-                  )}
-                </td>
-              </tr>
-            ))}
+                        {r.status === "Inactive" && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            aria-label={`Resume ${r.email} at full volume`}
+                            onClick={() => resumeFull(r)}
+                          >
+                            <Play aria-hidden />
+                            Resume at full volume
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
-      </div>
+      </TableFrame>
     </div>
   );
 }
