@@ -1487,6 +1487,89 @@ Pattern: Attio's centered onboarding card on a quiet canvas (from: attio §5), f
 - Links: `--signal`, underlined.
 - Theme: follows the system (next-themes); no toggle on auth pages.
 
+### B5.18 First-run onboarding `/sign-up` (replaces the one-page owner form)
+
+Problem (user feedback): the first screen a new installer sees is a bare five-field form that asks for a "setup
+token" with no explanation, no sense of what the product does, and no clear "start here" moment. Same purpose and
+same API (`POST /api/setup` with name, email, password, workspaceName, token), redesigned as a guided wizard.
+
+Patterns: Attio's split onboarding card with an "n/5" counter, bold question-style `h1`, one full-width Continue and
+a right-hand preview panel (from: attio §5 onboarding); folk's full-screen wizard on the paper canvas with no app
+chrome (from: folk §5 onboarding); lemlist's numbered step cards where future steps are greyed with a reason
+(from: lemlist §5 lemwarm onboarding); Front's "0/3 steps complete" thin progress bar (from: front §4 progress);
+Smartlead's "the wizard order is always visible" header (from: smartlead §6).
+
+Layout
+- Uses the `(auth)` canvas (B5.17) but the sign-up page widens to a split card: max-width 960px, radius 16,
+  `--surface`, 1px `--border`. Left column (form) 480px, padding 40px. Right column (>= 1024px only) `--surface-sunken`
+  panel, padding 40px, the "What happens next" preview. Below 1024px the card is the single 400px column (B5.17) and
+  the preview panel is not rendered.
+- Top of the left column: `mono` caption "Step {n} of 3" + 4px progress bar (fill `--fg`, track `--surface-sunken`,
+  `role="progressbar"` with `aria-valuetext="Step n of 3"`), then a row of three step labels ("Verify server",
+  "Your login", "Workspace") in `small`; current label `--fg` 600, done labels `--fg-muted` with a 14px `Check`,
+  future labels `--fg-subtle`. Not shown on the welcome step.
+- Footer of every step after welcome: secondary "Back" (left) and primary full-width-on-mobile "Continue" (right);
+  Enter submits the step. Values persist in React state when going Back; nothing is written to the URL or storage.
+- On every step change focus moves to the step `h1` (`tabIndex=-1`) and an `aria-live="polite"` region announces
+  "Step n of 3: {title}".
+
+Step 0: Welcome (no counter)
+- `h1` "Set up the owner account" (text kept for tests) with `display`-size brand line above it: "Welcome to
+  RightNow".
+- Lead paragraph: "RightNow is your self-hosted cold-email workspace. Connect your own mailboxes, warm them up, send
+  multi-step campaigns that stop when someone replies, and handle replies in one inbox and pipeline."
+- "Setup takes about two minutes" + an ordered list of the three steps, each a 48px row with a 24px number circle
+  (B4.15 style) and one line: 1 "Verify this is your server: paste the setup token from your .env file",
+  2 "Create your owner login: you will be the workspace admin", 3 "Name your workspace: usually your company name".
+- One primary `lg` button "Get started" (full width). Below it a `small` muted line: "Already set up? Sign in" (link).
+
+Step 1: Verify this is your server
+- `h1` "Verify this is your server". Body: "Anyone who can open this page could claim the workspace, so the first
+  account needs the secret you set when installing RightNow. It is the SETUP_TOKEN value in the .env file on your
+  server."
+- Neutral Callout (B4.11) "Where to find it" with a `mono` code block (`--surface-sunken`, radius 6, copy button
+  with aria-label "Copy command"): `grep SETUP_TOKEN .env` and, on a second line, the Windows form
+  `Select-String SETUP_TOKEN .env`, and one sentence: "Run it in the folder where you installed RightNow. Copy the
+  part after the = sign, without quotes."
+- Field: label "Setup token" (kept), `type="password"` with a ghost icon button "Show token"/"Hide token"
+  (aria-pressed), `autocomplete="off"`, `mono` input text.
+- Continue verifies the token before moving on: `POST /api/setup/verify-token` `{ token }` -> `{ ok: true }` or 403
+  `"Invalid setup token"`. Server side: same `limitOrThrow("setup", ip, 10, 900)` bucket as `/api/setup` (so it
+  adds no extra guessing budget), same constant-time `sameToken` compare, and 409 "Sign-up is closed" when a user
+  already exists. Error copy under the field (`role="alert"`): "That doesn't match SETUP_TOKEN in your .env file.
+  Check for extra spaces or quotes." Rate-limited copy: "Too many attempts. Wait 15 minutes and try again."
+- `/api/setup` still re-checks the token on submit (never trust the earlier step).
+
+Step 2: Your login
+- `h1` "Create your owner login". Body: "You will be the owner: the only admin until you invite teammates from
+  Settings."
+- Fields (labels kept for tests): "Your name", "Email", "Password (12+ characters)". Password: show/hide toggle and
+  a live hint line under it: "{n} / 12 characters" in `--fg-muted`, turning `--success-fg` with `Check` at 12+.
+  Continue is enabled at any time; client validation errors appear inline per field (`aria-describedby`).
+
+Step 3: Workspace
+- `h1` "Name your workspace". Field "Workspace name" (kept), helper "Shown in the sidebar and to teammates. You can
+  change it later in Settings."
+- Review block (`--surface-sunken`, radius 12, padding 16): rows "Owner" {name} · {email}, "Workspace" {live
+  value}, each with an "Edit" ghost `sm` button that jumps to its step.
+- Primary `lg` button "Create owner account" (text kept). Busy state "Creating account..." with spinner. Server
+  errors render in the existing `role="alert"` line; a token error sends the user back to step 1 with the error
+  shown there.
+- On success: existing sign-in + redirect to `/dashboard`, where the setup checklist (B4.15) is the continuation.
+
+Right panel: "What happens next" (>= 1024px)
+- `overline` "After setup", `h3` "Your first campaign in four steps", then the B4.15 checklist steps rendered as
+  lemlist-style cards, all locked (number circle `--surface-sunken`): "Connect an email account", "Add your physical
+  address", "Import leads", "Launch your first campaign", each with its one-line description, plus the footer advice
+  line "Warm new accounts for at least two weeks before full volume." The panel is static (decorative context, not
+  interactive): `aria-hidden` is not used; it is plain text in a `<aside aria-label="What happens next">`.
+
+Closed state (a user already exists): unchanged behaviour; single column, `h1` "Set up the owner account", neutral
+Callout "Sign-up is closed. This workspace already has an owner; ask them for an invite, or sign in." with the link.
+
+Mobile (< 768px): single column, card padding 24, step labels row hidden (the "Step n of 3" caption and bar stay),
+footer buttons stacked with Continue first, full width, 44px.
+
 ## B6. Accessibility
 
 Target: WCAG 2.2 AA. The existing e2e suite (`e2e/a11y.spec.ts`) runs axe (wcag2a, wcag2aa) on every nav section
