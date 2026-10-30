@@ -53,3 +53,14 @@ User rules for this effort:
   below 1536px; warm-up chart shows inbox/spam/not-found (no "planned" data exists).
 - `apps/.web-onb/` (onboarding agent's temp copy) breaks vitest ("project name not unique"): delete it before
   testing; never commit it. Also a stray root `onboarding-wizard.tsx`.
+
+**Onboarding agent (stopped cleanly):** wizard committed and pushed (e898222): `/sign-up` B5.18 wizard,
+`POST /api/setup/verify-token` (shared setup rate-limit bucket, constant-time compare, 403/409, no token echo),
+`auth-form.tsx` is now sign-in only. Lint + typecheck pass; `verify-token.test.ts` + `setup.test.ts` 6/6.
+Walked all steps at 1440/390 light+dark. Temp copies deleted.
+- NOT verified: the rewritten `e2e/auth.spec.ts` (never ran to completion). Run
+  `npx playwright test e2e/auth.spec.ts` from `apps/web` first.
+- Deviation: the Windows command has its own copy button ("Copy Windows command").
+
+**Resume order:** `git status` → `npm test` (fix the 3 failures) → auth e2e → full e2e (CSP + fonts) → then Next
+steps 2-5 above.
