@@ -65,7 +65,7 @@ export function AiAssist({
         {busy ? "Thinking..." : label}
       </Button>
       {err && (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="text-sm text-danger">
           {err}
         </p>
       )}

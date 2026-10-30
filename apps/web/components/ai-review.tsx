@@ -66,7 +66,7 @@ export function AiReview({
   return (
     <div className="flex flex-col gap-2">
       {err && (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="text-sm text-danger">
           {err}
         </p>
       )}
@@ -74,10 +74,10 @@ export function AiReview({
         Refresh
       </Button>
       {rows.length === 0 && (
-        <p className="text-sm text-muted-foreground">Nothing waiting for review.</p>
+        <p className="text-sm text-fg-muted">Nothing waiting for review.</p>
       )}
       {rows.length > 0 && (
-        <p role="status" className="text-sm text-muted-foreground">
+        <p role="status" className="text-sm text-fg-muted">
           {rows.length} of {total} waiting
         </p>
       )}
@@ -96,7 +96,7 @@ export function AiReview({
               <p className="text-sm font-medium">
                 {s.lead.email}
                 {who(s.lead) && (
-                  <span className="font-normal text-muted-foreground"> ({who(s.lead)})</span>
+                  <span className="font-normal text-fg-muted"> ({who(s.lead)})</span>
                 )}
               </p>
             )}
