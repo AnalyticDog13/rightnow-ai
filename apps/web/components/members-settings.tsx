@@ -2,10 +2,14 @@
 
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
+import { Callout } from "./callout";
+import { SettingsCard } from "./settings-row";
+import { StatusPill } from "./status-pill";
+import { TableFrame } from "./table-kit";
 import { Button } from "./ui/button";
-import { Card } from "./ui/card";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
+import { Select } from "./ui/select";
 
 type Member = { id: string; name: string; email: string; role: string; self: boolean };
 type Invite = { id: string; email: string; role: string | null; expiresAt: string };
@@ -59,114 +63,132 @@ export function MembersSettings({ members, invites }: { members: Member[]; invit
   }
 
   return (
-    <Card id="members" className="flex flex-col gap-4">
-      <h2 className="text-lg font-medium">Members</h2>
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-left text-muted-foreground">
-            <th className="py-1 font-medium">Name</th>
-            <th className="py-1 font-medium">Email</th>
-            <th className="py-1 font-medium">Role</th>
-            <th className="py-1" />
-          </tr>
-        </thead>
-        <tbody>
-          {members.map((m) => (
-            <tr key={m.id} className="border-t border-border">
-              <td className="py-1.5">{m.name}</td>
-              <td className="py-1.5">{m.email}</td>
-              <td className="py-1.5">
-                {m.role === "owner" ? (
-                  "owner"
-                ) : (
-                  <select
-                    aria-label={`Role of ${m.email}`}
-                    value={m.role}
-                    onChange={(e) =>
-                      void run(() =>
-                        call(`/api/v1/members/${m.id}`, "PATCH", { role: e.target.value }),
-                      )()
-                    }
-                    className="h-8 rounded-md border border-border bg-card px-2 text-sm"
-                  >
-                    {ROLES.map((r) => (
-                      <option key={r}>{r}</option>
-                    ))}
-                  </select>
-                )}
-              </td>
-              <td className="py-1.5 text-right">
-                {m.role !== "owner" && !m.self && (
-                  <Button
-                    variant="outline"
-                    aria-label={`Remove ${m.email}`}
-                    onClick={() => {
-                      if (
-                        confirm(
-                          `Remove ${m.email}? They lose access and their API keys are revoked.`,
-                        )
-                      )
-                        void run(() => call(`/api/v1/members/${m.id}`, "DELETE"))();
-                    }}
-                  >
-                    Remove
-                  </Button>
-                )}
-              </td>
+    <SettingsCard id="members" title="Members">
+      <TableFrame>
+        <table aria-label="Members">
+          <thead>
+            <tr>
+              <th scope="col">Name</th>
+              <th scope="col">Role</th>
+              <th scope="col" className="text-right">
+                <span className="sr-only">Actions</span>
+              </th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {members.map((m) => (
+              <tr key={m.id}>
+                <td className="max-w-64 py-2">
+                  <div className="truncate font-medium">
+                    {m.name}
+                    {m.self && <span className="font-normal text-fg-subtle"> (you)</span>}
+                  </div>
+                  <div className="truncate text-[13px]/[18px] text-fg-subtle">{m.email}</div>
+                </td>
+                <td>
+                  {m.role === "owner" ? (
+                    <StatusPill tone="neutral">owner</StatusPill>
+                  ) : (
+                    <Select
+                      size="sm"
+                      aria-label={`Role of ${m.email}`}
+                      value={m.role}
+                      onChange={(e) =>
+                        void run(() =>
+                          call(`/api/v1/members/${m.id}`, "PATCH", { role: e.target.value }),
+                        )()
+                      }
+                    >
+                      {ROLES.map((r) => (
+                        <option key={r}>{r}</option>
+                      ))}
+                    </Select>
+                  )}
+                </td>
+                <td className="text-right">
+                  {m.role !== "owner" && !m.self && (
+                    <Button
+                      variant="danger-ghost"
+                      size="sm"
+                      aria-label={`Remove ${m.email}`}
+                      onClick={() => {
+                        if (
+                          confirm(
+                            `Remove ${m.email}? They lose access and their API keys are revoked.`,
+                          )
+                        )
+                          void run(() => call(`/api/v1/members/${m.id}`, "DELETE"))();
+                      }}
+                    >
+                      Remove
+                    </Button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </TableFrame>
 
       <form onSubmit={invite} className="flex flex-wrap items-end gap-3">
-        <div className="flex flex-col gap-1.5">
+        <div className="flex min-w-56 flex-1 flex-col gap-1.5">
           <Label htmlFor="invite-to">Invite by email</Label>
           <Input id="invite-to" name="email" type="email" required />
         </div>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="invite-role">Role</Label>
-          <select
-            id="invite-role"
-            name="role"
-            defaultValue="member"
-            className="h-10 rounded-md border border-border bg-card px-3 text-sm"
-          >
+          <Select id="invite-role" name="role" defaultValue="member">
             {ROLES.map((r) => (
               <option key={r}>{r}</option>
             ))}
-          </select>
+          </Select>
         </div>
-        <Button type="submit">Create invite link</Button>
+        <Button type="submit" variant="outline">
+          Create invite link
+        </Button>
       </form>
       {link && (
-        <p className="text-sm">
+        <Callout tone="info" title="Invite link created">
           Send this link to the new member (valid for 7 days; no email is sent):{" "}
-          <code data-testid="invite-link" className="break-all">
+          <code data-testid="invite-link" className="font-mono break-all">
             {link}
           </code>
-        </p>
+        </Callout>
       )}
       {invites.length > 0 && (
-        <ul aria-label="Pending invites" className="flex flex-col gap-1 text-sm">
-          {invites.map((i) => (
-            <li key={i.id} className="flex items-center justify-between gap-3">
-              <span>
-                {i.email} as {i.role} (expires {new Date(i.expiresAt).toLocaleDateString()})
-              </span>
-              <Button
-                variant="outline"
-                aria-label={`Cancel invite for ${i.email}`}
-                onClick={() => void run(() => call(`/api/v1/invites/${i.id}`, "DELETE"))()}
+        <div className="flex flex-col gap-2">
+          <h3 className="micro text-fg-muted">Pending invites</h3>
+          <ul
+            aria-label="Pending invites"
+            className="flex flex-col divide-y divide-border rounded-md border border-border"
+          >
+            {invites.map((i) => (
+              <li
+                key={i.id}
+                className="flex items-center justify-between gap-3 py-1.5 pr-2 pl-3 text-sm"
               >
-                Cancel
-              </Button>
-            </li>
-          ))}
-        </ul>
+                <span className="min-w-0">
+                  <span className="font-medium break-all">{i.email}</span> as {i.role}{" "}
+                  <span className="text-fg-subtle">
+                    (expires {new Date(i.expiresAt).toLocaleDateString()})
+                  </span>
+                </span>
+                <Button
+                  variant="danger-ghost"
+                  size="sm"
+                  aria-label={`Cancel invite for ${i.email}`}
+                  onClick={() => void run(() => call(`/api/v1/invites/${i.id}`, "DELETE"))()}
+                >
+                  Cancel
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
-      <p role="status" className="min-h-5 text-sm">
+      <p role="status" className="text-[13px]/[18px] text-danger empty:hidden">
         {msg}
       </p>
-    </Card>
+    </SettingsCard>
   );
 }

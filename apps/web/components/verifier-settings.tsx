@@ -2,10 +2,12 @@
 
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
+import { Callout } from "./callout";
+import { SettingRow, SettingsCard } from "./settings-row";
+import { StatusPill } from "./status-pill";
 import { Button } from "./ui/button";
-import { Card } from "./ui/card";
 import { Input } from "./ui/input";
-import { Label } from "./ui/label";
+import { Select } from "./ui/select";
 
 type Props = {
   kind: string;
@@ -31,11 +33,7 @@ export function VerifierSettings(v: Props) {
   );
 }
 
-function VerifierForm({
-  msg,
-  setMsg,
-  ...v
-}: Props & { msg: string; setMsg: (m: string) => void }) {
+function VerifierForm({ msg, setMsg, ...v }: Props & { msg: string; setMsg: (m: string) => void }) {
   const router = useRouter();
   const [kind, setKind] = useState(v.kind);
 
@@ -69,74 +67,98 @@ function VerifierForm({
   }
 
   return (
-    <Card>
-      <form onSubmit={save} className="flex flex-col gap-4">
-        <h2 className="text-lg font-medium">Email verification</h2>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="verifierKind">Verifier</Label>
-          <select
+    <SettingsCard
+      id="verifier"
+      title="Email verification"
+      status={
+        v.kind === "http" ? (
+          v.hasApiKey ? (
+            <StatusPill tone="success">Key saved</StatusPill>
+          ) : (
+            <StatusPill tone="warning">No key</StatusPill>
+          )
+        ) : undefined
+      }
+    >
+      <form onSubmit={save} className="flex flex-col">
+        <SettingRow
+          htmlFor="verifierKind"
+          label="Verifier"
+          helper="The built-in check never marks an address verified. An external service is paid for by you."
+        >
+          <Select
             id="verifierKind"
             value={kind}
+            aria-describedby="verifierKind-help"
             onChange={(e) => setKind(e.target.value)}
-            className="h-10 rounded-md border border-border bg-card px-3 text-sm"
           >
             <option value="mx">Built in (syntax and MX records)</option>
             <option value="http">External service (HTTPS)</option>
-          </select>
-          <p className="text-xs text-muted-foreground">
-            The built-in check never marks an address verified. An external service is paid for by
-            you.
-          </p>
-        </div>
+          </Select>
+        </SettingRow>
         {kind === "http" && (
           <>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="verifierUrl">Service URL (https)</Label>
-              <Input id="verifierUrl" name="url" type="url" defaultValue={v.url} required />
-              <p className="text-xs text-muted-foreground">
-                Receives a POST with {`{"email": "..."}`} and an Authorization: Bearer header.
-              </p>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="verifierKey">API key</Label>
+            <SettingRow
+              htmlFor="verifierUrl"
+              label="Service URL (https)"
+              helper={`Receives a POST with {"email": "..."} and an Authorization: Bearer header.`}
+            >
+              <Input
+                id="verifierUrl"
+                name="url"
+                type="url"
+                className="font-mono md:text-[13px]"
+                aria-describedby="verifierUrl-help"
+                defaultValue={v.url}
+                required
+              />
+            </SettingRow>
+            <SettingRow
+              htmlFor="verifierKey"
+              label="API key"
+              helper="Write-only: the stored key is never shown."
+            >
               <Input
                 id="verifierKey"
                 name="apiKey"
                 type="password"
                 autoComplete="off"
+                aria-describedby="verifierKey-help"
                 placeholder={v.hasApiKey ? "Stored: leave empty to keep it" : ""}
               />
-              <p className="text-xs text-muted-foreground">
-                Write-only. Changing the host requires entering the key again.
-              </p>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="verifierPath">
-                Response field with the result (e.g. result.status)
-              </Label>
+              <Callout tone="warning">Changing the host requires a new key.</Callout>
+            </SettingRow>
+            <SettingRow
+              htmlFor="verifierPath"
+              label="Response field with the result (e.g. result.status)"
+            >
               <Input
                 id="verifierPath"
                 name="statusPath"
+                className="font-mono md:text-[13px]"
                 defaultValue={v.statusPath}
                 pattern="[A-Za-z0-9_.]{1,64}"
                 required
               />
-            </div>
+            </SettingRow>
           </>
         )}
         {v.lastError && (
-          <p role="alert" className="text-sm text-red-700">
+          <p
+            role="alert"
+            className="mb-3 rounded-md border border-danger-solid/30 bg-danger-tint px-3.5 py-3 text-[13px]/[18px]"
+          >
             Last verifier error: {v.lastError.reason}
             {v.lastError.at && ` (${new Date(v.lastError.at).toLocaleString()})`}
           </p>
         )}
-        <div className="flex items-center gap-3">
-          <Button type="submit">Save verifier</Button>
-          <p role="status" className="text-sm">
+        <div className="flex items-center justify-end gap-3 border-t border-border pt-4">
+          <p role="status" className="mr-auto text-[13px]/[18px]">
             {msg}
           </p>
+          <Button type="submit">Save verifier</Button>
         </div>
       </form>
-    </Card>
+    </SettingsCard>
   );
 }

@@ -1,8 +1,9 @@
 import { actorLabels, listAuditLogs } from "@rightnow/core";
 import { prisma } from "@rightnow/db";
 import Link from "next/link";
+import { SettingsCard } from "./settings-row";
+import { TableFrame } from "./table-kit";
 import { Button } from "./ui/button";
-import { Card } from "./ui/card";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 
@@ -39,48 +40,72 @@ export async function AuditLog({
     logs.map((l) => l.actorId),
   );
   return (
-    <Card id="audit" className="flex flex-col gap-4">
-      <h2 className="text-lg font-medium">Audit log</h2>
-      <form method="get" action="/settings#audit" className="flex items-end gap-3">
+    <SettingsCard id="audit-log" title="Audit log">
+      <form method="get" action="/settings#audit-log" className="flex flex-wrap items-end gap-2">
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="audit-action">Action starts with</Label>
-          <Input id="audit-action" name="action" defaultValue={action} placeholder="auth." />
+          <Input
+            id="audit-action"
+            name="action"
+            className="font-mono md:text-[13px]"
+            defaultValue={action}
+            placeholder="auth."
+          />
         </div>
         <Button type="submit" variant="outline">
           Filter
         </Button>
       </form>
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-left text-muted-foreground">
-            <th className="py-1 font-medium">Time</th>
-            <th className="py-1 font-medium">Who</th>
-            <th className="py-1 font-medium">Action</th>
-            <th className="py-1 font-medium">Target</th>
-            <th className="py-1 font-medium">Details</th>
-          </tr>
-        </thead>
-        <tbody>
-          {logs.map((l) => (
-            <tr key={l.id} className="border-t border-border align-top">
-              <td className="py-1.5 whitespace-nowrap">{l.createdAt.toLocaleString()}</td>
-              <td className="py-1.5">{(l.actorId && who.get(l.actorId)) || "system"}</td>
-              <td className="py-1.5 font-mono">{l.action}</td>
-              <td className="py-1.5 break-all">{l.target}</td>
-              <td className="py-1.5 break-all font-mono text-xs">{show(l.meta)}</td>
+      <TableFrame>
+        <table aria-label="Audit log">
+          <thead>
+            <tr>
+              <th scope="col">Time</th>
+              <th scope="col">Who</th>
+              <th scope="col">Action</th>
+              <th scope="col" className="hidden md:table-cell">
+                Target
+              </th>
+              <th scope="col" className="hidden md:table-cell">
+                Details
+              </th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-      {logs.length === 0 && <p className="text-sm text-muted-foreground">No matching entries.</p>}
+          </thead>
+          <tbody>
+            {logs.map((l) => (
+              <tr key={l.id} className="align-top">
+                <td className="whitespace-nowrap text-fg-muted tabular-nums">
+                  {l.createdAt.toLocaleString()}
+                </td>
+                <td>{(l.actorId && who.get(l.actorId)) || "system"}</td>
+                <td className="font-mono text-[13px]">{l.action}</td>
+                <td className="hidden max-w-48 break-all text-fg-muted md:table-cell">
+                  {l.target}
+                </td>
+                <td className="hidden max-w-64 font-mono text-xs break-all text-fg-subtle md:table-cell">
+                  {show(l.meta)}
+                </td>
+              </tr>
+            ))}
+            {logs.length === 0 && (
+              <tr>
+                <td colSpan={5} className="py-8 text-center text-fg-muted">
+                  No matching entries.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </TableFrame>
       {nextCursor && (
-        <Link
-          className="text-sm text-primary underline"
-          href={`/settings?${new URLSearchParams({ ...(action && { action }), cursor: nextCursor })}#audit`}
-        >
-          Older entries
-        </Link>
+        <Button asChild variant="outline" size="sm" className="self-start">
+          <Link
+            href={`/settings?${new URLSearchParams({ ...(action && { action }), cursor: nextCursor })}#audit-log`}
+          >
+            Next page
+          </Link>
+        </Button>
       )}
-    </Card>
+    </SettingsCard>
   );
 }

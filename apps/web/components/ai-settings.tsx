@@ -2,10 +2,12 @@
 
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
+import { SettingRow, SettingsCard } from "./settings-row";
+import { StatusPill } from "./status-pill";
 import { Button } from "./ui/button";
-import { Card } from "./ui/card";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
+import { Switch } from "./ui/switch";
 
 type Props = {
   baseUrl?: string;
@@ -30,6 +32,7 @@ const ERRORS: Record<string, string> = {
 export function AiSettings(s: Props) {
   const router = useRouter();
   const [msg, setMsg] = useState("");
+  const [classify, setClassify] = useState(!!s.classifierEnabled);
 
   async function save(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -54,76 +57,89 @@ export function AiSettings(s: Props) {
   }
 
   return (
-    <Card key={JSON.stringify(s)}>
-      <form onSubmit={save} className="flex flex-col gap-4">
-        <h2 className="text-lg font-medium">AI</h2>
-        <p className="text-xs text-muted-foreground">
-          Any OpenAI-compatible endpoint (hosted, or a local server). AI never sends anything: its
-          text waits for your approval. Usage is billed by your provider.
-        </p>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="aiBaseUrl">AI base URL</Label>
+    <SettingsCard
+      key={JSON.stringify(s)}
+      id="ai"
+      title="AI"
+      status={
+        s.hasApiKey ? (
+          <StatusPill tone="success">Key saved</StatusPill>
+        ) : (
+          <StatusPill tone="neutral">No key</StatusPill>
+        )
+      }
+      description="Any OpenAI-compatible endpoint (hosted, or a local server). AI never sends anything: its text waits for your approval. Usage is billed by your provider."
+    >
+      <form onSubmit={save} className="flex flex-col">
+        <SettingRow htmlFor="aiBaseUrl" label="AI base URL">
           <Input
             id="aiBaseUrl"
             name="baseUrl"
             type="url"
+            className="font-mono md:text-[13px]"
             defaultValue={s.baseUrl}
             placeholder="https://api.openai.com/v1"
             required
           />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="aiModel">AI model</Label>
+        </SettingRow>
+        <SettingRow htmlFor="aiModel" label="AI model">
           <Input id="aiModel" name="model" defaultValue={s.model} required />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="aiKey">AI provider key</Label>
+        </SettingRow>
+        <SettingRow
+          htmlFor="aiKey"
+          label="AI provider key"
+          helper="Write-only. Changing the host requires entering the key again."
+        >
           <Input
             id="aiKey"
             name="apiKey"
             type="password"
             autoComplete="off"
+            aria-describedby="aiKey-help"
             placeholder={s.hasApiKey ? "Stored: leave empty to keep it" : ""}
           />
-          <p className="text-xs text-muted-foreground">
-            Write-only. Changing the host requires entering the key again.
-          </p>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="aiIn">Input price (USD per 1M tokens)</Label>
-            <Input
-              id="aiIn"
-              name="inputPricePerMTok"
-              type="number"
-              min="0"
-              step="any"
-              defaultValue={s.inputPricePerMTok}
-            />
+        </SettingRow>
+        <SettingRow label="Prices (USD per 1M tokens)">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="aiIn">Input price (USD per 1M tokens)</Label>
+              <Input
+                id="aiIn"
+                name="inputPricePerMTok"
+                type="number"
+                min="0"
+                step="any"
+                defaultValue={s.inputPricePerMTok}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="aiOut">Output price (USD per 1M tokens)</Label>
+              <Input
+                id="aiOut"
+                name="outputPricePerMTok"
+                type="number"
+                min="0"
+                step="any"
+                defaultValue={s.outputPricePerMTok}
+              />
+            </div>
           </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="aiOut">Output price (USD per 1M tokens)</Label>
-            <Input
-              id="aiOut"
-              name="outputPricePerMTok"
-              type="number"
-              min="0"
-              step="any"
-              defaultValue={s.outputPricePerMTok}
-            />
-          </div>
-        </div>
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" name="classifierEnabled" defaultChecked={s.classifierEnabled} />
-          Use AI for uncertain replies
-        </label>
-        <div className="flex items-center gap-3">
-          <Button type="submit">Save AI settings</Button>
-          <p role="status" className="text-sm">
+        </SettingRow>
+        <SettingRow label="Reply classifier">
+          <Switch
+            name="classifierEnabled"
+            label="Use AI for uncertain replies"
+            checked={classify}
+            onChange={(e) => setClassify(e.target.checked)}
+          />
+        </SettingRow>
+        <div className="flex items-center justify-end gap-3 border-t border-border pt-4">
+          <p role="status" className="mr-auto text-[13px]/[18px]">
             {msg}
           </p>
+          <Button type="submit">Save AI settings</Button>
         </div>
       </form>
-    </Card>
+    </SettingsCard>
   );
 }

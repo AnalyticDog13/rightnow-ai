@@ -1,7 +1,12 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { Copy, KeyRound } from "lucide-react";
 import { useState, type FormEvent } from "react";
+import { Callout } from "./callout";
+import { chipClass } from "./overlay";
+import { StatusPill } from "./status-pill";
+import { TableEmpty, TableFrame } from "./table-kit";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { Input } from "./ui/input";
@@ -30,6 +35,7 @@ export function ApiKeys({ keys, scopes }: { keys: Key[]; scopes: string[] }) {
   const router = useRouter();
   const [error, setError] = useState("");
   const [token, setToken] = useState("");
+  const [copied, setCopied] = useState(false);
 
   async function create(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -61,67 +67,120 @@ export function ApiKeys({ keys, scopes }: { keys: Key[]; scopes: string[] }) {
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-semibold tracking-tight">API keys</h1>
-      <p role="alert" className="min-h-5 text-sm text-destructive">
+    <div className="flex flex-col gap-6 lg:max-w-240">
+      <p role="alert" className="text-[13px]/[18px] text-danger empty:hidden">
         {error}
       </p>
       {token && (
-        <Card role="status" className="flex flex-col gap-2">
+        <Card role="status" className="flex flex-col gap-3">
           <p className="text-sm font-medium">Copy this key now. It is shown only once.</p>
-          <code className="break-all rounded-md bg-muted p-2 text-sm" data-testid="new-token">
-            {token}
-          </code>
-          <Button variant="outline" className="self-start" onClick={() => setToken("")}>
+          <div className="flex flex-wrap items-start gap-2">
+            <code
+              className="min-w-0 flex-1 rounded-md border border-border bg-sunken px-3 py-2 font-mono text-[13px] break-all"
+              data-testid="new-token"
+            >
+              {token}
+            </code>
+            <Button
+              variant="outline"
+              onClick={() => void navigator.clipboard?.writeText(token).then(() => setCopied(true))}
+            >
+              <Copy aria-hidden />
+              {copied ? "Copied" : "Copy"}
+            </Button>
+          </div>
+          <Callout tone="warning">
+            It will not be shown again. Store it in a password manager.
+          </Callout>
+          <Button
+            variant="outline"
+            size="sm"
+            className="self-start"
+            onClick={() => {
+              setToken("");
+              setCopied(false);
+            }}
+          >
             I have copied it
           </Button>
         </Card>
       )}
       <Card>
         <form onSubmit={create} className="flex flex-col gap-4">
-          <h2 className="text-lg font-medium">Create a key</h2>
-          <div className="flex flex-col gap-1.5">
+          <h2 className="text-base font-semibold">Create a key</h2>
+          <div className="flex flex-col gap-1.5 sm:max-w-sm">
             <Label htmlFor="name">Name</Label>
             <Input id="name" name="name" maxLength={100} required />
           </div>
           <fieldset className="flex flex-col gap-2">
-            <legend className="mb-1 text-sm font-medium">Scopes</legend>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <legend className="mb-1.5 text-[13px]/[18px] font-medium">Scopes</legend>
+            <div className="grid grid-cols-1 gap-x-4 gap-y-1 rounded-md border border-border p-3 font-mono text-[13px] sm:grid-cols-2 lg:grid-cols-3">
               {scopes.map((s) => (
-                <label key={s} className="flex items-center gap-2 text-sm">
+                <label key={s} className="flex min-h-11 items-center gap-2 md:min-h-7">
                   <input type="checkbox" name="scope" value={s} /> {s}
                 </label>
               ))}
             </div>
           </fieldset>
-          <Button type="submit" className="self-start">
+          <Button type="submit" className="self-end">
+            <KeyRound aria-hidden />
             Create key
           </Button>
         </form>
       </Card>
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm">
+      <TableFrame>
+        <table aria-label="API keys">
           <thead>
-            <tr className="border-b border-border">
-              {["Name", "Prefix", "Scopes", "Created", "Last used", "Status", ""].map((h, i) => (
-                <th key={i} className="p-2 font-medium">
-                  {h || <span className="sr-only">Actions</span>}
-                </th>
-              ))}
+            <tr>
+              <th scope="col">Name</th>
+              <th scope="col" className="hidden md:table-cell">
+                Scopes
+              </th>
+              <th scope="col" className="hidden md:table-cell">
+                Created
+              </th>
+              <th scope="col" className="hidden md:table-cell">
+                Last used
+              </th>
+              <th scope="col">Status</th>
+              <th scope="col" className="text-right">
+                <span className="sr-only">Actions</span>
+              </th>
             </tr>
           </thead>
           <tbody>
             {keys.map((k) => (
-              <tr key={k.id} className="border-b border-border">
-                <td className="p-2">{k.name}</td>
-                <td className="p-2 font-mono">rn_{k.prefix}</td>
-                <td className="p-2">{k.scopes.join(", ")}</td>
-                <td className="p-2">{fmt(k.createdAt)}</td>
-                <td className="p-2">{fmt(k.lastUsedAt)}</td>
-                <td className="p-2">{k.revokedAt ? `Revoked ${fmt(k.revokedAt)}` : "Active"}</td>
-                <td className="p-2">
+              <tr key={k.id} className={k.revokedAt ? "[&>td]:text-fg-muted" : undefined}>
+                <td className="py-2">
+                  <div className="font-medium">{k.name}</div>
+                  <div className="font-mono text-xs text-fg-subtle">rn_{k.prefix}</div>
+                </td>
+                <td className="hidden max-w-72 md:table-cell">
+                  <span className="flex flex-wrap gap-1">
+                    {k.scopes.map((s) => (
+                      <span key={s} className={chipClass}>
+                        {s}
+                      </span>
+                    ))}
+                  </span>
+                </td>
+                <td className="hidden whitespace-nowrap md:table-cell">{fmt(k.createdAt)}</td>
+                <td className="hidden whitespace-nowrap md:table-cell">{fmt(k.lastUsedAt)}</td>
+                <td className="whitespace-nowrap text-[13px]/[18px]">
+                  {k.revokedAt ? (
+                    <>
+                      <StatusPill tone="neutral" outline>
+                        Revoked
+                      </StatusPill>{" "}
+                      {fmt(k.revokedAt)}
+                    </>
+                  ) : (
+                    <StatusPill tone="success">Active</StatusPill>
+                  )}
+                </td>
+                <td className="text-right">
                   {!k.revokedAt && (
-                    <Button variant="outline" onClick={() => revoke(k)}>
+                    <Button variant="danger-ghost" size="sm" onClick={() => revoke(k)}>
                       Revoke<span className="sr-only"> {k.name}</span>
                     </Button>
                   )}
@@ -129,15 +188,16 @@ export function ApiKeys({ keys, scopes }: { keys: Key[]; scopes: string[] }) {
               </tr>
             ))}
             {keys.length === 0 && (
-              <tr>
-                <td colSpan={7} className="p-4 text-center text-muted-foreground">
-                  No API keys yet.
-                </td>
-              </tr>
+              <TableEmpty
+                colSpan={6}
+                icon={KeyRound}
+                title="No API keys yet."
+                body="Create one to use the REST API or connect another tool."
+              />
             )}
           </tbody>
         </table>
-      </div>
+      </TableFrame>
     </div>
   );
 }

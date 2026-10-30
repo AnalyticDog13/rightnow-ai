@@ -7,16 +7,19 @@ import {
 import { prisma } from "@rightnow/db";
 import type { Metadata } from "next";
 import { headers } from "next/headers";
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AiSettings } from "../../../components/ai-settings";
 import { AuditLog } from "../../../components/audit-log";
+import { Callout } from "../../../components/callout";
 import { LabelsSettings } from "../../../components/labels-settings";
 import { MembersSettings } from "../../../components/members-settings";
+import { PageHeader } from "../../../components/page-header";
+import { SectionTabs } from "../../../components/section-tabs";
 import { SecuritySettings } from "../../../components/security-settings";
 import { VerifierSettings } from "../../../components/verifier-settings";
 import { WorkspaceSettings } from "../../../components/workspace-settings";
 import { getSessionInfo } from "../../../lib/workspace";
+import { SETTINGS_TABS } from "./tabs";
 
 export const metadata: Metadata = { title: "Settings" };
 export const dynamic = "force-dynamic";
@@ -57,38 +60,64 @@ export default async function Page({
       ])
     : [[], []];
   const q = await searchParams;
+  const member = info.role !== "VIEWER";
+  // the "On this page" nav lists only the sections this role can see
+  const sections = [
+    ["workspace", "Workspace", true],
+    ["members", "Members", admin],
+    ["labels", "Labels", member],
+    ["security", "Security", true],
+    ["ai", "AI", admin],
+    ["verifier", "Email verification", !!verifier],
+    ["audit-log", "Audit log", member],
+  ].filter(([, , on]) => on) as [string, string, boolean][];
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-      {s ? (
-        <WorkspaceSettings {...s} physicalAddress={s.physicalAddress ?? ""} />
-      ) : (
-        <p className="text-sm text-muted-foreground">
-          Only workspace owners and admins can change settings.
-        </p>
-      )}
-      {admin && (
-        <MembersSettings
-          members={members.map((m) => ({
-            id: m.id,
-            name: m.user.name,
-            email: m.user.email,
-            role: m.role,
-            self: m.userId === info.userId,
-          }))}
-          invites={invites.map((i) => ({ ...i, expiresAt: i.expiresAt.toISOString() }))}
-        />
-      )}
-      {info.role !== "VIEWER" && <LabelsSettings labels={await listLabels(prisma, ws)} />}
-      <SecuritySettings enabled={me.twoFactorEnabled} />
-      {admin && <AiSettings {...(ai ?? {})} />}
-      {verifier && <VerifierSettings {...verifier} />}
-      {info.role !== "VIEWER" && <AuditLog workspaceId={ws} action={q.action} cursor={q.cursor} />}
-      <p className="text-sm">
-        <Link className="text-primary underline" href="/settings/api-keys">
-          API keys
-        </Link>
-      </p>
+      <PageHeader title="Settings" tabs={<SectionTabs tabs={SETTINGS_TABS} />} />
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+        <nav
+          aria-label="Settings sections"
+          className="-mx-4 flex gap-1 overflow-x-auto px-4 [scrollbar-width:none] md:mx-0 md:px-0 lg:sticky lg:top-16 lg:w-50 lg:shrink-0 lg:flex-col"
+        >
+          {sections.map(([id, label]) => (
+            <a
+              key={id}
+              href={`#${id}`}
+              className="inline-flex h-9 shrink-0 items-center rounded-sm px-2.5 text-sm font-medium text-fg-muted hover:bg-hover hover:text-fg max-lg:h-11 max-lg:border max-lg:border-border max-lg:bg-surface"
+            >
+              {label}
+            </a>
+          ))}
+        </nav>
+        <div className="flex min-w-0 flex-1 flex-col gap-6 lg:max-w-180">
+          {s ? (
+            <WorkspaceSettings {...s} physicalAddress={s.physicalAddress ?? ""} />
+          ) : (
+            <section id="workspace" className="scroll-mt-16">
+              <Callout tone="neutral">
+                Only workspace owners and admins can change settings.
+              </Callout>
+            </section>
+          )}
+          {admin && (
+            <MembersSettings
+              members={members.map((m) => ({
+                id: m.id,
+                name: m.user.name,
+                email: m.user.email,
+                role: m.role,
+                self: m.userId === info.userId,
+              }))}
+              invites={invites.map((i) => ({ ...i, expiresAt: i.expiresAt.toISOString() }))}
+            />
+          )}
+          {member && <LabelsSettings labels={await listLabels(prisma, ws)} />}
+          <SecuritySettings enabled={me.twoFactorEnabled} />
+          {admin && <AiSettings {...(ai ?? {})} />}
+          {verifier && <VerifierSettings {...verifier} />}
+          {member && <AuditLog workspaceId={ws} action={q.action} cursor={q.cursor} />}
+        </div>
+      </div>
     </div>
   );
 }
