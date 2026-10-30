@@ -383,6 +383,8 @@ export async function warmupTick(
         x.accountId.localeCompare(y.accountId),
     )[0];
     if (!peer) return;
+    // reserve before any await: concurrent senders (mapLimit) must see this pick when ranking
+    received.set(peer.accountId, got(peer) + 1);
     // shortcut: window end taken as local 20:00 by plain addition, an hour off on a DST-change day
     const secLeft = Math.max(
       0,
@@ -393,8 +395,10 @@ export async function warmupTick(
       where: { accountId: s.accountId, OR: [{ nextAt: null }, { nextAt: { lte: now } }] },
       data: { nextAt: new Date(now.getTime() + gap * 1000) },
     });
-    if (!claim.count) return;
-    received.set(peer.accountId, got(peer) + 1);
+    if (!claim.count) {
+      received.set(peer.accountId, got(peer) - 1);
+      return;
+    }
     const row = await prisma.warmupMessage.create({
       data: {
         workspaceId: s.workspaceId,
