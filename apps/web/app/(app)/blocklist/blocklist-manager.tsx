@@ -1,11 +1,22 @@
 "use client";
 
+import { Ban, Search, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { BulkToolbar, NextPage, SortTh, useSort } from "../../../components/table-kit";
+import { pillFor, StatusPill, SUPPRESSION } from "../../../components/status-pill";
+import {
+  BulkToolbar,
+  NextPage,
+  SearchInput,
+  SortTh,
+  TableEmpty,
+  TableFrame,
+  useSort,
+} from "../../../components/table-kit";
 import { Button } from "../../../components/ui/button";
 import { Card } from "../../../components/ui/card";
-import { Input } from "../../../components/ui/input";
+import { Textarea } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
+import { Select } from "../../../components/ui/select";
 import { call, errorText } from "../accounts/api-client";
 import { REASON } from "../leads/labels";
 
@@ -17,7 +28,6 @@ type Row = {
   source: string | null;
   createdAt: string;
 };
-const sel = "h-10 rounded-md border border-border bg-card px-3 text-sm";
 
 export function BlocklistManager({ canEdit, isAdmin }: { canEdit: boolean; isAdmin: boolean }) {
   const [rows, setRows] = useState<Row[]>([]);
@@ -145,94 +155,106 @@ export function BlocklistManager({ canEdit, isAdmin }: { canEdit: boolean; isAdm
       return n;
     });
 
+  const filtered = q !== "" || reason !== "";
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-4">
       {canEdit && (
-        <form onSubmit={add} className="flex flex-col gap-2">
-          <Label htmlFor="bl-values">
-            Add emails or domains (separated by spaces, commas or new lines, up to 1000)
-          </Label>
-          <textarea
-            id="bl-values"
-            rows={3}
-            className="max-w-xl rounded-md border border-border bg-card p-3 text-sm"
-            placeholder="bad@example.com, spam-domain.com"
-            value={values}
-            onChange={(e) => setValues(e.target.value)}
-          />
-          <div className="flex flex-wrap items-center gap-2">
-            <Button type="submit" disabled={!values.trim()}>
-              Add to blocklist
-            </Button>
-            <Label htmlFor="bl-import" className="text-sm">
-              Import CSV
+        <Card className="max-w-3xl">
+          <form onSubmit={add} className="flex flex-col gap-3">
+            <Label htmlFor="bl-values">
+              Add emails or domains (separated by spaces, commas or new lines, up to 1000)
             </Label>
-            <input
-              id="bl-import"
-              type="file"
-              accept=".csv,text/csv"
-              onChange={(e) => void importFile(e.target.files?.[0])}
+            <Textarea
+              id="bl-values"
+              rows={3}
+              className="font-mono text-[13px]/5"
+              placeholder="bad@example.com, spam-domain.com"
+              value={values}
+              onChange={(e) => setValues(e.target.value)}
             />
-          </div>
-        </form>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              <Button type="submit" disabled={!values.trim()} className="max-md:w-full">
+                Add to blocklist
+              </Button>
+              <Button asChild variant="link">
+                <a href="/api/v1/blocklist/export" download="blocklist.csv">
+                  Export CSV
+                </a>
+              </Button>
+              <span className="flex items-center gap-2">
+                <Label htmlFor="bl-import" className="cursor-pointer text-signal hover:underline">
+                  Import CSV
+                </Label>
+                <input
+                  id="bl-import"
+                  type="file"
+                  accept=".csv,text/csv"
+                  className="max-w-56 text-[13px]/[18px] text-fg-muted file:mr-2 file:rounded-sm file:border file:border-border-strong file:bg-surface file:px-2 file:py-1 file:text-fg"
+                  onChange={(e) => void importFile(e.target.files?.[0])}
+                />
+              </span>
+            </div>
+          </form>
+        </Card>
       )}
-      <div className="flex flex-wrap items-center gap-2">
-        <Input
-          type="search"
-          aria-label="Search blocklist"
-          placeholder="Search"
-          className="max-w-xs"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-        />
-        <select
-          aria-label="Filter by reason"
-          className={sel}
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-        >
-          <option value="">All reasons</option>
-          {Object.entries(REASON).map(([k, v]) => (
-            <option key={k} value={k}>
-              {v}
-            </option>
-          ))}
-        </select>
-        <Button asChild variant="outline">
+      {!canEdit && (
+        <Button asChild variant="link" className="self-start">
           <a href="/api/v1/blocklist/export" download="blocklist.csv">
             Export CSV
           </a>
         </Button>
-        {isAdmin && (
-          <>
-            <Button variant="outline" onClick={clearAll}>
-              Remove all
-            </Button>
-          </>
-        )}
-      </div>
-      {isAdmin && selected.size > 0 && (
-        <BulkToolbar count={selected.size}>
-          <Button variant="outline" onClick={bulkRemove}>
+      )}
+      {isAdmin && selected.size > 0 ? (
+        <BulkToolbar count={selected.size} onClear={() => setSelected(new Set())}>
+          <Button variant="ghost" size="sm" onClick={bulkRemove}>
             Remove selected
           </Button>
         </BulkToolbar>
+      ) : (
+        <div className="flex min-h-12 flex-wrap items-center gap-2">
+          <SearchInput
+            aria-label="Search blocklist"
+            placeholder="Search"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+          <Select
+            size="sm"
+            aria-label="Filter by reason"
+            className="w-auto"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+          >
+            <option value="">All reasons</option>
+            {Object.entries(REASON).map(([k, v]) => (
+              <option key={k} value={k}>
+                Reason: {v}
+              </option>
+            ))}
+          </Select>
+          <span className="text-[13px]/[18px] text-fg-muted tabular-nums md:ml-auto">
+            {loading
+              ? "Loading…"
+              : `Showing ${rows.length}${total === null ? "" : ` of ${total}`} entries`}
+          </span>
+          {isAdmin && (
+            <Button variant="danger-ghost" size="sm" onClick={clearAll}>
+              <Trash2 aria-hidden />
+              Remove all
+            </Button>
+          )}
+        </div>
       )}
       {msg && (
         <p role="status" className="text-sm">
           {msg}
         </p>
       )}
-      <p className="text-sm text-muted-foreground">
-        {loading
-          ? "Loading…"
-          : `Showing ${rows.length}${total === null ? "" : ` of ${total}`} entries`}
-      </p>
-      <Card className="overflow-x-auto p-0">
-        <table aria-label="Blocklist" className="w-full text-left text-sm">
+      <TableFrame>
+        <table aria-label="Blocklist" aria-busy={loading || undefined}>
           <thead>
-            <tr className="border-b border-border">
-              <th className="w-10 p-3">
+            <tr>
+              <th scope="col" data-pin="check" className="w-11">
                 <input
                   type="checkbox"
                   aria-label={`Select all ${ids.length} loaded entries`}
@@ -241,69 +263,104 @@ export function BlocklistManager({ canEdit, isAdmin }: { canEdit: boolean; isAdm
                   onChange={() => setSelected(allOn ? new Set() : new Set(ids))}
                 />
               </th>
-              <SortTh col="value" sort={sort} onSort={sortBy}>
+              <SortTh col="value" sort={sort} onSort={sortBy} data-pin="id">
                 Value
               </SortTh>
-              <SortTh col="kind" sort={sort} onSort={sortBy}>
+              <SortTh col="kind" sort={sort} onSort={sortBy} className="hidden md:table-cell">
                 Type
               </SortTh>
               <SortTh col="reason" sort={sort} onSort={sortBy}>
                 Reason
               </SortTh>
-              <SortTh col="source" sort={sort} onSort={sortBy}>
+              <SortTh col="source" sort={sort} onSort={sortBy} className="hidden md:table-cell">
                 Source
               </SortTh>
-              <SortTh col="added" sort={sort} onSort={sortBy}>
+              <SortTh col="added" sort={sort} onSort={sortBy} className="hidden md:table-cell">
                 Added
               </SortTh>
-              <th scope="col" className="p-3 font-medium">
+              <th scope="col" className="text-right">
                 Actions
               </th>
             </tr>
           </thead>
           <tbody>
-            {sorted.map((r) => (
-              <tr key={r.id} className="border-b border-border">
-                <td className="p-3">
-                  <input
-                    type="checkbox"
-                    aria-label={`Select ${r.value ?? "erased address"}`}
-                    checked={selected.has(r.id)}
-                    disabled={!isAdmin}
-                    onChange={() => toggle(r.id)}
-                  />
-                </td>
-                <td className="p-3">{r.value ?? <em>erased (hash only)</em>}</td>
-                <td className="p-3">{r.kind === "EMAIL" ? "Email" : "Domain"}</td>
-                <td className="p-3">{REASON[r.reason]}</td>
-                <td className="p-3">{r.source}</td>
-                <td className="p-3">{r.createdAt.slice(0, 10)}</td>
-                <td className="p-3">
-                  {isAdmin && !["GDPR_ERASURE", "COMPLAINT"].includes(r.reason) && (
+            {sorted.map((r) => {
+              const label = REASON[r.reason] ?? r.reason;
+              return (
+                <tr key={r.id} aria-selected={selected.has(r.id)}>
+                  <td data-pin="check">
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${r.value ?? "erased address"}`}
+                      checked={selected.has(r.id)}
+                      disabled={!isAdmin}
+                      onChange={() => toggle(r.id)}
+                    />
+                  </td>
+                  <td data-pin="id" className="max-w-44 truncate font-mono text-[13px] md:max-w-80">
+                    {r.value ?? <em className="font-sans text-fg-subtle">erased (hash only)</em>}
+                  </td>
+                  <td className="hidden md:table-cell">
+                    {r.kind === "EMAIL" ? "Email" : "Domain"}
+                  </td>
+                  <td>
+                    <StatusPill {...pillFor(SUPPRESSION, label)}>{label}</StatusPill>
+                  </td>
+                  <td className="hidden text-fg-muted md:table-cell">
+                    {r.source ?? <span className="text-fg-subtle">-</span>}
+                  </td>
+                  <td className="hidden whitespace-nowrap tabular-nums md:table-cell">
+                    {r.createdAt.slice(0, 10)}
+                  </td>
+                  <td className="text-right">
+                    {isAdmin && !["GDPR_ERASURE", "COMPLAINT"].includes(r.reason) && (
+                      <Button
+                        variant="danger-ghost"
+                        size="sm"
+                        aria-label={`Remove ${r.value ?? "erased address"} from the blocklist`}
+                        onClick={() => remove(r)}
+                      >
+                        <Trash2 aria-hidden />
+                        <span className="max-lg:sr-only">Remove</span>
+                      </Button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+            {!loading &&
+              rows.length === 0 &&
+              (filtered ? (
+                <TableEmpty
+                  colSpan={7}
+                  icon={Search}
+                  title="No entries match these filters."
+                  actions={
                     <Button
-                      variant="outline"
-                      className="h-8 px-2 text-xs"
-                      aria-label={`Remove ${r.value ?? "erased address"} from the blocklist`}
-                      onClick={() => remove(r)}
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setQ("");
+                        setReason("");
+                      }}
                     >
-                      Remove
+                      Clear filters
                     </Button>
-                  )}
-                </td>
-              </tr>
-            ))}
-            {!loading && rows.length === 0 && (
-              <tr>
-                <td colSpan={7} className="p-6 text-center text-muted-foreground">
-                  The blocklist is empty.
-                </td>
-              </tr>
-            )}
+                  }
+                />
+              ) : (
+                <TableEmpty
+                  colSpan={7}
+                  icon={Ban}
+                  title="Nothing is blocked yet."
+                  body="Unsubscribes, hard bounces and complaints will appear here automatically."
+                />
+              ))}
           </tbody>
         </table>
-      </Card>
+      </TableFrame>
       {sort && next && (
-        <p role="status" className="text-sm text-muted-foreground">
+        <p role="status" className="text-[13px]/[18px] text-fg-muted">
           Sorted within the {rows.length} rows loaded.
         </p>
       )}
