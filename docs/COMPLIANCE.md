@@ -1,6 +1,6 @@
 # Compliance notes (PS-SEC-09 to -13)
 
-These are engineering notes for the person running RightNow, not legal advice. The sender is responsible for the lists they upload and the mail they send. Ask a lawyer about your own case.
+These are engineering notes for the person running rightnow, not legal advice. The sender is responsible for the lists they upload and the mail they send. Ask a lawyer about your own case.
 
 ## What the software enforces
 

@@ -1,7 +1,7 @@
 # Handoff
 
 **Phase:** 8 — Final verification DONE and merged to `main`. All phases complete.
-**Current task:** none. Project complete per IMPLEMENTATION_PLAN. Open items are the user decisions in docs/RELEASE_CHECK.md (lawyer review, RightNow.ai trademark search, LGPL libvips via sharp) and D17 live provider verification with real credentials (docs/ops/LIVE_VERIFICATION.md), required before real Gmail/Graph/IMAP campaign sending. Accepted residuals: docs/FINAL_ASSESSMENT.md.
+**Current task:** none. Project complete per IMPLEMENTATION_PLAN. Open items are the user decisions in docs/RELEASE_CHECK.md (lawyer review, rightnow.ai trademark search, LGPL libvips via sharp) and D17 live provider verification with real credentials (docs/ops/LIVE_VERIFICATION.md), required before real Gmail/Graph/IMAP campaign sending. Accepted residuals: docs/FINAL_ASSESSMENT.md.
 **Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 (approved). Done step plans: `docs/plans/phase-1.md` … `phase-5.md` (+ `phase-4-review.md`, `phase-5-review.md`).
 **Tests:** ~1290 vitest + Playwright (auth, accounts*, campaign-create, deliverability, inbox, leads, test-send …) green; CI `check`, `compose-smoke`, `imap-real` green. Parity: 311/316 ticked.
 

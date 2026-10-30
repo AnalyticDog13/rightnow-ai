@@ -185,7 +185,7 @@ No individual Claude conversation or temporary cloud environment should be the s
 
 The GitHub repository, `CLAUDE.md`, implementation plan, task records, and handoff documentation must provide everything necessary for recovery.
 
-# Build a Complete Open-Source Instantly.ai Alternative called RightNow\.ai
+# Build a Complete Open-Source Instantly.ai Alternative called rightnow\.ai
 
 ## PRIMARY MISSION
 

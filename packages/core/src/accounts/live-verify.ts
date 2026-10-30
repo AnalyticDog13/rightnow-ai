@@ -53,8 +53,8 @@ export async function liveVerify(
     const r = await provider.send({
       from: { email: provider.address },
       to: [{ email: to }],
-      subject: "RightNow live verification",
-      text: "Live verification message from RightNow. Safe to delete.",
+      subject: "rightnow live verification",
+      text: "Live verification message from rightnow. Safe to delete.",
       messageId,
       headers: { "X-RightNow-Test": "1" },
     });

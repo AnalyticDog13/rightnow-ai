@@ -71,7 +71,7 @@ export async function sendTestEmail(
 
   const rfcMessageId = newMessageId(domainOf(a.email));
   const body =
-    "This is a test message sent from RightNow to check this account. No reply is needed.";
+    "This is a test message sent from rightnow to check this account. No reply is needed.";
   try {
     const r = await (await providerOf(prisma, { clock, providerFor: deps.providerFor })(a)).send({
       from: { email: a.email, name: a.fromName },
@@ -80,7 +80,7 @@ export async function sendTestEmail(
       ...(p.content
         ? { subject: p.content.subject, text: p.content.text, html: p.content.html ?? undefined }
         : {
-            subject: "RightNow test email",
+            subject: "rightnow test email",
             text: a.signature ? `${body}\n\n${a.signature}` : body,
           }),
       messageId: rfcMessageId,

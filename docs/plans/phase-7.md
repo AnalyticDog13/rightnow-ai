@@ -94,7 +94,7 @@
     `docs/API.md` tells consumers to reject `|now − t| > 300 s` and to dedupe on the event id.
   - **Delivery.** At-least-once, unordered, documented.
     - `webhook-deliver` (cron each minute, a loop of up to 50 s with a 2 s idle sleep, stately) claims ≤ 20 rows `status = PENDING AND nextAttemptAt <= now` joined to an ACTIVE webhook, `FOR UPDATE SKIP LOCKED`, and sets `SENDING, leaseUntil = now + 60 s, attempts + 1`. Then it commits.
-    - The POST runs through `safeRequest` (10 s timeout, 64 KB of the response read and discarded, `User-Agent: RightNow-Webhooks/1`), 5 at a time.
+    - The POST runs through `safeRequest` (10 s timeout, 64 KB of the response read and discarded, `User-Agent: rightnow-Webhooks/1`), 5 at a time.
     - The result write is conditioned on `WHERE id AND status = 'SENDING' AND attempts = :n`. A 2xx → `DELIVERED`. Anything else (3xx, since redirects are not followed, 4xx, 5xx, network error, timeout) → `PENDING` with `nextAttemptAt = now + max(BACKOFF[n−1], Retry-After)`, Retry-After capped at 8 h. After 8 attempts → `FAILED`.
     - `BACKOFF_SEC = [60, 300, 1800, 7200, 18000, 28800, 28800]`, about 23.6 h over 8 attempts (PS-AUTO-08).
     - A lease that expires (worker died mid-request) puts the row back to `PENDING`, and the attempt counts.
@@ -115,7 +115,7 @@
   - **OpenAPI.** `route()` attaches `meta = {auth, role, scope, body, query}` to the handler it returns. `scripts/openapi.ts` imports every `apps/web/app/api/v1/**/route.ts` and builds OpenAPI 3.1 from the folder path (`[id]` → `{id}`, `%5F` → `_`), the method exports and `z.toJSONSchema(meta.body | meta.query)`, then writes the committed `docs/openapi.json`. A test regenerates it and fails on drift. `GET /api/v1/openapi.json` (public) serves the file. Responses are documented as `200 application/json` (`shortcut: no response schemas, add them when a client generator needs them`).
   - **Long-running operations** return `202 {jobId}` through `BackgroundJob(kind, status PENDING|RUNNING|DONE|FAILED, input, progress, result, error, attempts)`. The `background-jobs` cron runs the oldest PENDING job per tick, with the `lead-import` stale and 3-reset rules. Kinds: `leads_bulk` (T03a), `ai_personalize` (T05b) and `placement_run` (T09). Imports and verification keep their own D38/P3 flows, and `GET /jobs/:id` documents both.
   - **New scopes:** `webhooks`, `automations`, `ai`, `jobs`, `audit`, `workspace`.
-  - The Instantly v2 → RightNow v1 mapping table lives in `docs/API.md`. SDK, CLI and MCP are out of scope (PS-AUTO-14).
+  - The Instantly v2 → rightnow v1 mapping table lives in `docs/API.md`. SDK, CLI and MCP are out of scope (PS-AUTO-14).
 - **D46 · A/B auto-optimize (T04).**
   - The `ab-optimize` job (cron `17 * * * *`) checks every step of an ACTIVE campaign with `abAutoOptimize` and ≥ 2 active variants. Per variant: `n` = unique leads with an ACCEPTED Event, `k` = unique leads with the `abWinnerMetric` event (reply: REPLY; click: non-scanner CLICK; open: non-machine OPEN, labelled estimated). The default metric is `reply`.
   - **Deactivation.** A variant `v` is deactivated when `n_v ≥ 100` and `n_best ≥ 100` (`best` = the highest `k/n`), `v` is not `best`, and the two-proportion z-score `(p_best − p_v) / sqrt(p(1−p)(1/n_best + 1/n_v)) ≥ 1.96` (pooled `p`).

@@ -1,6 +1,6 @@
 # Offline recovery (laptop asleep, switched off, or worker down)
 
-RightNow sends only from a machine that is running. When it sleeps, is switched off or the worker is stopped, nothing
+rightnow sends only from a machine that is running. When it sleeps, is switched off or the worker is stopped, nothing
 is sent and nothing is synced. This page says what happens when it comes back, what is rebuilt from the mailboxes and
 what is lost. The behaviour is proven by `packages/core/test/e2e/downtime.test.ts` (1, 7 and 30 days, after a sleep
 and after a cold boot).

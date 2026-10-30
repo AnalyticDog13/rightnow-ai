@@ -1,4 +1,4 @@
-# RightNow.ai Product Specification (Instantly.ai feature parity)
+# rightnow.ai Product Specification (Instantly.ai feature parity)
 
 Status: research draft, 2026-10-19. Sources are Instantly's public help center (help.instantly.ai), developer docs (developer.instantly.ai, API v2) and public pages. Nothing here is copied from Instantly beyond short phrases; no Instantly code, assets or branding are reused.
 
@@ -16,7 +16,7 @@ Status: research draft, 2026-10-19. Sources are Instantly's public help center (
 5. Anything Instantly does that depends on its private infrastructure (warm-up pool, AirMail/DFY mailboxes, SuperSearch database, shared reputation data) is listed in section 19 as not reproducible and is replaced by an honest alternative.
 6. Live sending stays behind the Provider Compliance Gate (PS-DEPLOY-14).
 
-**Item format.** `- [ ] PS-<AREA>-NN: requirement — Instantly behavior/defaults (source key)`. Source keys resolve in section 20. "(undocumented)" means Instantly's public docs do not state the behavior; RightNow picks a documented-in-DECISIONS.md default. `[optional]` appears only where the master prompt says optional.
+**Item format.** `- [ ] PS-<AREA>-NN: requirement — Instantly behavior/defaults (source key)`. Source keys resolve in section 20. "(undocumented)" means Instantly's public docs do not state the behavior; rightnow picks a documented-in-DECISIONS.md default. `[optional]` appears only where the master prompt says optional.
 
 Areas: UI, ACC, WARM, CAMP, SEQ, SEND, LEAD, INBOX, TRACK, CRM, ANALYTICS, AUTO, AI, SEC, REWARM, SYNC, DEPLOY.
 
@@ -33,7 +33,7 @@ Areas: UI, ACC, WARM, CAMP, SEQ, SEND, LEAD, INBOX, TRACK, CRM, ANALYTICS, AUTO,
 - [x] PS-DEPLOY-03: Repo ships MIT LICENSE, setup docs, Prisma migrations, Dockerfile/compose, `.env.example`, tests, deployment instructions — master §1.
 - [x] PS-DEPLOY-04: REST API v1 prefix `/api/v1`, JSON, bearer auth, 429 on rate-limit, 402-equivalent not needed (no billing) — Instantly API v2: base `/api/v2`, bearer, limits 100 req/s and 6,000 req/min per workspace shared across keys, 429 on excess (S22).
 - [x] PS-DEPLOY-05: API error contract: 400 invalid body (reject unknown properties), 401 bad/revoked key, 404, 429 — Instantly schemas set additionalProperties false on create bodies (S3, S4, S5).
-- [x] PS-DEPLOY-06: OpenAPI document published for the RightNow API — Instantly publishes OpenAPI (api_v2.json) (S23).
+- [x] PS-DEPLOY-06: OpenAPI document published for the rightnow API — Instantly publishes OpenAPI (api_v2.json) (S23).
 
 ---
 
@@ -57,10 +57,10 @@ Areas: UI, ACC, WARM, CAMP, SEQ, SEND, LEAD, INBOX, TRACK, CRM, ANALYTICS, AUTO,
 - [x] PS-ACC-02: OAuth session object: `sessionId`, `authUrl`, 10-minute expiry; client polls status every ~5 s: `pending|success|error|expired`; result consumed on first read; error codes include `account_exists`, `server_error`, `expired` — Instantly OAuth connection flow (S8).
 - [x] PS-ACC-03: Microsoft 365/Outlook via Microsoft OAuth + Graph (send, delta read) — Instantly provider code 3 (S4, S8).
 - [x] PS-ACC-04: Custom IMAP/SMTP connection: email, first/last name, IMAP host/port/username/password, SMTP host/port/username/password, test-connection before save — Instantly provider code 1 requires all twelve fields (S4).
-- [x] PS-ACC-05: Provider enum in RightNow: custom_imap, google, microsoft (AWS/AirMail/DFY from Instantly are out of scope, see section 19) — Instantly codes 1,2,3,4,8,11 (S4).
+- [x] PS-ACC-05: Provider enum in rightnow: custom_imap, google, microsoft (AWS/AirMail/DFY from Instantly are out of scope, see section 19) — Instantly codes 1,2,3,4,8,11 (S4).
 - [x] PS-ACC-06: Google Workspace and free Gmail both supported; document Google Cloud Console project setup, OAuth consent screen, least-privilege scopes, and verification steps — master §3.
 - [x] PS-ACC-07: Refresh tokens and IMAP/SMTP passwords stored encrypted at rest (AES-256-GCM, key from secret store); never returned by the API — Instantly responses omit IMAP/SMTP credentials (S4).
-- [x] PS-ACC-08: Reconnect flow keeps account id, settings, history, campaign assignments (no delete+reconnect) — Instantly docs tell users to delete and reconnect after token errors (S18); RightNow deliberately does better (master reactivation §2).
+- [x] PS-ACC-08: Reconnect flow keeps account id, settings, history, campaign assignments (no delete+reconnect) — Instantly docs tell users to delete and reconnect after token errors (S18); rightnow deliberately does better (master reactivation §2).
 - [x] PS-ACC-09: Revocation: user can disconnect (revoke token at provider, stop jobs, keep history) — master §3.
 - [x] PS-ACC-10: Multiple independent mailboxes per workspace; duplicate email blocked with `account_exists` — S8.
 - [x] PS-ACC-11: Bulk account management: multi-select pause/resume, set daily limit, set sending gap, set signature, apply tags, enable/disable warm-up, delete — Instantly exposes pause-multiple and enable/disable warm-up for many accounts (S23 Account).
@@ -68,7 +68,7 @@ Areas: UI, ACC, WARM, CAMP, SEQ, SEND, LEAD, INBOX, TRACK, CRM, ANALYTICS, AUTO,
 ### 3.2 Per-account settings
 - [x] PS-ACC-12: Per-account `dailyLimit` (campaign emails/day) — Instantly guidance 30 campaign emails/account/day, 10 warm-up/day; plain-number field, nullable (S25, S4, S18).
 - [x] PS-ACC-13: Per-account `sendingGap` in minutes, integer 0–1440 — Instantly `sending_gap` range 0–1440 (S4). Campaign-level min gap default 9 min + random 5 min is separate (PS-CAMP-12).
-- [x] PS-ACC-14: Account status enum: Active, Paused, Temporarily paused (auto-resumes), Connection Error, Soft Bounce Error, Sending Error; plus RightNow adds Re-Warming, Inactive, Needs Attention as derived display states — Instantly status 1,2,3,-1,-2,-3 (S4).
+- [x] PS-ACC-14: Account status enum: Active, Paused, Temporarily paused (auto-resumes), Connection Error, Soft Bounce Error, Sending Error; plus rightnow adds Re-Warming, Inactive, Needs Attention as derived display states — Instantly status 1,2,3,-1,-2,-3 (S4).
 - [x] PS-ACC-15: Status message object with provider code, command, response, message for diagnostics (shown in UI) — Instantly `status_message` {code, command, response, e_message, responseCode} (S4).
 - [x] PS-ACC-16: "Enable slow ramp" per-account toggle: new accounts start low and gain a fixed amount per day until the daily limit — Instantly: starts at 2 emails and adds 2/day (S25); an Instantly blog says warm-up +1/day and campaign slow ramp +2/day, sources disagree (S24). Use +2/day default, configurable.
 - [x] PS-ACC-17: Signature (rich text/HTML) per account, appended to sends — Instantly `signature` field (S4).
@@ -82,7 +82,7 @@ Areas: UI, ACC, WARM, CAMP, SEQ, SEND, LEAD, INBOX, TRACK, CRM, ANALYTICS, AUTO,
 - [x] PS-ACC-25: "Mark as fixed" action clears an error status after the user remediates and a re-test passes — Instantly has "Mark an account as fixed" endpoint (S23).
 - [x] PS-ACC-26: Autofix state for transient errors (in progress / failed / succeeded) — Instantly `autofix_failed` tri-state (S4).
 - [x] PS-ACC-27: Pause/resume single and multiple accounts; paused accounts excluded from rotation immediately, queued jobs rescheduled — S23.
-- [x] PS-ACC-28: Delete account preserves historical emails/events for analytics (soft delete) — undocumented in Instantly; RightNow decision.
+- [x] PS-ACC-28: Delete account preserves historical emails/events for analytics (soft delete) — undocumented in Instantly; rightnow decision.
 - [x] PS-ACC-29: Microsoft SMTP-disabled remediation hint shown on connection error — Instantly help: enable SMTP, remove account, wait ~1 hour, reconnect (S18).
 - [x] PS-ACC-30: Provider-specific real limits shown as warnings (Gmail/Workspace/Microsoft); user limit cannot exceed a configurable hard ceiling — master §5.
 
@@ -107,7 +107,7 @@ See section 17 (SYNC) for requirements; account-level items:
 - [x] PS-CAMP-10: Positive-lead value `plValue` per campaign (value of each positive lead) feeding pipeline value reports — S3 `pl_value`.
 
 ### 4.2 Schedule
-- [x] PS-CAMP-11: One or more named schedules per campaign, each with: days of week (seven booleans), from/to time (24h HH:MM), IANA timezone (required); campaign-level optional start_date and end_date (YYYY-MM-DD in campaign timezone) — Instantly `campaign_schedule.schedules[]` min 1, `timing.from/to`, `days` keys "0"–"6" (mapping to weekdays not defined in the docs; RightNow uses 0=Sunday), timezone enum of ~100 zones (S3).
+- [x] PS-CAMP-11: One or more named schedules per campaign, each with: days of week (seven booleans), from/to time (24h HH:MM), IANA timezone (required); campaign-level optional start_date and end_date (YYYY-MM-DD in campaign timezone) — Instantly `campaign_schedule.schedules[]` min 1, `timing.from/to`, `days` keys "0"–"6" (mapping to weekdays not defined in the docs; rightnow uses 0=Sunday), timezone enum of ~100 zones (S3).
 - [x] PS-CAMP-12: Schedule presets: any day/any time, office hours, custom — Instantly options (S1).
 - [x] PS-CAMP-13: Min time gap between emails default 9 minutes; random additional time default 5 minutes (so 9–14 min between sends per account); warn below 5 minutes — Instantly (S1, S25); API `email_gap` and `random_wait_max` in minutes (S3).
 - [ ] PS-CAMP-14: Lead local-time sending ("send in recipient timezone") — undocumented as a campaign option; optional extension, not parity. (DEFERRED, D19)
@@ -123,12 +123,12 @@ See section 17 (SYNC) for requirements; account-level items:
 - [x] PS-CAMP-22: Delivery optimization: send as text-only (all steps) and send first email as text-only; enabling text-only disables open tracking and strips images/HTML styling — S1, S3 `text_only`, `first_email_text_only`, S17.
 - [x] PS-CAMP-23: Provider matching (`matchLeadEsp`): prefer sender with same ESP as recipient (Gmail to Gmail, Outlook to Outlook); needs at least one matching account — S1, S3. ESP detection for lead stored in lead record (Google, Microsoft, Zoho, Yahoo, Yandex, Other) — S5 ESP codes.
 - [x] PS-CAMP-24: ESP routing rules: list of {action send|do_not_send, recipientEsp[all|google|outlook|other], senderEsp[all|google|outlook|other]} evaluated at account selection — S3 `provider_routing_rules`.
-- [x] PS-CAMP-25: Insert unsubscribe header (List-Unsubscribe + one-click) toggle; RightNow default ON for compliance — S1 `insert_unsubscribe_header` (default undocumented).
+- [x] PS-CAMP-25: Insert unsubscribe header (List-Unsubscribe + one-click) toggle; rightnow default ON for compliance — S1 `insert_unsubscribe_header` (default undocumented).
 - [x] PS-CAMP-26: Allow risky emails (leads whose verification is Risky/Catch-all) toggle, default off; Disable BounceProtect toggle with warning — S1, S3.
-- [x] PS-CAMP-27: BounceProtect: automatically pause campaign (status Bounce Protect) when bounce rate threshold exceeded; RightNow default: pause when hard-bounce rate > 3% over >= 50 sends in rolling 24h (configurable) — Instantly feature exists, threshold undocumented in fetched pages (S21 refers to a "High Bounce Auto-Pause" article).
+- [x] PS-CAMP-27: BounceProtect: automatically pause campaign (status Bounce Protect) when bounce rate threshold exceeded; rightnow default: pause when hard-bounce rate > 3% over >= 50 sends in rolling 24h (configurable) — Instantly feature exists, threshold undocumented in fetched pages (S21 refers to a "High Bounce Auto-Pause" article).
 - [x] PS-CAMP-28: Limit emails per company (domain): caps daily emails to leads sharing a domain; scope per campaign or workspace; mode custom/disabled; min 1 — S1, S3 `limit_emails_per_company_override`.
 - [x] PS-CAMP-29: CC and BCC recipient lists on every campaign email (CC visible, BCC hidden) — S1, S3.
-- [x] PS-CAMP-30: Auto-optimize A/Z test: pick winning metric (reply rate, click rate, open rate); disable underperforming variants automatically; thresholds undocumented, RightNow requires min sample (default 100 sends per variant) before disabling — S1, S3 `auto_variant_select.trigger`, S20.
+- [x] PS-CAMP-30: Auto-optimize A/Z test: pick winning metric (reply rate, click rate, open rate); disable underperforming variants automatically; thresholds undocumented, rightnow requires min sample (default 100 sends per variant) before disabling — S1, S3 `auto_variant_select.trigger`, S20.
 - [x] PS-CAMP-31: Reset A/Z variant usage tracking daily (preference) — default balances variant usage over campaign lifetime — S20.
 - [x] PS-CAMP-32: Preview personalized message per lead before launch (render with real lead data, spintax resolved, fallback shown) and send-test-email action — master §4; Instantly send-a-test-email (S23, S12).
 - [x] PS-CAMP-33: Pre-launch validation: no sending accounts, no leads, missing subject/body, unresolved variable, invalid schedule, unverified tracking domain, compliance gate disabled provider — master §4.
@@ -145,17 +145,17 @@ See section 17 (SYNC) for requirements; account-level items:
 - [x] PS-SEQ-03: Delay counted from previous step's actual send time and only fires inside a schedule window — S1/S3 (exact semantics undocumented).
 - [x] PS-SEQ-04: Each step has >= 1 variant (A/Z), each with subject and HTML body; up to 26 variants per step; variants can be disabled individually — S3 `v_disabled`, S20 (26 max).
 - [x] PS-SEQ-05: Variant assignment is balanced over campaign lifetime by default (new variants catch up); optional daily reset; assignment recorded per send — S20.
-- [x] PS-SEQ-06: Follow-up steps may reuse previous subject (empty subject = reply in same thread) — undocumented in fetched pages; RightNow: empty subject on step N>1 sends as threaded reply (In-Reply-To/References).
+- [x] PS-SEQ-06: Follow-up steps may reuse previous subject (empty subject = reply in same thread) — undocumented in fetched pages; rightnow: empty subject on step N>1 sends as threaded reply (In-Reply-To/References).
 - [x] PS-SEQ-07: Sequence stops for a lead on reply, unsubscribe, hard bounce, manual removal/status change to non-active, global blocklist hit — S1, S5 statuses; master §4.
 - [x] PS-SEQ-08: Out-of-office handling: detect auto-reply, optionally pause the lead and resume sending after the OOO return date ("AI Smart Pause"/OOO Resume); resume date visible in lead details — S1, S14.
 - [x] PS-SEQ-09: Subsequences: separate mini-sequences attached to a campaign, triggered by (a) lead status/label (default or custom, multiple allowed), (b) activity: email opened, link clicked, campaign completed without reply, (c) reply keywords (semicolon-separated exact phrases) — S13.
-- [x] PS-SEQ-10: Subsequence settings: pre-delay before step 1 (minutes/hours/days), inherits campaign schedule and daily limit by default (custom or "no limit"), optional ignore-account-limits (with warning; RightNow disallows it for warming/re-warming accounts), pause/resume, duplicate, analytics — S13, S3 `pre_delay`. (ignore-account-limits not offered, D19)
+- [x] PS-SEQ-10: Subsequence settings: pre-delay before step 1 (minutes/hours/days), inherits campaign schedule and daily limit by default (custom or "no limit"), optional ignore-account-limits (with warning; rightnow disallows it for warming/re-warming accounts), pause/resume, duplicate, analytics — S13, S3 `pre_delay`. (ignore-account-limits not offered, D19)
 - [x] PS-SEQ-11: Only leads labeled after the subsequence is active enter automatically; existing leads can be moved manually; lead has `subsequenceId`; a lead can be removed from a subsequence; sends occur within ~10 minutes of entry if schedule/limits allow — S13, S5, S23.
-- [x] PS-SEQ-12: Variables (camelCase, case-sensitive, matching CSV headers): `{{firstName}} {{lastName}} {{companyName}} {{jobTitle}} {{website}} {{phone}} {{personalization}} {{email}}`, custom lead fields by column name, sender variables `{{sendingAccountFirstName}} {{sendingAccountLastName}} {{sendingAccountEmail}}` (RightNow naming; sender variable names are inferred, the fetched Instantly pages did not list them) — S5 payload known keys, S12.
+- [x] PS-SEQ-12: Variables (camelCase, case-sensitive, matching CSV headers): `{{firstName}} {{lastName}} {{companyName}} {{jobTitle}} {{website}} {{phone}} {{personalization}} {{email}}`, custom lead fields by column name, sender variables `{{sendingAccountFirstName}} {{sendingAccountLastName}} {{sendingAccountEmail}}` (rightnow naming; sender variable names are inferred, the fetched Instantly pages did not list them) — S5 payload known keys, S12.
 - [x] PS-SEQ-13: `{{industry}}` and other master-listed fields exist as standard lead columns — master §4.
 - [x] PS-SEQ-14: Fallback syntax `{{var | fallback}}`; fallbacks can chain (`{{firstName | lastName | for you}}` style) inside spintax options — S12.
 - [x] PS-SEQ-15: Spintax `{{RANDOM | a | b | c}}` picks one option per lead, deterministic per (lead, step, variant) so retries do not reshuffle; variables allowed inside options; usable in subject and body — S12.
-- [x] PS-SEQ-16: Conditional blocks `{% if var == "value" %}...{% endif %}` (LiquidJS subset), case-sensitive compare; hidden-variable trick not needed since RightNow resolves variables from lead payload directly — S12.
+- [x] PS-SEQ-16: Conditional blocks `{% if var == "value" %}...{% endif %}` (LiquidJS subset), case-sensitive compare; hidden-variable trick not needed since rightnow resolves variables from lead payload directly — S12.
 - [x] PS-SEQ-17: `{{personalization}}` is a free-text lead field (typically AI-written opener) inserted verbatim — S5.
 - [x] PS-SEQ-18: Template validation: unknown variable, unmatched braces, missing `RANDOM` keyword, empty fallback, variable absent from >0 leads (warn count) — S12 troubleshooting; master §4 validation.
 - [x] PS-SEQ-19: Unsubscribe link/variable `{{unsubscribeLink}}` available in body and auto-appended footer if absent when compliance setting on — master §14 (Instantly variable name undocumented).
@@ -197,10 +197,10 @@ See section 17 (SYNC) for requirements; account-level items:
 - [x] PS-WARM-05: "Disable slow warm-up" skips the ramp; for already-warmed accounts only, warn otherwise — S2.
 - [x] PS-WARM-06: Weekdays-only mode: do not send warm-up on weekends (still receive) — S2.
 - [x] PS-WARM-07: Warm-up filter tag: a label (customizable, "generate random") applied to warm-up messages so they can be auto-filed out of the primary inbox and excluded from inbox sync/analytics; change applies next cycle — S2.
-- [ ] PS-WARM-08: Advanced warm-up knobs exist in Instantly: read emulation (headless browser "reading"), open rate %, spam-protection % (rescue from spam), mark-important %, warm custom tracking domain — S2, S4. RightNow honesty rule: only implement what is real between opted-in mailboxes (opening/marking read/rescuing from spam on mailboxes the user owns); do not simulate human behavior to fool filters; document each knob as "cooperative-mailbox action" or "not provided". (PARTIAL: warm custom tracking domain not provided, D51)
+- [ ] PS-WARM-08: Advanced warm-up knobs exist in Instantly: read emulation (headless browser "reading"), open rate %, spam-protection % (rescue from spam), mark-important %, warm custom tracking domain — S2, S4. rightnow honesty rule: only implement what is real between opted-in mailboxes (opening/marking read/rescuing from spam on mailboxes the user owns); do not simulate human behavior to fool filters; document each knob as "cooperative-mailbox action" or "not provided". (PARTIAL: warm custom tracking domain not provided, D51)
 - [x] PS-WARM-09: Warm-up traffic is plain text, separate message type, stored in a separate table, excluded from customer analytics, replies, unibox, CRM — S2 (plain text), master §6.
-- [x] PS-WARM-10: Warm-up status enum: Paused, Active, Banned, Spam Folder Unknown, Permanent Suspension — Instantly 0,1,-1,-2,-3 (S4). RightNow maps to: Paused, Active, Provider-blocked, Placement-unknown, Suspended.
-- [x] PS-WARM-11: Warm-up health/score per account (0–100) — Instantly exposes `stat_warmup_score` (S4); formula undocumented. RightNow formula documented in-app: weighted from hard/soft bounce rate, provider errors, auth DNS status, warm-up reply/receive success between participants, and (if run) inbox-placement tests. Labeled an internal indicator, not a reputation guarantee.
+- [x] PS-WARM-10: Warm-up status enum: Paused, Active, Banned, Spam Folder Unknown, Permanent Suspension — Instantly 0,1,-1,-2,-3 (S4). rightnow maps to: Paused, Active, Provider-blocked, Placement-unknown, Suspended.
+- [x] PS-WARM-11: Warm-up health/score per account (0–100) — Instantly exposes `stat_warmup_score` (S4); formula undocumented. rightnow formula documented in-app: weighted from hard/soft bounce rate, provider errors, auth DNS status, warm-up reply/receive success between participants, and (if run) inbox-placement tests. Labeled an internal indicator, not a reputation guarantee.
 - [x] PS-WARM-12: Warm-up analytics per account per day: sent, received, replied, landed-in-spam (where measurable between cooperative mailboxes), health score trend — S23 warmup analytics.
 - [x] PS-WARM-13: Warm-up pool: "integration interface" for external warm-up providers + a self-hosted opt-in peer pool among the user's own mailboxes; no assumption of Instantly's pool — master §6, S17 section.
 - [x] PS-WARM-14: Domain authentication checks: SPF, DKIM (selector discovery for Google/Microsoft/custom), DMARC policy, MX, reverse DNS where possible, with fix instructions; re-check on schedule and before campaigns — Instantly "Test domain setup" (S18).
@@ -222,14 +222,14 @@ See section 17 (SYNC) for requirements; account-level items:
 - [x] PS-LEAD-04: Setting interest status has side effects: may complete the lead in campaigns, create/update an opportunity, fire automations and subsequences; setting null resets to Lead; processed asynchronously — S11. (P6 opportunity side effect; P7 side effects run as a BackgroundJob)
 - [x] PS-LEAD-05: Verification status: Not verified, Verified, Pending, Pending job, Invalid, Risky, Catch-all, Job change — S5. Campaign does not send to Invalid; Risky/Catch-all only when "allow risky" — S1.
 - [x] PS-LEAD-06: Enrichment status field (enriched, pending, not available, error) kept for integration hooks — S5.
-- [x] PS-LEAD-07: ESP code (Google, Microsoft, Zoho, Yahoo, Yandex, Other, Not found, In queue) and ESG code (Barracuda, Mimecast, Proofpoint, Cisco) detected via MX lookup; used for provider matching — S5. RightNow implements MX-based ESP/ESG detection; "in queue" while pending.
+- [x] PS-LEAD-07: ESP code (Google, Microsoft, Zoho, Yahoo, Yandex, Other, Not found, In queue) and ESG code (Barracuda, Mimecast, Proofpoint, Cisco) detected via MX lookup; used for provider matching — S5. rightnow implements MX-based ESP/ESG detection; "in queue" while pending.
 - [x] PS-LEAD-08: Per-lead counters and timestamps: open/reply/click counts, last contact/open/reply/click/interest-change/touch, step and variant of last open/reply/click, last sender — S5.
 - [x] PS-LEAD-09: Lead lists: create, rename, delete, move leads between lists and campaigns, list-level verification statistics — S23 Lead List, "Move leads to a campaign or list".
 - [x] PS-LEAD-10: CSV import wizard: upload, auto-map columns by header (case-insensitive) with manual remap, choose target list/campaign, preview first rows, show counts of missing/invalid emails, skipped duplicates ("X emails already exist") — S19, S27 (verify option), S5.
 - [x] PS-LEAD-11: Email column mandatory; rows with missing/malformed email rejected and counted; unmapped columns become custom fields — S27 (search result).
 - [x] PS-LEAD-12: Dedupe options on import: (a) skip if already in workspace, (b) skip if already in campaign, (c) skip if already in list; workspace-wide check default ON; within-file duplicate check always ON — S5 `skip_if_in_*`, S19.
 - [x] PS-LEAD-13: Import honors blocklist (emails and domains) automatically and reports the skipped count — S19/S27, S5 `blocklist_id`.
-- [x] PS-LEAD-14: Optional "verify on import" toggle calling a pluggable verification provider (hook interface); Instantly charges 0.25 credit/lead for built-in verifier; RightNow has no credits, provider cost is the user's — S27, S5 `verify_leads_on_import`.
+- [x] PS-LEAD-14: Optional "verify on import" toggle calling a pluggable verification provider (hook interface); Instantly charges 0.25 credit/lead for built-in verifier; rightnow has no credits, provider cost is the user's — S27, S5 `verify_leads_on_import`.
 - [x] PS-LEAD-15: Built-in local syntax + MX + disposable-domain validation always on; SMTP-probe verification not provided by default (provider-hook only) — master §7.
 - [x] PS-LEAD-16: Lead merge (two records into one, keeping history) — S23 "Merge two leads".
 - [x] PS-LEAD-17: Bulk actions: assign to users (round-robin option), move, delete, add to blocklist, change interest status, add/remove tag, export selected CSV — S14, S15, S23.
@@ -260,7 +260,7 @@ See section 17 (SYNC) for requirements; account-level items:
 - [x] PS-INBOX-11: Follow-up reminder per conversation (date/time) with "Reminders only" view and notification — S14; Instantly also adds nudges when a reply may be needed (changelog, search result).
 - [x] PS-INBOX-12: Actions: edit lead, set reminder, move to subsequence or other campaign, change interest status from thread header — S14.
 - [x] PS-INBOX-13: Lead info panel: step and variant that triggered the thread, resume date for OOO, lead fields, campaign — S14.
-- [x] PS-INBOX-14: Read/unread and delete in the inbox are one-way (local only; do not mutate the provider mailbox) — S14. RightNow default same; optional two-way read-state sync later.
+- [x] PS-INBOX-14: Read/unread and delete in the inbox are one-way (local only; do not mutate the provider mailbox) — S14. rightnow default same; optional two-way read-state sync later.
 - [x] PS-INBOX-15: Deleting a conversation keeps the lead in campaigns; deleting a lead / blocklisting offers: remove all same-domain leads, remove from all campaigns, block future outreach — S14.
 - [x] PS-INBOX-16: Reply from deleted lead still shows under Others — S14.
 - [x] PS-INBOX-17: Reply detection from headers and provider ids; bounces (DSN/NDR), auto-replies (Auto-Submitted, X-Autoreply, Precedence, OOO text), unsubscribe requests classified separately from genuine replies — master §8; Instantly separates auto-replies from replies in analytics (S9, S16).
@@ -294,7 +294,7 @@ See section 17 (SYNC) for requirements; account-level items:
 
 ## 11. Sales CRM (master §10)
 
-- [x] PS-CRM-01: CRM area sections: Tasks, Inbox (all activity: email/calls/SMS/tasks), Opportunities, Leads — Instantly CRM tab (S15). RightNow ships Tasks, Activity inbox, Opportunities, Leads; calls/SMS channels are manual log entries only.
+- [x] PS-CRM-01: CRM area sections: Tasks, Inbox (all activity: email/calls/SMS/tasks), Opportunities, Leads — Instantly CRM tab (S15). rightnow ships Tasks, Activity inbox, Opportunities, Leads; calls/SMS channels are manual log entries only.
 - [x] PS-CRM-02: Default pipeline stages (customizable: add, rename, reorder, delete with reassignment): Not Contacted, Contacted, Replied, Interested, Meeting Scheduled, Proposal Sent, Negotiation, Closed Won, Closed Lost — master §10. Instantly's own stages are lead interest statuses plus custom statuses editable in Preferences (S15).
 - [x] PS-CRM-03: Interest status to stage mapping (Interested to Interested, Meeting Booked to Meeting Scheduled, Won to Closed Won, Lost to Closed Lost, etc.), configurable — S11 side effects (opportunity created/updated).
 - [x] PS-CRM-04: Kanban board of opportunities with drag-and-drop between stages and per-column totals (count and value) — master §10; Instantly blog mentions kanban (S15 context).
@@ -317,7 +317,7 @@ See section 17 (SYNC) for requirements; account-level items:
 - [x] PS-ANALYTICS-02: Metric "Total sent": every email sent including follow-ups — S16.
 - [x] PS-ANALYTICS-03: Metric "Contacted / sequences started": unique leads that received step 1 (`contacted_count`), plus `new_leads_contacted_count` — S9, S16.
 - [x] PS-ANALYTICS-04: Metric "Opened": leads with >= 1 open (`open_count`), unique opens, unique opens by step; open rate = opens / sequences started (pixel-based, estimated) — S9, S17.
-- [x] PS-ANALYTICS-05: Metric "Replied": total replies, unique replies (first per lead, excluding auto-replies), unique by step; auto-replies counted separately; toggle "include auto replies"; account-level reply rate = replies / total sent, campaign-level counts replied leads — S9, S16 (Instantly's own definitions differ by view; RightNow documents both and defaults to unique replied leads / leads contacted, with total-sent variant selectable).
+- [x] PS-ANALYTICS-05: Metric "Replied": total replies, unique replies (first per lead, excluding auto-replies), unique by step; auto-replies counted separately; toggle "include auto replies"; account-level reply rate = replies / total sent, campaign-level counts replied leads — S9, S16 (Instantly's own definitions differ by view; rightnow documents both and defaults to unique replied leads / leads contacted, with total-sent variant selectable).
 - [x] PS-ANALYTICS-06: Metric "Clicked": total, unique, unique-by-step; click rate = sends with >= 1 click — S9, S16.
 - [x] PS-ANALYTICS-07: Metric "Bounced" (hard/soft split), "Unsubscribed", "Completed" lead counts — S9.
 - [x] PS-ANALYTICS-08: Metrics "Opportunities" (unique, count and total value) and "Positive reply rate" = opportunities / replies; "Conversions" = won opportunities with cash collected — S9, S16.
@@ -344,7 +344,7 @@ See section 17 (SYNC) for requirements; account-level items:
 - [x] PS-AUTO-05: Webhook events (names kept compatible): `email_sent, email_opened, email_link_clicked, reply_received, auto_reply_received, email_bounced, lead_unsubscribed, account_error, campaign_completed, lead_neutral, lead_interested, lead_not_interested, lead_meeting_booked, lead_meeting_completed, lead_closed, lead_out_of_office, lead_wrong_person, lead_no_show`, `all_events`, plus custom-label events using the label name as event type — S6, S7.
 - [x] PS-AUTO-06: Webhook subscription: target URL (http/https), optional campaign filter (null = all), optional name, event type, custom interest value, custom HTTP headers (e.g. Authorization); list, get, patch, delete, test, resume — S7, S23.
 - [x] PS-AUTO-07: Payload shape: JSON POST with `timestamp, event_type, workspace, campaign_id, campaign_name` always; optionally `lead_email, email_account, unibox_url` (reply events), `step` (1-based), `variant` (1-based), `is_first`, `email_id`, `email_subject`, `email_text`, `email_html`, `reply_text_snippet, reply_subject, reply_text, reply_html`, and lead fields merged — S6, S26.
-- [x] PS-AUTO-08: Webhook status active/error; disable after repeated delivery failures and record error timestamp; manual resume. Instantly thresholds and retry schedule are undocumented; RightNow: retry with exponential backoff up to 8 attempts over ~24h, disable after 20 consecutive failures — S7 (undocumented thresholds).
+- [x] PS-AUTO-08: Webhook status active/error; disable after repeated delivery failures and record error timestamp; manual resume. Instantly thresholds and retry schedule are undocumented; rightnow: retry with exponential backoff up to 8 attempts over ~24h, disable after 20 consecutive failures — S7 (undocumented thresholds).
 - [x] PS-AUTO-09: Outgoing webhooks are HMAC-SHA256 signed (`X-RightNow-Signature`, timestamp, event id) with per-webhook secret; consumers can replay-protect — master §12 (Instantly docs describe custom headers only, no signature: S7, S26).
 - [x] PS-AUTO-10: Webhook event log with payload, response code, latency, redelivery button; overview aggregates per day — S23 webhook event.
 - [x] PS-AUTO-11: API resources (v1 mirror of Instantly v2): accounts (+warm-up, pause/resume, vitals), campaigns (+analytics, steps analytics, subsequences, duplicate, export), leads (+bulk add/move/delete, merge, interest status), lead lists, lead labels, emails (list/get/reply/forward/patch/unread count), blocklist entries, custom tags, webhooks, analytics, background jobs, audit log, API keys, workspace members — S23.
@@ -417,7 +417,7 @@ Instantly has no dedicated reactivation product: users lower limits manually, re
 - [ ] PS-SYNC-01: Provider sync strategies: Gmail `history.list` + Pub/Sub watch (fallback polling), Microsoft Graph delta queries + change notifications (fallback polling), IMAP IDLE with UID/UIDVALIDITY tracking (fallback polling interval default 2–5 min) — master §3. (PARTIAL: polling P4-T05; Gmail watch + Graph subscriptions P7-T06; no IMAP IDLE, polling only, D48)
 - [x] PS-SYNC-02: Persist per-account checkpoint (Gmail historyId, Graph deltaLink, IMAP UIDVALIDITY+last UID) and sync run log.
 - [x] PS-SYNC-03: Incremental sync by default; when checkpoint expired/invalid (Gmail history too old, Graph delta token expired, UIDVALIDITY change) fall back to full reconciliation of a bounded window (default window = max(30 days, downtime + margin)).
-- [x] PS-SYNC-04: Import both incoming and provider-sent messages (including mail sent outside RightNow) and match to campaign sends by Message-ID/headers to avoid duplicate records.
+- [x] PS-SYNC-04: Import both incoming and provider-sent messages (including mail sent outside rightnow) and match to campaign sends by Message-ID/headers to avoid duplicate records.
 - [x] PS-SYNC-05: Dedupe by provider message id + RFC Message-ID; threading by headers; idempotent upserts.
 - [x] PS-SYNC-06: Detect and apply while offline: replies, auto-replies, bounces (DSN), unsubscribes (incl. List-Unsubscribe mailto), manual deletions, state changes; update campaign/lead status, CRM, analytics.
 - [x] PS-SYNC-07: Startup gate: on every process start, sending is blocked (global "sync-pending" flag per account and global) until reconciliation completes "sufficiently" (all accounts reached current checkpoint or are marked failed/excluded); UI shows progress.
@@ -447,20 +447,20 @@ Instantly has no dedicated reactivation product: users lower limits manually, re
 
 ## 19. Known limitations / not reproducible
 
-1. **Instantly's warm-up pool.** Instantly warm-up exchanges mail with other participating mailboxes; the pool, its sizing, selection and reply behavior are private (S2). RightNow cannot reproduce it. Replacement: gradual volume ramp, optional opted-in peer mailboxes owned by the same user, and optional external providers via an interface. No warm-up can guarantee inbox placement.
-2. **Fake-human signals.** Read emulation via headless browsers, forced "mark important", automatic spam rescue at configurable percentages exist in Instantly (S2). RightNow only performs these on mailboxes the user owns and has opted in, and labels them as test traffic; it does not inflate customer engagement metrics.
-3. **Warm-up health score formula** is undocumented (S4 exposes only `stat_warmup_score`). RightNow's score is its own transparent formula and not comparable to Instantly's.
+1. **Instantly's warm-up pool.** Instantly warm-up exchanges mail with other participating mailboxes; the pool, its sizing, selection and reply behavior are private (S2). rightnow cannot reproduce it. Replacement: gradual volume ramp, optional opted-in peer mailboxes owned by the same user, and optional external providers via an interface. No warm-up can guarantee inbox placement.
+2. **Fake-human signals.** Read emulation via headless browsers, forced "mark important", automatic spam rescue at configurable percentages exist in Instantly (S2). rightnow only performs these on mailboxes the user owns and has opted in, and labels them as test traffic; it does not inflate customer engagement metrics.
+3. **Warm-up health score formula** is undocumented (S4 exposes only `stat_warmup_score`). rightnow's score is its own transparent formula and not comparable to Instantly's.
 4. **AirMail, DFY mailboxes, pre-warmed domains, domain purchase/forwarding** (S23) depend on Instantly infrastructure. Out of scope.
 5. **SuperSearch / Lead Finder / AI enrichment / company lists / website visitors** use Instantly's data. Out of scope; only hook interfaces for external enrichment and verification.
-6. **Built-in email verification** (0.25 credit/lead, S27) depends on Instantly's verifier. RightNow ships syntax/MX/disposable checks plus a provider hook.
+6. **Built-in email verification** (0.25 credit/lead, S27) depends on Instantly's verifier. rightnow ships syntax/MX/disposable checks plus a provider hook.
 7. **AI Sales Agent, AI Inbox Manager, AI Deliverability Agent** (S23) are autonomous agents. Only optional, human-reviewed AI is in scope.
 8. **Tracking-pixel opens and clicks during downtime** are lost: opens/clicks that occur while the tracking domain or server is offline cannot be reconstructed. Replies, bounces, unsubscribes, sent mail are reconstructible from provider mailboxes.
 9. **Open tracking is inherently an estimate.** Apple MPP, security scanners and image proxies create false opens; text-only mail cannot register opens. Reply and click-with-human-timing are stronger signals. Instantly's public pages do not describe bot filtering (S17).
-10. **Delivered vs accepted.** Providers rarely give delivery receipts; RightNow reports provider-accepted and bounce/DSN outcomes only.
+10. **Delivered vs accepted.** Providers rarely give delivery receipts; rightnow reports provider-accepted and bounce/DSN outcomes only.
 11. **Gmail/Microsoft acceptable use.** Sending unsolicited bulk mail through OAuth-based API apps may be disallowed or require verification; live sending stays gated (PS-DEPLOY-14). Real provider limits override configured limits.
-12. **Undocumented Instantly behaviors with RightNow-chosen defaults:** BounceProtect threshold, auto-optimize A/Z sample thresholds, webhook retry/disable policy, weekday key mapping in `days`, whether follow-up delay counts from schedule-adjusted time, default for unsubscribe header and tracking toggles, health-score weights, sender variable names, Instantly CRM stage/value field details (help article "Managing Opportunities" not retrieved).
+12. **Undocumented Instantly behaviors with rightnow-chosen defaults:** BounceProtect threshold, auto-optimize A/Z sample thresholds, webhook retry/disable policy, weekday key mapping in `days`, whether follow-up delay counts from schedule-adjusted time, default for unsubscribe header and tracking toggles, health-score weights, sender variable names, Instantly CRM stage/value field details (help article "Managing Opportunities" not retrieved).
 13. **Source disagreements:** warm-up increment default (1/day in help center, "+2/day slow ramp" for campaigns, example "2,4,6" in blog) (S2, S24, S25); reply-rate definition differs between campaign and account analytics (S16).
-14. **Plan-gated features in Instantly** (Hyper Growth/Light Speed: advanced warm-up, prioritize new leads, subsequences, per-company limits, Unibox replying) are all available to RightNow users with no gating.
+14. **Plan-gated features in Instantly** (Hyper Growth/Light Speed: advanced warm-up, prioritize new leads, subsequences, per-company limits, Unibox replying) are all available to rightnow users with no gating.
 15. **Local mode** cannot run background work while the computer is off; reactivation, follow-ups and sync resume only after startup reconciliation.
 16. Instantly's SDK/CLI/MCP, billing/plan endpoints and agency white-label domain features are not reproduced.
 

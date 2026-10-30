@@ -86,7 +86,7 @@ export async function buildOpenApi(): Promise<Json> {
   }
   return {
     openapi: "3.1.0",
-    info: { title: "RightNow AI API", version: "1" },
+    info: { title: "rightnow API", version: "1" },
     servers: [{ url: "/api/v1" }],
     components: {
       securitySchemes: {

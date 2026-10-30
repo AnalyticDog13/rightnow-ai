@@ -355,7 +355,7 @@ Acceptance widths: 390px (mobile) and 1440px (desktop). Playwright runs at 1280x
 
 ```
 +----------------+--------------------------------------------------------+
-| RN  RightNow   |  [breadcrumb on record pages]       [Search or jump  ⌘K]| <- 48px top strip
+| RN  rightnow   |  [breadcrumb on record pages]       [Search or jump  ⌘K]| <- 48px top strip
 |     <workspace>|--------------------------------------------------------|
 |                |  H1 Page title            [secondary] [Primary action] |
 | Dashboard      |  One-line description                                   |
@@ -383,8 +383,8 @@ element after the skip link must be the first Main nav link, so nothing focusabl
 
 **Sidebar** (232px, `--surface-sunken`, 1px right `--border`, sticky full height, its own scroll):
 
-1. **Brand block** (56px tall, padding 12px 16px, not interactive): 28px `--primary` rounded-6 tile with "RN" in
-   Plex Mono 12/500 `--primary-fg`; to its right "RightNow" `body-strong` and the workspace name below in `small`
+1. **Brand block** (56px tall, padding 12px 16px, not interactive): 28px `--primary` rounded-6 tile with "rn" in
+   Plex Mono 12/500 `--primary-fg`; to its right "rightnow" `body-strong` and the workspace name below in `small`
    `--fg-muted`, truncated with a `title`. (from: attio §2, twenty §2, folk §2 workspace block; ours is static
    because the product is single-owner)
 2. **`<nav aria-label="Main">`** containing exactly the 10 PS-UI-01 links, in this order and with these exact
@@ -491,7 +491,7 @@ change is presentational.
 
 - **Top bar**: 56px, `--surface`, 1px bottom border, sticky, `--z-topbar`, padding 0 4px. Left: menu button 44x44
   (`Menu` / `X`, `aria-label` "Open menu" / "Close menu", `aria-expanded`, `aria-controls="sidebar"`, as today).
-  Then "RightNow" `body-strong`. Right: send meter chip (B4.17 compact: ring + "142/300") and a 44x44 search icon
+  Then "rightnow" `body-strong`. Right: send meter chip (B4.17 compact: ring + "142/300") and a 44x44 search icon
   button (`aria-label="Search or jump to"`) that opens the palette.
 - **Drawer**: the same `<aside id="sidebar">`, rendered `position: fixed; inset: 0 auto 0 0; width: min(300px,
   85vw)`, `--surface-sunken`, `--shadow-3`, slides in from the left (`--dur-3`), scrim `--overlay` behind it.
@@ -1150,7 +1150,7 @@ Desktop:
     day" text; buttons unchanged; cancel as `danger-ghost`.
   - Test send (admins): unchanged controls in a bordered block.
 Mobile: priority columns = checkbox, Email, Status, Today, Actions (icon-sm buttons); drawer full-screen.
-Empty (no accounts): `EmptyState` page variant: title "Connect your first mailbox", body "RightNow sends from your
+Empty (no accounts): `EmptyState` page variant: title "Connect your first mailbox", body "rightnow sends from your
 own Google, Microsoft or IMAP/SMTP mailboxes. Warm a new mailbox for at least two weeks before full volume.",
 action cards: "Connect Google", "Connect Microsoft", "Connect IMAP / SMTP" (same handlers as the connect dialog;
 from: attio §4 empty table with Connect buttons, folk §4 action cards). Non-admins see the title and body with
@@ -1471,7 +1471,7 @@ credentialed URL: danger Callout with the existing sentence and **no** Continue 
 Pattern: Attio's centered onboarding card on a quiet canvas (from: attio §5), folk's paper canvas (from: folk §3).
 
 - Layout (`(auth)/layout.tsx`): `--bg` full height, content column 400px centered vertically (top-aligned with
-  15vh top padding below 768), gutter 16px. Above the card: the brand tile (40px "RN") + "RightNow" in `display`
+  15vh top padding below 768), gutter 16px. Above the card: the brand tile (40px "rn") + "rightnow" in `display`
   32/40 600 (replaces the plain text line), and below it one `small` `--fg-muted` line "Self-hosted cold email.
   Your mailboxes, your data."
 - Card: `--surface`, 1px `--border`, radius 16, padding 32px (24px below 768), no shadow.
@@ -1515,8 +1515,8 @@ Layout
 
 Step 0: Welcome (no counter)
 - `h1` "Set up the owner account" (text kept for tests) with `display`-size brand line above it: "Welcome to
-  RightNow".
-- Lead paragraph: "RightNow is your self-hosted cold-email workspace. Connect your own mailboxes, warm them up, send
+  rightnow".
+- Lead paragraph: "rightnow is your self-hosted cold-email workspace. Connect your own mailboxes, warm them up, send
   multi-step campaigns that stop when someone replies, and handle replies in one inbox and pipeline."
 - "Setup takes about two minutes" + an ordered list of the three steps, each a 48px row with a 24px number circle
   (B4.15 style) and one line: 1 "Verify this is your server: paste the setup token from your .env file",
@@ -1525,11 +1525,11 @@ Step 0: Welcome (no counter)
 
 Step 1: Verify this is your server
 - `h1` "Verify this is your server". Body: "Anyone who can open this page could claim the workspace, so the first
-  account needs the secret you set when installing RightNow. It is the SETUP_TOKEN value in the .env file on your
+  account needs the secret you set when installing rightnow. It is the SETUP_TOKEN value in the .env file on your
   server."
 - Neutral Callout (B4.11) "Where to find it" with a `mono` code block (`--surface-sunken`, radius 6, copy button
   with aria-label "Copy command"): `grep SETUP_TOKEN .env` and, on a second line, the Windows form
-  `Select-String SETUP_TOKEN .env`, and one sentence: "Run it in the folder where you installed RightNow. Copy the
+  `Select-String SETUP_TOKEN .env`, and one sentence: "Run it in the folder where you installed rightnow. Copy the
   part after the = sign, without quotes."
 - Field: label "Setup token" (kept), `type="password"` with a ghost icon button "Show token"/"Hide token"
   (aria-pressed), `autocomplete="off"`, `mono` input text.

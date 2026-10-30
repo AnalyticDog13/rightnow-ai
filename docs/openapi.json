@@ -1,7 +1,7 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "RightNow AI API",
+    "title": "rightnow API",
     "version": "1"
   },
   "servers": [

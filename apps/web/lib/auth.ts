@@ -51,7 +51,7 @@ export const auth = betterAuth({
   emailAndPassword: { enabled: true, disableSignUp: true, minPasswordLength: 12 },
   // D49: the Postgres buckets in app/api/auth/[...all]/route.ts replace the in-memory limiter (one mechanism)
   rateLimit: { enabled: false },
-  appName: "RightNow", // the issuer shown in authenticator apps
+  appName: "rightnow", // the issuer shown in authenticator apps
   // every /organization/* endpoint: includes `leave` (the OWNER would orphan the workspace) and the unaudited
   // invite, accept, role-change and remove ones
   disabledPaths: Object.values(workspaces.endpoints).map((e) => e.path),

@@ -106,8 +106,8 @@ export async function startPlacementTest(
     content = r;
   } else
     content = {
-      subject: "RightNow placement test",
-      text: "This is an inbox placement test sent from RightNow. No reply is needed.",
+      subject: "rightnow placement test",
+      text: "This is an inbox placement test sent from rightnow. No reply is needed.",
     };
 
   const now = clock.now();

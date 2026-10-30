@@ -114,7 +114,7 @@ export async function postWebhook(
       headers: {
         ...(w.headersEnc ? (JSON.parse(decrypt(w.headersEnc)) as Record<string, string>) : {}),
         "content-type": "application/json",
-        "user-agent": "RightNow-Webhooks/1",
+        "user-agent": "rightnow-Webhooks/1",
         "x-rightnow-event-id": eventId,
         "x-rightnow-timestamp": String(t),
         "x-rightnow-signature": sign(decrypt(w.secretEnc), t, body),

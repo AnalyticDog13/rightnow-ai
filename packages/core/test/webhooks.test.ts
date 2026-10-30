@@ -188,7 +188,7 @@ describe("signature", () => {
     expect(h.eventId).toBe(e.id);
     expect(h.ts).toBe(String(T.getTime() / S));
     expect(h.sig).toBe(sign(secret, T.getTime() / S, h.body));
-    expect(h.headers["user-agent"]).toBe("RightNow-Webhooks/1");
+    expect(h.headers["user-agent"]).toBe("rightnow-Webhooks/1");
     expect(h.headers["content-type"]).toBe("application/json");
     const [d] = await rows(id);
     clock.advance(20 * 3600 * S);

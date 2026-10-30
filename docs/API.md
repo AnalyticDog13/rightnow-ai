@@ -1,4 +1,4 @@
-# RightNow AI public API (v1)
+# rightnow AI public API (v1)
 
 Base path `/api/v1`. The machine-readable description is [`docs/openapi.json`](openapi.json), generated from the route
 definitions (`npm run openapi`) and served without authentication at `GET /api/v1/openapi.json`. Responses are
@@ -168,9 +168,9 @@ export function verify(rawBody, header, secret, seenEventIds, eventId) {
 
 Answer with any 2xx within 10 seconds; redirects are not followed.
 
-## Instantly v2 to RightNow v1 (approximate)
+## Instantly v2 to rightnow v1 (approximate)
 
-| Instantly v2 | RightNow v1 |
+| Instantly v2 | rightnow v1 |
 |---|---|
 | `/accounts` | `/accounts`, `/accounts/{id}` (+ `pause`, `resume`, `warmup`) |
 | `/campaigns`, `/campaigns/{id}/activate`, `/pause` | `/campaigns`, `/campaigns/{id}/launch`, `/pause`, `/resume` |

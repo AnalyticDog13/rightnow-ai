@@ -111,7 +111,7 @@ per campaign with an opt-out message (campaign options); replies like "unsubscri
 can restrict cold email. The software is provided without warranty (see [LICENSE](LICENSE)); nothing here is legal
 advice. More detail: [docs/COMPLIANCE.md](docs/COMPLIANCE.md) and [docs/PROVIDER_COMPLIANCE.md](docs/PROVIDER_COMPLIANCE.md).
 
-RightNow.ai is an independent project and is not affiliated with or endorsed by any other email-outreach vendor.
+rightnow.ai is an independent project and is not affiliated with or endorsed by any other email-outreach vendor.
 Product names mentioned in the docs are trademarks of their owners.
 
 ---

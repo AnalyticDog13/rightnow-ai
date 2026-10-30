@@ -932,7 +932,7 @@
   {
    "id": "P8-T04",
    "phase": 8,
-   "title": "Release legal check (user requested at end): dependency license audit (all MIT-compatible), full git-history secret scan, trademark/branding review (no Instantly marks or affiliation; RightNow.ai name search noted for user), lawful-use wording, contributor DCO/CONTRIBUTING, NOTICE for third-party licenses",
+   "title": "Release legal check (user requested at end): dependency license audit (all MIT-compatible), full git-history secret scan, trademark/branding review (no Instantly marks or affiliation; rightnow.ai name search noted for user), lawful-use wording, contributor DCO/CONTRIBUTING, NOTICE for third-party licenses",
    "status": "done",
    "deps": [
     "P8-T03"
