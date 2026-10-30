@@ -52,7 +52,7 @@ export default async function Page() {
           title="Connect your first mailbox"
           body={
             <>
-              RightNow sends from your own Google, Microsoft or IMAP/SMTP mailboxes. Warm a new
+              rightnow sends from your own Google, Microsoft or IMAP/SMTP mailboxes. Warm a new
               mailbox for at least two weeks before full volume.
               {!isAdmin && (
                 <span className="mt-2 block">Ask a workspace admin to connect a mailbox.</span>

@@ -166,7 +166,7 @@ export function AppShell({
         >
           {open ? <X aria-hidden /> : <Menu aria-hidden />}
         </Button>
-        <span className="flex-1 text-sm font-medium">RightNow</span>
+        <span className="flex-1 text-sm font-medium">rightnow</span>
         <SendMeter summary={summary} variant="chip" />
         <Button variant="ghost" size="icon" aria-label="Search or jump to" onClick={palette.open}>
           <Search aria-hidden />
@@ -206,10 +206,10 @@ export function AppShell({
             aria-hidden
             className="grid size-7 shrink-0 place-items-center rounded-sm bg-primary font-mono text-xs font-medium text-primary-foreground"
           >
-            RN
+            rn
           </span>
           <span className="flex min-w-0 flex-1 flex-col rail:hidden">
-            <span className="text-sm font-medium">RightNow</span>
+            <span className="text-sm font-medium">rightnow</span>
             <span title={workspaceName} className="truncate text-[13px]/[18px] text-fg-muted">
               {workspaceName}
             </span>

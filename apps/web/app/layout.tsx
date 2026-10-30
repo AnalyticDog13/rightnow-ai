@@ -5,7 +5,7 @@ import { headers } from "next/headers";
 import type { ReactNode } from "react";
 import "./globals.css";
 
-export const metadata: Metadata = { title: { default: "RightNow", template: "%s | RightNow" } };
+export const metadata: Metadata = { title: { default: "rightnow", template: "%s | rightnow" } };
 
 // self-hosted at build time, so the CSP needs no font origin
 const sans = IBM_Plex_Sans({
