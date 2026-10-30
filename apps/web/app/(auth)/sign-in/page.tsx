@@ -16,7 +16,7 @@ export default async function SignIn() {
   return (
     <Card className="flex flex-col gap-4">
       <h1 className="text-xl font-semibold">Sign in</h1>
-      <AuthForm mode="sign-in" />
+      <AuthForm />
       {needsSetup && (
         <p className="text-sm text-muted-foreground">
           First time here?{" "}

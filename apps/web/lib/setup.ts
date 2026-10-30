@@ -22,6 +22,14 @@ function sameToken(a: string, b: string) {
   return x.length === y.length && timingSafeEqual(x, y);
 }
 
+export const verifyTokenInput = z.strictObject({ token: z.string().max(256) });
+
+/** Onboarding step 1 pre-check: 403 on a wrong token, 409 once an owner exists. /api/setup re-checks on submit. */
+export async function verifySetupToken(prisma: PrismaClient, token: string, setupToken: string) {
+  if (!sameToken(token, setupToken)) throw new HttpError(403, "Invalid setup token");
+  if ((await prisma.user.count()) > 0) throw new HttpError(409, "Sign-up is closed");
+}
+
 /** Creates user + credential + workspace + OWNER membership iff no user exists. The advisory lock serialises concurrent calls. */
 export async function createFirstOwner(
   prisma: PrismaClient,

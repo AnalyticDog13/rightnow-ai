@@ -24,13 +24,21 @@ async function signIn(page: import("@playwright/test").Page, email: string, pass
   await page.getByRole("button", { name: "Sign in" }).click();
 }
 
-async function fillSignUp(page: import("@playwright/test").Page, token: string) {
+/** Onboarding wizard (B5.18): welcome -> token -> login -> workspace. */
+async function startWizard(page: import("@playwright/test").Page, token: string) {
   await page.goto("/sign-up");
+  await page.getByRole("button", { name: "Get started" }).click();
+  await page.getByLabel("Setup token").fill(token);
+  await page.getByRole("button", { name: "Continue" }).click();
+}
+
+async function fillSignUp(page: import("@playwright/test").Page, token: string) {
+  await startWizard(page, token);
   await page.getByLabel("Your name").fill("Ada Owner");
   await page.getByLabel("Email").fill("ada@example.com");
   await page.getByLabel("Password (12+ characters)").fill("correct horse battery");
+  await page.getByRole("button", { name: "Continue" }).click();
   await page.getByLabel("Workspace name").fill("Acme");
-  await page.getByLabel("Setup token").fill(token);
   await page.getByRole("button", { name: "Create owner account" }).click();
 }
 
@@ -39,21 +47,37 @@ test("unauthenticated users are sent to sign-in", async ({ page }) => {
   await expect(page).toHaveURL(/\/sign-in/);
 });
 
-test("wrong setup token is rejected", async ({ page }) => {
-  await fillSignUp(page, "wrong-token-wrong-token");
-  await expect(page.getByRole("main").getByRole("alert")).toContainText("Invalid setup token");
+test("wrong setup token is rejected at the token step", async ({ page }) => {
+  await startWizard(page, "wrong-token-wrong-token");
+  await expect(page.getByRole("main").getByRole("alert")).toContainText(
+    "doesn't match SETUP_TOKEN",
+  );
+  await expect(page.getByRole("heading", { name: "Verify this is your server" })).toBeVisible();
 });
 
 test("an 11-character password is rejected and creates no user", async ({ page }) => {
-  await page.goto("/sign-up");
+  await startWizard(page, SETUP_TOKEN);
   await page.getByLabel("Your name").fill("Short Pw");
   await page.getByLabel("Email").fill("short@example.com");
   await page.getByLabel("Password (12+ characters)").fill("elevenchars");
-  await page.getByLabel("Workspace name").fill("Short");
-  await page.getByLabel("Setup token").fill(SETUP_TOKEN);
-  await page.getByRole("button", { name: "Create owner account" }).click();
-  await expect(page.getByRole("main").getByRole("alert")).not.toBeEmpty();
-  await expect(page).toHaveURL(/\/sign-up/);
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByText("Use at least 12 characters.")).toBeVisible();
+  await expect(page.getByLabel("Password (12+ characters)")).toHaveAttribute(
+    "aria-invalid",
+    "true",
+  );
+  await expect(page).toHaveURL(/\/sign-up$/);
+  // the server refuses it too (the client check is only a convenience)
+  const res = await page.request.post("/api/setup", {
+    data: {
+      name: "Short Pw",
+      email: "short@example.com",
+      password: "elevenchars",
+      workspaceName: "Short",
+      token: SETUP_TOKEN,
+    },
+  });
+  expect(res.status()).toBe(400);
   await page.goto("/sign-in");
   await page.getByLabel("Email").fill("short@example.com");
   await page.getByLabel("Password").fill("elevenchars");
