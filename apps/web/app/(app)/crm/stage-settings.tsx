@@ -2,18 +2,22 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { ArrowDown, ArrowUp, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { Callout } from "../../../components/callout";
+import { pillFor, STAGE_KIND, StatusPill } from "../../../components/status-pill";
 import { Button } from "../../../components/ui/button";
 import { Card } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
+import { Select } from "../../../components/ui/select";
 import { Label } from "../../../components/ui/label";
 import { call } from "../accounts/api-client";
 import { INTEREST } from "../leads/labels";
 import { friendly, type BoardData, type Kind } from "./types";
 
 type Stage = { id: string; name: string; kind: Kind; interestCodes: number[] };
-const sel = "h-10 rounded-md border border-border bg-card px-3 text-sm";
 const KINDS: Kind[] = ["OPEN", "WON", "LOST"];
+const KIND_LABEL = { OPEN: "Open", WON: "Won", LOST: "Lost" } as const;
 
 function Row({
   stage,
@@ -58,10 +62,16 @@ function Row({
   return (
     <fieldset
       aria-label={`Stage ${stage.name}`}
-      className="flex flex-col gap-3 rounded-md border border-border p-3"
+      className="flex flex-col gap-3 rounded-lg border border-border p-4"
     >
       <div className="flex flex-wrap items-end gap-3">
-        <div className="flex flex-col gap-1">
+        <StatusPill
+          {...pillFor(STAGE_KIND, KIND_LABEL[stage.kind])}
+          className="self-center max-sm:order-first max-sm:w-auto"
+        >
+          {KIND_LABEL[stage.kind]}
+        </StatusPill>
+        <div className="flex min-w-40 flex-1 flex-col gap-1.5">
           <Label htmlFor={`name-${stage.id}`}>Name</Label>
           <Input
             id={`name-${stage.id}`}
@@ -70,11 +80,10 @@ function Row({
             onChange={(e) => setName(e.target.value)}
           />
         </div>
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1.5">
           <Label htmlFor={`kind-${stage.id}`}>Kind</Label>
-          <select
+          <Select
             id={`kind-${stage.id}`}
-            className={sel}
             value={kind}
             disabled={count > 0}
             aria-describedby={count > 0 ? `kind-why-${stage.id}` : undefined}
@@ -85,39 +94,45 @@ function Row({
                 {k === "OPEN" ? "Open" : k === "WON" ? "Won" : "Lost"}
               </option>
             ))}
-          </select>
+          </Select>
           {count > 0 && (
-            <span id={`kind-why-${stage.id}`} className="text-xs text-muted-foreground">
+            <span id={`kind-why-${stage.id}`} className="text-[13px]/[18px] text-fg-subtle">
               Fixed while the stage holds {count} {count === 1 ? "deal" : "deals"}.
             </span>
           )}
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          aria-label={`Move ${stage.name} up`}
-          disabled={index === 0}
-          onClick={() => void patch({ position: index - 1 })}
-        >
-          Move up
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          aria-label={`Move ${stage.name} down`}
-          disabled={index === stages.length - 1}
-          onClick={() => void patch({ position: index + 1 })}
-        >
-          Move down
-        </Button>
+        <span className="flex gap-1">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            aria-label={`Move ${stage.name} up`}
+            disabled={index === 0}
+            onClick={() => void patch({ position: index - 1 })}
+          >
+            <ArrowUp aria-hidden />
+            <span className="max-md:sr-only">Move up</span>
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            aria-label={`Move ${stage.name} down`}
+            disabled={index === stages.length - 1}
+            onClick={() => void patch({ position: index + 1 })}
+          >
+            <ArrowDown aria-hidden />
+            <span className="max-md:sr-only">Move down</span>
+          </Button>
+        </span>
       </div>
       <div
         role="group"
         aria-label={`Interest statuses for ${stage.name}`}
-        className="flex flex-wrap gap-x-4 gap-y-1 text-sm"
+        className="flex flex-wrap gap-x-4 gap-y-1 text-[13px]/[18px]"
       >
         {Object.entries(INTEREST).map(([code, label]) => (
-          <label key={code} className="flex items-center gap-1">
+          <label key={code} className="flex min-h-11 items-center gap-1.5 md:min-h-6">
             <input
               type="checkbox"
               checked={codes.has(Number(code))}
@@ -130,6 +145,8 @@ function Row({
       <div className="flex flex-wrap items-end gap-3">
         <Button
           type="button"
+          variant="outline"
+          size="sm"
           onClick={() =>
             void patch({
               name: name.trim(),
@@ -140,12 +157,11 @@ function Row({
         >
           Save
         </Button>
-        <div className="ml-auto flex items-end gap-2">
-          <div className="flex flex-col gap-1">
+        <div className="ml-auto flex flex-wrap items-end gap-2">
+          <div className="flex flex-col gap-1.5">
             <Label htmlFor={`move-${stage.id}`}>Move deals to</Label>
-            <select
+            <Select
               id={`move-${stage.id}`}
-              className={sel}
               value={moveTo}
               onChange={(e) => setMoveTo(e.target.value)}
             >
@@ -155,9 +171,15 @@ function Row({
                   {s.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
-          <Button type="button" variant="outline" disabled={!moveTo} onClick={() => void remove()}>
+          <Button
+            type="button"
+            variant="danger-ghost"
+            disabled={!moveTo}
+            onClick={() => void remove()}
+          >
+            <Trash2 aria-hidden />
             Delete
           </Button>
         </div>
@@ -219,14 +241,14 @@ export function StageSettings({
   return (
     <div className="flex flex-col gap-4">
       {error && (
-        <p role="alert" className="text-sm text-destructive">
+        <Callout tone="danger" role="alert">
           {error}
-        </p>
+        </Callout>
       )}
       <Card className="flex flex-col gap-3">
-        <h2 className="text-lg font-medium">Pipeline options</h2>
+        <h2 className="text-base font-semibold">Pipeline options</h2>
         <div className="flex flex-wrap items-end gap-2">
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col gap-1.5">
             <Label htmlFor="currency">Currency (one per workspace)</Label>
             <Input
               id="currency"
@@ -248,26 +270,31 @@ export function StageSettings({
           </Button>
         </div>
         {currencyLocked && (
-          <p id="currency-why" className="text-xs text-muted-foreground">
-            The currency cannot change while a deal has a value or cash collected.
-          </p>
+          <Callout tone="neutral" className="sm:max-w-xl">
+            <span id="currency-why">
+              The currency cannot change while a deal has a value or cash collected.
+            </span>
+          </Callout>
         )}
-        <p className="text-sm">
+        <p className="text-[13px]/[18px] text-fg-muted">
           Automatic opportunities from positive replies are managed in{" "}
-          <Link href="/automations?tab=builtin" className="underline">
+          <Link
+            href="/automations?tab=builtin"
+            className="text-signal underline underline-offset-2"
+          >
             Automations
           </Link>
           .
         </p>
         {msg && (
-          <p role="status" className="text-sm">
+          <p role="status" className="text-[13px]/[18px]">
             {msg}
           </p>
         )}
       </Card>
       <Card className="flex flex-col gap-3">
-        <h2 className="text-lg font-medium">Stages</h2>
-        <p className="text-sm text-muted-foreground">
+        <h2 className="text-base font-semibold">Stages</h2>
+        <p className="text-[13px]/[18px] text-fg-muted">
           A pipeline keeps at least one open, one won and one lost stage. An interest status can map
           to one stage.
         </p>
@@ -285,8 +312,11 @@ export function StageSettings({
             }}
           />
         ))}
-        <form onSubmit={add} className="flex flex-wrap items-end gap-2">
-          <div className="flex flex-col gap-1">
+        <form
+          onSubmit={add}
+          className="flex flex-wrap items-end gap-2 rounded-lg border border-dashed border-border-strong p-4"
+        >
+          <div className="flex flex-col gap-1.5">
             <Label htmlFor="new-stage-name">New stage name</Label>
             <Input
               id="new-stage-name"
@@ -295,18 +325,17 @@ export function StageSettings({
               onChange={(e) => setNewName(e.target.value)}
             />
           </div>
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col gap-1.5">
             <Label htmlFor="new-stage-kind">New stage kind</Label>
-            <select
+            <Select
               id="new-stage-kind"
-              className={sel}
               value={newKind}
               onChange={(e) => setNewKind(e.target.value as Kind)}
             >
               <option value="OPEN">Open</option>
               <option value="WON">Won</option>
               <option value="LOST">Lost</option>
-            </select>
+            </Select>
           </div>
           <Button type="submit" disabled={!newName.trim()}>
             Add stage

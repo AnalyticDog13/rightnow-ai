@@ -2,20 +2,17 @@ import { useEffect, useRef, useState } from "react";
 import { call } from "../accounts/api-client";
 import type { Opp } from "./types";
 
-export const sel = "h-10 rounded-md border border-border bg-card px-3 text-sm";
 export const MAX = 999_999_999_999.99;
-export const dialogCls =
-  "m-auto max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-border bg-card p-6 text-foreground backdrop:bg-black/40";
 
-/** A modal <dialog> that reports its own close (Escape, Close button). */
-export function useDialog(onClose: () => void) {
+/** A modal <dialog> that reports its own close (Escape, Close button). `className` picks a sheet or a dialog. */
+export function useDialog(onClose: () => void, className: string) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     ref.current?.showModal();
   }, []);
   return {
     ref,
-    props: { ref, onClose, className: dialogCls },
+    props: { ref, onClose, className },
     close: () => ref.current?.close(),
   };
 }

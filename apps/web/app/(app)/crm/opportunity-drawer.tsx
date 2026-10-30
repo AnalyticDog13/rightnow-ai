@@ -1,40 +1,40 @@
 "use client";
 
+import { AlertCircle, X } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
+import { sheetClass, sheetFooter, sheetHeader } from "../../../components/overlay";
+import { pillFor, STAGE_KIND, StatusPill } from "../../../components/status-pill";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
+import { Select } from "../../../components/ui/select";
+import { DrawerSection } from "../accounts/account-drawer";
 import { call } from "../accounts/api-client";
 import type { Member } from "../leads/bulk-bar";
 import { ActivityList, useActivity } from "./activity-tab";
 import { NotesSection, TasksSection } from "./deal-sections";
-import {
-  checkMoney,
-  type Note,
-  num,
-  sel,
-  type Task,
-  useAttribution,
-  useDialog,
-} from "./drawer-kit";
-import { friendly, type Opp, type StageOption } from "./types";
+import { checkMoney, type Note, num, type Task, useAttribution, useDialog } from "./drawer-kit";
+import { friendly, money, type Opp, type StageOption } from "./types";
 
 export function OpportunityDrawer({
   opp: initial,
   stages,
   members,
+  currency,
   canEdit,
   onClose,
   onChanged,
 }: {
   opp: Opp;
   stages: StageOption[];
+  currency: string;
   members: Member[];
   canEdit: boolean;
   onClose: () => void;
   onChanged: () => void;
 }) {
-  const dlg = useDialog(onClose);
+  const dlg = useDialog(onClose, sheetClass());
+
   const [opp, setOpp] = useState(initial);
   const toForm = (o: Opp) => ({
     title: o.title,
@@ -130,164 +130,203 @@ export function OpportunityDrawer({
   }
 
   const field = (id: string, label: string, error?: string, input?: React.ReactNode) => (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-1.5">
       <Label htmlFor={id}>{label}</Label>
       {input}
       {error && (
-        <p id={`${id}-err`} role="alert" className="text-sm text-destructive">
+        <p
+          id={`${id}-err`}
+          role="alert"
+          className="flex items-center gap-1 text-[13px]/[18px] text-danger"
+        >
+          <AlertCircle className="size-3.5 shrink-0" aria-hidden />
           {error}
         </p>
       )}
     </div>
   );
+  const stage = stages.find((s) => s.id === opp.stageId);
+  const kind = stage ? KIND_LABEL[stage.kind] : undefined;
 
   return (
     <dialog {...dlg.props} aria-labelledby="opp-title">
-      <div className="mb-4 flex items-start justify-between gap-4">
-        <div>
-          <h2 id="opp-title" className="text-lg font-semibold">
+      <div className="flex h-full flex-col">
+        <header className={sheetHeader}>
+          <h2 id="opp-title" className="min-w-0 truncate text-base font-semibold" title={opp.title}>
             {opp.title}
           </h2>
-          <p className="text-sm text-muted-foreground">{opp.lead.email}</p>
-          <p className="text-sm text-muted-foreground">{attribution}</p>
-          {opp.closedAt && (
-            <p className="text-sm">
-              Closed on{" "}
-              {new Date(opp.closedAt).toLocaleDateString(undefined, { dateStyle: "medium" })}
-            </p>
+          {stage && kind && (
+            <StatusPill {...pillFor(STAGE_KIND, kind)} className="max-sm:hidden">
+              {stage.name}
+            </StatusPill>
           )}
-        </div>
-        <Button variant="outline" onClick={dlg.close}>
-          Close
-        </Button>
-      </div>
-      <form onSubmit={save} noValidate className="grid gap-3 sm:grid-cols-2">
-        {field(
-          "opp-title-in",
-          "Title",
-          undefined,
-          <Input
-            id="opp-title-in"
-            disabled={!canEdit}
-            value={form.title}
-            onChange={(e) => set("title", e.target.value)}
-          />,
-        )}
-        {field(
-          "opp-stage",
-          "Stage",
-          undefined,
-          <select
-            id="opp-stage"
-            disabled={!canEdit}
-            className={sel}
-            value={form.stageId}
-            onChange={(e) => set("stageId", e.target.value)}
-          >
-            {stages.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>,
-        )}
-        {field(
-          "opp-value",
-          "Value",
-          errors.value,
-          <Input
-            id="opp-value"
-            type="number"
-            step="0.01"
-            disabled={!canEdit}
-            value={form.value}
-            aria-invalid={!!errors.value}
-            aria-describedby={errors.value ? "opp-value-err" : undefined}
-            onChange={(e) => set("value", e.target.value)}
-          />,
-        )}
-        {field(
-          "opp-cash",
-          "Cash collected",
-          errors.cash,
-          <Input
-            id="opp-cash"
-            type="number"
-            step="0.01"
-            disabled={!canEdit}
-            value={form.cash}
-            aria-invalid={!!errors.cash}
-            aria-describedby={errors.cash ? "opp-cash-err" : undefined}
-            onChange={(e) => set("cash", e.target.value)}
-          />,
-        )}
-        {field(
-          "opp-close",
-          "Expected close",
-          undefined,
-          <Input
-            id="opp-close"
-            type="date"
-            disabled={!canEdit}
-            value={form.close}
-            onChange={(e) => set("close", e.target.value)}
-          />,
-        )}
-        {field(
-          "opp-owner",
-          "Owner",
-          undefined,
-          <select
-            id="opp-owner"
-            disabled={!canEdit}
-            className={sel}
-            value={form.ownerId}
-            onChange={(e) => set("ownerId", e.target.value)}
-          >
-            <option value="">Unassigned</option>
-            {members.map((m) => (
-              <option key={m.userId} value={m.userId}>
-                {m.name}
-              </option>
-            ))}
-          </select>,
-        )}
-        {error && (
-          <p role="alert" className="text-sm text-destructive sm:col-span-2">
-            {error}
-          </p>
-        )}
-        {msg && (
-          <p role="status" className="text-sm sm:col-span-2">
-            {msg}
-          </p>
-        )}
-        {canEdit && (
-          <div className="sm:col-span-2">
-            <Button type="submit">Save</Button>
-          </div>
-        )}
-      </form>
-
-      <NotesSection notes={notes} canEdit={canEdit} onLog={log} />
-
-      <TasksSection
-        tasks={tasks}
-        canEdit={canEdit}
-        opportunityId={opp.id}
-        onAdd={addTask}
-        onComplete={(t) => void complete(t)}
-      />
-
-      <section aria-label="Deal activity" className="mt-4 border-t border-border pt-4">
-        <h3 className="mb-2 text-sm font-medium">Activity</h3>
-        <ActivityList items={activity.items} members={members} />
-        {activity.next && (
-          <Button variant="outline" className="mt-2" onClick={() => void activity.more()}>
-            Load more
+          <Button variant="ghost" className="ml-auto" onClick={dlg.close}>
+            <X aria-hidden />
+            Close
           </Button>
+        </header>
+        <div className="flex flex-1 flex-col gap-6 overflow-y-auto p-5">
+          <DrawerSection label="Deal" title="Details">
+            <dl className="grid grid-cols-2 gap-3 rounded-lg border border-border bg-sunken px-4 py-3">
+              <div>
+                <dt className="micro text-fg-muted">Value</dt>
+                <dd className="text-xl/7 font-semibold tabular-nums">
+                  {money(currency, opp.value)}
+                </dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="micro text-fg-muted">Lead</dt>
+                <dd className="truncate text-sm font-medium" title={opp.lead.email}>
+                  {opp.lead.email}
+                </dd>
+              </div>
+            </dl>
+            <p className="text-[13px]/[18px] text-fg-muted">{attribution}</p>
+            {opp.closedAt && (
+              <p className="text-[13px]/[18px]">
+                Closed on{" "}
+                {new Date(opp.closedAt).toLocaleDateString(undefined, { dateStyle: "medium" })}
+              </p>
+            )}
+            <form
+              id="opp-form"
+              onSubmit={save}
+              noValidate
+              className="grid gap-x-4 gap-y-3 sm:grid-cols-2"
+            >
+              {field(
+                "opp-title-in",
+                "Title",
+                undefined,
+                <Input
+                  id="opp-title-in"
+                  disabled={!canEdit}
+                  value={form.title}
+                  onChange={(e) => set("title", e.target.value)}
+                />,
+              )}
+              {field(
+                "opp-stage",
+                "Stage",
+                undefined,
+                <Select
+                  id="opp-stage"
+                  disabled={!canEdit}
+                  value={form.stageId}
+                  onChange={(e) => set("stageId", e.target.value)}
+                >
+                  {stages.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </Select>,
+              )}
+              {field(
+                "opp-value",
+                "Value",
+                errors.value,
+                <Input
+                  id="opp-value"
+                  type="number"
+                  step="0.01"
+                  disabled={!canEdit}
+                  value={form.value}
+                  aria-invalid={!!errors.value}
+                  aria-describedby={errors.value ? "opp-value-err" : undefined}
+                  onChange={(e) => set("value", e.target.value)}
+                />,
+              )}
+              {field(
+                "opp-cash",
+                "Cash collected",
+                errors.cash,
+                <Input
+                  id="opp-cash"
+                  type="number"
+                  step="0.01"
+                  disabled={!canEdit}
+                  value={form.cash}
+                  aria-invalid={!!errors.cash}
+                  aria-describedby={errors.cash ? "opp-cash-err" : undefined}
+                  onChange={(e) => set("cash", e.target.value)}
+                />,
+              )}
+              {field(
+                "opp-close",
+                "Expected close",
+                undefined,
+                <Input
+                  id="opp-close"
+                  type="date"
+                  disabled={!canEdit}
+                  value={form.close}
+                  onChange={(e) => set("close", e.target.value)}
+                />,
+              )}
+              {field(
+                "opp-owner",
+                "Owner",
+                undefined,
+                <Select
+                  id="opp-owner"
+                  disabled={!canEdit}
+                  value={form.ownerId}
+                  onChange={(e) => set("ownerId", e.target.value)}
+                >
+                  <option value="">Unassigned</option>
+                  {members.map((m) => (
+                    <option key={m.userId} value={m.userId}>
+                      {m.name}
+                    </option>
+                  ))}
+                </Select>,
+              )}
+            </form>
+          </DrawerSection>
+
+          <NotesSection notes={notes} canEdit={canEdit} onLog={log} />
+
+          <TasksSection
+            tasks={tasks}
+            canEdit={canEdit}
+            opportunityId={opp.id}
+            onAdd={addTask}
+            onComplete={(t) => void complete(t)}
+          />
+
+          <DrawerSection label="Deal activity" title="Activity">
+            <ActivityList items={activity.items} members={members} />
+            {activity.next && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="self-start"
+                onClick={() => void activity.more()}
+              >
+                Load more
+              </Button>
+            )}
+          </DrawerSection>
+        </div>
+        {canEdit && (
+          <footer className={sheetFooter}>
+            <div className="mr-auto min-w-0 flex-1 text-[13px]/[18px]">
+              {error && (
+                <p role="alert" className="text-danger">
+                  {error}
+                </p>
+              )}
+              {msg && <p role="status">{msg}</p>}
+            </div>
+            <Button type="submit" form="opp-form">
+              Save
+            </Button>
+          </footer>
         )}
-      </section>
+      </div>
     </dialog>
   );
 }
+
+const KIND_LABEL = { OPEN: "Open", WON: "Won", LOST: "Lost" } as const;

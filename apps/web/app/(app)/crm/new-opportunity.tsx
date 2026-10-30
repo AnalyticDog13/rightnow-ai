@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
+import { dialogClass } from "../../../components/overlay";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
+import { Select } from "../../../components/ui/select";
 import { Label } from "../../../components/ui/label";
 import { call } from "../accounts/api-client";
 import type { Named } from "../leads/bulk-bar";
-import { checkMoney, sel, useDialog } from "./drawer-kit";
+import { checkMoney, useDialog } from "./drawer-kit";
 import { friendly, type StageOption } from "./types";
 
 type Found = { id: string; email: string };
@@ -23,7 +25,7 @@ export function NewOpportunity({
   onClose: () => void;
   onCreated: () => void;
 }) {
-  const dlg = useDialog(onClose);
+  const dlg = useDialog(onClose, dialogClass(640));
   const [q, setQ] = useState("");
   const [found, setFound] = useState<Found[]>([]);
   const [leadId, setLeadId] = useState("");
@@ -66,15 +68,15 @@ export function NewOpportunity({
   return (
     <dialog {...dlg.props} aria-labelledby="new-opp-title">
       <div className="mb-4 flex items-start justify-between gap-4">
-        <h2 id="new-opp-title" className="text-lg font-semibold">
+        <h2 id="new-opp-title" className="text-lg/[26px] font-semibold">
           New opportunity
         </h2>
-        <Button variant="outline" onClick={dlg.close}>
+        <Button variant="ghost" onClick={dlg.close}>
           Close
         </Button>
       </div>
       <form onSubmit={create} noValidate className="grid gap-3 sm:grid-cols-2">
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1.5">
           <Label htmlFor="new-find">Find a lead</Label>
           <Input
             id="new-find"
@@ -84,23 +86,18 @@ export function NewOpportunity({
             onChange={(e) => setQ(e.target.value)}
           />
         </div>
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1.5">
           <Label htmlFor="new-lead">Lead</Label>
-          <select
-            id="new-lead"
-            className={sel}
-            value={leadId}
-            onChange={(e) => setLeadId(e.target.value)}
-          >
+          <Select id="new-lead" value={leadId} onChange={(e) => setLeadId(e.target.value)}>
             <option value="">{found.length ? "Choose a lead" : "Search first"}</option>
             {found.map((l) => (
               <option key={l.id} value={l.id}>
                 {l.email}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1.5">
           <Label htmlFor="new-title">Title</Label>
           <Input
             id="new-title"
@@ -109,7 +106,7 @@ export function NewOpportunity({
             onChange={(e) => setTitle(e.target.value)}
           />
         </div>
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1.5">
           <Label htmlFor="new-value">Value</Label>
           <Input
             id="new-value"
@@ -119,26 +116,20 @@ export function NewOpportunity({
             onChange={(e) => setValue(e.target.value)}
           />
         </div>
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1.5">
           <Label htmlFor="new-stage">Stage</Label>
-          <select
-            id="new-stage"
-            className={sel}
-            value={stageId}
-            onChange={(e) => setStageId(e.target.value)}
-          >
+          <Select id="new-stage" value={stageId} onChange={(e) => setStageId(e.target.value)}>
             {stages.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1.5">
           <Label htmlFor="new-campaign">Campaign (optional)</Label>
-          <select
+          <Select
             id="new-campaign"
-            className={sel}
             value={campaignId}
             onChange={(e) => setCampaignId(e.target.value)}
           >
@@ -148,14 +139,17 @@ export function NewOpportunity({
                 {c.name}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
         {error && (
-          <p role="alert" className="text-sm text-destructive sm:col-span-2">
+          <p role="alert" className="text-[13px]/[18px] text-danger sm:col-span-2">
             {error}
           </p>
         )}
-        <div className="sm:col-span-2">
+        <div className="mt-2 flex justify-end gap-2 sm:col-span-2">
+          <Button type="button" variant="ghost" onClick={dlg.close}>
+            Cancel
+          </Button>
           <Button type="submit">Create opportunity</Button>
         </div>
       </form>

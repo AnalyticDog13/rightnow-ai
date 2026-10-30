@@ -1,9 +1,12 @@
 "use client";
 
+import { Plus } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
+import { PageHeader } from "../../../components/page-header";
 import { Tabs } from "../../../components/tabs";
+import { Button } from "../../../components/ui/button";
 import type { Member, Named } from "../leads/bulk-bar";
 import { ActivityTab } from "./activity-tab";
 import { Board } from "./board";
@@ -38,6 +41,7 @@ export function CrmClient({
 }) {
   const sp = useSearchParams();
   const [tab, setTab] = useState(sp.get("tab") === "tasks" ? "tasks" : "opportunities");
+  const [creating, setCreating] = useState(false);
   const tabs = [
     { id: "opportunities", label: "Opportunities" },
     { id: "tasks", label: "Tasks" },
@@ -45,13 +49,24 @@ export function CrmClient({
     ...(isAdmin ? [{ id: "settings", label: "Pipeline settings" }] : []),
   ];
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight">CRM</h1>
-        <Link href="/leads" className="text-sm underline">
-          Leads
-        </Link>
-      </div>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="CRM"
+        description="Deals from interested replies, by stage."
+        actions={
+          <>
+            <Button asChild variant="outline">
+              <Link href="/leads">Leads</Link>
+            </Button>
+            {canEdit && tab === "opportunities" && (
+              <Button onClick={() => setCreating(true)}>
+                <Plus aria-hidden />
+                New opportunity
+              </Button>
+            )}
+          </>
+        }
+      />
       <Tabs label="CRM views" tabs={tabs} value={tab} onChange={setTab}>
         {tab === "opportunities" && (
           <div className="flex flex-col gap-3">
@@ -62,6 +77,8 @@ export function CrmClient({
               members={members}
               campaigns={campaigns}
               canEdit={canEdit}
+              creating={creating}
+              onCreating={setCreating}
             />
           </div>
         )}

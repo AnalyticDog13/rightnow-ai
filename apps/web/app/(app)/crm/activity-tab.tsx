@@ -1,7 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import {
+  ArrowRight,
+  Handshake,
+  ListChecks,
+  Reply,
+  StickyNote,
+  type LucideIcon,
+} from "lucide-react";
+import { Callout } from "../../../components/callout";
 import { Button } from "../../../components/ui/button";
+import { Card } from "../../../components/ui/card";
+import { cn } from "../../../lib/utils";
 import { call, errorText } from "../accounts/api-client";
 import type { Member } from "../leads/bulk-bar";
 
@@ -46,6 +57,15 @@ function what(i: Item): string {
       : "Deal updated";
 }
 
+// B5.12 timeline discs: logged notes in chart-1, replies chart-2, stage moves neutral, tasks warning
+const DISC: Record<string, { icon: LucideIcon; cls: string }> = {
+  reply: { icon: Reply, cls: "bg-chart-2" },
+  stage: { icon: ArrowRight, cls: "bg-neutral-solid" },
+  task: { icon: ListChecks, cls: "bg-warning-solid" },
+  opportunity: { icon: Handshake, cls: "bg-neutral-solid" },
+};
+const LOGGED_DISC = { icon: StickyNote, cls: "bg-chart-1" };
+
 export function ActivityList({
   items,
   members,
@@ -56,18 +76,34 @@ export function ActivityList({
   /** names each item's deal (the workspace feed; a deal's own feed needs no name) */
   showDeal?: boolean;
 }) {
-  if (!items.length) return <p className="text-sm text-muted-foreground">No activity yet.</p>;
+  if (!items.length) return <p className="text-[13px]/[18px] text-fg-muted">No activity yet.</p>;
   return (
-    <ul aria-label="Activity" className="flex flex-col gap-2 text-sm">
+    <ul aria-label="Activity" className="flex flex-col">
       {items.map((i) => {
         const who = members.find((m) => m.userId === i.actorId)?.name ?? "Automatic";
         const deal = showDeal ? i.opportunityTitle : null;
+        const disc = i.kind in LOGGED ? LOGGED_DISC : (DISC[i.kind] ?? DISC.opportunity!);
         return (
-          <li key={i.id}>
-            <span className="text-muted-foreground">{new Date(i.at).toLocaleString()}</span>{" "}
-            <strong className="font-medium">{who}</strong>{" "}
-            {deal && <span className="text-muted-foreground">{deal}: </span>}
-            {what(i)}
+          <li
+            key={i.id}
+            className="relative flex gap-3 pb-4 text-[13px]/[18px] last:pb-0 [&:not(:last-child)]:before:absolute [&:not(:last-child)]:before:top-7 [&:not(:last-child)]:before:bottom-1 [&:not(:last-child)]:before:left-3 [&:not(:last-child)]:before:w-px [&:not(:last-child)]:before:bg-border"
+          >
+            <span className={cn("grid size-6 shrink-0 place-items-center rounded-full", disc.cls)}>
+              <disc.icon className="size-3 text-white dark:text-bg" aria-hidden />
+            </span>
+            <span className="min-w-0 flex-1 pt-0.5">
+              <strong className="font-medium">{who}</strong>{" "}
+              {deal && <span className="text-fg-muted">{deal}: </span>}
+              {what(i)}
+            </span>
+            <time dateTime={i.at} className="shrink-0 pt-0.5 text-fg-subtle tabular-nums">
+              {new Date(i.at).toLocaleString(undefined, {
+                month: "short",
+                day: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </time>
           </li>
         );
       })}
@@ -108,13 +144,15 @@ export function ActivityTab({ members }: { members: Member[] }) {
   return (
     <div className="flex flex-col gap-3">
       {error && (
-        <p role="alert" className="text-sm text-destructive">
+        <Callout tone="danger" role="alert">
           {error}
-        </p>
+        </Callout>
       )}
-      <ActivityList items={items} members={members} showDeal />
+      <Card className="max-w-3xl">
+        <ActivityList items={items} members={members} showDeal />
+      </Card>
       {next && (
-        <Button variant="outline" className="self-start" onClick={() => void more()}>
+        <Button variant="outline" size="sm" className="self-start" onClick={() => void more()}>
           Load more
         </Button>
       )}

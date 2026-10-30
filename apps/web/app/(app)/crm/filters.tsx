@@ -2,10 +2,10 @@
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
+import { SearchInput } from "../../../components/table-kit";
 import { Input } from "../../../components/ui/input";
+import { Select } from "../../../components/ui/select";
 import type { Member, Named } from "../leads/bulk-bar";
-
-const sel = "h-10 rounded-md border border-border bg-card px-3 text-sm";
 
 /** Board filters live in the URL query, so a reload or a shared link keeps them. */
 export function Filters({
@@ -45,19 +45,14 @@ export function Filters({
     all: string,
     options: { value: string; name: string }[],
   ) => (
-    <select
-      aria-label={label}
-      className={sel}
-      value={get(k)}
-      onChange={(e) => set(k, e.target.value)}
-    >
+    <Select size="sm" aria-label={label} value={get(k)} onChange={(e) => set(k, e.target.value)}>
       <option value="">{all}</option>
       {options.map((o) => (
         <option key={o.value} value={o.value}>
           {o.name}
         </option>
       ))}
-    </select>
+    </Select>
   );
 
   return (
@@ -67,11 +62,9 @@ export function Filters({
       className="flex flex-wrap items-center gap-2"
       onSubmit={(e) => e.preventDefault()}
     >
-      <Input
-        type="search"
+      <SearchInput
         aria-label="Search opportunities"
         placeholder="Search email or domain"
-        className="max-w-xs"
         value={q}
         onChange={(e) => setQ(e.target.value)}
       />
@@ -99,24 +92,26 @@ export function Filters({
         "All stages",
         stages.map((s) => ({ value: s.id, name: s.name })),
       )}
-      <label className="flex items-center gap-1 text-sm">
-        Created from
-        <Input
-          type="date"
-          className="w-40"
-          value={get("from")}
-          onChange={(e) => set("from", e.target.value)}
-        />
-      </label>
-      <label className="flex items-center gap-1 text-sm">
-        to
-        <Input
-          type="date"
-          className="w-40"
-          value={get("to")}
-          onChange={(e) => set("to", e.target.value)}
-        />
-      </label>
+      <span className="flex flex-wrap items-center gap-2">
+        <label className="flex items-center gap-2 text-[13px]/[18px] text-fg-muted">
+          Created from
+          <Input
+            type="date"
+            className="w-40 md:h-8"
+            value={get("from")}
+            onChange={(e) => set("from", e.target.value)}
+          />
+        </label>
+        <label className="flex items-center gap-2 text-[13px]/[18px] text-fg-muted">
+          to
+          <Input
+            type="date"
+            className="w-40 md:h-8"
+            value={get("to")}
+            onChange={(e) => set("to", e.target.value)}
+          />
+        </label>
+      </span>
     </form>
   );
 }
