@@ -207,7 +207,7 @@ export function PlacementManager({ isAdmin }: { isAdmin: boolean }) {
               </caption>
               <thead>
                 <tr>
-                  <th scope="col" data-pin="check">
+                  <th scope="col" data-pin="id" className="max-md:left-0">
                     Seed mailbox
                   </th>
                   <th scope="col" className="hidden md:table-cell">
@@ -222,8 +222,8 @@ export function PlacementManager({ isAdmin }: { isAdmin: boolean }) {
                   return (
                     <tr key={s.accountId}>
                       <td
-                        data-pin="check"
-                        className="max-w-56 truncate font-medium"
+                        data-pin="id"
+                        className="max-w-56 truncate font-medium max-md:left-0"
                         title={s.email}
                       >
                         {s.email}

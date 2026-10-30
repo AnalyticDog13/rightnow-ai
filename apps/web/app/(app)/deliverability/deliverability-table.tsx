@@ -93,7 +93,7 @@ export function DeliverabilityTable({
           <caption className="sr-only">Deliverability per email account</caption>
           <thead>
             <tr>
-              <th scope="col" data-pin="check">
+              <th scope="col" data-pin="id" className="max-md:left-0">
                 Account
               </th>
               <th scope="col">Status</th>
@@ -128,14 +128,13 @@ export function DeliverabilityTable({
               const dns = r.dns ? (DNS_LABEL[r.dns.level] ?? "DNS not checked") : "";
               return (
                 <tr key={r.id} data-stripe={bad ? "danger" : undefined}>
-                  <th
-                    scope="row"
-                    data-pin="check"
-                    className="max-w-40 truncate text-left font-medium md:max-w-56"
+                  <td
+                    data-pin="id"
+                    className="max-w-40 truncate font-medium max-md:left-0 md:max-w-56"
                     title={r.email}
                   >
                     {r.email}
-                  </th>
+                  </td>
                   <td>
                     <StatusPill {...pillFor(LIFECYCLE, r.status)}>{r.status}</StatusPill>
                   </td>
@@ -171,18 +170,16 @@ export function DeliverabilityTable({
                       </StatusPill>
                     )}
                   </td>
-                  <td className={`${md} text-[13px]/[18px] tabular-nums`}>
+                  <td
+                    className={`${md} min-w-36 text-[13px]/[18px] whitespace-nowrap tabular-nums`}
+                  >
                     <span className="block">Sent {r.sent30d}</span>
                     <span className="block">Hard {r.hardBouncePct30d}%</span>
                     <span className="block">Soft {r.softBouncePct30d}%</span>
                     <span className="block">Replies {r.replyPct30d}%</span>
                     <span className="block">Complaints {r.complaintPct30d}%</span>
-                    <span className="mt-1 block max-w-48 text-fg-subtle">
-                      Complaint data only when a feedback loop delivers to a connected mailbox
-                      (Gmail sends none).
-                    </span>
                     {r.lastBounceReasons.length > 0 && (
-                      <span className="mt-1 block max-w-48">
+                      <span className="mt-1 block max-w-48 whitespace-normal">
                         Latest bounces: {r.lastBounceReasons.join("; ")}
                       </span>
                     )}
@@ -258,6 +255,9 @@ export function DeliverabilityTable({
           </tbody>
         </table>
       </TableFrame>
+      <p className="text-[13px]/[18px] text-fg-subtle">
+        Complaint data only when a feedback loop delivers to a connected mailbox (Gmail sends none).
+      </p>
     </div>
   );
 }
