@@ -63,10 +63,12 @@ test("tiles match the API; a due task links to CRM Tasks; the strip lists health
   await expect(page.getByRole("group", { name: "Remaining capacity" })).toContainText(
     String(api.remainingToday),
   );
-  await expect(page.getByRole("group", { name: "Reply rate", exact: true })).toHaveAttribute(
-    "title",
-    /\d+ of \d+ contacted/,
-  );
+  // below 20 contacted the tile shows only "Not enough data", never an "x of y" line
+  const reply = page.getByRole("group", { name: "Reply rate", exact: true });
+  if (api.metrics7d.rateBase < 20) {
+    await expect(reply).toContainText("Not enough data");
+    await expect(reply).not.toContainText(/\d+ of \d+/);
+  } else await expect(reply).toHaveAttribute("title", /\d+ of \d+ contacted/);
 
   const mine = api.accounts.find((a: { email: string }) => a.email === EMAIL);
   await expect(page.getByRole("listitem").filter({ hasText: EMAIL })).toContainText(

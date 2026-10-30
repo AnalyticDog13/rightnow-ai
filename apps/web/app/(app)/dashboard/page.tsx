@@ -25,6 +25,9 @@ export const dynamic = "force-dynamic";
 const MIN_BASE = 20;
 const rate = (r: number | null, base: number) => (base < MIN_BASE ? "n/a" : pct(r));
 const thinNote = (base: number) => (base < MIN_BASE ? "Not enough data" : undefined);
+// below MIN_BASE only the note shows, so a "4 of 0" line never renders
+const tip = (n: number, base: number, what: string) =>
+  base < MIN_BASE ? undefined : rateTip(n, base, what);
 
 export default async function Page() {
   const info = await getSessionInfo(await headers());
@@ -129,19 +132,19 @@ export default async function Page() {
           <StatTile
             label="Reply rate"
             value={rate(d.rates7d.reply, m.rateBase)}
-            title={rateTip(m.replied, m.rateBase, "contacted")}
+            title={tip(m.replied, m.rateBase, "contacted")}
             note={thinNote(m.rateBase)}
           />
           <StatTile
             label="Positive reply rate"
             value={rate(d.rates7d.positiveReply, m.replied)}
-            title={rateTip(m.opportunities, m.replied, "replied leads")}
+            title={tip(m.opportunities, m.replied, "replied leads")}
             note={thinNote(m.replied)}
           />
           <StatTile
             label="Bounce rate"
             value={rate(d.rates7d.bounce, m.sent)}
-            title={rateTip(m.hardBounced, m.sent, "sent")}
+            title={tip(m.hardBounced, m.sent, "sent")}
             note={thinNote(m.sent)}
             className={cn(bounceHigh && "stripe-danger")}
           />
