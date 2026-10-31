@@ -203,7 +203,7 @@ export function AppShell({
         )}
       >
         <div className="flex h-14 shrink-0 items-center gap-2.5 px-4 rail:justify-center rail:px-0">
-          <img src="/rightnow-logo.svg" alt="" className="size-7 shrink-0 rounded-sm border border-border" />
+          <img src="/rightnow-logo.svg" alt="" className="size-7 shrink-0 rounded-sm invert dark:invert-0" />
           <span className="flex min-w-0 flex-1 flex-col rail:hidden">
             <span className="text-sm font-medium">rightnow</span>
             <span title={workspaceName} className="truncate text-[13px]/[18px] text-fg-muted">
