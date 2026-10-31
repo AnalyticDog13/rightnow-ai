@@ -64,3 +64,8 @@ Walked all steps at 1440/390 light+dark. Temp copies deleted.
 
 **Resume order:** `git status` → `npm test` (fix the 3 failures) → auth e2e → full e2e (CSP + fonts) → then Next
 steps 2-5 above.
+
+## Complete (2026-10-30)
+All screens restyled, onboarding wizard shipped, review findings and 9 e2e failures fixed. Local: lint, typecheck,
+unit (1918 passed) and affected e2e specs green. CI run 41149919748 on 4b1a0d2 green (check, compose-smoke,
+imap-real). `main` fast-forwarded to the redesign. Nothing pending.
