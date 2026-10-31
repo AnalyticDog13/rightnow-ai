@@ -85,7 +85,7 @@ test("interest creates a card; move by select and drag; tasks; activity", async 
   await page.goto("/crm");
   const column = (name: string) => page.getByRole("region", { name, exact: true });
   const card = (name: string) => page.getByRole("listitem").filter({ hasText: name });
-  await expect(column("Interested").getByText("Acme CRM")).toBeVisible();
+  await expect(column("Interested").getByText("Acme CRM", { exact: true })).toBeVisible();
   await expect(card("Acme CRM")).toContainText("CRM E2E");
 
   // the drawer names the attribution
@@ -108,10 +108,10 @@ test("interest creates a card; move by select and drag; tasks; activity", async 
   await expect(
     page.getByRole("status").filter({ hasText: "Moved Acme CRM to Meeting Scheduled" }),
   ).toBeVisible();
-  await expect(column("Meeting Scheduled").getByText("Acme CRM")).toBeVisible();
+  await expect(column("Meeting Scheduled").getByText("Acme CRM", { exact: true })).toBeVisible();
   await expect(stage).toBeFocused();
   await page.reload();
-  await expect(column("Meeting Scheduled").getByText("Acme CRM")).toBeVisible();
+  await expect(column("Meeting Scheduled").getByText("Acme CRM", { exact: true })).toBeVisible();
 
   // a rejected move is reported and the card goes back
   const patchUrl = "**/api/v1/crm/opportunities/*";
@@ -124,7 +124,7 @@ test("interest creates a card; move by select and drag; tasks; activity", async 
   await expect(
     page.getByRole("alert").filter({ hasText: "Could not move Acme CRM" }),
   ).toBeVisible();
-  await expect(column("Meeting Scheduled").getByText("Acme CRM")).toBeVisible();
+  await expect(column("Meeting Scheduled").getByText("Acme CRM", { exact: true })).toBeVisible();
   await page.unroute(patchUrl);
 
   // the network is down: the move and the reload both fail, and the card still goes back
@@ -134,8 +134,8 @@ test("interest creates a card; move by select and drag; tasks; activity", async 
   await expect(
     page.getByRole("alert").filter({ hasText: "Could not move Acme CRM" }),
   ).toBeVisible();
-  await expect(column("Meeting Scheduled").getByText("Acme CRM")).toBeVisible();
-  await expect(column("Negotiation").getByText("Acme CRM")).toHaveCount(0);
+  await expect(column("Meeting Scheduled").getByText("Acme CRM", { exact: true })).toBeVisible();
+  await expect(column("Negotiation").getByText("Acme CRM", { exact: true })).toHaveCount(0);
   await page.unroute(down);
 
   // a manual opportunity, dragged to the next column

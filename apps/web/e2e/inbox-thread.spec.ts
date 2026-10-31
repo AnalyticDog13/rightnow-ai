@@ -131,7 +131,10 @@ test("thread, reply with attachment, inert rendering, notes, bulk unread, remind
 
   // Primary with the unread badge
   await page.goto("/inbox");
-  const item = page.getByRole("list", { name: "Conversations" }).getByRole("listitem");
+  const item = page
+    .getByRole("main")
+    .getByRole("list", { name: "Conversations" })
+    .getByRole("listitem");
   await expect(item).toHaveCount(1);
   await expect(item.getByText("Unread", { exact: true })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Main" }).getByLabel("1 unread")).toBeVisible();
@@ -266,7 +269,10 @@ test("thread, reply with attachment, inert rendering, notes, bulk unread, remind
   await page.getByLabel("Select Quick question").check();
   await page.getByRole("button", { name: "Mark unread" }).click();
   await expect(
-    page.getByRole("list", { name: "Conversations" }).getByText("Unread", { exact: true }),
+    page
+      .getByRole("main")
+      .getByRole("list", { name: "Conversations" })
+      .getByText("Unread", { exact: true }),
   ).toBeVisible();
 
   // rendering is inert (Review Focus 4)
