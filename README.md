@@ -5,6 +5,9 @@ mailboxes, warm them up (or re-warm them after a break), run multi-step campaign
 inbox, and track deals in a built-in CRM. It runs on your laptop or on a Linux VPS, and your data never leaves
 your own database.
 
+**Website:** [rightnow-ai-site.vercel.app](https://rightnow-ai-site.vercel.app/): see how it works, try the
+interactive demos, and follow the setup guide.
+
 > **Status: complete.** All 8 build phases are done, about 1,290 automated tests and the browser tests pass in
 > CI, and sending has been verified live with real mailboxes.
 

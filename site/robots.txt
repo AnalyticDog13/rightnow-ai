@@ -2,4 +2,4 @@ User-agent: *
 Allow: /
 Disallow: /tools/
 Disallow: /tests/
-Sitemap: https://rightnow-ai.vercel.app/sitemap.xml
+Sitemap: https://rightnow-ai-site.vercel.app/sitemap.xml

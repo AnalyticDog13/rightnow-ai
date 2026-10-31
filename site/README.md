@@ -25,12 +25,12 @@ any URL depth.
 
 ## Change the origin (canonical, Open Graph, sitemap)
 
-The site origin is the constant `https://rightnow-ai.vercel.app` (no trailing slash). It appears only in the three
+The site origin is the constant `https://rightnow-ai-site.vercel.app` (no trailing slash). It appears only in the three
 pages' `<head>` (canonical, `og:url`, `og:image`, `twitter:image`, JSON-LD), `sitemap.xml` and `robots.txt`.
 Replace it everywhere with:
 
 ```bash
-grep -rl "https://rightnow-ai.vercel.app" site | xargs sed -i "s#https://rightnow-ai.vercel.app#https://YOUR-ORIGIN#g"
+grep -rl "https://rightnow-ai-site.vercel.app" site | xargs sed -i "s#https://rightnow-ai-site.vercel.app#https://YOUR-ORIGIN#g"
 ```
 
 PowerShell:
