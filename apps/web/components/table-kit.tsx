@@ -216,14 +216,22 @@ export function TableFrame({
   children,
   footer,
   className,
+  label,
 }: {
   children: ReactNode;
   footer?: ReactNode;
   className?: string;
+  /** for a table with no focusable cells: makes the scroll region a named tab stop so keyboard users can scroll it */
+  label?: string;
 }) {
   return (
     <div className={cn("overflow-hidden rounded-lg border border-border bg-surface", className)}>
-      <div className="table-frame relative overflow-x-auto">{children}</div>
+      <div
+        className="table-frame relative overflow-x-auto"
+        {...(label && { tabIndex: 0, role: "region", "aria-label": label })}
+      >
+        {children}
+      </div>
       {footer}
     </div>
   );

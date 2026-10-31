@@ -110,7 +110,7 @@ export function Table({
   children: ReactNode;
 }) {
   return (
-    <TableFrame>
+    <TableFrame label={caption}>
       <table>
         <caption className="sr-only">{caption}</caption>
         <thead>

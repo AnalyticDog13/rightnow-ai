@@ -152,8 +152,9 @@ export function ThreadList({
       <ul aria-label="Conversations" onKeyDown={onKey} className="min-h-0 flex-1 overflow-y-auto">
         {groups.map(([g, rows]) => (
           <Fragment key={g}>
+            {/* aria-hidden: a list may only own list items; each row's own date already says when */}
             <li
-              role="presentation"
+              aria-hidden
               className="micro sticky top-0 z-(--z-sticky) flex h-7 items-center border-b border-border bg-surface px-4 text-fg-subtle"
             >
               {g}
@@ -193,7 +194,12 @@ export function ThreadList({
                         {m ? who(m) : ""}
                       </span>
                       {!t.isRead && <span className="sr-only">Unread</span>}
-                      <span className="ml-auto shrink-0 font-mono text-[11px] text-fg-subtle tabular-nums">
+                      <span
+                        className={cn(
+                          "ml-auto shrink-0 font-mono text-[11px] tabular-nums",
+                          on ? "text-fg-muted" : "text-fg-subtle", // fg-subtle misses 4.5:1 on the dark signal tint
+                        )}
+                      >
                         {when(new Date(t.lastMessageAt), now)}
                       </span>
                     </span>

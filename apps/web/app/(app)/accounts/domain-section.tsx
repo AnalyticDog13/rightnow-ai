@@ -14,6 +14,7 @@ const STATUS = { pass: "OK", warn: "Warning", fail: "Failed", unknown: "Unknown"
 /** The domain verdict, as in core `findings()`: only a failed SPF blocks; any other non-pass check warns. */
 const verdict = (r: DomainReport | null) => {
   if (!r) return "DNS not checked";
+  if (r.managed) return "DNS OK"; // a managed report's checks may be empty; its pill is not shown anyway
   if (r.spf.status === "fail") return "DNS blocks sending";
   const checks = [r.spf, r.dkim, r.dmarc, r.mx, r.dnsbl, r.ptr];
   return checks.some((c) => c && c.status !== "pass") ? "DNS warning" : "DNS OK";
