@@ -1,0 +1,554 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Self-Hosted Cold Email Software, Open Source | rightnow-ai</title>
+<meta name="description" content="rightnow-ai is free, open-source (MIT) cold email software you self-host: mailbox warm-up, campaigns, a unified inbox and a CRM. An Instantly alternative.">
+<meta name="robots" content="index, follow">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#F8F7F4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121210" media="(prefers-color-scheme: dark)">
+<link rel="canonical" href="https://rightnow-ai.vercel.app/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="rightnow-ai">
+<meta property="og:title" content="Self-Hosted Cold Email Software, Open Source">
+<meta property="og:description" content="rightnow-ai is free, open-source (MIT) cold email software you self-host: mailbox warm-up, campaigns, a unified inbox and a CRM. An Instantly alternative.">
+<meta property="og:url" content="https://rightnow-ai.vercel.app/">
+<meta property="og:image" content="https://rightnow-ai.vercel.app/assets/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="rightnow-ai: open-source cold email you run yourself">
+<meta property="og:locale" content="en_US">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Self-Hosted Cold Email Software, Open Source">
+<meta name="twitter:description" content="rightnow-ai is free, open-source (MIT) cold email software you self-host: mailbox warm-up, campaigns, a unified inbox and a CRM. An Instantly alternative.">
+<meta name="twitter:image" content="https://rightnow-ai.vercel.app/assets/og.png">
+<meta name="twitter:image:alt" content="rightnow-ai: open-source cold email you run yourself">
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="icon" href="assets/img/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+<link rel="preload" href="assets/fonts/ibm-plex-sans-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/fonts/ibm-plex-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="assets/css/site.css">
+<script src="assets/js/theme-init.js"></script>
+<script type="module" src="assets/js/site.js"></script>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@graph":[
+{"@type":"WebSite","@id":"https://rightnow-ai.vercel.app/#website","url":"https://rightnow-ai.vercel.app/","name":"rightnow-ai","inLanguage":"en","publisher":{"@id":"https://rightnow-ai.vercel.app/#maintainer"}},
+{"@type":"Person","@id":"https://rightnow-ai.vercel.app/#maintainer","name":"AnalyticDog13","url":"https://github.com/AnalyticDog13"},
+{"@type":"SoftwareApplication","@id":"https://rightnow-ai.vercel.app/#software","name":"rightnow-ai","description":"Open-source, self-hosted cold email software: mailbox warm-up, multi-step campaigns, a unified inbox, a CRM, analytics and automations.","applicationCategory":"BusinessApplication","applicationSubCategory":"Cold email and sales engagement","operatingSystem":"Linux, macOS, Windows (Docker)","isAccessibleForFree":true,"license":"https://opensource.org/licenses/MIT","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"downloadUrl":"https://github.com/AnalyticDog13/rightnow-ai","softwareHelp":"https://rightnow-ai.vercel.app/self-host/","featureList":["Gmail, Microsoft 365 and IMAP/SMTP mailboxes","Email warm-up and re-warm-up","SPF, DKIM, DMARC and blacklist checks","Multi-step campaigns with A/B variants","Unified inbox","CRM pipeline","Analytics","Automations, webhooks and REST API"],"screenshot":"https://rightnow-ai.vercel.app/assets/screens/dashboard-light-1600.webp","author":{"@id":"https://rightnow-ai.vercel.app/#maintainer"}},
+{"@type":"SoftwareSourceCode","@id":"https://rightnow-ai.vercel.app/#code","name":"rightnow-ai","codeRepository":"https://github.com/AnalyticDog13/rightnow-ai","programmingLanguage":"TypeScript","runtimePlatform":"Node.js, Docker","license":"https://opensource.org/licenses/MIT","targetProduct":{"@id":"https://rightnow-ai.vercel.app/#software"}},
+{"@type":"FAQPage","@id":"https://rightnow-ai.vercel.app/#faq","mainEntity":[
+{"@type":"Question","name":"Is rightnow-ai really free?","acceptedAnswer":{"@type":"Answer","text":"Yes. It is MIT-licensed open-source software with no paid edition, no plans and no account to create. You pay only for what you run it on (nothing extra on your own computer, or a small VPS) and for your own mailboxes and domains."}},
+{"@type":"Question","name":"Is there a hosted version or an online demo?","acceptedAnswer":{"@type":"Answer","text":"No. rightnow-ai is only self-hosted and the maintainer runs no servers. To try it without real mail, set MAIL_PROVIDER_FAKE=1 in .env: every provider is replaced by a fake in-process mailbox and the whole pipeline runs without sending anything."}},
+{"@type":"Question","name":"What do I need to run it?","acceptedAnswer":{"@type":"Answer","text":"Docker Desktop (or Docker Engine with Compose) and git. For always-on sending, a Linux VPS with 1 vCPU and 2 GB RAM is enough to start, plus a domain for HTTPS."}},
+{"@type":"Question","name":"Can I deploy it on Vercel or Netlify?","acceptedAnswer":{"@type":"Answer","text":"Not the app. It needs PostgreSQL and a background worker that runs all the time, so it runs with Docker Compose on your machine or a VPS. Only this marketing page is a static site."}},
+{"@type":"Question","name":"Which mailboxes can I connect?","acceptedAnswer":{"@type":"Answer","text":"Gmail and Google Workspace (through your own Google OAuth client), Microsoft 365 and Outlook (through your own Microsoft Entra app), and any other provider over IMAP/SMTP with an app password where required."}},
+{"@type":"Question","name":"How does warm-up work? Does it guarantee the inbox?","acceptedAnswer":{"@type":"Answer","text":"Warm-up sends labelled messages between your own mailboxes, ramps volume up daily and records inbox versus spam placement. Nothing can guarantee inbox placement, and rightnow-ai never fakes opens or rescues mail from spam. For a larger network you can use an outside warm-up service alongside it."}},
+{"@type":"Question","name":"Is it a full Instantly alternative?","acceptedAnswer":{"@type":"Answer","text":"It covers mailboxes, warm-up, campaigns, a unified inbox, a CRM, analytics, automations and an API. It does not include a lead database, done-for-you mailboxes, a shared warm-up network or autonomous AI agents."}},
+{"@type":"Question","name":"Where is my data stored?","acceptedAnswer":{"@type":"Answer","text":"In your own PostgreSQL database. Mailbox logins and tokens are encrypted at rest with AES-256-GCM using your ENCRYPTION_KEY. There is no rightnow account and no rightnow server for your data to go to."}},
+{"@type":"Question","name":"What happens if my laptop sleeps mid-campaign?","acceptedAnswer":{"@type":"Answer","text":"Nothing sends while it sleeps. On wake, each mailbox syncs first, so replies and unsubscribes that came in are seen before anything is sent; missed sends go out inside their schedule window, never as a burst. A send whose outcome is unknown is held, not resent."}},
+{"@type":"Question","name":"Can I use it for my team?","acceptedAnswer":{"@type":"Answer","text":"Yes. Invite teammates with roles, protect sign-in with two-factor authentication, and review the audit log. One workspace per install today."}}
+]}]}
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<svg class="sr" aria-hidden="true" focusable="false"><filter id="rough"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="1" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="1.5"/></filter></svg>
+
+<header class="nav" id="nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="./" aria-label="rightnow-ai home"><img class="logo" src="assets/img/rightnow-logo.svg" alt="" width="28" height="28"><span>rightnow<span>-ai</span></span></a>
+    <nav class="nav-links" aria-label="Main">
+      <a href="#how">How it works</a><a href="#features">Features</a><a href="self-host/">Self-host</a><a href="instantly-alternative/">Compare</a><a href="#faq">FAQ</a>
+    </nav>
+    <div class="nav-r">
+      <a class="star" href="https://github.com/AnalyticDog13/rightnow-ai" data-star><svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#github"/></svg><span>Star on GitHub</span></a>
+      <button class="icon-btn theme-btn" type="button" aria-label="Switch to dark theme" aria-pressed="false" data-theme-toggle><svg class="ico sun" aria-hidden="true"><use href="assets/img/icons.svg#sun"/></svg><svg class="ico moon" aria-hidden="true"><use href="assets/img/icons.svg#moon"/></svg></button>
+      <a class="btn btn-ink btn-sm" href="https://github.com/AnalyticDog13/rightnow-ai"><svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#github"/></svg>View on GitHub</a>
+    </div>
+    <div class="nav-m">
+      <a class="icon-btn" href="https://github.com/AnalyticDog13/rightnow-ai" aria-label="View rightnow-ai on GitHub"><svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#github"/></svg></a>
+      <button class="icon-btn" type="button" aria-expanded="false" aria-controls="nav-menu" aria-label="Menu" data-menu><svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#menu"/></svg></button>
+    </div>
+  </div>
+  <div id="nav-menu">
+    <a class="ml" href="#how">How it works</a><a class="ml" href="#features">Features</a><a class="ml" href="self-host/">Self-host</a><a class="ml" href="instantly-alternative/">Compare</a><a class="ml" href="#faq">FAQ</a>
+    <div class="mrow"><a class="star" href="https://github.com/AnalyticDog13/rightnow-ai" data-star><svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#github"/></svg><span>Star on GitHub</span></a>
+      <div class="seg" role="group" aria-label="Theme"><button type="button" data-set-theme="system" aria-pressed="true">System</button><button type="button" data-set-theme="light" aria-pressed="false">Light</button><button type="button" data-set-theme="dark" aria-pressed="false">Dark</button></div></div>
+    <a class="btn btn-ink" href="https://github.com/AnalyticDog13/rightnow-ai"><svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#github"/></svg>View on GitHub</a>
+  </div>
+</header>
+
+<main id="main">
+<section id="top" class="hero" aria-labelledby="h1">
+  <div class="wrap hero-t rv">
+    <p class="eyebrow">SELF-HOSTED · MIT LICENSED · NO ACCOUNT TO CREATE</p>
+    <h1 id="h1">Open-source cold email you <span class="ww">run yourself<svg class="wave" viewBox="0 0 240 24" preserveAspectRatio="none" aria-hidden="true"><path pathLength="1" d="M0 4q6-5 12 0t12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0"/><path pathLength="1" d="M0 8q6-5 12 0t12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0"/><path pathLength="1" d="M0 12q6-5 12 0t12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0"/><path pathLength="1" d="M0 16q6-5 12 0t12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0"/><path pathLength="1" d="M0 20q6-5 12 0t12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0 12 0"/></svg></span>.</h1>
+    <p class="lead">Connect your own Gmail, Microsoft 365 or IMAP/SMTP mailboxes, warm them up, run multi-step campaigns, answer every reply in one inbox and track deals in a built-in CRM. A self-hosted alternative to Instantly that runs on your laptop or your own server, so your leads and replies never leave your database.</p>
+    <div class="ctas">
+      <a class="btn btn-ink btn-lg" href="https://github.com/AnalyticDog13/rightnow-ai"><svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#github"/></svg>View the code on GitHub</a>
+      <a class="btn btn-out btn-lg" href="#self-host">Set it up in 4 commands</a>
+    </div>
+    <p class="small subtle">Free and MIT licensed. You pay only for your own server, if any, and your own mailboxes.</p>
+    <div class="cmd">
+      <p class="small muted" id="cmd-cap">Don't want to read the docs yet? You need Docker and git:</p>
+      <div class="cmd-box"><code id="c-hero" tabindex="0" aria-labelledby="cmd-cap">git clone https://github.com/AnalyticDog13/rightnow-ai.git &amp;&amp; cd rightnow-ai &amp;&amp; cp .env.example .env</code><button class="copy" type="button" data-copy="#c-hero"><svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#copy"/></svg><span>Copy</span></button></div>
+      <p class="small muted">Then add <a href="#self-host">three secrets</a> to .env and run scripts/start.sh.</p>
+    </div>
+  </div>
+  <div class="hero-stage">
+    <div class="wrap">
+      <div class="hero-frame-w rv" id="hero-frame">
+        <svg class="pm hero-pm wait" viewBox="0 0 112 112" aria-hidden="true"><g filter="url(#rough)"><circle cx="56" cy="56" r="53" stroke-width="2"/><circle cx="56" cy="56" r="37"/><path id="pmr1" d="M12 56a44 44 0 1 1 88 0a44 44 0 1 1-88 0" fill="none"/><text class="pm-ring"><textPath href="#pmr1" textLength="262">SENT FROM YOUR OWN SERVER · RIGHTNOW-AI ·</textPath></text><line x1="32" x2="80" y1="58" y2="58"/><text class="pm-date" x="56" y="53" text-anchor="middle">SELF</text><text class="pm-date pm-y" x="56" y="72" text-anchor="middle">HOSTED</text></g></svg>
+        <figure class="frame">
+          <div class="frame-bar" aria-hidden="true"><i></i><i></i><i></i><span>localhost:3000/dashboard</span></div>
+          <picture>
+            <source media="(max-width: 767px)" srcset="assets/screens/dashboard-mobile-light-390.webp 390w, assets/screens/dashboard-mobile-light-780.webp 780w" sizes="100vw" width="780" height="1688">
+            <source media="(prefers-color-scheme: dark)" data-dark srcset="assets/screens/dashboard-dark-800.webp 800w, assets/screens/dashboard-dark-1600.webp 1600w" sizes="(min-width: 1200px) 1120px, 100vw">
+            <img src="assets/screens/dashboard-light-1600.webp" srcset="assets/screens/dashboard-light-800.webp 800w, assets/screens/dashboard-light-1600.webp 1600w" sizes="(min-width: 1200px) 1120px, 100vw" width="1600" height="1000" fetchpriority="high" decoding="async" alt="rightnow-ai dashboard showing today's sends against the daily allowance, replies and campaign status (sample data)">
+          </picture>
+        </figure>
+        <div class="float meter">
+          <div class="meter-top"><span class="eyebrow">SENT TODAY</span><span class="pill ok">Sending</span></div>
+          <span class="num">142 / 300</span>
+          <div class="bar"><i class="hero-meter-fill"></i></div>
+          <p class="small subtle">Sample. Each mailbox's allowance is reserved before every send.</p>
+        </div>
+        <div class="float reply">
+          <span class="av" aria-hidden="true">DR</span>
+          <div><div class="who"><span>Dana Reyes</span><span class="pill ok">Interested</span></div><div class="sub">Re: Quick question about Harbor Ops</div></div>
+          <div class="meta">via maya@outreach-one.example · step 2, variant B</div>
+        </div>
+      </div>
+      <p class="cap">Sample data. The dashboard of a running install.</p>
+    </div>
+  </div>
+</section>
+
+<section id="proof" aria-label="Facts about rightnow-ai">
+  <div class="wrap proof">
+    <a href="https://github.com/AnalyticDog13/rightnow-ai/blob/main/LICENSE"><span class="eyebrow">MIT LICENSE</span>Read it, fork it, run it. No paid edition.</a>
+    <!-- source: README.md "about 1,290 automated tests and the browser tests pass in CI"; .github/workflows/ci.yml runs on push -->
+    <a href="https://github.com/AnalyticDog13/rightnow-ai/actions"><span class="eyebrow">~1,290 TESTS IN CI</span>Unit, integration and browser tests run on every push.</a>
+    <!-- docs/ops/LIVE_VERIFICATION.md results table lists no provider as passed yet, so no "live-verified" claim; LOCAL.md: real providers stay off for campaign sending until scripts/live-verify.ts passes (D17) -->
+    <a href="https://github.com/AnalyticDog13/rightnow-ai/blob/main/docs/ops/LIVE_VERIFICATION.md"><span class="eyebrow">LIVE CHECK BEFORE SENDING</span>Campaign sending from a provider stays off until its one-time live check passes.</a>
+    <a href="https://github.com/AnalyticDog13/rightnow-ai/blob/main/docs/DECISIONS.md"><span class="eyebrow">POSTGRESQL ONLY</span>One database holds the data and the job queue. No Redis.</a>
+    <a href="https://github.com/AnalyticDog13/rightnow-ai"><span class="eyebrow">ENCRYPTED CREDENTIALS</span>OAuth tokens and SMTP passwords are encrypted at rest (AES-256-GCM).</a>
+  </div>
+</section>
+
+<section id="how" class="sec ruled" aria-labelledby="how-h">
+  <div class="wrap">
+    <div class="head rv">
+      <p class="eyebrow">HOW IT WORKS</p>
+      <h2 id="how-h">From mailbox to closed deal. <span class="tone">Six steps, all in one app on your server.</span></h2>
+      <p class="lead">This is the whole loop rightnow-ai runs for you. Each step is a page in the app.</p>
+    </div>
+    <div class="how">
+      <nav class="rail" aria-label="Steps">
+        <a href="#step-1" class="on"><span>[ 01 / 06 ]</span><b>Connect your mailboxes</b></a>
+        <a href="#step-2"><span>[ 02 / 06 ]</span><b>Fix your DNS</b></a>
+        <a href="#step-3"><span>[ 03 / 06 ]</span><b>Warm up, or re-warm</b></a>
+        <a href="#step-4"><span>[ 04 / 06 ]</span><b>Import your leads</b></a>
+        <a href="#step-5"><span>[ 05 / 06 ]</span><b>Build the campaign</b></a>
+        <a href="#step-6"><span>[ 06 / 06 ]</span><b>Work the replies</b></a>
+      </nav>
+      <div class="steps">
+        <article class="step kpanel" id="step-1" aria-labelledby="s1h">
+          <p class="ctr">[ 01 / 06 ]</p><h3 id="s1h">Connect your mailboxes</h3>
+          <p class="stmt">Gmail, Microsoft 365 and any IMAP/SMTP host. <span>Gmail and Google Workspace connect with your own Google OAuth client, Microsoft 365 and Outlook with your own Entra app, everything else with a host, username and app password. Logins are encrypted before they are stored.</span></p>
+          <p class="links"><a class="link" href="https://github.com/AnalyticDog13/rightnow-ai/blob/main/docs/ops/GOOGLE_SETUP.md">Google setup <span aria-hidden="true">→</span></a><a class="link" href="https://github.com/AnalyticDog13/rightnow-ai/blob/main/docs/ops/MICROSOFT_SETUP.md">Microsoft setup <span aria-hidden="true">→</span></a></p>
+          <p class="step-cap">Gmail, Microsoft 365 and IMAP/SMTP mailboxes side by side.</p>
+          <figure class="frame shot"><div class="frame-bar" aria-hidden="true"><i></i><i></i><i></i><span>localhost:3000/accounts</span></div><img src="assets/screens/accounts-list-light-1600.webp" srcset="assets/screens/accounts-list-light-800.webp 800w, assets/screens/accounts-list-light-1600.webp 1600w" sizes="(min-width: 1024px) 800px, 100vw" width="1600" height="1000" loading="lazy" decoding="async" alt="Email accounts page listing connected mailboxes with status and daily capacity (sample data)"></figure>
+        </article>
+        <article class="step kpanel" id="step-2" aria-labelledby="s2h">
+          <p class="ctr">[ 02 / 06 ]</p><h3 id="s2h">Fix your DNS</h3>
+          <p class="stmt">SPF, DKIM and DMARC, checked for you. <span>The Deliverability page checks each sending domain's records, MX and spam blacklists, and tells you what to fix. A missing or broken SPF record blocks launch.</span></p>
+          <p class="step-cap">The Deliverability page tells you which DNS record to fix.</p>
+          <figure class="frame shot"><div class="frame-bar" aria-hidden="true"><i></i><i></i><i></i><span>localhost:3000/deliverability</span></div><img src="assets/screens/deliverability-overview-light-1600.webp" srcset="assets/screens/deliverability-overview-light-800.webp 800w, assets/screens/deliverability-overview-light-1600.webp 1600w" sizes="(min-width: 1024px) 800px, 100vw" width="1600" height="1000" loading="lazy" decoding="async" alt="Deliverability page with SPF, DKIM, DMARC, MX and blacklist checks per domain (sample data)"></figure>
+        </article>
+        <article class="step kpanel" id="step-3" aria-labelledby="s3h">
+          <p class="ctr">[ 03 / 06 ]</p><h3 id="s3h">Warm up, or re-warm</h3>
+          <!-- 30 days: Workspace.inactivityDays @default(30), autoRewarm @default(AUTO) in packages/db/prisma/schema.prisma -->
+          <p class="stmt">Two to four weeks before real volume. <span>Turn on warm-up per mailbox: your mailboxes send short, plainly labelled messages to each other and record whether they land in the inbox or in spam. A mailbox that sat idle for 30 days is re-warmed automatically.</span></p>
+          <p class="links"><a class="link" href="#warmup">How warm-up works <span aria-hidden="true">→</span></a></p>
+          <p class="step-cap">Warm-up volume, inbox rate and health per mailbox.</p>
+          <figure class="frame shot"><div class="frame-bar" aria-hidden="true"><i></i><i></i><i></i><span>localhost:3000/accounts</span></div><img src="assets/screens/account-drawer-warmup-light-1600.webp" srcset="assets/screens/account-drawer-warmup-light-800.webp 800w, assets/screens/account-drawer-warmup-light-1600.webp 1600w" sizes="(min-width: 1024px) 800px, 100vw" width="1600" height="1000" loading="lazy" decoding="async" alt="Warm-up settings for one mailbox with a chart of where warm-up mail landed over 30 days (sample data)"></figure>
+        </article>
+        <article class="step kpanel" id="step-4" aria-labelledby="s4h">
+          <p class="ctr">[ 04 / 06 ]</p><h3 id="s4h">Import your leads</h3>
+          <!-- source: docs/COMPLIANCE.md "Authorized lists" -->
+          <p class="stmt">CSV in, duplicates out. <span>Map your CSV's columns to names, companies and custom fields. You confirm you have the right to contact the list and record a lawful basis before the import starts. Anyone on the blocklist is never emailed.</span></p>
+          <div class="tabs sm" role="tablist" aria-label="Lead screenshots"><button role="tab" id="t4a" aria-controls="p4a" aria-selected="true">Leads</button><button role="tab" id="t4b" aria-controls="p4b" aria-selected="false" tabindex="-1">CSV import</button></div>
+          <div role="tabpanel" id="p4a" aria-labelledby="t4a"><p class="step-cap">Leads with lists, tags and custom fields.</p><figure class="frame shot"><div class="frame-bar" aria-hidden="true"><i></i><i></i><i></i><span>localhost:3000/leads</span></div><img src="assets/screens/leads-list-light-1600.webp" srcset="assets/screens/leads-list-light-800.webp 800w, assets/screens/leads-list-light-1600.webp 1600w" sizes="(min-width: 1024px) 800px, 100vw" width="1600" height="1000" loading="lazy" decoding="async" alt="Leads table with names, companies, lists and status (sample data)"></figure></div>
+          <div role="tabpanel" id="p4b" aria-labelledby="t4b" hidden><p class="step-cap">Map CSV columns; duplicates are removed.</p><figure class="frame shot"><div class="frame-bar" aria-hidden="true"><i></i><i></i><i></i><span>localhost:3000/leads</span></div><img src="assets/screens/leads-import-mapping-light-1600.webp" srcset="assets/screens/leads-import-mapping-light-800.webp 800w, assets/screens/leads-import-mapping-light-1600.webp 1600w" sizes="(min-width: 1024px) 800px, 100vw" width="1600" height="1000" loading="lazy" decoding="async" alt="CSV import wizard mapping columns to lead fields (sample data)"></figure></div>
+        </article>
+        <article class="step kpanel" id="step-5" aria-labelledby="s5h">
+          <p class="ctr">[ 05 / 06 ]</p><h3 id="s5h">Build the campaign</h3>
+          <p class="stmt">Steps, delays, A/B variants and a schedule. <span>Write step 1 and the follow-ups with merge fields like {{firstName}} and spintax like {{RANDOM | Hi | Hello}}. Set sending days and hours, the time zone, the daily limit and which mailboxes send. Send yourself a test, then launch.</span></p>
+          <div class="tabs sm" role="tablist" aria-label="Campaign screenshots"><button role="tab" id="t5a" aria-controls="p5a" aria-selected="true">Sequence</button><button role="tab" id="t5b" aria-controls="p5b" aria-selected="false" tabindex="-1">Schedule</button></div>
+          <div role="tabpanel" id="p5a" aria-labelledby="t5a"><p class="step-cap">Steps, delays, merge fields and A/B variants.</p><figure class="frame shot"><div class="frame-bar" aria-hidden="true"><i></i><i></i><i></i><span>localhost:3000/campaigns</span></div><picture><source media="(prefers-color-scheme: dark)" data-dark srcset="assets/screens/campaign-sequence-dark-800.webp 800w, assets/screens/campaign-sequence-dark-1600.webp 1600w" sizes="(min-width: 1024px) 800px, 100vw"><img src="assets/screens/campaign-sequence-light-1600.webp" srcset="assets/screens/campaign-sequence-light-800.webp 800w, assets/screens/campaign-sequence-light-1600.webp 1600w" sizes="(min-width: 1024px) 800px, 100vw" width="1600" height="1000" loading="lazy" decoding="async" alt="Campaign sequence editor with step 1 and its A/B variants (sample data)"></picture></figure></div>
+          <div role="tabpanel" id="p5b" aria-labelledby="t5b" hidden><p class="step-cap">Sending days, hours and time zone per campaign.</p><figure class="frame shot"><div class="frame-bar" aria-hidden="true"><i></i><i></i><i></i><span>localhost:3000/campaigns</span></div><img src="assets/screens/campaign-schedule-light-1600.webp" srcset="assets/screens/campaign-schedule-light-800.webp 800w, assets/screens/campaign-schedule-light-1600.webp 1600w" sizes="(min-width: 1024px) 800px, 100vw" width="1600" height="1000" loading="lazy" decoding="async" alt="Campaign schedule with sending days, hours and time zone (sample data)"></figure></div>
+        </article>
+        <article class="step kpanel" id="step-6" aria-labelledby="s6h">
+          <p class="ctr">[ 06 / 06 ]</p><h3 id="s6h">Work the replies</h3>
+          <p class="stmt">One inbox, a CRM, analytics and automations. <span>Replies from every mailbox land in one threaded inbox, labelled interested, out of office, unsubscribe and more. Interested leads become deals on a Kanban board, with revenue tracked back to the campaign that found them.</span></p>
+          <div class="tabs sm" role="tablist" aria-label="Reply screenshots"><button role="tab" id="t6a" aria-controls="p6a" aria-selected="true">Inbox</button><button role="tab" id="t6b" aria-controls="p6b" aria-selected="false" tabindex="-1">CRM</button><button role="tab" id="t6c" aria-controls="p6c" aria-selected="false" tabindex="-1">Analytics</button><button role="tab" id="t6d" aria-controls="p6d" aria-selected="false" tabindex="-1">Automations</button></div>
+          <div role="tabpanel" id="p6a" aria-labelledby="t6a"><p class="step-cap">Every mailbox in one threaded inbox.</p><figure class="frame shot"><div class="frame-bar" aria-hidden="true"><i></i><i></i><i></i><span>localhost:3000/inbox</span></div><img src="assets/screens/inbox-thread-light-1600.webp" srcset="assets/screens/inbox-thread-light-800.webp 800w, assets/screens/inbox-thread-light-1600.webp 1600w" sizes="(min-width: 1024px) 800px, 100vw" width="1600" height="1511" loading="lazy" decoding="async" alt="Unified inbox with a reply labelled Interested (sample data)"></figure></div>
+          <div role="tabpanel" id="p6b" aria-labelledby="t6b" hidden><p class="step-cap">Deals on a Kanban board, revenue tied to the campaign.</p><figure class="frame shot"><div class="frame-bar" aria-hidden="true"><i></i><i></i><i></i><span>localhost:3000/crm</span></div><img src="assets/screens/crm-kanban-light-1600.webp" srcset="assets/screens/crm-kanban-light-800.webp 800w, assets/screens/crm-kanban-light-1600.webp 1600w" sizes="(min-width: 1024px) 800px, 100vw" width="1600" height="1000" loading="lazy" decoding="async" alt="CRM Kanban board with deals in pipeline stages (sample data)"></figure></div>
+          <div role="tabpanel" id="p6c" aria-labelledby="t6c" hidden><p class="step-cap">Sends, replies, bounces and revenue by campaign, step and mailbox.</p><figure class="frame shot"><div class="frame-bar" aria-hidden="true"><i></i><i></i><i></i><span>localhost:3000/analytics</span></div><img src="assets/screens/analytics-charts-light-1600.webp" srcset="assets/screens/analytics-charts-light-800.webp 800w, assets/screens/analytics-charts-light-1600.webp 1600w" sizes="(min-width: 1024px) 800px, 100vw" width="1600" height="1000" loading="lazy" decoding="async" alt="Analytics page with sends, replies and bounces over time (sample data)"></figure></div>
+          <div role="tabpanel" id="p6d" aria-labelledby="t6d" hidden><p class="step-cap">Rules like "when a lead replies interested, move it to this stage".</p><figure class="frame shot"><div class="frame-bar" aria-hidden="true"><i></i><i></i><i></i><span>localhost:3000/automations</span></div><img src="assets/screens/automations-rules-light-1600.webp" srcset="assets/screens/automations-rules-light-800.webp 800w, assets/screens/automations-rules-light-1600.webp 1600w" sizes="(min-width: 1024px) 800px, 100vw" width="1600" height="1000" loading="lazy" decoding="async" alt="Automations page listing event rules (sample data)"></figure></div>
+          <p class="links"><a class="link" href="#self-host">Set it up <span aria-hidden="true">→</span></a></p>
+        </article>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="simulator" class="sec ruled" aria-labelledby="sim-h" data-mod="simulator">
+  <div class="wrap">
+    <div class="head rv">
+      <p class="eyebrow">TRY IT · RUNS IN YOUR BROWSER</p>
+      <h2 id="sim-h">Follow one lead through a campaign. <span class="tone">Pick what the lead does and watch the rules the app applies.</span></h2>
+    </div>
+    <div class="card demo sim" id="sim">
+      <span class="chip">SAMPLE DATA</span>
+      <div>
+        <fieldset class="js-only"><legend>What does Dana do?</legend><div class="scen" role="radiogroup" aria-label="What does Dana do?"></div></fieldset>
+        <div class="ctl js-only"><button class="btn btn-ink btn-sm" type="button" data-play>Play</button><button class="btn btn-out btn-sm" type="button" data-step>Step</button><button class="textbtn" type="button" data-reset>Reset</button></div>
+        <dl class="camp"><dt class="sr">Campaign</dt><dd><b>Harbor Ops intro (sample)</b></dd><dt class="sr">Mailbox</dt><dd>maya@outreach-one.example</dd><dt class="sr">Lead</dt><dd>Dana Reyes · Harbor Ops · dana@harbor-ops.example</dd><dt class="sr">Schedule</dt><dd>Mon-Fri 09:00-17:00</dd></dl>
+      </div>
+      <div>
+        <!-- schedule: packages/core/src/campaigns/schema.ts officeHours {days:62, from "09:00", to "17:00"}; delays are sample values -->
+        <ol class="tl" aria-label="Sequence">
+          <li class="node sent" data-node="0"><b>STEP 1 · DAY 0</b><span class="subj">Quick question about Harbor Ops</span><span data-st>Sent 09:41</span></li>
+          <li class="wait" aria-hidden="true">wait 3 days</li>
+          <li class="node sent" data-node="1"><b>STEP 2 · DAY 3</b><span class="subj">Re: Quick question about Harbor Ops</span><span data-st>Sent 10:12</span></li>
+          <li class="wait" aria-hidden="true">wait 4 days</li>
+          <li class="node cancelled" data-node="2"><b>STEP 3 · DAY 7</b><span class="subj">Re: Quick question about Harbor Ops</span><span data-st><span class="pill">Cancelled</span></span></li>
+        </ol>
+        <ol class="ledger" aria-live="polite" aria-atomic="false" aria-label="Event ledger">
+          <li><time>D0 09:41</time><span>Step 1 sent: "Hi Dana," (variant A)</span></li>
+          <li><time>D3 10:12</time><span>Step 2 sent</span></li>
+          <li><time>D4 08:03</time><span>Reply received ("Sounds good, can you send times for next week?")</span></li>
+          <li><time>D4 08:04</time><span>Mailbox synced → reply matched to the thread</span></li>
+          <li><time>D4 08:04</time><span>Labelled by the rule classifier <span class="pill ok">Interested</span></span></li>
+          <li><time>D4 08:04</time><span>Step 3 cancelled (stop on reply)</span></li>
+          <li><time>D4 08:04</time><span>Deal opened in CRM: stage Interested, campaign Harbor Ops intro</span></li>
+          <li><time>D4 08:04</time><span>Automation "When a lead replies interested" can move the stage or call a webhook (lead_interested).</span></li>
+        </ol>
+        <div class="outcome"><span class="chip">Outcome: deal opened, 1 step cancelled</span><div class="crmcard"><b>Dana Reyes</b><span>Harbor Ops</span><span class="mono">from Harbor Ops intro</span><span><span class="pill ok">Interested</span> · value —</span></div></div>
+      </div>
+      <p class="foot">A simulation of rightnow-ai's rules with sample data. In the app these happen on your schedule, minutes or days apart.</p>
+    </div>
+  </div>
+</section>
+
+<section id="inbox" class="sec ruled" aria-labelledby="ibx-h" data-mod="inbox-demo">
+  <div class="wrap">
+    <div class="head rv">
+      <p class="eyebrow">UNIFIED INBOX · CRM</p>
+      <h2 id="ibx-h">Every reply in one inbox. <span class="tone">The good ones become deals.</span></h2>
+      <p class="lead">rightnow-ai labels each reply with rules first (interested, out of office, unsubscribe, automated), and you can always correct it. Below is a working copy of the idea with sample threads. It is also a small open-source CRM: deals, stages, tasks and revenue, on your own server.</p>
+    </div>
+    <div class="ibx-sec">
+      <div class="card demo ibx" id="ibx">
+        <div class="ibx-top"><p class="toast" aria-live="polite" data-toast>6 sample threads</p><button class="textbtn js-only" type="button" data-pause aria-pressed="false">Pause</button><span class="chip">SAMPLE DATA</span></div>
+        <div class="ibx-main">
+          <div class="list">
+            <div class="filters js-only" role="group" aria-label="Filter by label"></div>
+            <ul class="rows" aria-label="Threads">
+              <li><span class="row"><span class="av" aria-hidden="true">DR</span><span class="nm">Dana Reyes</span><span class="pill ok">Interested</span><span class="sj">Re: Quick question about Harbor Ops</span><span class="mb">via maya@outreach-one.example · step 2 · B</span></span></li>
+              <li><span class="row"><span class="av" aria-hidden="true">TO</span><span class="nm">Tomás Okafor</span><span class="pill info">Out of office</span><span class="sj">Re: Shipping audits</span><span class="mb">via jon@outreach-two.example · step 1 · A</span></span></li>
+              <li><span class="row"><span class="av" aria-hidden="true">PN</span><span class="nm">Priya Nair</span><span class="pill">Not interested</span><span class="sj">Re: Front desk follow-ups</span><span class="mb">via maya@outreach-one.example · step 3 · A</span></span></li>
+              <li><span class="row"><span class="av" aria-hidden="true">SW</span><span class="nm">Sam Whitlock</span><span class="pill bad">Unsubscribe</span><span class="sj">Re: Studio bookings</span><span class="mb">via ops@mail.outreach-three.example · step 2 · A</span></span></li>
+              <li><span class="row"><span class="av" aria-hidden="true">LF</span><span class="nm">Lena Fischer</span><span class="pill ok">Meeting requested</span><span class="sj">Re: Lab scheduling</span><span class="mb">via jon@outreach-two.example · step 2 · B</span></span></li>
+              <li><span class="row"><span class="av" aria-hidden="true">AN</span><span class="nm">Auto-notify</span><span class="pill">Automated</span><span class="sj">Automatic reply: Kestrel Freight</span><span class="mb">via maya@outreach-one.example · step 1 · B</span></span></li>
+            </ul>
+          </div>
+          <div class="thread js-only" aria-live="off"></div>
+        </div>
+        <div class="kan" role="group" aria-label="CRM pipeline (sample)">
+          <div class="col"><p class="kh">Replied <span>0</span></p></div>
+          <div class="col"><p class="kh">Interested <span>1</span></p><div class="crmcard"><b>Dana Reyes</b><span>Harbor Ops</span><span class="mono">from Harbor Ops intro</span><span>value —</span></div></div>
+          <div class="col"><p class="kh">Meeting Scheduled <span>1</span></p><div class="crmcard"><b>Lena Fischer</b><span>Brightwater Labs</span><span class="mono">from Harbor Ops intro</span><span>value —</span></div></div>
+          <div class="col"><p class="kh">Proposal Sent <span>0</span></p></div>
+          <div class="col"><p class="kh">Closed Won <span>0</span></p></div>
+        </div>
+        <p class="foot">Sample threads. In the app, replies arrive through each mailbox's sync and the labels come from rules you can correct; optional AI labelling is off by default.</p>
+      </div>
+      <figure class="phone"><img src="assets/screens/inbox-mobile-thread-light-390.webp" srcset="assets/screens/inbox-mobile-thread-light-390.webp 390w, assets/screens/inbox-mobile-thread-light-780.webp 780w" sizes="228px" width="780" height="1688" loading="lazy" decoding="async" alt="rightnow-ai inbox on a phone (sample data)"><figcaption class="sr">Replies from your phone.</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section id="features" class="sec ruled" aria-labelledby="feat-h">
+  <div class="wrap">
+    <div class="head rv">
+      <p class="eyebrow">FEATURES</p>
+      <h2 id="feat-h">Everything a cold email platform needs. <span class="tone">On your server, with no plan to upgrade to.</span></h2>
+    </div>
+    <ul class="feat">
+      <li><svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#mail"/></svg><h3>Email accounts</h3><p>Gmail API, Microsoft Graph and any IMAP/SMTP host. Per-mailbox daily limits, health and encrypted logins.</p></li>
+      <li><svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#flame"/></svg><h3>Warm-up and re-warm-up</h3><p>Gradual ramp-up between your own mailboxes, inbox-placement tracking, and automatic re-warming after a break.</p></li>
+      <li><svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#shield"/></svg><h3>Deliverability checks</h3><p>SPF, DKIM, DMARC, MX and blacklist checks, inbox placement tests, bounce monitoring and automatic slow-down.</p></li>
+      <li><svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#layers"/></svg><h3>Campaigns and sequences</h3><p>Unlimited steps and delays, A/B variants, spintax, merge fields with fallbacks, schedules per time zone and mailbox rotation.</p></li>
+      <li><svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#users"/></svg><h3>Leads</h3><p>CSV import with column mapping and dedupe, lists, custom fields, tags, a blocklist and optional email verification.</p></li>
+      <li><svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#inbox"/></svg><h3>Unified inbox</h3><p>Every mailbox threaded in one place, with reply labels, notes, reminders and rich-text replies from the original mailbox.</p></li>
+      <li><svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#kanban"/></svg><h3>CRM</h3><p>A Kanban pipeline with deal values, tasks and activity history. Revenue is attributed to the campaign, step and mailbox.</p></li>
+      <li><svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#chart"/></svg><h3>Analytics</h3><p>Sends, replies, bounces, clicks, opportunities and revenue by campaign, step, variant and mailbox, with CSV export. Opens are marked as estimates.</p></li>
+      <li><svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#zap"/></svg><h3>Automations</h3><p>Event rules like "when a lead replies interested, move it to this stage", plus signed webhooks.</p></li>
+      <li><svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#code"/></svg><h3>REST API</h3><p>Scoped API keys for accounts, campaigns, leads, inbox and analytics.</p></li>
+      <li><svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#spark"/></svg><h3>Optional AI drafting</h3><p>Bring your own OpenAI-compatible endpoint (including local models). Drafts wait for a human to approve them. Off by default.</p></li>
+      <li><svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#lock"/></svg><h3>Team and security</h3><p>Invites and roles, two-factor sign-in, an audit log, rate limits, GDPR export and erasure.</p></li>
+    </ul>
+  </div>
+</section>
+
+<div class="band-o">
+<section id="reliability" class="band sec ruled" aria-labelledby="rel-h">
+  <div class="wrap">
+    <div class="head rv">
+      <p class="eyebrow">RELIABLE SENDING</p>
+      <h2 id="rel-h">Built not to burn your domain. <span class="tone">Or send the same email twice.</span></h2>
+      <p class="lead">Sending runs on a PostgreSQL-backed queue. These rules are enforced in code and covered by tests.</p>
+    </div>
+    <div class="rel" data-rel>
+      <div class="diag" data-diag>
+        <svg viewBox="0 0 640 220" role="img" aria-label="Send path: leads, planner, send queue in PostgreSQL, a gate checking fresh sync, quota and schedule, then your mailboxes">
+          <path class="wire" d="M80 110H560"/>
+          <g data-n="none"><rect x="4" y="86" width="76" height="48" rx="6"/><text x="42" y="114">Leads</text></g>
+          <g data-n="none"><rect x="104" y="86" width="84" height="48" rx="6"/><text x="146" y="114">Planner</text></g>
+          <g data-n="0 3"><rect x="212" y="78" width="124" height="64" rx="6"/><text x="274" y="106">Send queue</text><text x="274" y="124">(PostgreSQL)</text></g>
+          <g data-n="0 1 2"><polygon points="374,62 470,62 494,110 470,158 374,158 350,110"/><text x="422" y="96">Fresh sync?</text><text x="422" y="114">Quota left?</text><text x="422" y="132">In schedule?</text></g>
+          <g data-n="4"><rect x="520" y="78" width="116" height="64" rx="6"/><text x="578" y="106">Your</text><text x="578" y="124">mailboxes</text></g>
+          <circle class="dot" r="4" cx="0" cy="0"><animateMotion dur="3.2s" repeatCount="indefinite" path="M80 110H560" keyPoints="0;.71;.71;1" keyTimes="0;.6;.725;1" calcMode="linear"/></circle>
+        </svg>
+        <div class="diag-f"><p class="small muted">Illustration of the send path. Not live data.</p><button class="textbtn js-only" type="button" data-diag-pause aria-pressed="false">Pause animation</button></div>
+      </div>
+      <!-- sources: CLAUDE.md architecture; packages/core/src/quota.ts; .env.example SYNC_MAX_STALENESS_SEC=300; docs/ops/LOCAL.md "While the laptop sleeps" (SEND_LEASE_SEC); README §5 -->
+      <div class="rel-i"><button class="rel-b" type="button" aria-expanded="true" aria-controls="rp0" data-i="0"><code>quota.reserve()</code><span>Reserved before sending</span></button>
+        <div class="rel-p" id="rp0"><p>Limits that cannot be overshot</p><p>Each mailbox's daily allowance is reserved in the same database transaction that claims a send, so parallel workers cannot exceed it.</p></div></div>
+      <div class="rel-i"><button class="rel-b" type="button" aria-expanded="false" aria-controls="rp1" data-i="1"><code>sync → then send</code><span>Sync before send</span></button>
+        <div class="rel-p" id="rp1" hidden><p>Fresh mailboxes only</p><p>A mailbox may send only if it synced in the last 5 minutes, so replies, bounces and unsubscribes that arrived while you were offline are seen first.</p></div></div>
+      <div class="rel-i"><button class="rel-b" type="button" aria-expanded="false" aria-controls="rp2" data-i="2"><code>no burst</code><span>No backlog bursts</span></button>
+        <div class="rel-p" id="rp2" hidden><p>Late, never all at once</p><p>After downtime, missed sends go out inside their schedule window at the normal pace, or wait for the next window. Never as a burst.</p></div></div>
+      <div class="rel-i"><button class="rel-b" type="button" aria-expanded="false" aria-controls="rp3" data-i="3"><code>HELD</code><span>Unknown means held</span></button>
+        <div class="rel-p" id="rp3" hidden><p>Never resent on a guess</p><p>A send whose outcome is unknown is looked for in the Sent folder. If it isn't found twice, 15 minutes apart, it is held until you release or cancel it.</p></div></div>
+      <div class="rel-i"><button class="rel-b" type="button" aria-expanded="false" aria-controls="rp4" data-i="4"><code>same mailbox</code><span>Follow-ups stay in thread</span></button>
+        <div class="rel-p" id="rp4" hidden><p>One sender per lead</p><p>Follow-ups always go from the mailbox that sent step 1. A reply, bounce or unsubscribe stops the lead's sequence.</p></div></div>
+    </div>
+  </div>
+</section>
+</div>
+
+<section id="warmup" class="sec kraft" aria-labelledby="wu-h" data-mod="planner">
+  <div class="wrap">
+    <div class="head rv">
+      <p class="eyebrow">WARM-UP</p>
+      <h2 id="wu-h">Email warm-up, open source and honest about it. <span class="tone">It builds reputation slowly and never fakes engagement.</span></h2>
+    </div>
+    <div class="wu">
+      <div class="wu-text">
+        <p>Built-in warm-up uses only your own mailboxes. Every mailbox with warm-up on sends short, plainly labelled messages to the others, and some of them reply. Volume starts small and grows each day, and the app records whether each message landed in the inbox or in spam. That inbox rate feeds each mailbox's health score.</p>
+        <ul class="checks">
+          <li><svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#check"/></svg>It never fakes opens, rescues mail from spam or marks messages important.</li>
+          <li><svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#check"/></svg>One mailbox can't warm up on its own. It needs others to talk to.</li>
+          <li><svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#check"/></svg>It works best with several mailboxes on different domains, mixed across Gmail and Outlook.</li>
+          <li><svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#check"/></svg>With only a few mailboxes it builds little reputation. Treat it mainly as an inbox-placement monitor.</li>
+        </ul>
+        <p class="small muted">Want a bigger warm-up network? Connect the same mailboxes to an outside warm-up service, turn this app's warm-up off for them, and lower their daily campaign limit to leave room. <a href="https://github.com/AnalyticDog13/rightnow-ai#how-warm-up-works">Details on GitHub <span aria-hidden="true">→</span></a></p>
+      </div>
+      <div>
+        <figure class="frame"><div class="frame-bar" aria-hidden="true"><i></i><i></i><i></i><span>localhost:3000/accounts</span></div><img src="assets/screens/account-drawer-warmup-light-1600.webp" srcset="assets/screens/account-drawer-warmup-light-800.webp 800w, assets/screens/account-drawer-warmup-light-1600.webp 1600w" sizes="(min-width: 1024px) 680px, 100vw" width="1600" height="1000" loading="lazy" decoding="async" alt="Warm-up and deliverability settings showing warm-up volume and where warm-up mail landed (sample data)"></figure>
+        <p class="cap">Warm-up volume, inbox rate and health per mailbox.</p>
+      </div>
+    </div>
+
+    <div class="plan-h"><h3 id="plan-h">How much can you send?</h3><p class="small muted">Plan it with the same defaults the app uses. Nothing here leaves your browser.</p></div>
+    <div class="card demo planner" id="planner" aria-labelledby="plan-h">
+      <span class="chip">YOUR INPUTS × THE APP'S DEFAULTS</span>
+      <p class="now js-only" data-now>Right now: checking your clock…</p>
+      <div class="nojs-only">
+        <p class="big">90<small>emails per sending day</small></p>
+        <p>3 Google Workspace mailboxes at 30 a day: 90 emails per sending day after a 2-week warm-up. 3,000 emails take about 34 sending days.</p>
+      </div>
+      <div class="pl js-only" data-pl></div>
+      <details class="consts" open>
+        <summary>The defaults this planner uses, with their source</summary>
+        <div class="scroll"><table class="tbl">
+          <thead><tr><th scope="col">Constant</th><th scope="col">Value</th><th scope="col">Source</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Default provider cap</th><td>Google Workspace 1500, Gmail 400, Microsoft 365 5000, Outlook.com 250, SMTP 100</td><td><code>accounts/factory.ts</code> TIER_CAP</td></tr>
+            <tr><th scope="row">Highest daily limit per mailbox</th><td>Half the cap: 750, 200, 2500, 125, 50</td><td><code>factory.ts</code> maxDailyLimit</td></tr>
+            <tr><th scope="row">New mailbox daily limit</th><td>30 (or the highest limit, if lower)</td><td><code>accounts/open-account.ts</code></td></tr>
+            <tr><th scope="row">Slow ramp-up (off by default)</th><td>2 + 2 per day since connect</td><td><code>schema.prisma</code>, <code>quota.ts</code> effectiveAllowance</td></tr>
+            <tr><th scope="row">Gap between sends</th><td>540 s plus 0-300 s random (690 s on average)</td><td><code>schema.prisma</code> Campaign minGapSec, randomGapSec</td></tr>
+            <tr><th scope="row">Default schedule</th><td>Mon-Fri 09:00-17:00</td><td><code>campaigns/schema.ts</code> officeHours</td></tr>
+            <tr><th scope="row">Warm-up (off until enabled)</th><td>1 a day, +1 a day, up to 10; never above 50 or a tenth of the cap</td><td><code>deliverability/warmup-settings.ts</code>, <code>warmup.ts</code></td></tr>
+          </tbody>
+        </table></div>
+      </details>
+      <p class="foot">Defaults are read from the rightnow-ai source (<a href="https://github.com/AnalyticDog13/rightnow-ai/blob/main/packages/core/src/accounts/factory.ts">factory.ts</a>, <a href="https://github.com/AnalyticDog13/rightnow-ai/blob/main/packages/core/src/quota.ts">quota.ts</a>, <a href="https://github.com/AnalyticDog13/rightnow-ai/blob/main/packages/core/src/deliverability/warmup-settings.ts">warmup-settings.ts</a>). The app also applies health and re-warm limits you can't see here.</p>
+    </div>
+  </div>
+</section>
+
+<div class="band-o">
+<section id="self-host" class="band sec ruled" aria-labelledby="sh-h" data-mod="terminal">
+  <div class="wrap">
+    <div class="head rv">
+      <p class="eyebrow">SELF-HOST</p>
+      <h2 id="sh-h">Your mailboxes. Your server. Your leads. <span class="tone">Running in four commands.</span></h2>
+      <p class="lead">rightnow-ai is only self-hosted. There is no rightnow account and no rightnow server: you run the same Docker Compose stack on a laptop or a Linux VPS.</p>
+    </div>
+    <!-- sources: docs/ops/LOCAL.md Prerequisites, "While the laptop sleeps", "Limitation: tracking links"; docs/ops/VPS.md §1, §3 -->
+    <div class="dep">
+      <div class="dep-c on" data-dep="laptop"><h3><button type="button" aria-pressed="true">Laptop (Docker Desktop)</button></h3>
+        <dl><dt>Best for</dt><dd>Trying it, small campaigns while you work</dd><dt>You need</dt><dd>Docker Desktop and git (Windows, macOS or Linux)</dd><dt>Sends when</dt><dd>Only while the machine is awake</dd><dt>Tracking</dt><dd>Not available on localhost (unsubscribe falls back to mailto)</dd><dt>Upkeep</dt><dd><code>scripts/backup.sh</code>, <code>scripts/upgrade.sh</code></dd></dl></div>
+      <div class="dep-c" data-dep="vps"><h3><button type="button" aria-pressed="false">VPS (Compose + Caddy HTTPS)</button></h3>
+        <dl><dt>Best for</dt><dd>Always-on sending, open and click tracking</dd><dt>You need</dt><dd>A Linux VPS with Docker Engine + Compose and git; 1 vCPU / 2 GB RAM is enough to start; a domain</dd><dt>Sends when</dt><dd>Around the clock, inside your schedules</dd><dt>Tracking</dt><dd>Opens, clicks and one-click unsubscribe over HTTPS</dd><dt>Upkeep</dt><dd>Same, plus a nightly backup cron and off-server copies</dd></dl></div>
+    </div>
+    <div class="term js-only" id="term"></div>
+    <div class="nojs-only three">
+      <div class="code"><div class="code-h">01 Clone</div><pre><code><span class="p">git clone https://github.com/AnalyticDog13/rightnow-ai.git</span>
+<span class="p">cd rightnow-ai</span></code></pre></div>
+      <div class="code"><div class="code-h">02 Configure</div><pre><code><span class="p">cp .env.example .env</span>
+<span class="c"># then set in .env:</span>
+MODE=local
+APP_URL=http://localhost:3000
+ENCRYPTION_KEY=&lt;openssl rand -base64 32&gt;
+BETTER_AUTH_SECRET=&lt;openssl rand -base64 32&gt;
+SETUP_TOKEN=&lt;16+ random characters&gt;
+<span class="c"># Back up ENCRYPTION_KEY with your database.</span></code></pre></div>
+      <div class="code"><div class="code-h">03 Start · 04 Sign up</div><pre><code><span class="p">scripts/start.sh</span>
+<span class="c"># Windows (PowerShell): scripts\start.ps1</span>
+<span class="c"># Open http://localhost:3000/sign-up and create the owner with your SETUP_TOKEN.</span></code></pre></div>
+    </div>
+    <div class="warnbox" role="note"><svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#warn"/></svg><p>Back up ENCRYPTION_KEY with your database. Your mailbox logins are encrypted with it; a backup restored without the same key cannot read them.</p></div>
+    <div class="own">
+      <h3>Self-hosting means you are the sysadmin.</h3>
+      <ul>
+        <li><b>Updates:</b> scripts/upgrade.sh backs up, pulls, rebuilds, migrates and restarts.</li>
+        <li><b>Backups:</b> scripts/backup.sh writes a dump. Copy it off the server, with the key stored separately.</li>
+        <li><b>Mailbox apps:</b> Gmail and Microsoft need your own OAuth app. Step-by-step guides are in the repo.</li>
+        <li><b>Uptime:</b> a laptop sends only while it is awake. A VPS is the always-on option.</li>
+        <li><b>Support:</b> it is an open-source project. Issues and pull requests on GitHub, no SLA.</li>
+      </ul>
+    </div>
+    <div class="band-cta">
+      <a class="btn btn-ink btn-lg" href="https://github.com/AnalyticDog13/rightnow-ai"><svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#github"/></svg>View the code on GitHub</a>
+      <a class="btn btn-out btn-lg" href="self-host/">Read the full setup guide <span aria-hidden="true">→</span></a>
+    </div>
+  </div>
+</section>
+</div>
+
+<section id="deploy" class="sec ruled" aria-labelledby="dep-h">
+  <div class="wrap">
+    <div class="head rv">
+      <p class="eyebrow">DEPLOY IT YOURSELF</p>
+      <h2 id="dep-h">Deploy it yourself from GitHub. <span class="tone">Fork it, configure it, start it.</span></h2>
+    </div>
+    <ol class="three">
+      <li class="card"><p class="ctr">01</p><h3>Fork or clone</h3><p class="muted">Fork the repo to keep your own changes, or clone it as is.</p>
+        <div class="code"><div class="code-h">bash<button class="copy" type="button" data-copy="#c-d1"><svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#copy"/></svg><span>Copy</span></button></div><pre tabindex="0" aria-label="Clone command"><code id="c-d1"><span class="p">git clone https://github.com/&lt;you&gt;/rightnow-ai.git</span></code></pre></div>
+        <p class="small subtle">Replace &lt;you&gt; with your GitHub name, or use AnalyticDog13 to clone the original.</p></li>
+      <li class="card"><p class="ctr">02</p><h3>Fill in .env</h3><p class="muted">Copy the example file and set three secrets (and, on a VPS, your domain and a database password).</p>
+        <div class="code"><div class="code-h">bash<button class="copy" type="button" data-copy="#c-d2"><svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#copy"/></svg><span>Copy</span></button></div><pre tabindex="0" aria-label="Copy the example env file"><code id="c-d2"><span class="p">cp .env.example .env</span></code></pre></div></li>
+      <li class="card"><p class="ctr">03</p><h3>Start it</h3><p class="muted">Build and start the stack, then create the owner account with your SETUP_TOKEN.</p>
+        <div class="code"><div class="code-h">bash<button class="copy" type="button" data-copy="#c-d3"><svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#copy"/></svg><span>Copy</span></button></div><pre tabindex="0" aria-label="Start command"><code id="c-d3"><span class="p">scripts/start.sh</span></code></pre></div>
+        <p class="small subtle">Windows: scripts\start.ps1. Then open http://localhost:3000/sign-up.</p></li>
+    </ol>
+    <!-- source: docker-compose.yml services postgres, migrate, web, worker, caddy -->
+    <div class="card note-card"><svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#info"/></svg><div><h3>Why there is no "Deploy to Vercel" button</h3><p>rightnow-ai needs a PostgreSQL database and a background worker that runs all the time to sync mailboxes, warm up and send on schedule. Vercel runs short-lived functions and static files, so it cannot host the app. Use Docker Compose on your own machine or a VPS. This page is the only part deployed to Vercel: it is plain HTML in the repo's site/ folder.</p></div></div>
+    <div class="api">
+      <figure class="frame"><div class="frame-bar" aria-hidden="true"><i></i><i></i><i></i><span>localhost:3000/settings</span></div><img src="assets/screens/settings-api-keys-light-800.webp" srcset="assets/screens/settings-api-keys-light-800.webp 800w, assets/screens/settings-api-keys-light-1600.webp 1600w" sizes="(min-width: 768px) 320px, 100vw" width="1600" height="1000" loading="lazy" decoding="async" alt="API keys settings page with scopes per key (sample data)"></figure>
+      <p class="muted">Once it runs, everything in the app is also available over a REST API with scoped keys.</p>
+    </div>
+  </div>
+</section>
+
+<section id="compare" class="sec ruled" aria-labelledby="cmp-h">
+  <div class="wrap">
+    <div class="head rv">
+      <p class="eyebrow">COMPARE</p>
+      <h2 id="cmp-h">An open-source alternative to Instantly. <span class="tone">And to Smartlead and lemlist, if you'd rather host it yourself.</span></h2>
+    </div>
+    <div class="cmp-w" role="region" aria-label="Comparison table" tabindex="0">
+      <table class="tbl cmp">
+        <thead><tr><th scope="col"><span class="sr">Question</span></th><th scope="col">rightnow-ai</th><th scope="col">Hosted cold-email tools (Instantly, Smartlead, lemlist)</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Who runs it</th><td>You, on your laptop or server</td><td>The vendor, as a SaaS</td></tr>
+          <tr><th scope="row">Source code</th><td>Public, MIT license</td><td>Not public</td></tr>
+          <tr><th scope="row">Where leads and replies live</th><td>Your own PostgreSQL database</td><td>The vendor's systems</td></tr>
+          <tr><th scope="row">Cost model</th><td>Free software. You pay for your server (if any), mailboxes and domains</td><td>Subscription; see each vendor's pricing page</td></tr>
+          <tr><th scope="row">Mailboxes</th><td>Your own Gmail, Microsoft 365 and IMAP/SMTP</td><td>Typically your own mailboxes; some vendors also sell mailboxes</td></tr>
+          <tr><th scope="row">Warm-up network</th><td>Your own mailboxes only</td><td>Vendor-run shared networks are common</td></tr>
+          <tr><th scope="row">Lead database</th><td>None. Bring your own lists</td><td>Some vendors include one</td></tr>
+          <tr><th scope="row">Setup work</th><td>Docker, DNS, and your own Google/Microsoft OAuth app</td><td>Sign up and connect</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="cap">Based on each product's public website as of October 2026. Check the vendors' own pages for current details.</p>
+    <p class="links"><a class="link" href="instantly-alternative/">Read the full comparison <span aria-hidden="true">→</span></a></p>
+  </div>
+</section>
+
+<section id="responsible-use" class="sec" aria-labelledby="ru-h">
+  <div class="wrap">
+    <div class="resp kraft">
+      <h2 id="ru-h">Use it responsibly.</h2>
+      <p>You are responsible for how you use this software. Before you email anyone you need a lawful basis to do so (for example CAN-SPAM in the US, GDPR and PECR in the EU and UK, CASL in Canada, as they apply to you and your recipients). Send only as your own, honestly identified sender.</p>
+      <p>Every campaign email carries a List-Unsubscribe header and an unsubscribe link or opt-out line, and unsubscribes are always honored: the address is suppressed and the lead's sequences stop. Your mailbox providers' terms also apply and can restrict cold email. Nothing here is legal advice.</p>
+      <p>rightnow-ai is an independent open-source project. It is not affiliated with or endorsed by Instantly, Smartlead, lemlist or any other email-outreach vendor. Product names are trademarks of their owners.</p>
+      <p class="links"><a class="link" href="https://github.com/AnalyticDog13/rightnow-ai/blob/main/docs/COMPLIANCE.md">Compliance notes <span aria-hidden="true">→</span></a><a class="link" href="https://github.com/AnalyticDog13/rightnow-ai/blob/main/docs/PROVIDER_COMPLIANCE.md">Provider rules <span aria-hidden="true">→</span></a></p>
+    </div>
+  </div>
+</section>
+
+<section id="faq" class="sec ruled" aria-labelledby="faq-h">
+  <div class="wrap">
+    <div class="head"><p class="eyebrow">FAQ</p><h2 id="faq-h">Questions about rightnow-ai.</h2></div>
+    <div class="faq">
+      <details><summary>Is rightnow-ai really free?<svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#plus"/></svg></summary><p>Yes. It is MIT-licensed open-source software with no paid edition, no plans and no account to create. You pay only for what you run it on (nothing extra on your own computer, or a small VPS) and for your own mailboxes and domains.</p></details>
+      <details><summary>Is there a hosted version or an online demo?<svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#plus"/></svg></summary><p>No. rightnow-ai is only self-hosted and the maintainer runs no servers. To try it without real mail, set <code>MAIL_PROVIDER_FAKE=1</code> in <code>.env</code>: every provider is replaced by a fake in-process mailbox and the whole pipeline runs without sending anything.</p></details>
+      <details><summary>What do I need to run it?<svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#plus"/></svg></summary><p>Docker Desktop (or Docker Engine with Compose) and git. For always-on sending, a Linux VPS with 1 vCPU and 2 GB RAM is enough to start, plus a domain for HTTPS.</p></details>
+      <details><summary>Can I deploy it on Vercel or Netlify?<svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#plus"/></svg></summary><p>Not the app. It needs PostgreSQL and a background worker that runs all the time, so it runs with Docker Compose on your machine or a VPS. Only this marketing page is a static site.</p></details>
+      <details><summary>Which mailboxes can I connect?<svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#plus"/></svg></summary><p>Gmail and Google Workspace (through your own Google OAuth client), Microsoft 365 and Outlook (through your own Microsoft Entra app), and any other provider over IMAP/SMTP with an app password where required.</p></details>
+      <details><summary>How does warm-up work? Does it guarantee the inbox?<svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#plus"/></svg></summary><p>Warm-up sends labelled messages between your own mailboxes, ramps volume up daily and records inbox versus spam placement. Nothing can guarantee inbox placement, and rightnow-ai never fakes opens or rescues mail from spam. For a larger network you can use an outside warm-up service alongside it.</p></details>
+      <details><summary>Is it a full Instantly alternative?<svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#plus"/></svg></summary><p>It covers mailboxes, warm-up, campaigns, a unified inbox, a CRM, analytics, automations and an API. It does not include a lead database, done-for-you mailboxes, a shared warm-up network or autonomous AI agents.</p></details>
+      <details><summary>Where is my data stored?<svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#plus"/></svg></summary><p>In your own PostgreSQL database. Mailbox logins and tokens are encrypted at rest with AES-256-GCM using your <code>ENCRYPTION_KEY</code>. There is no rightnow account and no rightnow server for your data to go to.</p></details>
+      <details><summary>What happens if my laptop sleeps mid-campaign?<svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#plus"/></svg></summary><p>Nothing sends while it sleeps. On wake, each mailbox syncs first, so replies and unsubscribes that came in are seen before anything is sent; missed sends go out inside their schedule window, never as a burst. A send whose outcome is unknown is held, not resent.</p></details>
+      <details><summary>Can I use it for my team?<svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#plus"/></svg></summary><p>Yes. Invite teammates with roles, protect sign-in with two-factor authentication, and review the audit log. One workspace per install today.</p></details>
+    </div>
+  </div>
+</section>
+
+<section class="final wrap" aria-labelledby="fin-h">
+  <svg class="pm wait" viewBox="0 0 112 112" aria-hidden="true"><g filter="url(#rough)"><circle cx="56" cy="56" r="53" stroke-width="2"/><circle cx="56" cy="56" r="37"/><path id="pmr2" d="M12 56a44 44 0 1 1 88 0a44 44 0 1 1-88 0" fill="none"/><text class="pm-ring"><textPath href="#pmr2" textLength="262">SENT FROM YOUR OWN SERVER · RIGHTNOW-AI ·</textPath></text><line x1="32" x2="80" y1="58" y2="58"/><text class="pm-date" x="56" y="53" text-anchor="middle">SELF</text><text class="pm-date pm-y" x="56" y="72" text-anchor="middle">HOSTED</text></g></svg>
+  <h2 id="fin-h">Clone it. Run it. It's yours.</h2>
+  <p class="lead">MIT licensed, self-hosted, no account to create.</p>
+  <div class="ctas"><a class="btn btn-ink btn-lg" href="https://github.com/AnalyticDog13/rightnow-ai"><svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#github"/></svg>View the code on GitHub</a><a class="link" href="#self-host">Set it up <span aria-hidden="true">→</span></a></div>
+</section>
+</main>
+
+<div class="foot-o">
+<footer class="footer">
+  <div class="f-top">
+    <div><a class="brand" href="./" aria-label="rightnow-ai home"><img class="logo" src="assets/img/rightnow-logo.svg" alt="" width="40" height="40"><span>rightnow<span>-ai</span></span></a><p>Open-source, self-hosted cold email.</p></div>
+    <a class="icon-btn" href="https://github.com/AnalyticDog13/rightnow-ai" aria-label="rightnow-ai on GitHub"><svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#github"/></svg></a>
+  </div>
+  <div class="f-cols">
+    <nav aria-labelledby="fc1"><h2 id="fc1">Product</h2><ul><li><a href="#how">How it works</a></li><li><a href="#features">Features</a></li><li><a href="#warmup">Warm-up</a></li><li><a href="#inbox">Inbox and CRM</a></li><li><a href="#faq">FAQ</a></li></ul></nav>
+    <nav aria-labelledby="fc2"><h2 id="fc2">Self-host</h2><ul><li><a href="self-host/">Setup guide</a></li><li><a href="self-host/#laptop">Run on a laptop</a></li><li><a href="self-host/#vps">Run on a VPS</a></li><li><a href="self-host/#upkeep">Backups and upgrades</a></li></ul></nav>
+    <nav aria-labelledby="fc3"><h2 id="fc3">Compare</h2><ul><li><a href="instantly-alternative/">Instantly alternative</a></li><li><a href="instantly-alternative/#smartlead">Smartlead alternative</a></li><li><a href="instantly-alternative/#lemlist">lemlist alternative</a></li></ul></nav>
+    <nav aria-labelledby="fc4"><h2 id="fc4">Code</h2><ul><li><a href="https://github.com/AnalyticDog13/rightnow-ai">GitHub repository</a></li><li><a href="https://github.com/AnalyticDog13/rightnow-ai#readme">README</a></li><li><a href="https://github.com/AnalyticDog13/rightnow-ai/blob/main/LICENSE">License (MIT)</a></li><li><a href="https://github.com/AnalyticDog13/rightnow-ai/blob/main/CONTRIBUTING.md">Contributing</a></li><li><a href="https://github.com/AnalyticDog13/rightnow-ai/blob/main/docs/DECISIONS.md">Decisions</a></li></ul></nav>
+  </div>
+  <div class="f-bot"><p>MIT licensed · Not affiliated with any email-outreach vendor · This page sets no cookies and uses no analytics.</p><p>© 2026 rightnow-ai contributors</p></div>
+</footer>
+</div>
+</body>
+</html>

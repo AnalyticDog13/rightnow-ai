@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /tools/
+Disallow: /tests/
+Sitemap: https://rightnow-ai.vercel.app/sitemap.xml

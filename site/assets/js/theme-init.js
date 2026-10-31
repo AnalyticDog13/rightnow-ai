@@ -1,0 +1,1 @@
+(function(d){var t;d.classList.add("js");try{t=localStorage.getItem("rn-theme")}catch(e){}if(t==="light"||t==="dark")d.setAttribute("data-theme",t);else t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";d.setAttribute("data-eff",t)})(document.documentElement);

@@ -1,0 +1,3 @@
+# Only resized WebPs ship; originals live in docs/design/site/screens-src/.
+assets/screens/*.png
+README.md

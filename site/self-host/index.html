@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Self-Host rightnow-ai: Docker and VPS Setup Guide</title>
+<meta name="description" content="Run rightnow-ai, the open-source cold email platform, on your laptop with Docker Compose or on a VPS with Caddy HTTPS. Requirements, .env, backups, upgrades.">
+<meta name="robots" content="index, follow">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#F8F7F4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121210" media="(prefers-color-scheme: dark)">
+<link rel="canonical" href="https://rightnow-ai.vercel.app/self-host/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="rightnow-ai">
+<meta property="og:title" content="Self-Host rightnow-ai: Docker and VPS Setup Guide">
+<meta property="og:description" content="Run rightnow-ai, the open-source cold email platform, on your laptop with Docker Compose or on a VPS with Caddy HTTPS. Requirements, .env, backups, upgrades.">
+<meta property="og:url" content="https://rightnow-ai.vercel.app/self-host/">
+<meta property="og:image" content="https://rightnow-ai.vercel.app/assets/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="rightnow-ai: open-source cold email you run yourself">
+<meta property="og:locale" content="en_US">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Self-Host rightnow-ai: Docker and VPS Setup Guide">
+<meta name="twitter:description" content="Run rightnow-ai, the open-source cold email platform, on your laptop with Docker Compose or on a VPS with Caddy HTTPS. Requirements, .env, backups, upgrades.">
+<meta name="twitter:image" content="https://rightnow-ai.vercel.app/assets/og.png">
+<meta name="twitter:image:alt" content="rightnow-ai: open-source cold email you run yourself">
+<link rel="icon" href="../favicon.ico" sizes="any">
+<link rel="icon" href="../assets/img/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
+<link rel="preload" href="../assets/fonts/ibm-plex-sans-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/ibm-plex-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/css/site.css">
+<script src="../assets/js/theme-init.js"></script>
+<script type="module" src="../assets/js/site.js"></script>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@graph":[{"@type":"WebPage","@id":"https://rightnow-ai.vercel.app/self-host/","url":"https://rightnow-ai.vercel.app/self-host/","name":"Self-host rightnow-ai","inLanguage":"en","about":{"@id":"https://rightnow-ai.vercel.app/#software"}},{"@type":"HowTo","name":"Self-host rightnow-ai with Docker Compose","tool":[{"@type":"HowToTool","name":"Docker"},{"@type":"HowToTool","name":"git"}],"step":[{"@type":"HowToStep","name":"Clone","text":"git clone https://github.com/AnalyticDog13/rightnow-ai.git && cd rightnow-ai"},{"@type":"HowToStep","name":"Configure","text":"cp .env.example .env, then set MODE=local, APP_URL=http://localhost:3000, ENCRYPTION_KEY, BETTER_AUTH_SECRET and SETUP_TOKEN. Back up ENCRYPTION_KEY with your database."},{"@type":"HowToStep","name":"Start","text":"Run scripts/start.sh (Windows: scripts\\start.ps1). The first build takes a few minutes."},{"@type":"HowToStep","name":"Sign up","text":"Open http://localhost:3000/sign-up and create the owner with your SETUP_TOKEN."}]},{"@type":"Person","@id":"https://rightnow-ai.vercel.app/#maintainer","name":"AnalyticDog13","url":"https://github.com/AnalyticDog13"},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://rightnow-ai.vercel.app/"},{"@type":"ListItem","position":2,"name":"Self-host","item":"https://rightnow-ai.vercel.app/self-host/"}]}]}
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<svg class="sr" aria-hidden="true" focusable="false"><filter id="rough"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="1" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="1.5"/></filter></svg>
+
+<header class="nav" id="nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="../" aria-label="rightnow-ai home"><img class="logo" src="../assets/img/rightnow-logo.svg" alt="" width="28" height="28"><span>rightnow<span>-ai</span></span></a>
+    <nav class="nav-links" aria-label="Main">
+      <a href="../#how">How it works</a><a href="../#features">Features</a><a href="../self-host/" aria-current="page">Self-host</a><a href="../instantly-alternative/">Compare</a><a href="../#faq">FAQ</a>
+    </nav>
+    <div class="nav-r">
+      <a class="star" href="https://github.com/AnalyticDog13/rightnow-ai" data-star><svg class="ico" aria-hidden="true"><use href="../assets/img/icons.svg#github"/></svg><span>Star on GitHub</span></a>
+      <button class="icon-btn theme-btn" type="button" aria-label="Switch to dark theme" aria-pressed="false" data-theme-toggle><svg class="ico sun" aria-hidden="true"><use href="../assets/img/icons.svg#sun"/></svg><svg class="ico moon" aria-hidden="true"><use href="../assets/img/icons.svg#moon"/></svg></button>
+      <a class="btn btn-ink btn-sm" href="https://github.com/AnalyticDog13/rightnow-ai"><svg class="ico" aria-hidden="true"><use href="../assets/img/icons.svg#github"/></svg>View on GitHub</a>
+    </div>
+    <div class="nav-m">
+      <a class="icon-btn" href="https://github.com/AnalyticDog13/rightnow-ai" aria-label="View rightnow-ai on GitHub"><svg class="ico" aria-hidden="true"><use href="../assets/img/icons.svg#github"/></svg></a>
+      <button class="icon-btn" type="button" aria-expanded="false" aria-controls="nav-menu" aria-label="Menu" data-menu><svg class="ico" aria-hidden="true"><use href="../assets/img/icons.svg#menu"/></svg></button>
+    </div>
+  </div>
+  <div id="nav-menu">
+    <a class="ml" href="../#how">How it works</a><a class="ml" href="../#features">Features</a><a class="ml" href="../self-host/">Self-host</a><a class="ml" href="../instantly-alternative/">Compare</a><a class="ml" href="../#faq">FAQ</a>
+    <div class="mrow"><a class="star" href="https://github.com/AnalyticDog13/rightnow-ai" data-star><svg class="ico" aria-hidden="true"><use href="../assets/img/icons.svg#github"/></svg><span>Star on GitHub</span></a>
+      <div class="seg" role="group" aria-label="Theme"><button type="button" data-set-theme="system" aria-pressed="true">System</button><button type="button" data-set-theme="light" aria-pressed="false">Light</button><button type="button" data-set-theme="dark" aria-pressed="false">Dark</button></div></div>
+    <a class="btn btn-ink" href="https://github.com/AnalyticDog13/rightnow-ai"><svg class="ico" aria-hidden="true"><use href="../assets/img/icons.svg#github"/></svg>View on GitHub</a>
+  </div>
+</header>
+
+<main id="main">
+<div class="wrap doc">
+  <nav class="toc" aria-label="On this page">
+    <a href="#requirements">Before you begin</a><a href="#laptop">Run it on your laptop</a><a href="#vps">Run it on a VPS</a><a href="#mailboxes">Connect Gmail and Microsoft</a><a href="#limits">Sending limits per mailbox</a><a href="#upkeep">Backups, restore and upgrades</a><a href="#move">Moving from a laptop to a VPS</a><a href="#vercel">Why not Vercel?</a>
+  </nav>
+  <article class="prose">
+    <p class="crumbs"><a href="../">Home</a><span aria-hidden="true">/</span><span>Self-host</span></p>
+    <h1>Self-host rightnow-ai</h1>
+    <p class="lead">rightnow-ai runs only on hardware you control. This guide covers both supported ways: Docker Compose on your own computer, and the same stack on a Linux VPS with Caddy for HTTPS.</p>
+    <div class="band walk" id="walkthrough" data-mod="terminal">
+      <div class="term js-only" id="term"></div>
+      <p class="nojs-only small">The interactive walkthrough needs JavaScript. Every command is also written out below.</p>
+    </div>
+
+    <h2 id="requirements">Before you begin</h2>
+    <!-- sources: docs/ops/LOCAL.md Prerequisites, docs/ops/VPS.md §1, .env.example -->
+    <div class="scroll"><table class="tbl">
+      <thead><tr><th scope="col">Section</th><th scope="col">Check</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Docker</th><td>Docker Desktop (Windows, macOS) or Docker Engine with the Compose plugin (Linux)</td></tr>
+        <tr><th scope="row">git</th><td>To clone the repository and pull upgrades</td></tr>
+        <tr><th scope="row">Secrets</th><td><code>openssl</code>, or the generator in the walkthrough above</td></tr>
+        <tr><th scope="row">VPS only</th><td>1 vCPU / 2 GB RAM to start, a domain with an A record, inbound ports 22, 80 and 443</td></tr>
+        <tr><th scope="row">Gmail, Microsoft</th><td>Your own Google OAuth client and Microsoft Entra app (guides linked below)</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="laptop">Run it on your laptop</h2>
+    <div class="code"><div class="code-h">bash<button class="copy" type="button" data-copy="#c-l1"><svg class="ico" aria-hidden="true"><use href="../assets/img/icons.svg#copy"/></svg><span>Copy</span></button></div><pre tabindex="0" aria-label="Laptop commands"><code id="c-l1"><span class="p">git clone https://github.com/AnalyticDog13/rightnow-ai.git</span>
+<span class="p">cd rightnow-ai</span>
+<span class="p">cp .env.example .env</span></code></pre></div>
+    <p>In <code>.env</code>, set <code>ENCRYPTION_KEY</code> and <code>BETTER_AUTH_SECRET</code> (<code>openssl rand -base64 32</code> each) and a <code>SETUP_TOKEN</code> of 16 or more characters. Leave <code>MODE=local</code> and <code>APP_URL=http://localhost:3000</code>.</p>
+    <div class="code"><div class="code-h">bash<button class="copy" type="button" data-copy="#c-l2"><svg class="ico" aria-hidden="true"><use href="../assets/img/icons.svg#copy"/></svg><span>Copy</span></button></div><pre tabindex="0" aria-label="Start command"><code id="c-l2"><span class="p">scripts/start.sh</span>
+<span class="c"># Windows (PowerShell): scripts\start.ps1 · the first build takes a few minutes</span></code></pre></div>
+    <p>Open http://localhost:3000/sign-up and create the owner account with your <code>SETUP_TOKEN</code>. Sign-up closes after the first owner; everyone else joins by invite. Always open the app at the exact host in <code>APP_URL</code> (<code>localhost</code>, not <code>127.0.0.1</code>), or every form submission is rejected.</p>
+    <h3>While the laptop sleeps</h3>
+    <p>Nothing sends or syncs while the machine is asleep. On wake, a mailbox may send only after a sync in the last 5 minutes (<code>SYNC_MAX_STALENESS_SEC=300</code>), so replies, bounces and unsubscribes are seen first. Missed sends go out late inside their schedule window, or wait for the next window, never as a burst. A send that was in flight is never resent automatically: it is looked for in the Sent folder, and held if it isn't found twice, 15 minutes apart.</p>
+    <h3>Tracking needs a public address</h3>
+    <p>On <code>localhost</code>, recipients cannot reach your tracking or one-click unsubscribe links, so emails carry a mailto-only unsubscribe and open and click tracking is off. Run on a VPS (or behind a tunnel, for tests only) for tracking.</p>
+    <h3>Dry-run mode</h3>
+    <p>Set <code>MAIL_PROVIDER_FAKE=1</code> in <code>.env</code> to replace Gmail, Microsoft and IMAP/SMTP with an in-process fake mailbox. You can connect accounts, launch a campaign and watch the whole pipeline run without contacting a provider. The app refuses this flag when <code>MODE=vps</code>.</p>
+
+    <h2 id="vps">Run it on a VPS</h2>
+    <!-- source: docs/ops/VPS.md §1-§2b; docker-compose.yml caddy profiles: ["vps"] -->
+    <p>The same Compose file runs on the server; <code>MODE=vps</code> adds the <code>caddy</code> service, which gets a Let's Encrypt certificate automatically.</p>
+    <ol class="nums">
+      <li>A Linux VPS with Docker Engine, the Compose plugin and git (1 vCPU / 2 GB RAM is enough to start).</li>
+      <li>Point an <code>A</code> record (and <code>AAAA</code> with IPv6) for your domain at the server and wait until it resolves.</li>
+      <li>Allow inbound 22, 80 and 443 only. Postgres is not published and the web port is bound to 127.0.0.1.</li>
+    </ol>
+    <div class="code"><div class="code-h">bash<button class="copy" type="button" data-copy="#c-v1"><svg class="ico" aria-hidden="true"><use href="../assets/img/icons.svg#copy"/></svg><span>Copy</span></button></div><pre tabindex="0" aria-label="VPS commands"><code id="c-v1"><span class="p">ufw allow 22,80,443/tcp &amp;&amp; ufw enable</span>
+<span class="p">git clone https://github.com/AnalyticDog13/rightnow-ai.git &amp;&amp; cd rightnow-ai</span>
+<span class="p">cp .env.example .env</span></code></pre></div>
+    <div class="code"><div class="code-h">.env<button class="copy" type="button" data-copy="#c-v2"><svg class="ico" aria-hidden="true"><use href="../assets/img/icons.svg#copy"/></svg><span>Copy</span></button></div><pre tabindex="0" aria-label="VPS .env"><code id="c-v2"><span class="l">MODE=vps</span>
+<span class="l">DOMAIN=app.example.com</span>
+<span class="l">APP_URL=https://app.example.com</span>
+<span class="l">ENCRYPTION_KEY=&lt;openssl rand -base64 32&gt;</span>
+<span class="l">BETTER_AUTH_SECRET=&lt;openssl rand -base64 32&gt;</span>
+<span class="l">SETUP_TOKEN=&lt;16+ random characters&gt;</span>
+<span class="l">POSTGRES_PASSWORD=&lt;openssl rand -hex 24&gt;</span><span class="c">   # set before the first start</span></code></pre></div>
+    <p>Then run <code>scripts/start.sh</code>, open <code>https://app.example.com/sign-up</code> and create the owner with your <code>SETUP_TOKEN</code>.</p>
+    <p><strong>Private hosts.</strong> Webhook URLs, the AI base URL and the email-verifier URL must be public by default. <code>ALLOW_PRIVATE_HTTP_HOSTS=1</code> lets them reach your private network (for example a local Ollama server). Cloud metadata and link-local addresses stay blocked whatever the setting.</p>
+
+    <h2 id="mailboxes">Connect Gmail and Microsoft</h2>
+    <!-- sources: docs/ops/GOOGLE_SETUP.md, docs/ops/MICROSOFT_SETUP.md, .env.example redirect URIs -->
+    <h3>Gmail and Google Workspace</h3>
+    <ul class="dots">
+      <li>Create a Google Cloud project and enable the Gmail API.</li>
+      <li>Configure the OAuth consent screen and set it to "In production": an app left in "Testing" gets refresh tokens that expire after 7 days.</li>
+      <li>Create a Web application OAuth client with the redirect URI <code>${APP_URL}/api/v1/oauth/google/callback</code>.</li>
+      <li>Put <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code> in <code>.env</code> and restart.</li>
+      <li>In the app: Email Accounts, then Connect Google. Full guide: <a href="https://github.com/AnalyticDog13/rightnow-ai/blob/main/docs/ops/GOOGLE_SETUP.md">GOOGLE_SETUP.md</a>.</li>
+    </ul>
+    <h3>Microsoft 365 and Outlook.com</h3>
+    <ul class="dots">
+      <li>Register an app in Microsoft Entra for organizational and personal accounts.</li>
+      <li>Add the Web redirect URI <code>${APP_URL}/api/v1/oauth/microsoft/callback</code>.</li>
+      <li>Create a client secret and note its expiry date.</li>
+      <li>Add the delegated Graph permissions <code>Mail.Send</code>, <code>Mail.ReadWrite</code>, <code>offline_access</code> and <code>User.Read</code>.</li>
+      <li>Put <code>MS_CLIENT_ID</code>, <code>MS_CLIENT_SECRET</code> and <code>MS_TENANT=common</code> in <code>.env</code>. Full guide: <a href="https://github.com/AnalyticDog13/rightnow-ai/blob/main/docs/ops/MICROSOFT_SETUP.md">MICROSOFT_SETUP.md</a>.</li>
+    </ul>
+    <p>Any other provider connects over IMAP/SMTP with a host, username and password (an app password where the provider requires one). Before the first real campaign from a provider, run its one-time live check: <code>npx tsx scripts/live-verify.ts --account &lt;id&gt; --to &lt;another address of yours&gt;</code>. Campaign sending from a provider stays off until it passes.</p>
+
+    <h2 id="limits">Sending limits per mailbox</h2>
+    <!-- verbatim from docs/ops/LOCAL.md "Sending limits per account"; values in packages/core/src/accounts/factory.ts -->
+    <p>The daily limit you set is never allowed above half of the provider's rolling 24-hour cap. Calendar-day counting is only safe against a rolling window with that margin. Larger values are saved at the maximum and the page tells you so.</p>
+    <div class="scroll"><table class="tbl">
+      <thead><tr><th scope="col">Account type</th><th scope="col">Provider cap (default / highest you can set)</th><th scope="col">Highest daily limit</th><th scope="col">Minimum gap</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Google Workspace</th><td class="n">1500 / 2000</td><td class="n">750</td><td>none</td></tr>
+        <tr><th scope="row">Gmail (gmail.com)</th><td class="n">400 / 500</td><td class="n">200</td><td>none</td></tr>
+        <tr><th scope="row">Microsoft 365</th><td class="n">5000 / 10000</td><td class="n">2500</td><td>3 s</td></tr>
+        <tr><th scope="row">Outlook.com, Hotmail, Live</th><td class="n">250 / 300</td><td class="n">125</td><td>3 s</td></tr>
+        <tr><th scope="row">SMTP</th><td class="n">100 / 10000</td><td class="n">50</td><td>none</td></tr>
+      </tbody>
+    </table></div>
+    <p>New accounts start at 30 a day (or the maximum, if lower). Counts follow the account's own timezone.</p>
+
+    <h2 id="upkeep">Backups, restore and upgrades</h2>
+    <div class="scroll"><table class="tbl">
+      <thead><tr><th scope="col">Task</th><th scope="col">Command</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Start</th><td><code>scripts/start.sh</code></td></tr>
+        <tr><th scope="row">Stop (data is kept)</th><td><code>scripts/stop.sh</code></td></tr>
+        <tr><th scope="row">Backup</th><td><code>scripts/backup.sh</code> writes <code>backups/rightnow-&lt;timestamp&gt;.dump</code></td></tr>
+        <tr><th scope="row">Restore</th><td><code>scripts/restore.sh backups/rightnow-&lt;timestamp&gt;.dump</code> (replaces current data; asks for <code>yes</code>)</td></tr>
+        <tr><th scope="row">Upgrade</th><td><code>scripts/upgrade.sh</code>: backs up, then git pull, rebuild, migrations, restart</td></tr>
+      </tbody>
+    </table></div>
+    <p>Windows uses the matching <code>.ps1</code> scripts. Data lives in the Docker volume <code>pgdata</code>; the scripts never delete it.</p>
+    <div class="warnbox" role="note"><svg class="ico" aria-hidden="true"><use href="../assets/img/icons.svg#warn"/></svg><p>Back up ENCRYPTION_KEY with your database. Your mailbox logins are encrypted with it; a backup restored without the same key cannot read them.</p></div>
+    <p><strong>A restore pauses every active campaign.</strong> Messages sent after the dump was taken are recognised from the Sent folders and not sent again. Resume the campaigns only after every mailbox shows a sync completed since the restore.</p>
+    <p>On a VPS, back up nightly with cron and copy <code>backups/</code> off the server, keeping the key somewhere separate:</p>
+    <div class="code"><div class="code-h">crontab<button class="copy" type="button" data-copy="#c-cron"><svg class="ico" aria-hidden="true"><use href="../assets/img/icons.svg#copy"/></svg><span>Copy</span></button></div><pre tabindex="0" aria-label="Backup cron line"><code id="c-cron"><span class="l">0 3 * * * cd /home/you/rightnow-ai &amp;&amp; mkdir -p backups &amp;&amp; scripts/backup.sh &gt;&gt; backups/cron.log 2&gt;&amp;1 &amp;&amp; find backups -name '*.dump' -mtime +14 -delete</span></code></pre></div>
+
+    <h2 id="move">Moving from a laptop to a VPS</h2>
+    <!-- condensed from docs/ops/VPS.md §3c -->
+    <ol class="nums">
+      <li>Stop the local stack and keep it stopped: two installs must never sync or send from one mailbox.</li>
+      <li>On the laptop, run <code>scripts/backup.sh</code>.</li>
+      <li>Copy the dump and your <code>ENCRYPTION_KEY</code> to the server out of band.</li>
+      <li>Set up the VPS as above with the same <code>ENCRYPTION_KEY</code>; do not start it yet.</li>
+      <li>Run <code>scripts/restore.sh &lt;dump&gt;</code> (it pauses active campaigns), then start the stack.</li>
+      <li>Sign in, check <code>/api/readyz</code> and each mailbox's state, and download one attachment by hand.</li>
+      <li>Add the new domain's redirect URIs in Google and Microsoft and reconnect any mailbox that needs attention.</li>
+      <li>Switch DNS and tracking-domain CNAMEs only after these checks pass.</li>
+      <li>Never restart the local install afterwards: it would send the same mail a second time.</li>
+    </ol>
+
+    <h2 id="vercel">Why not Vercel, Netlify or serverless?</h2>
+    <!-- source: docker-compose.yml services postgres, migrate, web, worker, caddy -->
+    <p>rightnow-ai needs a PostgreSQL database and a background worker that runs all the time to sync mailboxes, warm up and send on schedule. The Compose stack has five services: <code>postgres</code> (data and the job queue), <code>migrate</code> (applies database migrations, then exits), <code>web</code> (the app and REST API), <code>worker</code> (sync, scheduling, sending, warm-up) and, with <code>MODE=vps</code>, <code>caddy</code> (HTTPS). Vercel and Netlify run short-lived functions and static files, so they cannot host the worker or the database. Only this documentation site is static.</p>
+    <p class="ctas"><a class="btn btn-ink btn-lg" href="https://github.com/AnalyticDog13/rightnow-ai"><svg class="ico" aria-hidden="true"><use href="../assets/img/icons.svg#github"/></svg>View the code on GitHub</a></p>
+  </article>
+</div>
+</main>
+
+<div class="foot-o">
+<footer class="footer">
+  <div class="f-top">
+    <div><a class="brand" href="../" aria-label="rightnow-ai home"><img class="logo" src="../assets/img/rightnow-logo.svg" alt="" width="40" height="40"><span>rightnow<span>-ai</span></span></a><p>Open-source, self-hosted cold email.</p></div>
+    <a class="icon-btn" href="https://github.com/AnalyticDog13/rightnow-ai" aria-label="rightnow-ai on GitHub"><svg class="ico" aria-hidden="true"><use href="../assets/img/icons.svg#github"/></svg></a>
+  </div>
+  <div class="f-cols">
+    <nav aria-labelledby="fc1"><h2 id="fc1">Product</h2><ul><li><a href="../#how">How it works</a></li><li><a href="../#features">Features</a></li><li><a href="../#warmup">Warm-up</a></li><li><a href="../#inbox">Inbox and CRM</a></li><li><a href="../#faq">FAQ</a></li></ul></nav>
+    <nav aria-labelledby="fc2"><h2 id="fc2">Self-host</h2><ul><li><a href="../self-host/">Setup guide</a></li><li><a href="../self-host/#laptop">Run on a laptop</a></li><li><a href="../self-host/#vps">Run on a VPS</a></li><li><a href="../self-host/#upkeep">Backups and upgrades</a></li></ul></nav>
+    <nav aria-labelledby="fc3"><h2 id="fc3">Compare</h2><ul><li><a href="../instantly-alternative/">Instantly alternative</a></li><li><a href="../instantly-alternative/#smartlead">Smartlead alternative</a></li><li><a href="../instantly-alternative/#lemlist">lemlist alternative</a></li></ul></nav>
+    <nav aria-labelledby="fc4"><h2 id="fc4">Code</h2><ul><li><a href="https://github.com/AnalyticDog13/rightnow-ai">GitHub repository</a></li><li><a href="https://github.com/AnalyticDog13/rightnow-ai#readme">README</a></li><li><a href="https://github.com/AnalyticDog13/rightnow-ai/blob/main/LICENSE">License (MIT)</a></li><li><a href="https://github.com/AnalyticDog13/rightnow-ai/blob/main/CONTRIBUTING.md">Contributing</a></li><li><a href="https://github.com/AnalyticDog13/rightnow-ai/blob/main/docs/DECISIONS.md">Decisions</a></li></ul></nav>
+  </div>
+  <div class="f-bot"><p>MIT licensed · Not affiliated with any email-outreach vendor · This page sets no cookies and uses no analytics.</p><p>© 2026 rightnow-ai contributors</p></div>
+</footer>
+</div>
+</body>
+</html>

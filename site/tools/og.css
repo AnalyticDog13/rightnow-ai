@@ -1,0 +1,13 @@
+/* OG card layout (1200x630), rendered once with Playwright into ../assets/og.png */
+.og{width:1200px;height:630px;overflow:hidden;margin:0}
+.og::before{content:"";position:fixed;inset:0 64px;left:64px;right:64px;width:auto;transform:none;border-inline:1px solid var(--border);pointer-events:none}
+.og-in{height:100%;padding:64px;display:grid;grid-template-columns:1fr 300px;gap:40px;align-items:center}
+.og-l{display:grid;gap:28px}
+.og .brand{font-size:26px}.og .logo{width:56px;height:56px}
+.og h1{font-size:64px;line-height:1.08}
+.og-tags{font:500 22px/1.3 var(--mono);color:var(--fg-muted)}
+.og-url{font:400 20px/1 var(--mono);color:var(--fg)}
+.og-r{position:relative;height:100%;display:grid;place-items:center}
+.og-pm{position:absolute;top:30px;right:20px;width:160px;height:160px}
+.og-meter{position:static;width:300px;margin-top:150px}
+.og .pm.og-pm .pm-date{font-size:12px}
