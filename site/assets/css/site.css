@@ -202,7 +202,7 @@ p a,li a,dd a,td a{text-decoration:underline}
 .cmd-box code::before{content:"$ ";color:var(--fg-subtle)}
 @media (max-width:767px){.code pre,.term pre{font-size:13px;line-height:20px}}
 
-/* postmark + wave */
+/* postmark */
 .pm{width:112px;height:112px;color:var(--fg);opacity:.88;transform:rotate(-8deg);pointer-events:none}
 .pm text{font-family:var(--mono);font-weight:500;fill:currentColor}
 .pm .pm-ring{font-size:9px;letter-spacing:.12em}
@@ -216,13 +216,6 @@ p a,li a,dd a,td a{text-decoration:underline}
 @keyframes thunk{from{opacity:0;transform:scale(1.25) rotate(-14deg)}to{opacity:.88;transform:rotate(-8deg)}}
 @keyframes press{50%{transform:translateY(1px)}}
 .ww{position:relative;white-space:nowrap}
-.wave{position:absolute;inset-inline:0;bottom:-.18em;height:.32em;width:100%;overflow:visible}
-.wave path{fill:none;stroke:var(--signal);stroke-width:1.5;vector-effect:non-scaling-stroke}
-@media (prefers-reduced-motion:no-preference){
-  html.js .wave path{stroke-dasharray:1;stroke-dashoffset:1;animation:draw 700ms var(--ease-out) forwards}
-  html.js .wave path:nth-child(1){animation-delay:300ms}html.js .wave path:nth-child(2){animation-delay:360ms}html.js .wave path:nth-child(3){animation-delay:420ms}html.js .wave path:nth-child(4){animation-delay:480ms}html.js .wave path:nth-child(5){animation-delay:540ms}
-}
-@keyframes draw{to{stroke-dashoffset:0}}
 .divider{height:12px;width:100%;color:var(--border-strong)}
 .divider path{fill:none;stroke:currentColor;stroke-width:1;vector-effect:non-scaling-stroke}
 
