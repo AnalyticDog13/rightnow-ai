@@ -115,6 +115,19 @@ export function initTabs(list, onChange) {
 }
 $$("main [role=tablist]").forEach(l => initTabs(l));
 
+/* in-page links: sections above the target finish loading after the jump and push it down, so re-align
+   whenever the page height changes, until the reader scrolls themselves or 2.5 s pass */
+function pin(t) {
+  let h = root.scrollHeight;
+  const ro = new ResizeObserver(() => { if (root.scrollHeight !== h) { h = root.scrollHeight; t.scrollIntoView({ block: "start" }); } });
+  const stop = () => { ro.disconnect(); ["wheel", "touchstart", "keydown"].forEach(ev => removeEventListener(ev, stop)); };
+  ro.observe(d.body);
+  ["wheel", "touchstart", "keydown"].forEach(ev => addEventListener(ev, stop, { passive: true }));
+  setTimeout(stop, 2500);
+}
+d.addEventListener("click", e => { const a = e.target.closest('a[href^="#"]'); const t = a && a.hash.length > 1 && d.getElementById(a.hash.slice(1)); if (t) pin(t); });
+if (location.hash.length > 1) { const t = d.getElementById(location.hash.slice(1)); if (t) pin(t); }
+
 /* how-it-works rail: scroll-spy + smooth jump */
 const rail = $$(".rail a");
 if (rail.length) {
