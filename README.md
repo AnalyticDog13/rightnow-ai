@@ -12,7 +12,7 @@ interactive demos, and follow the setup guide.
 
 *The campaign simulator (sample data). [Try it in your browser](https://rightnow-ai-site.vercel.app/#simulator), no install needed.*
 
-> **Status: complete.** All 8 build phases are done, about 1,290 automated tests and the browser tests pass in
+> **Status: complete.** All 8 build phases are done, about 1,900 automated tests and the browser tests pass in
 > CI, and sending has been verified live with real mailboxes.
 
 ## How to use it

@@ -432,12 +432,12 @@ line. These are the only "stats" on the page; no counters, no count-up.
 | Eyebrow | Line | Link |
 |---|---|---|
 | `MIT LICENSE` | Read it, fork it, run it. No paid edition. | `LICENSE` on GitHub |
-| `~1,290 TESTS IN CI` | Unit, integration and browser tests run on every push. | GitHub Actions page |
+| `~1,900 TESTS IN CI` | Unit, integration and browser tests run on every push. | GitHub Actions page |
 | `LIVE-VERIFIED SENDING` | Checked against real Gmail, Microsoft and SMTP mailboxes. | `docs/ops/LIVE_VERIFICATION.md` on GitHub |
 | `POSTGRESQL ONLY` | One database holds the data and the job queue. No Redis. | `docs/DECISIONS.md` on GitHub |
 | `ENCRYPTED CREDENTIALS` | OAuth tokens and SMTP passwords are encrypted at rest (AES-256-GCM). | The repo README (no anchor) |
 
-Source of the test count: README "about 1,290 automated tests and the browser tests pass in CI". The live-verified
+Source of the test count: README "about 1,900 automated tests and the browser tests pass in CI". The live-verified
 item may say "Gmail, Microsoft and SMTP" only if `docs/ops/LIVE_VERIFICATION.md` lists all three as passed at build
 time; otherwise the builder writes exactly the providers it lists.
 
