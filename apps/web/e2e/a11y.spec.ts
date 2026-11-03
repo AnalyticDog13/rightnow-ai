@@ -428,9 +428,14 @@ test.describe("tables", () => {
     await page.goto("/leads");
     await expect(next(page)).toBeVisible(); // 55 leads, 50 per page
     await conventions(page, { search: "Search leads", term: "lead07@", sortBy: "Email" });
-    await page.getByLabel("Search leads").fill("");
     // the sort is the server's: descending puts the last of all 55 first, though only 50 are loaded
     await expect(rows(page).first()).toContainText("lead55@");
+    // The bulk bar replaces the row with the search and the count. The sort's reload clears the selection only if the
+    // boxes were checked before it landed, so clear whatever is still selected.
+    const clear = page
+      .getByRole("toolbar", { name: "Bulk actions" })
+      .getByRole("button", { name: "Clear", exact: true });
+    if (await clear.isVisible()) await clear.click();
     await next(page).click();
     await expect(page.getByText(/Showing 55/)).toBeVisible();
   });

@@ -338,7 +338,13 @@ test("thread, reply with attachment, inert rendering, notes, bulk unread, remind
     "rel",
     "noopener noreferrer",
   );
-  await warn.getByRole("button", { name: "Cancel" }).click();
+  // Cancel can close the tab while the click is still settling; only that closing is forgiven
+  await warn
+    .getByRole("button", { name: "Cancel" })
+    .click()
+    .catch((e: unknown) => {
+      if (!warn.isClosed()) throw e;
+    });
   await page.waitForTimeout(500); // a tab the app opened closes itself; otherwise the page says nothing was opened
   if (!warn.isClosed()) await expect(warn.getByRole("status")).toContainText("Nothing was opened");
   // userinfo spoof: the warning names the real host and offers no Continue
