@@ -424,7 +424,7 @@ BETTER_AUTH_SECRET=&lt;openssl rand -base64 32&gt;
 SETUP_TOKEN=&lt;16+ random characters&gt;
 <span class="c"># Back up ENCRYPTION_KEY with your database.</span></code></pre></div>
       <div class="code"><div class="code-h">03 Start · 04 Sign up</div><pre><code><span class="p">scripts/start.sh</span>
-<span class="c"># Windows (PowerShell): scripts\start.ps1</span>
+<span class="c"># Windows (PowerShell): powershell -ExecutionPolicy Bypass -File scripts\start.ps1</span>
 <span class="c"># Open http://localhost:3000/sign-up and create the owner with your SETUP_TOKEN.</span></code></pre></div>
     </div>
     <div class="warnbox" role="note"><svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#warn"/></svg><p>Back up ENCRYPTION_KEY with your database. Your mailbox logins are encrypted with it; a backup restored without the same key cannot read them.</p></div>
@@ -460,7 +460,7 @@ SETUP_TOKEN=&lt;16+ random characters&gt;
         <div class="code"><div class="code-h">bash<button class="copy" type="button" data-copy="#c-d2"><svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#copy"/></svg><span>Copy</span></button></div><pre tabindex="0" aria-label="Copy the example env file"><code id="c-d2"><span class="p">cp .env.example .env</span></code></pre></div></li>
       <li class="card"><p class="ctr">03</p><h3>Start it</h3><p class="muted">Build and start the stack, then create the owner account with your SETUP_TOKEN.</p>
         <div class="code"><div class="code-h">bash<button class="copy" type="button" data-copy="#c-d3"><svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#copy"/></svg><span>Copy</span></button></div><pre tabindex="0" aria-label="Start command"><code id="c-d3"><span class="p">scripts/start.sh</span></code></pre></div>
-        <p class="small subtle">Windows: scripts\start.ps1. Then open http://localhost:3000/sign-up.</p></li>
+        <p class="small subtle">Windows: powershell -ExecutionPolicy Bypass -File scripts\start.ps1. Then open http://localhost:3000/sign-up.</p></li>
     </ol>
     <!-- source: docker-compose.yml services postgres, migrate, web, worker, caddy -->
     <div class="card note-card"><svg class="ico" aria-hidden="true"><use href="assets/img/icons.svg#info"/></svg><div><h3>Why there is no "Deploy to Vercel" button</h3><p>rightnow-ai needs a PostgreSQL database and a background worker that runs all the time to sync mailboxes, warm up and send on schedule. Vercel runs short-lived functions and static files, so it cannot host the app. Use Docker Compose on your own machine or a VPS. This page is the only part deployed to Vercel: it is plain HTML in the repo's site/ folder.</p></div></div>

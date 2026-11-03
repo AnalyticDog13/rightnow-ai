@@ -32,10 +32,12 @@ cp .env.example .env
 ```
 
 Fill in `.env`:
-- `ENCRYPTION_KEY` and `BETTER_AUTH_SECRET`: run `openssl rand -base64 32` once for each.
+- `ENCRYPTION_KEY` and `BETTER_AUTH_SECRET`: run `openssl rand -base64 32` once for each. Windows PowerShell often
+  has no `openssl`, so use this there instead, once for each:
+  `$b = New-Object byte[] 32; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b); [Convert]::ToBase64String($b)`
 - `SETUP_TOKEN`: any secret of 16+ characters.
 
-Then start it with `scripts/start.sh` (Windows: `scripts\start.ps1`) and open http://localhost:3000/sign-up.
+Then start it with `scripts/start.sh` (Windows: `powershell -ExecutionPolicy Bypass -File scripts\start.ps1`) and open http://localhost:3000/sign-up.
 Create the owner account with your `SETUP_TOKEN`. Teammates join later by invite.
 
 Back up `ENCRYPTION_KEY` along with your database. Without it, the saved mailbox logins can't be read.

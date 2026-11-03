@@ -17,7 +17,7 @@ const env = (vps, v, dom) => [
 ];
 const STEPS = {
   laptop: (v) => [["01", ...CLONE], ["02", "Configure", [P("cp .env.example .env"), ...env(false, v), C("# Back up ENCRYPTION_KEY with your database.")], "env"],
-    ["03", "Start", [P("scripts/start.sh"), C("# Windows (PowerShell): scripts\\start.ps1"), C("# The first build takes a few minutes.")]],
+    ["03", "Start", [P("scripts/start.sh"), C("# Windows (PowerShell): powershell -ExecutionPolicy Bypass -File scripts\\start.ps1"), C("# The first build takes a few minutes.")]],
     ["04", "Sign up", [C("# Open http://localhost:3000/sign-up and create the owner with your SETUP_TOKEN."), C("# Always use the exact host in APP_URL (localhost, not 127.0.0.1).")], "done"]],
   vps: (v, dom) => [["00", "Server and DNS", [C("# A Linux VPS with Docker Engine + Compose and git (1 vCPU / 2 GB RAM)."), C(`# Point an A record for ${dom} at the server, then:`), P("ufw allow 22,80,443/tcp && ufw enable")]],
     ["01", ...CLONE], ["02", "Configure", [P("cp .env.example .env"), ...env(true, v, dom)], "env"],

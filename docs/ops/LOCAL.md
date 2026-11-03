@@ -8,10 +8,10 @@
 ## First run
 
 1. `cp .env.example .env` and fill in:
-   - `ENCRYPTION_KEY` and `BETTER_AUTH_SECRET`: `openssl rand -base64 32` each.
+   - `ENCRYPTION_KEY` and `BETTER_AUTH_SECRET`: `openssl rand -base64 32` each. In Windows PowerShell without `openssl`: `$b = New-Object byte[] 32; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b); [Convert]::ToBase64String($b)`.
    - `SETUP_TOKEN`: any secret string of 16+ characters.
    - Leave `MODE=local` and `APP_URL=http://localhost:3000`. (`DATABASE_URL` in `.env` is for running outside Docker; compose overrides it to point at the `postgres` service.)
-2. `scripts/start.sh` (Windows: `scripts\start.ps1`). The first build takes a few minutes.
+2. `scripts/start.sh` (Windows: `powershell -ExecutionPolicy Bypass -File scripts\start.ps1`). The first build takes a few minutes.
 3. Open http://localhost:3000/sign-up and create the owner account with your `SETUP_TOKEN`. Sign-up closes after the first owner; everyone else joins by invite.
    Always open the app at the exact host in `APP_URL` (e.g. `localhost`, not `127.0.0.1`); a mismatch makes the cross-site check reject every form submission with 403.
 
